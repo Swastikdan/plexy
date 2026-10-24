@@ -97,7 +97,10 @@ normally uses its bundled server and never shows this screen.
 
 - If the hosted page is HTTPS, the server address must also be HTTPS. Browsers
   block an `https://…` page from calling a plain `http://192.168.x.x` server.
-  Use a Cloudflare Tunnel (or Tailscale HTTPS) for the server, or use the Mac app.
+  The connection screen offers a one-click **Open http://…** button that loads
+  the server's own copy of the app over HTTP instead, which is the simplest fix
+  on a home network. For a public HTTPS address, use a Cloudflare Tunnel (or
+  Tailscale HTTPS) in front of the server.
 - `VITE_API_URL` can seed a default address at build time. Viewers can still
   change it from the Server icon in the top bar.
 - The backend already enables CORS for hosted clients.

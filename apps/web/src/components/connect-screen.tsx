@@ -187,7 +187,7 @@ export function ConnectScreen({
             </Button>
           </form>
 
-          {error && (
+          {error && !mixedContentRisk && (
             <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300">
               <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-400" />
               <span>{error}</span>
@@ -201,14 +201,24 @@ export function ConnectScreen({
             </div>
           )}
 
-          {mixedContentRisk && !error && (
+          {mixedContentRisk && (
             <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-200">
               <ShieldAlert size={15} className="mt-0.5 shrink-0 text-amber-300" />
-              <span>
-                This page is HTTPS, so the browser may block a plain HTTP server.
-                Use an HTTPS address such as a Cloudflare Tunnel or Tailscale
-                HTTPS URL.
-              </span>
+              <div className="min-w-0 space-y-2">
+                <p>
+                  This page is served over HTTPS, so the browser blocks a plain
+                  HTTP server. Your server already serves this same app over
+                  HTTP — open it there instead:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.location.assign(normalized)}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1.5 text-xs font-semibold text-amber-100 transition-colors hover:bg-amber-500/25 focus-visible:outline-2 focus-visible:outline-amber-300 focus-visible:outline-offset-2"
+                >
+                  <span className="truncate">Open {normalized}</span>
+                  <ArrowRight size={13} className="shrink-0" />
+                </button>
+              </div>
             </div>
           )}
 
