@@ -1,12 +1,14 @@
 {
   "name": "@plexy/desktop",
   "version": "0.1.0",
+  "description": "Plexy desktop app for macOS",
+  "author": "Plexy",
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
     "build:main": "bun build.ts",
     "dev": "bun run build:main && electron .",
-    "package": "bun run build:main && electron-builder"
+    "package": "bun run build:main && electron-builder --publish never"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

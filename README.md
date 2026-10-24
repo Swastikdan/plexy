@@ -141,6 +141,8 @@ tells the GitHub release notes which URL to link to.
   - `PORT`: Server listen port (default `8765`).
   - `PLEXY_DATA_DIR`: Data and database directory (default: macOS `~/Library/Application Support/Plexy`, dev `/tmp/plexy-dev`).
   - `PLEXY_LOG_LEVEL`: Log level (`debug`, `info`, `warn`, `error`).
+- The desktop app prefers port `8765` so LAN bookmarks stay valid; it falls back to a random free port only when `8765` is already taken.
+- LAN access is off by default (`bindAddress: "127.0.0.1"`). Enable it in **Server → Settings → Network & Access**, then restart Plexy. That page lists the exact `http://<lan-ip>:<port>` addresses to open on phones and TVs.
 
 ---
 

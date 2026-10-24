@@ -15,6 +15,7 @@ import { resetInterruptedTrickplay, shutdownTrickplay } from "./trickplay";
 import type { Level } from "./logger";
 import { networkInterfaces } from "node:os";
 import { migrateLegacyPackagedData } from "./paths";
+import { setLiveBinding } from "./runtime";
 
 const isMediaWorker = process.argv.includes("--worker=media") || process.argv.some(a => a.endsWith("media-worker.ts") || a.endsWith("media-worker"));
 const isOptimizeWorker = process.argv.includes("--worker=optimize") || process.argv.some(a => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"));
@@ -64,19 +65,23 @@ async function main(): Promise<void> {
   const hostname = cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   app.listen({ port, hostname });
-  resetInterruptedTrickplay();
 
   // Print the addresses a phone/tablet on the same Wi-Fi can actually open.
   // The server is plain HTTP; `https://` fails before a request reaches it.
-  if (hostname === "0.0.0.0") {
-    const lan = Object.values(networkInterfaces())
-      .flat()
-      .filter((entry) => entry && entry.family === "IPv4" && !entry.internal)
-      .map((entry) => entry!.address);
-    for (const address of lan) {
-      log.info("server", "LAN playback address", { url: `http://${address}:${port}` });
-      console.log(`▸ LAN → http://${address}:${port}`);
-    }
+  const lanUrls =
+    hostname === "0.0.0.0"
+      ? Object.values(networkInterfaces())
+          .flat()
+          .filter((entry) => entry && entry.family === "IPv4" && !entry.internal)
+          .map((entry) => `http://${entry!.address}:${port}`)
+      : [];
+  setLiveBinding({ bind: hostname, port, lanUrls });
+
+  resetInterruptedTrickplay();
+
+  for (const url of lanUrls) {
+    log.info("server", "LAN playback address", { url });
+    console.log(`▸ LAN → ${url}`);
   }
 
   // Soft shutdown: finish writes, close the workers, close logs (PRD 5.1).

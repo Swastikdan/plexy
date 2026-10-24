@@ -97,11 +97,17 @@ async function buildDesktop() {
   execSync("bun apps/desktop/build.ts", { stdio: "inherit" });
 
   // 6. Package macOS Electron Application
+  // `--publish never` is required: on CI, electron-builder otherwise tries to
+  // publish to GitHub and fails without GH_TOKEN. The release workflow uploads
+  // the artifacts itself.
   console.log("\n6. Packaging macOS Electron Application with electron-builder...");
-  execSync("./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac", {
-    stdio: "inherit",
-    env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
-  });
+  execSync(
+    "./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never",
+    {
+      stdio: "inherit",
+      env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
+    },
+  );
 
   // 7. Verify and refresh app bundle resources
   const appBundle = join(distMac, "mac-arm64", "Plexy.app");

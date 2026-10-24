@@ -1,32 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createServer } from "node:net";
 import path from "node:path";
 import { app } from "electron";
+import { getAvailablePort } from "./port";
 
 let serverProcess: ChildProcess | null = null;
 let activePort = 0;
 
 export function getActivePort(): number {
   return activePort;
-}
-
-/** Dynamically allocate an open, available port on loopback without using a fixed/constant port */
-export function getAvailablePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.unref();
-    srv.on("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const address = srv.address();
-      if (address && typeof address === "object") {
-        const port = address.port;
-        srv.close(() => resolve(port));
-      } else {
-        srv.close(() => resolve(8765));
-      }
-    });
-  });
 }
 
 /** Poll /api/server/status until healthy or timeout */
@@ -124,7 +106,7 @@ function resolveBunBinary(): string {
 export async function startServer(): Promise<{ url: string; port: number }> {
   const isDev = !app.isPackaged;
 
-  // Allocate a completely dynamic port instead of using a constant port
+  // Prefer 8765 so LAN bookmarks stay valid; random only if it is taken.
   activePort = await getAvailablePort();
 
   const dataDir = path.join(app.getPath("appData"), "Plexy");
