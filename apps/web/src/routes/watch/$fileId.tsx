@@ -264,8 +264,12 @@ function WatchRoute() {
         setRestartAt({ fileId: Number(fileId), seconds: seekEvent.detail });
       }
     };
-    const onPointerUp = (event: Event) => {
-      if (!isScrubbingRef.current || !isTimeRangeEvent(event)) return;
+    const onPointerUp = () => {
+      // Finish the scrub on any pointer release. If the pointer leaves the
+      // timeline (or the window) before release, waiting for a pointerup that
+      // targets the range leaves `isScrubbingRef` stuck and swallows the next
+      // arrow/seek request.
+      if (!isScrubbingRef.current) return;
       isScrubbingRef.current = false;
       const seekTo = pendingSeekRef.current;
       pendingSeekRef.current = null;
@@ -286,17 +290,63 @@ function WatchRoute() {
       }
     };
 
+    // Arrow keys must always seek by a fixed step. Without this, the focused
+    // native range input handles them as 1% of the file (which can jump most
+    // of the way to the end); unfocused they are handled by Media Chrome at
+    // 10 seconds. Intercepting here keeps both cases identical.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented) return;
+
+      const path = event.composedPath();
+      // Leave volume sliders and open menus/dialogs to their own controls.
+      const usesArrow = path.some((target) => {
+        if (!(target instanceof Element) || target.localName === "media-time-range") return false;
+        const keys = (target as Element & { keysUsed?: unknown }).keysUsed;
+        return Array.isArray(keys) && keys.includes(event.key);
+      });
+      if (usesArrow) return;
+
+      const video = videoRef.current;
+      if (!video) return;
+
+      const total = duration ?? (Number.isFinite(video.duration) ? video.duration : null);
+      const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const step = event.key === "ArrowRight" ? 10 : -10;
+      let seekTo = Math.max(0, current + step);
+      if (total != null && Number.isFinite(total)) {
+        seekTo = Math.min(seekTo, Math.max(0, total - 0.25));
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (Math.abs(seekTo - current) < 0.05) return;
+
+      if (play.data?.path && play.data.path !== "direct") {
+        setRestartAt({ fileId: Number(fileId), seconds: seekTo });
+        return;
+      }
+      try {
+        video.currentTime = seekTo;
+      } catch {
+        // Ignore seeks that arrive before the browser can satisfy them.
+      }
+    };
+
     container.addEventListener("pointerdown", onPointerDown, true);
     container.addEventListener("mediaseekrequest", onSeekRequest, true);
-    container.addEventListener("pointerup", onPointerUp, true);
-    container.addEventListener("pointercancel", onPointerUp, true);
+    container.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("pointercancel", onPointerUp, true);
     return () => {
       container.removeEventListener("pointerdown", onPointerDown, true);
       container.removeEventListener("mediaseekrequest", onSeekRequest, true);
-      container.removeEventListener("pointerup", onPointerUp, true);
-      container.removeEventListener("pointercancel", onPointerUp, true);
+      container.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("pointercancel", onPointerUp, true);
     };
-  }, [fileId, play.data?.path, streamStart]);
+  }, [fileId, play.data?.path, streamStart, duration]);
 
   // Resume position callback
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLMediaElement>) => {
