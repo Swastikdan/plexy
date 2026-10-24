@@ -106,7 +106,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       setupComplete: hasTmdbToken && hasLibraries,
       scan: currentScan,
       recentScans,
-      optimizer: await optimizerStatus(),
+      optimizer: await optimizerStatus({ includeFiles: false }),
     };
   })
 
@@ -176,7 +176,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       return Response.json({ error: "Wait for media preparation to finish before resetting Plexy data." }, { status: 409 });
     }
 
-    pauseOptimizer();
+    pauseOptimizer("reset");
     try {
       const counts = {
         libraries: Number(q<{ n: number }>("SELECT COUNT(*) AS n FROM libraries").get()?.n ?? 0),
@@ -209,7 +209,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       log.warn("server", "local Plexy data reset", counts);
       return { ok: true, ...counts };
     } finally {
-      resumeOptimizer();
+      resumeOptimizer("reset");
     }
   })
 

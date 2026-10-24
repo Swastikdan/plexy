@@ -20,8 +20,9 @@ const ConfigSchema = z.object({
   metadataLanguage: z.string().default("en-US"),
   metadataRegion: z.string().default("US"),
   imageQuality: z.enum(["w342", "w500", "w780", "original"]).default("w780"),
-  /** Prepare non-direct files in the background so playback and seeking are instant. */
-  autoOptimize: z.boolean().default(true),
+  // Keep new installs quiet until the owner opts into library-wide background
+  // preparation. Manual "Prepare Now" remains available.
+  autoOptimize: z.boolean().default(false),
   /** 0 = use all available space. Otherwise prune the oldest prepared copies. */
   optimizeMaxCacheGb: z.number().int().min(0).default(0),
   /** Files probed in parallel during a scan. Higher is faster on fast disks. */

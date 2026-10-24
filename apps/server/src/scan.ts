@@ -199,7 +199,7 @@ async function runScan(libraryIds: number[]): Promise<void> {
 
   // Preparation jobs would compete with scanning for CPU and disk; keep the
   // queue for after the walk (it resumes in `finally`).
-  pauseOptimizer();
+  pauseOptimizer("scan");
 
   const seen = { count: 0 };
   const cfg = await getConfig();
@@ -274,7 +274,7 @@ async function runScan(libraryIds: number[]): Promise<void> {
     scanning = false;
     // Start preparing everything the walk just discovered. Optimizer jobs run
     // one at a time in a child process, so this never blocks the event loop.
-    resumeOptimizer();
+    resumeOptimizer("scan");
     void enqueueMissingOptimizations().catch((err) =>
       log.warn("optimizer", "could not queue preparation after scan", {
         message: err instanceof Error ? err.message : String(err),

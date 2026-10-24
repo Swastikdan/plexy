@@ -218,17 +218,20 @@ const queue: number[] = [];
 const queuedIds = new Set<number>();
 let running = false;
 let paused = false;
+const pauseReasons = new Set<string>();
 let stopping = false;
 let current: { fileId: number; progress: number } | null = null;
 
-/** Called by the scanner so probing keeps the machine to itself. */
-export function pauseOptimizer(): void {
+/** Pause queue advancement while higher-priority work uses the machine. */
+export function pauseOptimizer(reason = "manual"): void {
+  pauseReasons.add(reason);
   paused = true;
 }
 
-export function resumeOptimizer(): void {
-  paused = false;
-  void pump();
+export function resumeOptimizer(reason = "manual"): void {
+  pauseReasons.delete(reason);
+  paused = pauseReasons.size > 0;
+  if (!paused) void pump();
 }
 
 function markStatus(fileId: number, status: string, patch: Record<string, unknown> = {}) {
@@ -274,8 +277,16 @@ async function pump(): Promise<void> {
       optimized_at: new Date().toISOString(),
     });
   } finally {
-    running = false;
     current = null;
+    // Cache pruning scans all prepared rows. Do it once after the queue drains,
+    // rather than once for each file in a long preparation batch.
+    if (queue.length === 0 && !paused && !stopping) {
+      await pruneOptimizerCache().catch((err) =>
+        log.warn("optimizer", "cache pruning failed", {
+          message: err instanceof Error ? err.message : String(err),
+        }));
+    }
+    running = false;
     void pump();
   }
 }
@@ -442,7 +453,6 @@ async function optimizeOne(fileId: number): Promise<void> {
       }
     }
 
-    void pruneOptimizerCache();
   } catch (err) {
     await unlink(output).catch(() => {});
     await unlink(`${output}.part`).catch(() => {});
@@ -512,12 +522,12 @@ export async function enqueueMissingOptimizations(
 
 /** Reset interrupted jobs and start working through the queue. */
 export async function startOptimizer(): Promise<void> {
-  try {
-    await mkdir(resolveOptimizedDir(), { recursive: true });
-  } catch { /* the directory is recreated on demand */ }
   run("UPDATE media_files SET optimized_status = 'none', optimized_progress = NULL WHERE optimized_status IN ('running', 'queued')");
   const cfg = await getConfig();
   if (!cfg.autoOptimize) return;
+  try {
+    await mkdir(resolveOptimizedDir(), { recursive: true });
+  } catch { /* the directory is recreated on demand */ }
   await enqueueMissingOptimizations();
 }
 
@@ -549,7 +559,9 @@ export interface OptimizerStatus {
   }>;
 }
 
-export async function optimizerStatus(): Promise<OptimizerStatus> {
+export async function optimizerStatus(
+  options: { includeFiles?: boolean } = {},
+): Promise<OptimizerStatus> {
   const cfg = await getConfig();
   const counts: Record<string, number> = {
     none: 0, queued: 0, running: 0, done: 0, failed: 0, skipped: 0,
@@ -562,7 +574,7 @@ export async function optimizerStatus(): Promise<OptimizerStatus> {
   const cache = q<{ bytes: number | null }>(
     "SELECT SUM(optimized_size) AS bytes FROM media_files WHERE optimized_status = 'done'",
   ).get();
-  const preparedRows = q<{
+  const preparedRows = options.includeFiles === false ? [] : q<{
     id: number;
     path: string;
     size: number;
@@ -587,7 +599,7 @@ export async function optimizerStatus(): Promise<OptimizerStatus> {
     counts,
     cacheBytes: Number(cache?.bytes ?? 0),
     cacheDir: resolveOptimizedDir(),
-    files: preparedRows.map((r) => ({
+    ...(options.includeFiles === false ? {} : { files: preparedRows.map((r) => ({
       id: Number(r.id),
       path: String(r.path),
       optimizedPath: r.optimized_path ? String(r.optimized_path) : null,
@@ -595,7 +607,7 @@ export async function optimizerStatus(): Promise<OptimizerStatus> {
       optimizedSize: Number(r.optimized_size ?? 0),
       mtime: r.optimized_mtime ? Number(r.optimized_mtime) : null,
       title: r.title ? String(r.title) : undefined,
-    })),
+    })) }),
   };
 }
 

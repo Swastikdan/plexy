@@ -1,20 +1,15 @@
-/// Fullscreen Netflix-style Player with Sutro Theme (PRD 5.8, 10.4, 10.8).
-///
-/// Integrates MediaThemeSutro from player.style/sutro/react and HlsVideo from
-/// hls-video-element/react with Plexy's backend playability routing.
-import { useEffect, useRef, useState, useCallback } from "react";
+/// Fullscreen Cinema Player using Video.js 10 and Plexy playback engine.
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, SkipForward } from "lucide-react";
- 
-import HlsVideo from "hls-video-element/react";
+
+import { VideoPlayer, Video } from "@videojs/react/video";
+import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
+import { VideoSkin } from "@/components/videojs/video/skin";
 import { api, type Playability, type SubtitleTrack } from "../../client";
 import { probeBrowserCaps } from "@plexy/api-client";
 import { queries } from "../../queries";
-
-const MediaThemeSutroWithDuration = MediaThemeSutro as React.ComponentType<
-  React.ComponentProps<typeof MediaThemeSutro> & { defaultduration?: number }
->;
 
 function WatchRoute() {
   const { fileId } = useParams({ from: Route.id });
@@ -22,10 +17,7 @@ function WatchRoute() {
   const queryClient = useQueryClient();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const themeRef = useRef<React.ComponentRef<typeof MediaThemeSutro> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const isScrubbingRef = useRef(false);
-  const pendingSeekRef = useRef<number | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,6 +29,11 @@ function WatchRoute() {
   const [knownDuration, setKnownDuration] = useState<number | null>(null);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
   const [nextFileId, setNextFileId] = useState<number | null>(null);
+
+  // Audio track and subtitle sync state
+  const [selectedAudioIndex, setSelectedAudioIndex] = useState<number>(0);
+  const [subtitleOffset, setSubtitleOffset] = useState<number>(0);
+  const appliedSubtitleOffsetRef = useRef<number>(0);
 
   // Auto-hide top header bar on mouse inactivity
   const resetHideTimer = useCallback(() => {
@@ -65,106 +62,81 @@ function WatchRoute() {
     };
   }, [resetHideTimer]);
 
-  // Fetch playability routing decision
+  // Fetch complete player manifest
+  const hasInitializedAudioRef = useRef(false);
   const play = useQuery({
-    queryKey: ["playability", fileId, caps],
+    queryKey: ["play", fileId, caps],
     queryFn: async () => {
-      const verdict = await api.playability(Number(fileId), JSON.parse(caps));
-      if (verdict.itemId) {
-        const detail = await api.title(verdict.itemId);
-        setTitle(detail.item.name);
-        setKnownDuration(detail.file?.duration ?? null);
-        // If series, check if next episode exists
-        if (detail.episodes && detail.episodes.length > 0) {
-          const idx = detail.episodes.findIndex((e) => e.id === verdict.itemId);
-          if (idx !== -1 && idx < detail.episodes.length - 1) {
-            const nextEp = detail.episodes[idx + 1];
-            if (nextEp?.id) {
-              setNextFileId(nextEp.id);
-            }
-          }
-        }
+      const manifest = await api.play(Number(fileId), JSON.parse(caps));
+      if (manifest.title) {
+        setTitle(manifest.subtitle ? `${manifest.title} · ${manifest.subtitle}` : manifest.title);
       }
-      return verdict;
+      if (manifest.duration) {
+        setKnownDuration(manifest.duration);
+      }
+      if (manifest.nextFileId) {
+        setNextFileId(manifest.nextFileId);
+      }
+      return manifest;
     },
     enabled: !!caps,
   });
+
+  // Set default audio track from manifest once on initial load
+  useEffect(() => {
+    if (!hasInitializedAudioRef.current && play.data?.audioTracks && play.data.audioTracks.length > 0) {
+      hasInitializedAudioRef.current = true;
+      const defaultIdx = play.data.audioTracks.findIndex((t: any) => t.isDefault);
+      if (defaultIdx >= 0) setSelectedAudioIndex(defaultIdx);
+    }
+  }, [play.data?.audioTracks]);
 
   // Subtitle tracks
   const tracksQuery = useQuery({ ...queries.subtitles(Number(fileId)), enabled: !!caps });
   const tracks = (tracksQuery.data?.tracks ?? []) as (SubtitleTrack & { isDefault?: boolean })[];
 
-  // Keep Sutro's hover time preview and captions control available. Media
-  // Chrome hides captions UI when no tracks were discovered, so show an
-  // explicit empty state instead of silently removing the subtitle button.
+  const resumeAt =
+    play.data?.watch && !play.data.watch.played && play.data.watch.position > 15
+      ? play.data.watch.position
+      : 0;
+
+  const streamStart =
+    play.data?.path === "direct" && selectedAudioIndex === 0
+      ? 0
+      : restartAt?.fileId === Number(fileId)
+        ? restartAt.seconds
+        : resumeAt;
+
+  const effectivePath = useMemo(() => {
+    if (!play.data || play.data.path === "unsupported") return null;
+    // If original direct play, but user selected an alternate audio track, remux to preserve choice
+    if (play.data.path === "direct" && selectedAudioIndex > 0) return "remux";
+    return play.data.path;
+  }, [play.data, selectedAudioIndex]);
+
+  const streamUrl = useMemo(() => {
+    if (!effectivePath) return null;
+    return api.streamUrl(Number(fileId), effectivePath, streamStart || undefined, selectedAudioIndex);
+  }, [fileId, effectivePath, streamStart, selectedAudioIndex]);
+
+  // Fast trickplay track URL for scrub previews
+  const trickplayTrackUrl = useMemo(() => {
+    if (!play.data || play.data.path === "unsupported") return null;
+    return api.trickplayTrackUrl(Number(fileId));
+  }, [fileId, play.data]);
+
+  // Preload all trickplay sprite sheets into browser cache immediately on player load
   useEffect(() => {
-    const root = themeRef.current?.shadowRoot;
-    if (!root) return;
-
-    const timeRange = root.querySelector("media-time-range");
-    if (timeRange && !timeRange.querySelector("media-preview-time-display")) {
-      const previewTime = document.createElement("media-preview-time-display");
-      previewTime.slot = "preview";
-      timeRange.append(previewTime);
+    const sprites = play.data?.trickplay?.sprites;
+    if (sprites && sprites.length > 0) {
+      for (const url of sprites) {
+        const img = new Image();
+        img.src = url;
+      }
     }
+  }, [play.data?.trickplay?.sprites]);
 
-    const timeDisplay = root.querySelector(".time-bar media-time-display");
-    if (timeDisplay) {
-      timeDisplay.removeAttribute("remaining");
-      timeDisplay.setAttribute("showduration", "");
-      timeDisplay.setAttribute("notoggle", "");
-    }
-
-    const noSubtitles = tracksQuery.isSuccess && tracks.length === 0;
-    let style = root.getElementById("plexy-player-overrides") as HTMLStyleElement | null;
-    if (!style) {
-      style = document.createElement("style");
-      style.id = "plexy-player-overrides";
-      root.append(style);
-    }
-    style.textContent = `media-loading-indicator { display: none; }
-      ${noSubtitles ? `
-        media-captions-button:not([mediasubtitleslist]) {
-          display: inline-flex !important;
-          opacity: 0.55;
-        }
-        media-captions-button:not([mediasubtitleslist])::after {
-          content: "No subtitles available for this file";
-          position: absolute;
-          right: 0;
-          bottom: calc(100% + 10px);
-          width: max-content;
-          max-width: 220px;
-          padding: 6px 9px;
-          border-radius: 4px;
-          background: #181818;
-          color: white;
-          font: 12px/1.4 sans-serif;
-          opacity: 0;
-          pointer-events: none;
-          transition: opacity 120ms ease;
-        }
-        media-captions-button:not([mediasubtitleslist]):is(:hover, :focus-visible)::after {
-          opacity: 1;
-        }
-      ` : ""}`;
-  }, [fileId, play.data?.path, tracks.length, tracksQuery.isSuccess]);
-
-  const resumeAt = play.data?.watch && !play.data.watch.played && play.data.watch.position > 15
-    ? play.data.watch.position
-    : 0;
-  const streamStart = play.data?.path === "direct"
-    ? 0
-    : restartAt?.fileId === Number(fileId)
-      ? restartAt.seconds
-      : resumeAt;
-  const streamUrl = play.data && play.data.path !== "unsupported"
-    ? api.streamUrl(Number(fileId), play.data.path, streamStart || undefined)
-    : null;
-
-  // A new direct stream or server-side seek starts a fresh media load. Show
-  // feedback immediately until playback starts; later stalls are debounced to
-  // avoid flashing the spinner during brief network hiccups.
+  // Immediate loading state feedback on stream changes
   useEffect(() => {
     if (!streamUrl) return;
     setIsBuffering(true);
@@ -174,17 +146,13 @@ function WatchRoute() {
   }, [streamUrl]);
 
   const isHls = Boolean(streamUrl && streamUrl.includes(".m3u8"));
-
-  // Converted fragmented MP4 streams report their duration as data arrives.
-  // The player should use the scanned source duration from the first frame.
   const duration = knownDuration ?? play.data?.watch?.duration ?? undefined;
 
-  // Media Chrome reads the media element's duration/currentTime/seekable values
-  // directly. Present source-timeline values for converted streams, whose MP4
-  // timestamps restart at zero after each server-side seek.
+  // Converted fragmented MP4 streams report duration as data arrives.
+  // Define source-timeline properties so seeking and duration stay in sync.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || play.data?.path === "direct") return;
+    if (!video || effectivePath === "direct") return;
 
     const durationDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "duration");
     const currentTimeDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
@@ -199,7 +167,13 @@ function WatchRoute() {
       currentTime: {
         configurable: true,
         get: () => streamStart + currentTimeDescriptor.get!.call(video),
-        set: (sourceTime: number) => currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart)),
+        set: (sourceTime: number) => {
+          if (Math.abs(sourceTime - (streamStart + currentTimeDescriptor.get!.call(video))) > 2) {
+            setRestartAt({ fileId: Number(fileId), seconds: sourceTime });
+          } else {
+            currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart));
+          }
+        },
       },
       seekable: {
         configurable: true,
@@ -220,7 +194,6 @@ function WatchRoute() {
       },
     });
 
-    // The media element may have emitted loadedmetadata before this effect ran.
     video.dispatchEvent(new Event("durationchange"));
     video.dispatchEvent(new Event("timeupdate"));
     video.dispatchEvent(new Event("seekablechange"));
@@ -230,80 +203,91 @@ function WatchRoute() {
       Reflect.deleteProperty(video, "currentTime");
       Reflect.deleteProperty(video, "seekable");
     };
-  }, [streamUrl, streamStart, duration, play.data?.path]);
+  }, [streamUrl, streamStart, duration, effectivePath, fileId]);
 
-  // media-time-range emits a seek request for every pointer movement. That is
-  // smooth for a local seekable file, but causes repeated range/decoder work on
-  // streamed conversions. Let the range update its preview while dragging and
-  // issue one seek when the pointer is released.
+  // Subtitle Synchronization Adjustment Engine
+  const handleAdjustSubtitleOffset = useCallback((delta: number) => {
+    setSubtitleOffset((prev) => Number((prev + delta).toFixed(2)));
+  }, []);
+
+  const handleResetSubtitleOffset = useCallback(() => {
+    setSubtitleOffset(0);
+  }, []);
+
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const video = videoRef.current;
+    if (!video) return;
 
-    const isTimeRangeEvent = (event: Event) =>
-      event.composedPath().some(
-        (target) => target instanceof Element && target.localName === "media-time-range",
-      );
+    const diff = subtitleOffset - appliedSubtitleOffsetRef.current;
+    if (Math.abs(diff) < 0.001) return;
+    appliedSubtitleOffsetRef.current = subtitleOffset;
 
-    const onPointerDown = (event: Event) => {
-      if (isTimeRangeEvent(event)) {
-        isScrubbingRef.current = true;
-        pendingSeekRef.current = null;
-      }
-    };
-    const onSeekRequest = (event: Event) => {
-      if (play.data?.path === "direct" && !isScrubbingRef.current) return;
-      const seekEvent = event as CustomEvent<number>;
-      if (Number.isFinite(seekEvent.detail)) pendingSeekRef.current = seekEvent.detail;
-      event.stopPropagation();
-      if (play.data?.path !== "direct" && !isScrubbingRef.current && Number.isFinite(seekEvent.detail)) {
-        setRestartAt({ fileId: Number(fileId), seconds: seekEvent.detail });
-      }
-    };
-    const onPointerUp = (event: Event) => {
-      if (!isScrubbingRef.current || !isTimeRangeEvent(event)) return;
-      isScrubbingRef.current = false;
-      const seekTo = pendingSeekRef.current;
-      pendingSeekRef.current = null;
-      const video = videoRef.current;
-      if (seekTo != null && video) {
-        if (play.data?.path && play.data.path !== "direct") {
-          // Converted MP4 responses are sequential streams without byte ranges.
-          // Restart conversion at the requested source timestamp to make seeking
-          // work beyond data that has already reached the browser.
-          setRestartAt({ fileId: Number(fileId), seconds: seekTo });
-          return;
+    if (video.textTracks) {
+      for (let t = 0; t < video.textTracks.length; t++) {
+        const track = video.textTracks[t];
+        // Shift cues for subtitle/captions tracks only (preserve metadata tracks like trickplay)
+        if (track.kind === "subtitles" || track.kind === "captions") {
+          if (track.cues) {
+            for (let c = 0; c < track.cues.length; c++) {
+              const cue = track.cues[c];
+              cue.startTime += diff;
+              cue.endTime += diff;
+            }
+          }
         }
-        try {
-          video.currentTime = seekTo;
-        } catch {
-          // Some in-progress converted streams cannot seek until more data arrives.
-        }
-      }
-    };
-
-    container.addEventListener("pointerdown", onPointerDown, true);
-    container.addEventListener("mediaseekrequest", onSeekRequest, true);
-    container.addEventListener("pointerup", onPointerUp, true);
-    container.addEventListener("pointercancel", onPointerUp, true);
-    return () => {
-      container.removeEventListener("pointerdown", onPointerDown, true);
-      container.removeEventListener("mediaseekrequest", onSeekRequest, true);
-      container.removeEventListener("pointerup", onPointerUp, true);
-      container.removeEventListener("pointercancel", onPointerUp, true);
-    };
-  }, [fileId, play.data?.path, streamStart]);
-
-  // Resume position callback
-  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLMediaElement>) => {
-    const v = e.currentTarget;
-    const resumeAt = play.data?.watch?.position ?? 0;
-    if (resumeAt > 15 && !play.data?.watch?.played) {
-      if (play.data?.path === "direct" && Math.abs(v.currentTime - resumeAt) > 3) {
-        v.currentTime = resumeAt;
       }
     }
-  };
+  }, [subtitleOffset]);
+
+  // Ensure freshly loaded subtitle tracks receive current offset
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onTrackLoad = () => {
+      if (appliedSubtitleOffsetRef.current === 0 || !video.textTracks) return;
+      const currentOffset = appliedSubtitleOffsetRef.current;
+      for (let t = 0; t < video.textTracks.length; t++) {
+        const track = video.textTracks[t];
+        if (track.kind === "subtitles" || track.kind === "captions") {
+          const trackExt = track as any;
+          if (track.cues && track.cues.length > 0 && !trackExt.__plexy_offset_applied) {
+            trackExt.__plexy_offset_applied = true;
+            for (let c = 0; c < track.cues.length; c++) {
+              const cue = track.cues[c];
+              cue.startTime += currentOffset;
+              cue.endTime += currentOffset;
+            }
+          }
+        }
+      }
+    };
+
+    const trackElements = video.querySelectorAll("track");
+    trackElements.forEach((el) => el.addEventListener("load", onTrackLoad));
+    return () => {
+      trackElements.forEach((el) => el.removeEventListener("load", onTrackLoad));
+    };
+  }, [tracks, fileId]);
+
+  // Audio track switching handler
+  const handleSelectAudioTrack = useCallback((index: number) => {
+    if (index === selectedAudioIndex) return;
+    const currentPos = videoRef.current?.currentTime ?? streamStart;
+    setSelectedAudioIndex(index);
+    setRestartAt({ fileId: Number(fileId), seconds: currentPos });
+  }, [fileId, selectedAudioIndex, streamStart]);
+
+  // Resume position callback
+  const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLMediaElement>) => {
+    const v = e.currentTarget;
+    const resumePos = play.data?.watch?.position ?? 0;
+    if (resumePos > 15 && !play.data?.watch?.played) {
+      if (effectivePath === "direct" && Math.abs(v.currentTime - resumePos) > 3) {
+        v.currentTime = resumePos;
+      }
+    }
+  }, [effectivePath, play.data?.watch]);
 
   return (
     <div
@@ -312,7 +296,7 @@ function WatchRoute() {
       onClick={resetHideTimer}
       className="fixed inset-0 z-50 flex flex-col bg-black select-none overflow-hidden"
     >
-      {/* Top Header Controls */}
+      {/* Top Header Bar */}
       <div
         className={`absolute top-0 inset-x-0 z-30 flex h-20 items-center justify-between px-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${
           controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -346,28 +330,10 @@ function WatchRoute() {
               <span>Next Episode</span>
             </button>
           )}
-
-          {play.data && (
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-md border ${
-                play.data.path === "direct"
-                  ? "border-green-500/40 bg-green-500/20 text-green-300"
-                  : play.data.path === "remux"
-                    ? "border-blue-500/40 bg-blue-500/20 text-blue-300"
-                    : "border-amber-500/40 bg-amber-500/20 text-amber-300"
-              }`}
-            >
-              {play.data.path === "direct"
-                ? "Direct Play"
-                : play.data.path === "remux"
-                  ? "Remux"
-                  : "Transcoding"}
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Main Video View / Sutro Theme */}
+      {/* Main Video View / Video.js 10 */}
       <div className="relative flex-1 flex items-center justify-center w-full h-full p-0">
         {play.data?.path === "unsupported" ? (
           <div className="max-w-md p-6 text-center rounded-2xl bg-[#181818] border border-white/10 text-white z-20">
@@ -382,114 +348,130 @@ function WatchRoute() {
           </div>
         ) : streamUrl ? (
           <div className="w-full h-full flex items-center justify-center">
-            <MediaThemeSutroWithDuration
-              ref={themeRef}
-              defaultduration={duration}
-              style={{
-                width: "100%",
-                maxWidth: "100%",
-                maxHeight: "100vh",
-                aspectRatio: "16 / 9",
-                ["--media-accent-color" as any]: "#E50914",
-                ["--media-primary-color" as any]: "#ffffff",
-                ["--media-secondary-color" as any]: "rgba(255, 255, 255, 0.75)",
-                ["--media-control-background" as any]: "rgba(18, 18, 18, 0.85)",
-                ["--media-control-hover-background" as any]: "rgba(35, 35, 35, 0.95)",
-                ["--media-font-family" as any]: "inherit",
-              } as React.CSSProperties}
-              className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
-            >
-              {isHls ? (
-                <HlsVideo
-                  key={streamUrl}
-                  ref={(el: any) => { videoRef.current = el; }}
-                  slot="media"
-                  src={streamUrl}
-                  autoplay
-                  playsInline
-                  crossOrigin="anonymous"
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onWaiting={showBufferingAfterDelay}
-                  onStalled={showBufferingAfterDelay}
-                  onCanPlay={hideBuffering}
-                  onPlaying={hideBuffering}
-                  onError={hideBuffering}
-                  className="h-full w-full object-contain"
-                >
-                  {tracks.map((t) => (
-                    <track
-                      key={t.track}
-                      label={t.title || t.language || `Track ${t.track}`}
-                      kind="subtitles"
-                      src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
-                      srcLang={t.language ?? undefined}
-                      default={t.isDefault}
-                    />
-                  ))}
-                </HlsVideo>
-              ) : (
-                <video
-                  key={streamUrl}
-                  ref={(el) => { videoRef.current = el; }}
-                  slot="media"
-                  src={streamUrl}
-                  autoPlay
-                  playsInline
-                  crossOrigin="anonymous"
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onWaiting={showBufferingAfterDelay}
-                  onStalled={showBufferingAfterDelay}
-                  onCanPlay={hideBuffering}
-                  onPlaying={hideBuffering}
-                  onError={hideBuffering}
-                  className="h-full w-full object-contain"
-                >
-                  {tracks.map((t) => (
-                    <track
-                      key={t.track}
-                      label={t.title || t.language || `Track ${t.track}`}
-                      kind="subtitles"
-                      src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
-                      srcLang={t.language ?? undefined}
-                      default={t.isDefault}
-                    />
-                  ))}
-                </video>
-              )}
-            </MediaThemeSutroWithDuration>
+            <VideoPlayer>
+              <VideoSkin
+                className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
+                serverAudioTracks={play.data?.audioTracks}
+                selectedAudioIndex={selectedAudioIndex}
+                onSelectAudioTrack={handleSelectAudioTrack}
+                subtitleOffset={subtitleOffset}
+                onAdjustSubtitleOffset={handleAdjustSubtitleOffset}
+                onResetSubtitleOffset={handleResetSubtitleOffset}
+              >
+                {isHls ? (
+                  <HlsJsVideo
+                    key={streamUrl}
+                    ref={(el: HTMLVideoElement | null) => {
+                      videoRef.current = el;
+                    }}
+                    src={streamUrl}
+                    autoPlay
+                    playsInline
+                    crossOrigin="anonymous"
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onLoadedData={hideBuffering}
+                    onTimeUpdate={hideBuffering}
+                    onPlay={hideBuffering}
+                    onWaiting={showBufferingAfterDelay}
+                    onStalled={showBufferingAfterDelay}
+                    onCanPlay={hideBuffering}
+                    onPlaying={hideBuffering}
+                    onError={hideBuffering}
+                    className="h-full w-full object-contain"
+                  >
+                    {/* Storyboard track for scrub preview trickplay */}
+                    {trickplayTrackUrl && (
+                      <track
+                        kind="metadata"
+                        label="thumbnails"
+                        src={trickplayTrackUrl}
+                        default
+                      />
+                    )}
+                    {/* WebVTT Subtitle tracks */}
+                    {tracks.map((t) => (
+                      <track
+                        key={t.track}
+                        label={t.title || t.language || `Track ${t.track}`}
+                        kind="subtitles"
+                        src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
+                        srcLang={t.language ?? undefined}
+                        default={t.isDefault}
+                      />
+                    ))}
+                  </HlsJsVideo>
+                ) : (
+                  <Video
+                    key={streamUrl}
+                    ref={(el: HTMLVideoElement | null) => {
+                      videoRef.current = el;
+                    }}
+                    src={streamUrl}
+                    autoPlay
+                    playsInline
+                    crossOrigin="anonymous"
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onLoadedData={hideBuffering}
+                    onTimeUpdate={hideBuffering}
+                    onPlay={hideBuffering}
+                    onWaiting={showBufferingAfterDelay}
+                    onStalled={showBufferingAfterDelay}
+                    onCanPlay={hideBuffering}
+                    onPlaying={hideBuffering}
+                    onError={hideBuffering}
+                    className="h-full w-full object-contain"
+                  >
+                    {/* Storyboard track for scrub preview trickplay */}
+                    {trickplayTrackUrl && (
+                      <track
+                        kind="metadata"
+                        label="thumbnails"
+                        src={trickplayTrackUrl}
+                        default
+                      />
+                    )}
+                    {/* WebVTT Subtitle tracks */}
+                    {tracks.map((t) => (
+                      <track
+                        key={t.track}
+                        label={t.title || t.language || `Track ${t.track}`}
+                        kind="subtitles"
+                        src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
+                        srcLang={t.language ?? undefined}
+                        default={t.isDefault}
+                      />
+                    ))}
+                  </Video>
+                )}
+              </VideoSkin>
+            </VideoPlayer>
+
             {isBuffering && (
               <div
                 role="status"
                 aria-live="polite"
-                className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/25 text-white"
+                className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/25 text-white"
               >
                 <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />
-                <span className="text-sm font-medium drop-shadow">Buffering video…</span>
-                {play.data?.path && play.data.path !== "direct" && (
-                  <span className="-mt-2 text-xs text-white/70">
-                    {play.data.path === "transcode"
-                      ? "Converting this local file for playback"
-                      : "Remuxing this local file for playback"}
-                  </span>
-                )}
               </div>
             )}
           </div>
         ) : (
           <div className="text-center text-ink-muted">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#E50914] mx-auto mb-3" />
-            <p className="text-sm">Preparing stream…</p>
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#E50914] mx-auto" />
           </div>
         )}
       </div>
 
-      <ProgressReporter bridge={{
-        play: play.data,
-        fileId: Number(fileId),
-        queryClient,
-        streamStart,
-        duration,
-      }} />
+      <ProgressReporter
+        bridge={{
+          play: play.data,
+          fileId: Number(fileId),
+          queryClient,
+          streamStart,
+          duration,
+        }}
+      />
     </div>
   );
 }
@@ -514,7 +496,7 @@ function ProgressReporter({
 
   useEffect(() => {
     if (!itemId) return;
-    const video = document.querySelector("video") || document.querySelector("hls-video");
+    const video = document.querySelector("video");
     if (!video) return;
 
     const mediaEl = video as HTMLMediaElement;

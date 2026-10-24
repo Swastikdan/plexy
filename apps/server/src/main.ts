@@ -38,17 +38,6 @@ async function main(): Promise<void> {
            AND parent_id IN (SELECT id FROM items WHERE kind = 'series' AND match_status = 'matched')`);
     run(`DELETE FROM tmdb_cache WHERE key = 'tmdb/images/config'`);
 
-    if (cfg.tmdbToken) {
-      setTimeout(async () => {
-        try {
-          const { hydrateMissingEpisodes } = await import("./hydrate");
-          const repaired = await hydrateMissingEpisodes();
-          if (repaired > 0) {
-            log.info("tmdb", "repaired unhydrated series episodes on startup", { count: repaired });
-          }
-        } catch { /* background hydration */ }
-      }, 1000);
-    }
   } catch { /* non-fatal */ }
 
   const app = buildApp();

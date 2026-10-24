@@ -1102,7 +1102,7 @@ function OptimizerSettings() {
         </div>
       )}
 
-      {/* Auto-optimize checkbox */}
+      {/* Background preparation is opt-in to keep idle machines quiet. */}
       <label className="flex items-center gap-2.5 text-xs sm:text-sm text-ink cursor-pointer select-none">
         <input
           type="checkbox"
@@ -1110,7 +1110,7 @@ function OptimizerSettings() {
           onChange={(e) => save.mutate({ autoOptimize: e.target.checked })}
           className="h-4 w-4 rounded accent-[var(--color-brand)]"
         />
-        <span>Automatically prepare files after scanning</span>
+        <span>Automatically prepare files in the background</span>
       </label>
 
       {/* Actions and Cache limit */}

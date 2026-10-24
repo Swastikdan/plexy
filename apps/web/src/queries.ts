@@ -16,7 +16,7 @@ export const queries = {
         const data = q.state.data;
         if (data?.scan?.status === "running") return 1500;
         if (data?.optimizer?.running || (data?.optimizer?.queued ?? 0) > 0) return 2500;
-        return 15_000;
+        return 30_000;
       },
     }),
 
@@ -82,7 +82,7 @@ export const queries = {
       queryKey: ["optimizer"],
       queryFn: api.optimizeStatus,
       refetchInterval: (q) =>
-        q.state.data?.running || q.state.data?.queued ? 2000 : 15_000,
+        q.state.data?.running || q.state.data?.queued ? 2000 : 30_000,
     }),
 
   // --- admin ---
@@ -91,7 +91,7 @@ export const queries = {
     queryOptions({
       queryKey: ["libraries"],
       queryFn: () => api.libraries().then((r) => r.libraries),
-      refetchInterval: 4000,
+      refetchInterval: 15_000,
     }),
 
   settings: () =>
@@ -104,7 +104,7 @@ export const queries = {
     queryOptions({
       queryKey: ["review", params?.status ?? "attention", params?.q ?? ""],
       queryFn: () => api.review(params),
-      refetchInterval: 8000,
+      refetchInterval: 20_000,
       placeholderData: keepPreviousData,
     }),
 
@@ -112,7 +112,7 @@ export const queries = {
     queryOptions({
       queryKey: ["logs", filter?.level ?? "", filter?.component ?? "", filter?.search ?? ""],
       queryFn: () => api.logs(filter).then((r) => r.lines),
-      refetchInterval: 3000,
+      refetchInterval: 10_000,
       placeholderData: keepPreviousData,
     }),
 

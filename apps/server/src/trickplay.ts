@@ -10,6 +10,7 @@
 /// kill the extractor without touching playback. Generation is lazy (first time
 /// a file is opened), serialized, and delayed briefly so it never competes with
 /// the first seconds of playback.
+import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -18,9 +19,13 @@ import { log } from "./logger";
 import { resolveTrickplayDir } from "./paths";
 import { resolveFfmpeg } from "./ffmpeg";
 import { fmtVttTimestamp } from "./subtitles";
+import { pauseOptimizer, resumeOptimizer } from "./optimize";
 
 export const TRICKPLAY_WIDTH = 160;
 export const TRICKPLAY_HEIGHT = 90;
+export const SPRITE_COLS = 10;
+export const SPRITE_ROWS = 10;
+export const SPRITE_SIZE = SPRITE_COLS * SPRITE_ROWS; // 100 frames per sprite sheet
 const DEFAULT_INTERVAL = 10;
 const LONG_INTERVAL = 15;
 const START_DELAY_MS = 4_000;
@@ -30,6 +35,7 @@ export interface TrickplayView {
   ready: boolean;
   status: string;
   trackUrl: string | null;
+  sprites: string[];
   interval: number;
   width: number;
   height: number;
@@ -80,11 +86,23 @@ function intervalFor(duration: number | null): number {
 /** Public manifest view; never exposes filesystem paths. */
 export function trickplayView(row: Row): TrickplayView {
   const entry = currentRow(row, rowFor(Number(row.id)));
-  const ready = Boolean(entry && entry.status === "done" && Number(entry.frame_count ?? 0) > 0);
+  const dir = trickplayDirFor(row);
+  const hasSprites = existsSync(join(dir, "sprite_000.jpg"));
+  const ready = Boolean(entry && entry.status === "done" && Number(entry.frame_count ?? 0) > 0 && hasSprites);
+  const count = Number(entry?.frame_count ?? 0);
+  const sprites: string[] = [];
+  if (ready && count > 0) {
+    const numSheets = Math.ceil(count / SPRITE_SIZE);
+    for (let s = 0; s < numSheets; s++) {
+      const name = `sprite_${String(s).padStart(3, "0")}.jpg`;
+      sprites.push(`/api/trickplay/${Number(row.id)}/${name}?v=${Number(row.mtime)}`);
+    }
+  }
   return {
     ready,
     status: ready ? "done" : (entry?.status ?? "none"),
     trackUrl: ready ? trickplayTrackUrl(row) : null,
+    sprites,
     interval: entry?.interval != null ? Number(entry.interval) : intervalFor(row.duration as number | null),
     width: entry?.width != null ? Number(entry.width) : TRICKPLAY_WIDTH,
     height: entry?.height != null ? Number(entry.height) : TRICKPLAY_HEIGHT,
@@ -122,7 +140,9 @@ export function enqueueTrickplay(rowOrId: Row | number): void {
   if (Number(row.mtime) <= 0 || String(row.analysis_status ?? "") !== "probed") return;
 
   const entry = currentRow(row, rowFor(fileId));
-  if (entry?.status === "done" && Number(entry.frame_count ?? 0) > 0) return;
+  const dir = trickplayDirFor(row);
+  const hasSprites = existsSync(join(dir, "sprite_000.jpg"));
+  if (entry?.status === "done" && Number(entry.frame_count ?? 0) > 0 && hasSprites) return;
   if (entry?.status === "running" || entry?.status === "queued") return;
   if (queued.has(fileId) || active?.fileId === fileId) return;
 
@@ -195,18 +215,20 @@ async function extractOne(fileId: number): Promise<void> {
   await mkdir(dir, { recursive: true });
 
   const interval = Number(entry.interval) > 0 ? Number(entry.interval) : DEFAULT_INTERVAL;
-  const pattern = join(dir, "%05d.jpg");
+  const pattern = join(dir, "sprite_%03d.jpg");
   const filter = [
     `fps=1/${interval}`,
     `scale=${TRICKPLAY_WIDTH}:${TRICKPLAY_HEIGHT}:force_original_aspect_ratio=decrease`,
     `pad=${TRICKPLAY_WIDTH}:${TRICKPLAY_HEIGHT}:(ow-iw)/2:(oh-ih)/2`,
+    `tile=${SPRITE_COLS}x${SPRITE_ROWS}`,
   ].join(",");
 
   mark(fileId, "running", { error: null });
 
   const args = [
     "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-    "-threads", "2",
+    "-threads", "0",
+    "-skip_frame", "nokey",
     "-i", source,
     "-map", "0:v:0", "-an", "-sn", "-dn",
     "-vf", filter,
@@ -215,9 +237,14 @@ async function extractOne(fileId: number): Promise<void> {
     pattern,
   ];
 
-  log.info("media", "extracting trickplay", { fileId, interval });
+  log.info("media", "extracting trickplay sprite sheets", { fileId, interval });
   const startedAt = Date.now();
-  await runFfmpeg(ffmpeg, args, fileId);
+  pauseOptimizer("trickplay");
+  try {
+    await runFfmpeg(ffmpeg, args, fileId);
+  } finally {
+    resumeOptimizer("trickplay");
+  }
   if (stopping) {
     // Shutdown killed the extractor; the row stays `running` and is reset on
     // the next boot, which regenerates the folder from scratch.
@@ -225,9 +252,19 @@ async function extractOne(fileId: number): Promise<void> {
     return;
   }
 
-  const frames = (await readdir(dir).catch(() => [] as string[]))
-    .filter((name) => /^\d+\.jpg$/.test(name)).length;
-  if (frames === 0) throw new Error("FFmpeg produced no frames");
+  const dirFiles = await readdir(dir).catch(() => [] as string[]);
+  const spriteFiles = dirFiles.filter((name) => /^sprite_\d+\.jpg$/.test(name));
+  const legacyFiles = dirFiles.filter((name) => /^\d+\.jpg$/.test(name));
+
+  let frames = 0;
+  if (spriteFiles.length > 0) {
+    const dur = row.duration == null ? null : Number(row.duration);
+    frames = dur && dur > 0 ? Math.ceil(dur / interval) : spriteFiles.length * SPRITE_SIZE;
+  } else if (legacyFiles.length > 0) {
+    frames = legacyFiles.length;
+  } else {
+    throw new Error("FFmpeg produced no frames");
+  }
 
   // Remove folders for older source versions of this file.
   const prefix = `${fileId}-`;
@@ -278,17 +315,26 @@ function runFfmpeg(ffmpeg: string, args: string[], fileId: number): Promise<void
 }
 
 /** All cached frame paths for one file, or empty when not ready. */
-export async function trickplayFrame(row: Row, index: number): Promise<string | null> {
+export async function trickplayFilePath(row: Row, filename: string): Promise<string | null> {
   const entry = currentRow(row, rowFor(Number(row.id)));
   if (!entry || entry.status !== "done") return null;
-  if (!Number.isInteger(index) || index < 0 || index >= Number(entry.frame_count ?? 0)) return null;
-  const path = join(trickplayDirFor(row), `${String(index).padStart(5, "0")}.jpg`);
+  const dir = trickplayDirFor(row);
+  let path = join(dir, filename);
+  // Also support legacy numeric index, e.g. "0.jpg" -> "00000.jpg"
+  if (!existsSync(path) && /^\d+\.jpg$/.test(filename)) {
+    const num = Number(filename.replace(".jpg", ""));
+    path = join(dir, `${String(num).padStart(5, "0")}.jpg`);
+  }
   try {
     const info = await stat(path);
     return info.isFile() && info.size > 0 ? path : null;
   } catch {
     return null;
   }
+}
+
+export async function trickplayFrame(row: Row, index: number): Promise<string | null> {
+  return trickplayFilePath(row, `${String(index).padStart(5, "0")}.jpg`);
 }
 
 /** Build the WebVTT thumbnails track on demand (tiny; no disk file needed). */
@@ -299,13 +345,29 @@ export function trickplayVtt(row: Row): string {
   const interval = Number(entry.interval) > 0 ? Number(entry.interval) : DEFAULT_INTERVAL;
   const duration = entry.duration != null ? Number(entry.duration) : null;
   const lines: string[] = ["WEBVTT", ""];
+
+  const dir = trickplayDirFor(row);
+  const hasSprites = existsSync(join(dir, "sprite_000.jpg")) || existsSync(join(dir, "sprite_001.jpg"));
+  if (!hasSprites) {
+    enqueueTrickplay(row);
+    return "WEBVTT\n\n";
+  }
+
   for (let index = 0; index < count; index++) {
     const start = index * interval;
     const end = Math.min(start + interval, duration && duration > start ? duration : start + interval);
     if (end <= start) break;
+
+    const sheetIndex = Math.floor(index / SPRITE_SIZE);
+    const posInSheet = index % SPRITE_SIZE;
+    const col = posInSheet % SPRITE_COLS;
+    const rowIdx = Math.floor(posInSheet / SPRITE_COLS);
+    const x = col * TRICKPLAY_WIDTH;
+    const y = rowIdx * TRICKPLAY_HEIGHT;
+    const sheetName = `sprite_${String(sheetIndex).padStart(3, "0")}.jpg`;
     lines.push(
       `${fmtVttTimestamp(start)} --> ${fmtVttTimestamp(end)}`,
-      `/api/trickplay/${Number(row.id)}/${index}.jpg?v=${Number(row.mtime)}#xywh=0,0,${TRICKPLAY_WIDTH},${TRICKPLAY_HEIGHT}`,
+      `/api/trickplay/${Number(row.id)}/${sheetName}?v=${Number(row.mtime)}#xywh=${x},${y},${TRICKPLAY_WIDTH},${TRICKPLAY_HEIGHT}`,
       "",
     );
   }

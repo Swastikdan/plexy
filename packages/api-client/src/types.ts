@@ -108,6 +108,7 @@ export interface Trickplay {
   ready: boolean;
   status: "none" | "queued" | "running" | "done" | "failed" | string;
   trackUrl: string | null;
+  sprites?: string[];
   interval: number;
   width: number;
   height: number;

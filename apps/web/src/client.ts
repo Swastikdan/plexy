@@ -363,6 +363,10 @@ export const api = {
     return `${API_BASE}/api/subtitles/${fileId}/${track}`;
   },
 
+  trickplayTrackUrl: (fileId: number): string => {
+    return `${API_BASE}/api/trickplay/${fileId}/track.vtt`;
+  },
+
   imageUrl: (artworkId: number): string => {
     return `${API_BASE}/api/images/${artworkId}`;
   },

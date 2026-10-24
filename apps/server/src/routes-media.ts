@@ -6,8 +6,8 @@
 /// - `GET /api/stream/:fileId`           direct HTTP Range streaming. Serves
 ///                                       the prepared fast-start copy when one
 ///                                       exists, otherwise the original.
-/// - `GET /api/stream/:fileId/remux`     fallback container fix while a file is
-///                                       still waiting in the preparation queue.
+/// - `GET /api/stream/:fileId/remux`     default-audio container fallback;
+///                                       alternate-track remux is disabled.
 /// - `GET /api/stream/:fileId/transcode` fallback re-encode for the same case.
 /// - `GET /api/subtitles/:fileId`        discovered tracks (embedded + sidecar).
 /// - `GET /api/subtitles/:fileId/:track` WebVTT, from the extracted cache.
@@ -24,11 +24,13 @@ import {
   canonicalCodec, classifyPlayability, preferredAudioBitrate, preferredVideoBitrate,
   rangeResponse, type BrowserCaps,
 } from "./playback";
-import { optimizationView, usableOptimizedPath, enqueueOptimization } from "./optimize";
+import {
+  optimizationView, usableOptimizedPath, pauseOptimizer, resumeOptimizer,
+} from "./optimize";
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { resolveFfmpeg } from "./ffmpeg";
 import {
-  enqueueTrickplay, trickplayFrame, trickplayVtt, trickplayView,
+  enqueueTrickplay, trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
 
 // --- helpers -----------------------------------------------------------------
@@ -98,6 +100,7 @@ function conversionArgs(path: string, options: ConversionOptions): string[] {
 
   args.push(
     "-sn", "-dn", "-map_metadata", "-1",
+    "-avoid_negative_ts", "make_zero",
     // Fragmented MP4 lets the browser start before FFmpeg has finished and
     // survives a non-seekable pipe.
     "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
@@ -125,9 +128,24 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
   }
 
   const args = conversionArgs(path, options);
-  const child = spawn(ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"] });
+  // Keep prepared-file work from starting during a live stream conversion.
+  // Reason-scoped pauses cannot clear a scan or reset pause by accident.
+  pauseOptimizer("live-conversion");
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    resumeOptimizer("live-conversion");
+    throw err;
+  }
 
   let closed = false;
+  let optimizerResumed = false;
+  const resumeBackgroundWork = () => {
+    if (optimizerResumed) return;
+    optimizerResumed = true;
+    resumeOptimizer("live-conversion");
+  };
   let received = 0;
   let stderr = "";
   const stop = () => {
@@ -154,10 +172,12 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
       child.on("error", (err) => {
         if (closed) return;
         closed = true;
+        resumeBackgroundWork();
         log.error("media", `${options.mode} process failed`, { message: err.message });
         try { controller.error(new Error("conversion failed")); } catch { /* done */ }
       });
       child.on("exit", (code, signal) => {
+        resumeBackgroundWork();
         if (closed) return;
         closed = true;
         if (code === 0) {
@@ -183,6 +203,7 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
       settled = true;
       resolve(result);
     };
+    child.stdout!.once("data", () => finish("started"));
     child.once("spawn", () => setTimeout(() => finish("started"), 350));
     child.once("error", () => finish("failed"));
     child.once("exit", (code) => {
@@ -192,6 +213,7 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
   });
   if (early === "failed") {
     stop();
+    resumeBackgroundWork();
     return Response.json(
       { error: `${options.mode === "remux" ? "Remux" : "Conversion"} could not start for this file.` },
       { status: options.mode === "remux" ? 500 : 503 },
@@ -393,13 +415,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const prepared = !selectedAudioNeedsConversion ? await usableOptimizedPath(row) : null;
     if (prepared) {
       verdict = { path: "direct", reason: "Prepared for instant playback and seeking" };
-    } else if (!selectedAudioNeedsConversion && String(row.optimized_status ?? "") === "done") {
-      // The cache file vanished (cleared by hand or a failed disk). Rebuild it
-      // in the background; playback still works through the fallback route.
-      enqueueOptimization(Number(row.id));
     }
     if (selectedAudioNeedsConversion && verdict.path === "direct") {
-      verdict = { path: "remux", reason: "Remuxing the selected audio track" };
+      verdict = { path: "remux", reason: "Remuxing with selected audio track" };
     }
 
     const watch = row.item_id
@@ -537,16 +555,17 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const path = await openablePath(fileId);
     if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
     const row = getFile(fileId)!;
+    const requestedAudio = Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
+      ? Number(ctx.query.audio)
+      : 0;
     try {
       return await conversionResponse(path, {
         mode: "remux",
         height: (row.height as number | null) ?? null,
         sourceBitrate: (row.bitrate as number | null) ?? null,
-        channels: firstChannelCount(row, Number(ctx.query.audio) || 0),
-        audioCodec: firstAudioCodec(row, Number(ctx.query.audio) || 0),
-        audioIndex: Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
-          ? Number(ctx.query.audio)
-          : 0,
+        channels: firstChannelCount(row, requestedAudio),
+        audioCodec: firstAudioCodec(row, requestedAudio),
+        audioIndex: requestedAudio,
         trimStart: Number.isFinite(Number(ctx.query.start)) && Number(ctx.query.start) > 0
           ? Number(ctx.query.start)
           : undefined,
@@ -674,15 +693,15 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     });
   }, { params: t.Object({ fileId: t.Numeric() }) })
 
-  /** One cached trickplay frame (JPEG). */
+  /** One cached trickplay frame or sprite sheet (JPEG). */
   .get("/trickplay/:fileId/:frame", async (ctx) => {
     const row = getFile(Number(ctx.params.fileId));
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });
-    const index = Number(String(ctx.params.frame).replace(/\.jpe?g$/i, ""));
-    if (!Number.isInteger(index) || index < 0) {
+    const frameName = String(ctx.params.frame);
+    if (!/^sprite_\d+\.jpe?g$/i.test(frameName) && !/^\d+\.jpe?g$/i.test(frameName)) {
       return Response.json({ error: "Bad frame" }, { status: 400 });
     }
-    const path = await trickplayFrame(row, index);
+    const path = await trickplayFilePath(row, frameName);
     if (!path) return Response.json({ error: "Not found" }, { status: 404 });
     return new Response(Bun.file(path), {
       headers: {

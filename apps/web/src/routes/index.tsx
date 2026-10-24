@@ -123,7 +123,11 @@ export default function HomeRoute() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 overflow-y-auto max-h-[calc(85vh-120px)] pr-1 pt-1">
                   {continueRow.items.map((item) => (
-                    <div key={item.id} className="flex flex-col gap-1.5">
+                    <div
+                      key={item.id}
+                      className="flex flex-col gap-1.5"
+                      onClick={() => setContinueModalOpen(false)}
+                    >
                       <Poster
                         item={item}
                         wide
