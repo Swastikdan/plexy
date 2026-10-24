@@ -5,11 +5,12 @@
 /// page so opening a title is instant.
 import clsx, { type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { Link } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { Film, MonitorPlay, Tv } from "lucide-react";
-import { probeBrowserCaps, type ItemCard } from "../client";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle } from "lucide-react";
+import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
+import { Menu } from "./ui/menu";
 
 export function cx(...parts: ClassValue[]) {
   return twMerge(clsx(parts));
@@ -19,6 +20,7 @@ const BROWSER_CAPS = typeof document === "undefined" ? "" : JSON.stringify(probe
 
 export interface PosterItem {
   id: number;
+  publicId?: string;
   name: string;
   poster?: string | null;
   backdrop?: string | null;
@@ -68,7 +70,27 @@ export function Poster({
 }) {
   const imgSrc = wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const canPlayDirect = directPlay && item.fileId != null;
+
+  const clearWatchMutation = useMutation({
+    mutationFn: (targetId: number) => api.clearWatch(targetId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["home"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["title", item.id] });
+    },
+  });
+
+  const watchMutation = useMutation({
+    mutationFn: ({ itemId, played }: { itemId: number; played: boolean }) =>
+      api.setWatched(itemId, played),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["home"] });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["title", item.id] });
+    },
+  });
 
   // Quiet prefetch: the first hover warms the destination so navigation has
   // nothing left to wait for. Direct-play cards warm the player manifest.
@@ -79,27 +101,32 @@ export function Poster({
       }
       return;
     }
-    void queryClient.prefetchQuery(queries.title(item.id));
+    void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
   };
 
   const destination = canPlayDirect
     ? ({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } } as const)
-    : ({ to: "/title/$itemId", params: { itemId: String(item.id) } } as const);
+    : ({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } } as const);
 
   return (
-    <Link
-      {...destination}
-      onPointerEnter={prefetch}
-      onFocus={prefetch}
-      onContextMenu={(e) => e.preventDefault()}
+    <div
       className={cx(
         "group relative block overflow-hidden rounded-[var(--radius-poster)]",
         "bg-surface border border-line/60",
         "transition-[transform,border-color] duration-300 ease-out hover:z-20 hover:scale-[1.04] hover:border-line",
-        "focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2",
+        "focus-within:ring-2 focus-within:ring-brand/40",
         className,
       )}
     >
+      <Link
+        {...destination}
+        onPointerEnter={prefetch}
+        onFocus={prefetch}
+        onContextMenu={(e) => e.preventDefault()}
+        className="absolute inset-0 z-0 outline-none"
+        aria-label={item.name}
+      />
+
       {showKind && <KindChip kind={item.kind} />}
       {imgSrc ? (
         <img
@@ -107,10 +134,10 @@ export function Poster({
           alt={item.name}
           loading="lazy"
           decoding="async"
-          className="h-full w-full object-cover transition-transform duration-300 ease-out"
+          className="h-full w-full object-cover transition-transform duration-300 ease-out pointer-events-none"
         />
       ) : (
-        <div className="flex h-full w-full flex-col justify-end p-4 bg-gradient-to-t from-black/80 via-black/30 to-transparent">
+        <div className="flex h-full w-full flex-col justify-end p-4 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none">
           <span className="font-display text-sm font-semibold text-ink line-clamp-2">
             {item.name}
           </span>
@@ -144,7 +171,7 @@ export function Poster({
       {/* Watch progress for continuing titles */}
       {item.watch && item.watch.percent > 0 && (
         <div
-          className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden"
+          className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden pointer-events-none z-10"
           aria-hidden
         >
           <div
@@ -153,6 +180,68 @@ export function Poster({
           />
         </div>
       )}
-    </Link>
+
+      {/* More Options Menu for Continue Watching cards */}
+      {wide && (
+        <div className="absolute right-2 top-2 z-20 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <Menu.Root>
+            <Menu.Trigger
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              aria-label={`Options for ${item.name}`}
+              title="More options"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/75 backdrop-blur-md text-white/90 border border-white/20 hover:bg-black/95 hover:text-white hover:scale-105 active:scale-95 transition-all shadow-lg"
+            >
+              <MoreVertical size={13} />
+            </Menu.Trigger>
+            <Menu.Positioner align="end" side="bottom" sideOffset={6}>
+              {canPlayDirect && (
+                <Menu.Item
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void navigate({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } });
+                  }}
+                >
+                  <Play size={13} className="shrink-0 text-brand-text" />
+                  <span>Resume playback</span>
+                </Menu.Item>
+              )}
+              <Menu.Item
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void navigate({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } });
+                }}
+              >
+                <Info size={13} className="shrink-0 text-ink-muted" />
+                <span>View Details</span>
+              </Menu.Item>
+              <Menu.Item
+                onClick={(e) => {
+                  e.stopPropagation();
+                  watchMutation.mutate({ itemId: item.id, played: true });
+                }}
+              >
+                <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                <span>Mark as Watched</span>
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearWatchMutation.mutate(item.id);
+                }}
+                className="text-red-400 data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-300"
+              >
+                <XCircle size={13} className="shrink-0" />
+                <span>Remove from Continue Watching</span>
+              </Menu.Item>
+            </Menu.Positioner>
+          </Menu.Root>
+        </div>
+      )}
+    </div>
   );
 }

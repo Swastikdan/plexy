@@ -48,17 +48,18 @@ async function buildExecutable() {
   }
   console.log(`✓ Migrations copied to dist/migrations`);
 
-  // 3. Generate AppIcon.icns with red accent
-  console.log("3. Generating red accent application icon...");
+  // 3. Generate a square AppIcon.icns with enough inset to avoid macOS clipping.
+  console.log("3. Generating application icon...");
   const icnsPath = join(distDir, "AppIcon.icns");
-  const iconsetDir = "/tmp/Plexy.iconset";
-  const masterPng = "/tmp/icon.svg.png";
+  const iconsetDir = join(distDir, ".Plexy.iconset");
+  const masterPng = join(distDir, "app-icon.svg.png");
 
   try {
-    const svgSource = join(process.cwd(), "apps/web/public/icon.svg");
+    const svgSource = join(process.cwd(), "apps/web/public/app-icon.svg");
     if (existsSync(svgSource)) {
       try {
-        execSync(`qlmanage -t -s 1024 -o /tmp "${svgSource}" >/dev/null 2>&1`);
+        if (existsSync(masterPng)) await unlink(masterPng);
+        execSync(`qlmanage -t -s 1024 -o "${distDir}" "${svgSource}" >/dev/null 2>&1`);
       } catch {}
     }
 
@@ -82,7 +83,9 @@ async function buildExecutable() {
       }
       try { if (existsSync(icnsPath)) await unlink(icnsPath); } catch {}
       execSync(`iconutil -c icns "${iconsetDir}" -o "${icnsPath}"`);
-      console.log(`✓ Application icon ready: dist/AppIcon.icns (red accent)`);
+      console.log(`✓ Application icon ready: dist/AppIcon.icns`);
+      await rm(iconsetDir, { recursive: true, force: true });
+      await rm(masterPng, { force: true });
     }
   } catch (err) {
     console.warn("Notice: Could not generate .icns icon:", err);
@@ -132,6 +135,9 @@ async function buildExecutable() {
   // Runner script (Contents/MacOS/Plexy)
   const runnerScript = `#!/bin/bash
 export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.bun/bin:$PATH"
+export NODE_ENV=production
+export PLEXY_DATA_DIR="\${PLEXY_DATA_DIR:-$HOME/Library/Application Support/Plexy}"
+export PLEXY_LOG_DIR="\${PLEXY_LOG_DIR:-$HOME/Library/Logs/Plexy}"
 
 BUN_BIN=""
 if command -v bun >/dev/null 2>&1; then

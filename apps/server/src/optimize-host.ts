@@ -29,6 +29,7 @@ interface Pending {
 let child: ChildProcess | null = null;
 let nextId = 1;
 const pending = new Map<string, Pending>();
+let shuttingDown = false;
 
 function rejectAll(message: string) {
   for (const [id, wait] of pending) {
@@ -94,7 +95,13 @@ function spawnWorker(): ChildProcess {
     rejectAll(`optimizer worker failed: ${err.message}`);
   });
   proc.on("exit", (code, signal) => {
-    log.warn("optimizer", `worker exited code=${code} signal=${signal}`);
+    if (shuttingDown || (code === 0 && pending.size === 0)) {
+      log.debug("optimizer", `worker stopped code=${code} signal=${signal}`);
+    } else {
+      log.warn("optimizer", `worker exited unexpectedly code=${code} signal=${signal}`, {
+        pending: pending.size,
+      });
+    }
     if (child === proc) child = null;
     rejectAll(`optimizer worker exited before finishing (code=${code})`);
   });
@@ -131,6 +138,7 @@ export function runOptimize(
 /** Terminate the worker (shutdown or a wedged job). Rejects in-flight jobs. */
 export async function shutdownOptimizeWorker(): Promise<void> {
   const proc = child;
+  shuttingDown = true;
   child = null;
   rejectAll("optimizer worker stopped");
   if (!proc) return;

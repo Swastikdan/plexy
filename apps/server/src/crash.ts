@@ -71,6 +71,29 @@ async function writeCrash(report: CrashReport): Promise<string> {
 
 let crashing = false;
 
+/**
+ * Rejections are logged and recorded, but they do **not** stop the server.
+ *
+ * A stray rejection used to kill playback for everyone: one unawaited promise
+ * in a background task took down the whole process. Rejections are almost
+ * always recoverable at the request boundary, so the server keeps serving and
+ * the report stays available in the admin crash list. Repeated identical
+ * rejections are collapsed to avoid filling the log during a loop.
+ */
+const recentRejections = new Map<string, number>();
+const REJECTION_REPEAT_MS = 10_000;
+
+function shouldReportRejection(message: string): boolean {
+  const now = Date.now();
+  for (const [key, at] of recentRejections) {
+    if (now - at > REJECTION_REPEAT_MS) recentRejections.delete(key);
+  }
+  const last = recentRejections.get(message);
+  if (last != null && now - last < REJECTION_REPEAT_MS) return false;
+  recentRejections.set(message, now);
+  return true;
+}
+
 /** Install global handlers exactly once from `main.ts`. */
 export function installCrashHandlers(): void {
   process.on("uncaughtException", async (error) => {
@@ -84,16 +107,16 @@ export function installCrashHandlers(): void {
       process.exit(1);
     }
   });
-  process.on("unhandledRejection", async (reason) => {
-    if (crashing) return;
-    crashing = true;
-    const report = buildReport("unhandledRejection", reason);
-    log.error("server", "unhandled rejection", { message: report.message });
-    try { await writeCrash(report); } finally {
-      flushLogs();
-      closeLog();
-      process.exit(1);
-    }
+  process.on("unhandledRejection", (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    if (!shouldReportRejection(err.message)) return;
+    log.error("server", "unhandled rejection (server continues)", {
+      message: err.message,
+      stack: err.stack?.split("\n").slice(1, 4).join("\n") ?? null,
+    });
+    // Fire-and-forget: writing the report must never create another rejection
+    // or delay request handling.
+    void writeCrash(buildReport("unhandledRejection", err)).catch(() => {});
   });
 }
 

@@ -14,6 +14,7 @@ import { optimizationView } from "./optimize";
 
 export interface ItemCard {
   id: number;
+  publicId: string;
   kind: string;
   name: string;
   year: number | null;
@@ -21,6 +22,7 @@ export interface ItemCard {
   episodeNumber?: number | null;
   fileId?: number | null;
   parentId?: number | null;
+  parentPublicId?: string | null;
   parentTitle?: string | null;
   poster: string | null;
   backdrop: string | null;
@@ -105,6 +107,7 @@ async function attachArt(rows: Row[]): Promise<ItemCard[]> {
     const m = art.get(id);
     return {
       id,
+      publicId: String(row.public_id),
       kind: String(row.kind),
       name: String(row.name),
       year: row.year == null ? null : Number(row.year),
@@ -113,7 +116,7 @@ async function attachArt(rows: Row[]): Promise<ItemCard[]> {
       fileId: fileIds.get(id) ?? null,
       parentId: row.parent_id == null ? null : Number(row.parent_id),
       poster: m?.poster ?? (row.kind === "episode" ? m?.thumb ?? null : null),
-      backdrop: m?.backdrop ?? null,
+      backdrop: m?.backdrop ?? (row.kind === "episode" ? m?.thumb ?? m?.poster ?? null : null),
       overview: md?.overview == null ? null : String(md.overview),
       rating: md?.rating == null ? null : Number(md.rating),
       runtime: md?.runtime == null ? null : Number(md.runtime),
@@ -235,7 +238,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
        WHERE w.position_seconds > 15 AND w.played = 0
          AND w.duration_seconds IS NOT NULL
          AND w.position_seconds < w.duration_seconds * 0.95
-       ORDER BY w.updated_at DESC LIMIT 20`,
+       ORDER BY w.updated_at DESC LIMIT 50`,
     ).all();
     const recentMovies = q<Row>(
       `SELECT * FROM items WHERE kind='movie' AND match_status='matched'
@@ -294,9 +297,12 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
 
   /** Title detail (PRD 10.3). */
   .get("/items/:id", async ({ params }) => {
-    const id = Number(params.id);
-    const row = q<Row>("SELECT * FROM items WHERE id = ?").get(id);
+    const legacyId = /^\d+$/.test(params.id) ? Number(params.id) : null;
+    const row = legacyId != null
+      ? q<Row>("SELECT * FROM items WHERE id = ?").get(legacyId)
+      : q<Row>("SELECT * FROM items WHERE public_id = ?").get(params.id);
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    const id = Number(row.id);
 
     const [card] = await attachArt([row]);
     const meta = q<Row>("SELECT * FROM item_metadata WHERE item_id = ?").get(id);
@@ -347,11 +353,22 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       episodes = await attachArt(
         q<Row>("SELECT * FROM items WHERE parent_id = ? AND kind = 'episode' ORDER BY season_number, episode_number").all(id),
       );
+
+      if (row.kind === "series" && row.tmdb_id && row.match_status === "matched") {
+        const hasMissing = episodes.some((ep) => !ep.poster || ep.matchStatus !== "matched");
+        if (hasMissing) {
+          const { hydrateMissingEpisodes } = await import("./hydrate");
+          void hydrateMissingEpisodes(id);
+        }
+      }
     }
 
     if (row.kind === "episode" && row.parent_id) {
-      const parentRow = q<Row>("SELECT name FROM items WHERE id = ?").get(Number(row.parent_id));
-      if (parentRow) card.parentTitle = String(parentRow.name);
+      const parentRow = q<Row>("SELECT name, public_id FROM items WHERE id = ?").get(Number(row.parent_id));
+      if (parentRow) {
+        card.parentTitle = String(parentRow.name);
+        card.parentPublicId = String(parentRow.public_id);
+      }
     }
 
     const file = row.kind === "movie" || row.kind === "episode"
@@ -403,6 +420,10 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
   /**
    * Shared playback progress (PRD 5.8, 5.10) — the only LAN-allowed mutation.
    * The player reports every 10 s and on pause/close.
+   *
+   * `played` is monotonic here on purpose: a routine progress report must never
+   * silently unmark a finished title. Explicit watched/unwatched changes go
+   * through `POST /api/watch/:itemId/played`.
    */
   .post("/progress", ({ body }) => {
     const itemId = Math.trunc(Number(body.itemId));
@@ -415,7 +436,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
        ON CONFLICT(item_id) DO UPDATE SET
          position_seconds = excluded.position_seconds,
          duration_seconds = COALESCE(excluded.duration_seconds, watch_state.duration_seconds),
-         played = max(watch_state.played, excluded.played),
+         played = CASE WHEN excluded.played = 1 THEN 1 ELSE watch_state.played END,
          updated_at = datetime('now')`,
       itemId, Math.max(0, Number(body.position) || 0), body.duration ?? null, body.played ? 1 : 0,
     );
@@ -428,4 +449,50 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       duration: t.Optional(t.Numeric()),
       played: t.Boolean({ default: false }),
     }),
-  });
+  })
+
+  /** Explicit mark-as-watched / mark-as-unwatched. */
+  .post("/watch/:itemId/played", ({ params, body }) => {
+    const itemId = Math.trunc(Number(params.itemId));
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      return Response.json({ error: "itemId must be a positive number" }, { status: 400 });
+    }
+    const exists = q<{ id: number }, [number]>("SELECT id FROM items WHERE id = ?").get(itemId);
+    if (!exists) return Response.json({ error: "Not found" }, { status: 404 });
+
+    if (body.played) {
+      run(
+        `INSERT INTO watch_state (item_id, position_seconds, duration_seconds, played, updated_at)
+         VALUES (?, 0, NULL, 1, datetime('now'))
+         ON CONFLICT(item_id) DO UPDATE SET
+           position_seconds = 0, played = 1, updated_at = datetime('now')`,
+        itemId,
+      );
+    } else {
+      // Keep the duration for the progress bar, but restart from the beginning
+      // and clear the finished flag.
+      run(
+        `INSERT INTO watch_state (item_id, position_seconds, duration_seconds, played, updated_at)
+         VALUES (?, 0, NULL, 0, datetime('now'))
+         ON CONFLICT(item_id) DO UPDATE SET
+           position_seconds = 0, played = 0, updated_at = datetime('now')`,
+        itemId,
+      );
+    }
+    log.info("player", body.played ? "marked watched" : "marked unwatched", { itemId });
+    return { ok: true, played: body.played };
+  }, {
+    params: t.Object({ itemId: t.Numeric() }),
+    body: t.Object({ played: t.Boolean() }),
+  })
+
+  /** Remove a watch-state row entirely ("delete" / remove from Continue Watching). */
+  .delete("/watch/:itemId", ({ params }) => {
+    const itemId = Math.trunc(Number(params.itemId));
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      return Response.json({ error: "itemId must be a positive number" }, { status: 400 });
+    }
+    run("DELETE FROM watch_state WHERE item_id = ?", itemId);
+    log.info("player", "watch state cleared", { itemId });
+    return { ok: true };
+  }, { params: t.Object({ itemId: t.Numeric() }) });

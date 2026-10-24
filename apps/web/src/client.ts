@@ -131,7 +131,7 @@ export const api = {
     );
   },
 
-  title: async (id: number): Promise<TitleDetail> => {
+  title: async (id: number | string): Promise<TitleDetail> => {
     return unwrap<TitleDetail>(rpc.api.items({ id: String(id) }).get());
   },
 
@@ -149,8 +149,11 @@ export const api = {
    * next episode, subtitle tracks and preparation state. Uses REST rather than
    * Eden so the response shape is not coupled to route type inference.
    */
-  play: async (fileId: number, caps?: BrowserCaps): Promise<Playability> => {
-    const query = caps ? `?caps=${encodeURIComponent(JSON.stringify(caps))}` : "";
+  play: async (fileId: number, caps?: BrowserCaps, audioIndex = -1): Promise<Playability> => {
+    const params = new URLSearchParams();
+    if (caps) params.set("caps", JSON.stringify(caps));
+    if (audioIndex >= 0) params.set("audio", String(audioIndex));
+    const query = params.size ? `?${params.toString()}` : "";
     return restFetch<Playability>(`/api/play/${fileId}${query}`);
   },
 
@@ -174,15 +177,29 @@ export const api = {
     );
   },
 
-  markWatched: async (itemId: number, watched: boolean): Promise<{ ok: boolean }> => {
-    return unwrap<{ ok: boolean }>(
-      rpc.api.progress.post({
-        itemId,
-        position: 0,
-        duration: undefined,
-        played: watched,
-      }),
-    );
+  markWatched: async (itemId: number): Promise<{ ok: boolean; played: boolean }> => {
+    return restFetch<{ ok: boolean; played: boolean }>(`/api/watch/${itemId}/played`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ played: true }),
+    });
+  },
+
+  /**
+   * Explicit watched state. Unlike `progress`, this may unmark a title, so the
+   * "watched" toggle on the title page works in both directions.
+   */
+  setWatched: async (itemId: number, played: boolean): Promise<{ ok: boolean; played: boolean }> => {
+    return restFetch<{ ok: boolean; played: boolean }>(`/api/watch/${itemId}/played`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ played }),
+    });
+  },
+
+  /** Remove the watch-state row: clears progress and Continue Watching entry. */
+  clearWatch: async (itemId: number): Promise<{ ok: boolean }> => {
+    return restFetch<{ ok: boolean }>(`/api/watch/${itemId}`, { method: "DELETE" });
   },
 
   // --- Admin endpoints (Loopback-only, RPC / REST) ---
@@ -221,6 +238,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+  },
+
+  clearTmdbCache: async (): Promise<{ removed: number }> => {
+    return restFetch<{ removed: number }>("/api/tmdb/cache/clear", { method: "POST" });
+  },
+
+  resetLocalData: async (): Promise<{ ok: true; libraries: number; files: number; titles: number }> => {
+    return restFetch<{ ok: true; libraries: number; files: number; titles: number }>("/api/database/reset", { method: "POST" });
   },
 
   testTmdb: async (): Promise<{ ok: boolean; message: string }> => {
@@ -319,7 +344,7 @@ export const api = {
 
   // --- Direct Streaming & Media REST URLs ---
 
-  streamUrl: (fileId: number, playPath: string, start?: number): string => {
+  streamUrl: (fileId: number, playPath: string, start?: number, audioIndex = 0): string => {
     const base = (
       playPath === "remux"
         ? `/api/stream/${fileId}/remux`
@@ -327,7 +352,10 @@ export const api = {
           ? `/api/stream/${fileId}/transcode`
           : `/api/stream/${fileId}`
     );
-    const query = start && start > 0 ? `?start=${Math.floor(start)}` : "";
+    const params = new URLSearchParams();
+    if (start && start > 0) params.set("start", String(Math.floor(start)));
+    if (audioIndex > 0 || (audioIndex === 0 && playPath !== "direct")) params.set("audio", String(audioIndex));
+    const query = params.size ? `?${params.toString()}` : "";
     return `${API_BASE}${base}${query}`;
   },
 

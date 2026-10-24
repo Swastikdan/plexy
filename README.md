@@ -41,6 +41,7 @@ This compiles:
 ### 3. Launching Plexy
 
 - **From macOS Applications / Spotlight / Dock**: Open `Plexy` in `/Applications`. It will start the server and open `http://localhost:8765` in your browser.
+- The packaged app stores its database, settings, artwork, and playback cache in `~/Library/Application Support/Plexy`, with logs in `~/Library/Logs/Plexy`. On first launch, newer data from the old `/tmp/plexy-dev` location is moved into Application Support; any previous Application Support folder is kept as a timestamped backup.
 - **From Terminal**:
   ```sh
   ./dist/plexy

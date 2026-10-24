@@ -4,7 +4,8 @@
 /// and 7: a data directory for database/config/cached artwork and a log
 /// directory that mirrors macOS conventions (`~/Library/Logs/Plexy`).
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
 
 /** True when running in dev/test or outside the packaged standalone binary. */
 export const isDev =
@@ -23,6 +24,65 @@ export function resolveDataDir(): string {
   if (Bun.env.NODE_ENV === "test") return "/tmp/plexy-test";
   if (isDev) return "/tmp/plexy-dev";
   return join(homedir(), "Library", "Application Support", "Plexy");
+}
+
+/**
+ * Move data from the old packaged-app development default on first launch.
+ * If both locations exist, the newer database wins and the previous
+ * Application Support folder is retained as a timestamped backup.
+ */
+export async function migrateLegacyPackagedData(): Promise<void> {
+  if (isDev || Bun.env.PLEXY_DATA_DIR) return;
+
+  const destination = resolveDataDir();
+  const legacy = "/tmp/plexy-dev";
+  let destinationExists = false;
+  try {
+    await stat(destination);
+    destinationExists = true;
+  } catch {
+    // First launch in the permanent data location.
+  }
+
+  try {
+    const legacyDb = await stat(join(legacy, "library.sqlite"));
+    const legacyWal = await stat(join(legacy, "library.sqlite-wal")).catch(() => null);
+    const legacyMtime = Math.max(legacyDb.mtimeMs, legacyWal?.mtimeMs ?? 0);
+    if (destinationExists) {
+      try {
+        const destinationDb = await stat(join(destination, "library.sqlite"));
+        const destinationWal = await stat(join(destination, "library.sqlite-wal")).catch(() => null);
+        const destinationMtime = Math.max(destinationDb.mtimeMs, destinationWal?.mtimeMs ?? 0);
+        if (destinationMtime >= legacyMtime) return;
+      } catch {
+        // The legacy database is the only complete database.
+      }
+    }
+  } catch {
+    return;
+  }
+
+  await mkdir(dirname(destination), { recursive: true });
+  const backup = destinationExists ? `${destination}.backup-${Date.now()}` : null;
+  if (backup) await rename(destination, backup);
+
+  try {
+    await rename(legacy, destination);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EXDEV") {
+      if (backup) await rename(backup, destination);
+      throw error;
+    }
+
+    try {
+      await cp(legacy, destination, { recursive: true, force: false, errorOnExist: true });
+    } catch (copyError) {
+      await rm(destination, { recursive: true, force: true });
+      if (backup) await rename(backup, destination);
+      throw copyError;
+    }
+  }
 }
 
 /**
@@ -63,4 +123,12 @@ export function resolveOptimizedDir(): string {
 
 export function resolveSubtitleCacheDir(): string {
   return join(resolveOptimizedDir(), "subtitles");
+}
+
+/**
+ * Trickplay (scrub preview) frames. One folder per file *and* source mtime so a
+ * changed file can never serve stale thumbnails. Safe to delete while stopped.
+ */
+export function resolveTrickplayDir(): string {
+  return join(resolveDataDir(), "trickplay");
 }

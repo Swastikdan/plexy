@@ -153,7 +153,11 @@ export function movieFolderKey(path: string, libraryRoots: string[]): string {
   const folder = segments.slice(0, -1);
   const hasExtras = folder.length > 0 && EXTRA_FOLDER.test(folder[folder.length - 1]!);
   const trimmed = hasExtras ? folder.slice(0, -1) : folder;
-  return join(...trimmed) || basename(path, extname(path));
+  // path.join() with no segments returns ".", which made every movie stored
+  // directly in a library root collide into one catalog item. Use the file
+  // stem as its stable key in that layout; files in a named folder still
+  // group together as alternate versions of the same title.
+  return trimmed.length ? join(...trimmed) : basename(path, extname(path));
 }
 
 /**

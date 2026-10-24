@@ -10,12 +10,16 @@ import { prepareLogDir, log, closeLog, setLogLevel } from "./logger";
 import { buildApp } from "./app";
 import { shutdownWorker } from "./worker-host";
 import { startOptimizer, stopOptimizer } from "./optimize";
+import { resetInterruptedTrickplay, shutdownTrickplay } from "./trickplay";
 import type { Level } from "./logger";
+import { networkInterfaces } from "node:os";
+import { migrateLegacyPackagedData } from "./paths";
 
 installCrashHandlers();
 prepareLogDir();
 
 async function main(): Promise<void> {
+  await migrateLegacyPackagedData();
   await runMigrations();
   const cfg = await initConfig();
   const envLevel = Bun.env.PLEXY_LOG_LEVEL as Level | undefined;
@@ -37,18 +41,10 @@ async function main(): Promise<void> {
     if (cfg.tmdbToken) {
       setTimeout(async () => {
         try {
-          const matchedSeries = q(
-            `SELECT id, tmdb_id, name FROM items WHERE kind = 'series' AND match_status = 'matched' AND tmdb_id IS NOT NULL`
-          ).all();
-          const { hydrateItemMetadata } = await import("./hydrate");
-          for (const s of matchedSeries) {
-            const hasMeta = q(
-              `SELECT m.id FROM item_metadata m JOIN items i ON i.id = m.item_id
-               WHERE i.parent_id = ? AND i.kind = 'episode' LIMIT 1`
-            ).get(Number((s as any).id));
-            if (!hasMeta) {
-              await hydrateItemMetadata(Number((s as any).id), "tv", Number((s as any).tmdb_id));
-            }
+          const { hydrateMissingEpisodes } = await import("./hydrate");
+          const repaired = await hydrateMissingEpisodes();
+          if (repaired > 0) {
+            log.info("tmdb", "repaired unhydrated series episodes on startup", { count: repaired });
           }
         } catch { /* background hydration */ }
       }, 1000);
@@ -57,16 +53,31 @@ async function main(): Promise<void> {
 
   const app = buildApp();
   // Bind follows the config: loopback unless LAN viewing was explicitly
-  // enabled (PRD 5.10).
+  // enabled (PRD 5.10). `0.0.0.0` still accepts loopback traffic.
   const hostname = cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   app.listen({ port, hostname });
+  resetInterruptedTrickplay();
+
+  // Print the addresses a phone/tablet on the same Wi-Fi can actually open.
+  // The server is plain HTTP; `https://` fails before a request reaches it.
+  if (hostname === "0.0.0.0") {
+    const lan = Object.values(networkInterfaces())
+      .flat()
+      .filter((entry) => entry && entry.family === "IPv4" && !entry.internal)
+      .map((entry) => entry!.address);
+    for (const address of lan) {
+      log.info("server", "LAN playback address", { url: `http://${address}:${port}` });
+      console.log(`▸ LAN → http://${address}:${port}`);
+    }
+  }
 
   // Soft shutdown: finish writes, close the workers, close logs (PRD 5.1).
   const shutdown = (signal: string) => {
     log.info("server", `received ${signal}, shutting down`);
     app.stop(true);
     void stopOptimizer()
+      .then(() => shutdownTrickplay())
       .then(() => shutdownWorker())
       .then(() => {
         closeLog();

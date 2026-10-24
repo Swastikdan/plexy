@@ -5,9 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Wrench } from "lucide-react";
 import { queries } from "../../queries";
 import { Poster } from "../../components/poster";
-import { Button } from "../../components/ui/button";
+import { Button, cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { State } from "../index";
+import { PageLoader } from "../../components/page-loader";
 
 const SORTS = [
   { value: "name", label: "Alphabetical" },
@@ -23,7 +24,7 @@ function LibraryRoute() {
   const status = useQuery(queries.serverStatus());
 
   const apiKind: "movie" | "series" = kind === "tv" ? "series" : "movie";
-  const { data, isLoading, isError } = useQuery(
+  const { data, isLoading, isFetching, isError } = useQuery(
     queries.items({ kind: apiKind, sort, unwatched }),
   );
 
@@ -73,13 +74,18 @@ function LibraryRoute() {
         </div>
       </div>
 
-      {isLoading && <GridSkeleton />}
+      {isLoading && !data && <PageLoader className="min-h-[55vh]" />}
       {isError && <State title="Couldn't load the library" body="Is Plexy running on this machine?" />}
       {data && data.items.length === 0 &&
         <State title={`No ${label.toLowerCase()} yet`} body="Scan a library or wait for a match pass to finish." />}
 
       {data && data.items.length > 0 && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-4 sm:gap-y-6">
+        <div
+          className={cx(
+            "grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-4 sm:gap-y-6 transition-opacity duration-150",
+            isFetching && "opacity-75",
+          )}
+        >
           {data.items.map((item) => (
             <Poster
               key={item.id}
@@ -90,16 +96,6 @@ function LibraryRoute() {
         </div>
       )}
     </main>
-  );
-}
-
-function GridSkeleton() {
-  return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-4 sm:gap-y-6">
-      {Array.from({ length: 18 }, (_, i) => (
-        <div key={i} className="aspect-[2/3] w-full animate-pulse rounded-[var(--radius-poster)] bg-surface" />
-      ))}
-    </div>
   );
 }
 

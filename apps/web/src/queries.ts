@@ -3,7 +3,7 @@
 /// Centralising stale times here keeps screens snappy: catalog data is
 /// effectively static while browsing, watch state and scan progress are the
 /// only live pieces.
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, keepPreviousData } from "@tanstack/react-query";
 import { api } from "./client";
 
 export const queries = {
@@ -32,9 +32,10 @@ export const queries = {
       queryKey: ["items", query],
       queryFn: () => api.items({ ...query, limit: 200 }),
       staleTime: 60_000,
+      placeholderData: keepPreviousData,
     }),
 
-  title: (id: number) =>
+  title: (id: number | string) =>
     queryOptions({
       queryKey: ["title", id],
       queryFn: () => api.title(id),
@@ -55,12 +56,18 @@ export const queries = {
       staleTime: Infinity,
     }),
 
-  play: (fileId: number, caps?: string) =>
+  play: (fileId: number, caps?: string, audioIndex = -1) =>
     queryOptions({
-      queryKey: ["play", fileId, caps ?? ""],
-      queryFn: () => api.play(fileId, caps ? JSON.parse(caps) : undefined),
+      queryKey: ["play", fileId, caps ?? "", audioIndex],
+      queryFn: () => api.play(fileId, caps ? JSON.parse(caps) : undefined, audioIndex),
       staleTime: 30_000,
       gcTime: 10 * 60_000,
+      // Trickplay extraction runs in the background after the first play.
+      // Poll until it finishes so the scrub preview appears without a reload.
+      refetchInterval: (q) => {
+        const status = q.state.data?.trickplay?.status;
+        return status === "queued" || status === "running" ? 3000 : false;
+      },
     }),
 
   playability: (fileId: number, caps: string) =>
@@ -98,6 +105,7 @@ export const queries = {
       queryKey: ["review", params?.status ?? "attention", params?.q ?? ""],
       queryFn: () => api.review(params),
       refetchInterval: 8000,
+      placeholderData: keepPreviousData,
     }),
 
   logs: (filter?: { level?: string; component?: string; search?: string }) =>
@@ -105,6 +113,7 @@ export const queries = {
       queryKey: ["logs", filter?.level ?? "", filter?.component ?? "", filter?.search ?? ""],
       queryFn: () => api.logs(filter).then((r) => r.lines),
       refetchInterval: 3000,
+      placeholderData: keepPreviousData,
     }),
 
   crashes: () =>

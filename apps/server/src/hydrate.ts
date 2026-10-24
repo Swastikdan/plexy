@@ -72,7 +72,7 @@ export async function hydrateItemMetadata(
 /**
  * Resolve episode names, descriptions, runtimes, ratings, and stills from TMDB.
  */
-async function hydrateEpisodes(
+export async function hydrateEpisodes(
   seriesItemId: number,
   tmdbId: number,
   seriesTitle: string,
@@ -162,9 +162,7 @@ async function hydrateEpisodes(
       );
 
       if (ep.still_path) {
-        run("DELETE FROM artwork WHERE item_id = ? AND kind IN ('thumb', 'poster')", epId);
-        await writeArtwork(epId, "thumb", ep.still_path, img);
-        await writeArtwork(epId, "poster", ep.still_path, img);
+        await writeEpisodeArtwork(epId, ep.still_path, img);
       }
     }
   }
@@ -179,6 +177,123 @@ async function hydrateEpisodes(
      WHERE parent_id = ? AND kind = 'episode' AND match_status != 'matched'`,
     seriesItemId,
   );
+}
+
+/** Write thumb, poster, and backdrop artwork rows for an episode still. */
+export async function writeEpisodeArtwork(
+  epId: number,
+  stillPath: string | null | undefined,
+  img: tmdb.ImageConfig,
+): Promise<void> {
+  if (!stillPath) return;
+  run("DELETE FROM artwork WHERE item_id = ? AND kind IN ('thumb', 'poster', 'backdrop')", epId);
+  const baseUrl = img.baseUrl;
+  const thumbUrl = baseUrl + (img.stillSize ?? "w300") + stillPath;
+  const originalUrl = baseUrl + "original" + stillPath;
+  q("INSERT INTO artwork (item_id, kind, source, url) VALUES (?,?,?,?)").run(epId, "thumb", "tmdb", thumbUrl);
+  q("INSERT INTO artwork (item_id, kind, source, url) VALUES (?,?,?,?)").run(epId, "poster", "tmdb", originalUrl);
+  q("INSERT INTO artwork (item_id, kind, source, url) VALUES (?,?,?,?)").run(epId, "backdrop", "tmdb", originalUrl);
+}
+
+/** Hydrate a single episode item from its season data. */
+export async function hydrateEpisodeItem(
+  epId: number,
+  seriesId: number,
+  seasonNumber: number,
+  episodeNumber: number,
+  seriesTitle?: string,
+): Promise<boolean> {
+  const series = q<{ tmdb_id: number | null; name: string }, [number]>(
+    "SELECT tmdb_id, name FROM items WHERE id = ?",
+  ).get(seriesId);
+  if (!series?.tmdb_id) return false;
+
+  let episodes: tmdb.TmdbEpisode[];
+  try {
+    episodes = await tmdb.season(series.tmdb_id, seasonNumber);
+  } catch {
+    return false;
+  }
+
+  const ep = episodes.find((e) => e.episode_number === episodeNumber);
+  if (!ep) return false;
+
+  const title = seriesTitle ?? series.name;
+  const name = ep.name?.trim()
+    ? `S${String(seasonNumber).padStart(2, "0")}E${String(ep.episode_number).padStart(2, "0")} · ${ep.name.trim()}`
+    : `S${String(seasonNumber).padStart(2, "0")}E${String(ep.episode_number).padStart(2, "0")}`;
+
+  run(
+    `UPDATE items SET
+       name = ?,
+       sort_title = ?,
+       tmdb_id = ?,
+       tmdb_type = 'tv',
+       match_status = 'matched',
+       matched_by = 'series',
+       score = 1,
+       refreshed_at = ?
+     WHERE id = ?`,
+    name,
+    normalizeTitle(`${title} ${name}`),
+    ep.id,
+    new Date().toISOString(),
+    epId,
+  );
+
+  run(
+    `INSERT INTO item_metadata
+       (item_id, overview, runtime, rating, poster_path, backdrop_path, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(item_id) DO UPDATE SET
+       overview = excluded.overview,
+       runtime = excluded.runtime,
+       rating = excluded.rating,
+       poster_path = excluded.poster_path,
+       backdrop_path = excluded.backdrop_path,
+       updated_at = excluded.updated_at`,
+    epId,
+    ep.overview ?? null,
+    ep.runtime ?? null,
+    ep.vote_average ?? null,
+    ep.still_path ?? null,
+    ep.still_path ?? null,
+    new Date().toISOString(),
+  );
+
+  const img = await tmdb.imageConfig();
+  await writeEpisodeArtwork(epId, ep.still_path, img);
+  return true;
+}
+
+/** Hydrate missing episode records for a given series, or all matched series. */
+export async function hydrateMissingEpisodes(targetSeriesId?: number): Promise<number> {
+  const seriesList = targetSeriesId
+    ? q<{ id: number; tmdb_id: number; name: string }>(
+        `SELECT id, tmdb_id, name FROM items
+         WHERE id = ? AND kind = 'series' AND match_status = 'matched' AND tmdb_id IS NOT NULL`,
+      ).all(targetSeriesId)
+    : q<{ id: number; tmdb_id: number; name: string }>(
+        `SELECT DISTINCT s.id, s.tmdb_id, s.name FROM items s
+         JOIN items e ON e.parent_id = s.id AND e.kind = 'episode'
+         LEFT JOIN item_metadata m ON m.item_id = e.id
+         WHERE s.kind = 'series' AND s.match_status = 'matched' AND s.tmdb_id IS NOT NULL
+           AND (e.tmdb_id IS NULL OR m.item_id IS NULL)`,
+      ).all();
+
+  let count = 0;
+  for (const s of seriesList) {
+    try {
+      await hydrateEpisodes(Number(s.id), Number(s.tmdb_id), String(s.name));
+      count++;
+    } catch (e) {
+      log.warn("tmdb", "failed hydrating missing episodes for series", {
+        seriesId: s.id,
+        error: String(e),
+      });
+    }
+  }
+  return count;
 }
 
 async function writeArtwork(

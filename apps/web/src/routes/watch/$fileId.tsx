@@ -6,13 +6,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, SkipForward } from "lucide-react";
-import MediaThemeSutro from "player.style/sutro/react";
+ 
 import HlsVideo from "hls-video-element/react";
-import { api, type Playability } from "../../client";
+import { api, type Playability, type SubtitleTrack } from "../../client";
 import { probeBrowserCaps } from "@plexy/api-client";
 import { queries } from "../../queries";
-
-const BRAND_ACCENT = "#3b7df9";
 
 const MediaThemeSutroWithDuration = MediaThemeSutro as React.ComponentType<
   React.ComponentProps<typeof MediaThemeSutro> & { defaultduration?: number }
@@ -33,31 +31,12 @@ function WatchRoute() {
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Synchronously probe browser capabilities so the manifest request can start
-  // immediately on mount.
+  // Synchronously probe browser capabilities so query is enabled immediately on mount (prevents deadlock)
   const [caps] = useState<string>(() => JSON.stringify(probeBrowserCaps()));
+  const [title, setTitle] = useState<string | null>(null);
+  const [knownDuration, setKnownDuration] = useState<number | null>(null);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
-
-  // Stream recovery: when a converted or dropped stream dies mid-playback, bump
-  // this to remount the media element and restart the stream at the same point.
-  const [reloadSeq, setReloadSeq] = useState(0);
-  const resumeOnRecoveryRef = useRef<number | null>(null);
-  const lastRecoveryAtRef = useRef(0);
-  const stallTicksRef = useRef(0);
-
-  // One request carries the play path, title, resume point, next episode and
-  // subtitle tracks. The old flow chained three requests before the first byte
-  // of video could be requested, which is what made opening a title feel slow.
-  const manifest = useQuery(queries.play(Number(fileId), caps));
-  const play = { data: manifest.data };
-  const title = manifest.data?.title || null;
-  const knownDuration = manifest.data?.duration ?? null;
-  const nextFileId = manifest.data?.nextFileId ?? null;
-  const tracks = manifest.data?.tracks ?? [];
-  // Sidecar labels are human-readable filenames (spaces, dots, apostrophes),
-  // so they must be encoded before becoming part of the track URL.
-  const subtitleUrl = (track: string) =>
-    `/api/subtitles/${fileId}/${encodeURIComponent(track.endsWith(".vtt") ? track : `${track}.vtt`)}`;
+  const [nextFileId, setNextFileId] = useState<number | null>(null);
 
   // Auto-hide top header bar on mouse inactivity
   const resetHideTimer = useCallback(() => {
@@ -69,9 +48,8 @@ function WatchRoute() {
   }, []);
 
   const showBufferingAfterDelay = useCallback(() => {
-    // Debounced: short decoder hiccups and seeking must not flash the loader.
     if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
-    bufferingTimerRef.current = setTimeout(() => setIsBuffering(true), 600);
+    bufferingTimerRef.current = setTimeout(() => setIsBuffering(true), 180);
   }, []);
 
   const hideBuffering = useCallback(() => {
@@ -87,6 +65,35 @@ function WatchRoute() {
     };
   }, [resetHideTimer]);
 
+  // Fetch playability routing decision
+  const play = useQuery({
+    queryKey: ["playability", fileId, caps],
+    queryFn: async () => {
+      const verdict = await api.playability(Number(fileId), JSON.parse(caps));
+      if (verdict.itemId) {
+        const detail = await api.title(verdict.itemId);
+        setTitle(detail.item.name);
+        setKnownDuration(detail.file?.duration ?? null);
+        // If series, check if next episode exists
+        if (detail.episodes && detail.episodes.length > 0) {
+          const idx = detail.episodes.findIndex((e) => e.id === verdict.itemId);
+          if (idx !== -1 && idx < detail.episodes.length - 1) {
+            const nextEp = detail.episodes[idx + 1];
+            if (nextEp?.id) {
+              setNextFileId(nextEp.id);
+            }
+          }
+        }
+      }
+      return verdict;
+    },
+    enabled: !!caps,
+  });
+
+  // Subtitle tracks
+  const tracksQuery = useQuery({ ...queries.subtitles(Number(fileId)), enabled: !!caps });
+  const tracks = (tracksQuery.data?.tracks ?? []) as (SubtitleTrack & { isDefault?: boolean })[];
+
   // Keep Sutro's hover time preview and captions control available. Media
   // Chrome hides captions UI when no tracks were discovered, so show an
   // explicit empty state instead of silently removing the subtitle button.
@@ -100,13 +107,6 @@ function WatchRoute() {
       previewTime.slot = "preview";
       timeRange.append(previewTime);
     }
-    // Buffered-ahead visualization in the scrubber rail: shows how much of the
-    // timeline has already loaded, so fast-forwarding is an informed move.
-    if (timeRange && !timeRange.querySelector("media-buffered-progress-bar")) {
-      const buffered = document.createElement("media-buffered-progress-bar");
-      buffered.slot = "buffered";
-      timeRange.append(buffered);
-    }
 
     const timeDisplay = root.querySelector(".time-bar media-time-display");
     if (timeDisplay) {
@@ -115,7 +115,7 @@ function WatchRoute() {
       timeDisplay.setAttribute("notoggle", "");
     }
 
-    const noSubtitles = manifest.isSuccess && tracks.length === 0;
+    const noSubtitles = tracksQuery.isSuccess && tracks.length === 0;
     let style = root.getElementById("plexy-player-overrides") as HTMLStyleElement | null;
     if (!style) {
       style = document.createElement("style");
@@ -123,11 +123,6 @@ function WatchRoute() {
       root.append(style);
     }
     style.textContent = `media-loading-indicator { display: none; }
-      media-buffered-progress-bar {
-        --media-range-track-background: rgba(255, 255, 255, 0.16);
-        --media-progress-bar-border-radius: var(--radius);
-        color: rgba(255, 255, 255, 0.22);
-      }
       ${noSubtitles ? `
         media-captions-button:not([mediasubtitleslist]) {
           display: inline-flex !important;
@@ -141,8 +136,8 @@ function WatchRoute() {
           width: max-content;
           max-width: 220px;
           padding: 6px 9px;
-          border-radius: var(--radius);
-          background: #1f1f23;
+          border-radius: 4px;
+          background: #181818;
           color: white;
           font: 12px/1.4 sans-serif;
           opacity: 0;
@@ -153,14 +148,7 @@ function WatchRoute() {
           opacity: 1;
         }
       ` : ""}`;
-  }, [fileId, play.data?.path, tracks.length, manifest.isSuccess]);
-
-  // Warm the next episode's manifest while the current one plays, so hitting
-  // Next Episode starts instantly.
-  useEffect(() => {
-    if (!nextFileId || !caps) return;
-    void queryClient.prefetchQuery(queries.play(nextFileId, caps));
-  }, [nextFileId, caps, queryClient]);
+  }, [fileId, play.data?.path, tracks.length, tracksQuery.isSuccess]);
 
   const resumeAt = play.data?.watch && !play.data.watch.played && play.data.watch.position > 15
     ? play.data.watch.position
@@ -186,35 +174,6 @@ function WatchRoute() {
   }, [streamUrl]);
 
   const isHls = Boolean(streamUrl && streamUrl.includes(".m3u8"));
-
-  /**
-   * Bring playback back after the stream dies (server hiccup, stalled media).
-   * Converted streams are rejoined server-side at the current source timestamp;
-   * direct files simply reload and re-seek (ranges are supported).
-   * Repeated calls are rate limited so a dead server cannot loop reloads.
-   */
-  const attemptRecovery = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || video.ended) return;
-    const now = Date.now();
-    if (now - lastRecoveryAtRef.current < 8000) return;
-    lastRecoveryAtRef.current = now;
-
-    const path = play.data?.path;
-    const displayTime = video.currentTime;
-    if (path && path !== "direct") {
-      // The media element's currentTime is the display timeline (source offset
-      // by streamStart) when the descriptor override is installed; restart the
-      // conversion at the matching source timestamp. A changed start also
-      // changes streamUrl, which remounts the media element by key.
-      const sourceSeconds = Math.max(0, displayTime - streamStart);
-      setRestartAt({ fileId: Number(fileId), seconds: sourceSeconds });
-    } else {
-      resumeOnRecoveryRef.current = displayTime;
-      setReloadSeq((s) => s + 1);
-    }
-    setIsBuffering(true);
-  }, [fileId, play.data?.path, streamStart]);
 
   // Converted fragmented MP4 streams report their duration as data arrives.
   // The player should use the scanned source duration from the first frame.
@@ -301,12 +260,8 @@ function WatchRoute() {
         setRestartAt({ fileId: Number(fileId), seconds: seekEvent.detail });
       }
     };
-    const onPointerUp = () => {
-      // Finish the scrub on any pointer release. If the pointer leaves the
-      // timeline (or the window) before release, waiting for a pointerup that
-      // targets the range leaves `isScrubbingRef` stuck and swallows the next
-      // arrow/seek request.
-      if (!isScrubbingRef.current) return;
+    const onPointerUp = (event: Event) => {
+      if (!isScrubbingRef.current || !isTimeRangeEvent(event)) return;
       isScrubbingRef.current = false;
       const seekTo = pendingSeekRef.current;
       pendingSeekRef.current = null;
@@ -327,134 +282,22 @@ function WatchRoute() {
       }
     };
 
-    // Arrow keys must always seek by a fixed step. Without this, the focused
-    // native range input handles them as 1% of the file (which can jump most
-    // of the way to the end); unfocused they are handled by Media Chrome at
-    // 10 seconds. Intercepting here keeps both cases identical.
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.defaultPrevented) return;
-
-      const path = event.composedPath();
-      // Never steal arrows while typing in a field (e.g. a search box).
-      const isTyping = path.some((target) => {
-        if (!(target instanceof HTMLElement)) return false;
-        if (target.isContentEditable || target.tagName === "TEXTAREA") return true;
-        return target.tagName === "INPUT" && (target as HTMLInputElement).type !== "range";
-      });
-      if (isTyping) return;
-
-      // Leave volume sliders and open menus/dialogs to their own controls.
-      const usesArrow = path.some((target) => {
-        if (!(target instanceof Element) || target.localName === "media-time-range") return false;
-        const keys = (target as Element & { keysUsed?: unknown }).keysUsed;
-        return Array.isArray(keys) && keys.includes(event.key);
-      });
-      if (usesArrow) return;
-
-      const video = videoRef.current;
-      if (!video) return;
-
-      const total = duration ?? (Number.isFinite(video.duration) ? video.duration : null);
-      const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-      const step = event.key === "ArrowRight" ? 10 : -10;
-      let seekTo = Math.max(0, current + step);
-      if (total != null && Number.isFinite(total)) {
-        seekTo = Math.min(seekTo, Math.max(0, total - 0.25));
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      if (Math.abs(seekTo - current) < 0.05) return;
-
-      if (play.data?.path && play.data.path !== "direct") {
-        setRestartAt({ fileId: Number(fileId), seconds: seekTo });
-        return;
-      }
-      try {
-        video.currentTime = seekTo;
-      } catch {
-        // Ignore seeks that arrive before the browser can satisfy them.
-      }
-    };
-
     container.addEventListener("pointerdown", onPointerDown, true);
     container.addEventListener("mediaseekrequest", onSeekRequest, true);
-    // Listen on the window, not the player container: the first arrow press
-    // should seek without requiring a click to move focus into the player.
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("pointerup", onPointerUp, true);
-    window.addEventListener("pointercancel", onPointerUp, true);
+    container.addEventListener("pointerup", onPointerUp, true);
+    container.addEventListener("pointercancel", onPointerUp, true);
     return () => {
       container.removeEventListener("pointerdown", onPointerDown, true);
       container.removeEventListener("mediaseekrequest", onSeekRequest, true);
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("pointerup", onPointerUp, true);
-      window.removeEventListener("pointercancel", onPointerUp, true);
+      container.removeEventListener("pointerup", onPointerUp, true);
+      container.removeEventListener("pointercancel", onPointerUp, true);
     };
-  }, [fileId, play.data?.path, streamStart, duration]);
-
-  // Lock landscape while fullscreened on mobile, and leave cleanly on exit.
-  // Where the OS will not rotate (e.g. iOS), styles.css rotates the fullscreen
-  // element with CSS instead.
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      const orientation = screen.orientation as
-        | (ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void })
-        | undefined;
-      if (document.fullscreenElement && orientation?.lock) {
-        orientation.lock("landscape").catch(() => {
-          // Unsupported or denied; CSS fallback handles the rotation.
-        });
-      } else {
-        orientation?.unlock?.();
-      }
-    };
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
-      onFullscreenChange();
-    };
-  }, []);
-
-  // Recover automatically when the media stops receiving data even though we
-  // expect it to be playing. Two consecutive quiet watchdog ticks (~8s) minus
-  // any user scrubbing means the stream went away and needs a restart.
-  useEffect(() => {
-    const tick = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || video.paused || video.ended || isScrubbingRef.current) {
-        stallTicksRef.current = 0;
-        return;
-      }
-      if (video.readyState < 2) {
-        stallTicksRef.current += 1;
-        if (stallTicksRef.current >= 2) {
-          stallTicksRef.current = 0;
-          attemptRecovery();
-        }
-      } else {
-        stallTicksRef.current = 0;
-      }
-    }, 4000);
-    return () => clearInterval(tick);
-  }, [attemptRecovery]);
+  }, [fileId, play.data?.path, streamStart]);
 
   // Resume position callback
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLMediaElement>) => {
     const v = e.currentTarget;
     const resumeAt = play.data?.watch?.position ?? 0;
-    if (play.data?.path === "direct" && resumeOnRecoveryRef.current != null) {
-      // Recovered direct stream: jump back to where playback died.
-      try {
-        v.currentTime = resumeOnRecoveryRef.current;
-      } catch {
-        // Metadata is not always seekable at this exact moment; best effort.
-      }
-      resumeOnRecoveryRef.current = null;
-      return;
-    }
     if (resumeAt > 15 && !play.data?.watch?.played) {
       if (play.data?.path === "direct" && Math.abs(v.currentTime - resumeAt) > 3) {
         v.currentTime = resumeAt;
@@ -479,12 +322,12 @@ function WatchRoute() {
           <button
             onClick={() => void navigate({ to: "/" })}
             aria-label="Back"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-none bg-white/10 text-white hover:bg-white/20 transition-colors"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
           >
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="font-display text-base sm:text-lg font-bold text-white">
+            <h1 className="font-display text-base sm:text-lg font-bold text-white drop-shadow">
               {title ?? "Loading title…"}
             </h1>
           </div>
@@ -496,12 +339,30 @@ function WatchRoute() {
               onClick={() =>
                 navigate({ to: "/watch/$fileId", params: { fileId: String(nextFileId) } })
               }
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-white/15 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/25"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/15 px-3 text-xs font-semibold text-white hover:bg-white/25 transition-colors"
               title="Next Episode"
             >
               <SkipForward size={15} />
               <span>Next Episode</span>
             </button>
+          )}
+
+          {play.data && (
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-md border ${
+                play.data.path === "direct"
+                  ? "border-green-500/40 bg-green-500/20 text-green-300"
+                  : play.data.path === "remux"
+                    ? "border-blue-500/40 bg-blue-500/20 text-blue-300"
+                    : "border-amber-500/40 bg-amber-500/20 text-amber-300"
+              }`}
+            >
+              {play.data.path === "direct"
+                ? "Direct Play"
+                : play.data.path === "remux"
+                  ? "Remux"
+                  : "Transcoding"}
+            </span>
           )}
         </div>
       </div>
@@ -509,12 +370,12 @@ function WatchRoute() {
       {/* Main Video View / Sutro Theme */}
       <div className="relative flex-1 flex items-center justify-center w-full h-full p-0">
         {play.data?.path === "unsupported" ? (
-          <div className="max-w-md rounded-2xl border border-surface/50 bg-[#161618] p-6 text-center text-white z-20">
+          <div className="max-w-md p-6 text-center rounded-2xl bg-[#181818] border border-white/10 text-white z-20">
             <p className="font-display text-lg font-bold">Unsupported Format</p>
-            <p className="mt-2 text-sm text-white/60">{play.data.reason}</p>
+            <p className="mt-2 text-sm text-ink-muted">{play.data.reason}</p>
             <button
               onClick={() => void navigate({ to: "/" })}
-              className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-brand px-6 text-sm font-bold text-white transition-colors hover:bg-brand-hover"
+              className="mt-6 rounded-lg bg-[#E50914] px-5 py-2 text-sm font-semibold hover:bg-[#b80710] transition-colors"
             >
               Return Home
             </button>
@@ -527,32 +388,32 @@ function WatchRoute() {
               style={{
                 width: "100%",
                 maxWidth: "100%",
-                maxHeight: "100dvh",
+                maxHeight: "100vh",
                 aspectRatio: "16 / 9",
-                ["--media-accent-color" as any]: BRAND_ACCENT,
+                ["--media-accent-color" as any]: "#E50914",
                 ["--media-primary-color" as any]: "#ffffff",
                 ["--media-secondary-color" as any]: "rgba(255, 255, 255, 0.75)",
                 ["--media-control-background" as any]: "rgba(18, 18, 18, 0.85)",
                 ["--media-control-hover-background" as any]: "rgba(35, 35, 35, 0.95)",
                 ["--media-font-family" as any]: "inherit",
               } as React.CSSProperties}
-              className="w-full h-full max-w-full max-h-full aspect-video"
+              className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
             >
               {isHls ? (
                 <HlsVideo
-                  key={`${streamUrl}-${reloadSeq}`}
+                  key={streamUrl}
                   ref={(el: any) => { videoRef.current = el; }}
                   slot="media"
                   src={streamUrl}
                   autoplay
-                  preload="auto"
                   playsInline
                   crossOrigin="anonymous"
                   onLoadedMetadata={handleLoadedMetadata}
                   onWaiting={showBufferingAfterDelay}
+                  onStalled={showBufferingAfterDelay}
                   onCanPlay={hideBuffering}
                   onPlaying={hideBuffering}
-                  onError={attemptRecovery}
+                  onError={hideBuffering}
                   className="h-full w-full object-contain"
                 >
                   {tracks.map((t) => (
@@ -560,7 +421,7 @@ function WatchRoute() {
                       key={t.track}
                       label={t.title || t.language || `Track ${t.track}`}
                       kind="subtitles"
-                      src={subtitleUrl(t.track)}
+                      src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
                       srcLang={t.language ?? undefined}
                       default={t.isDefault}
                     />
@@ -568,19 +429,19 @@ function WatchRoute() {
                 </HlsVideo>
               ) : (
                 <video
-                  key={`${streamUrl}-${reloadSeq}`}
+                  key={streamUrl}
                   ref={(el) => { videoRef.current = el; }}
                   slot="media"
                   src={streamUrl}
                   autoPlay
-                  preload="auto"
                   playsInline
                   crossOrigin="anonymous"
                   onLoadedMetadata={handleLoadedMetadata}
                   onWaiting={showBufferingAfterDelay}
+                  onStalled={showBufferingAfterDelay}
                   onCanPlay={hideBuffering}
                   onPlaying={hideBuffering}
-                  onError={attemptRecovery}
+                  onError={hideBuffering}
                   className="h-full w-full object-contain"
                 >
                   {tracks.map((t) => (
@@ -588,7 +449,7 @@ function WatchRoute() {
                       key={t.track}
                       label={t.title || t.language || `Track ${t.track}`}
                       kind="subtitles"
-                      src={subtitleUrl(t.track)}
+                      src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
                       srcLang={t.language ?? undefined}
                       default={t.isDefault}
                     />
@@ -600,22 +461,24 @@ function WatchRoute() {
               <div
                 role="status"
                 aria-live="polite"
-                aria-label="Loading video"
-                className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/25 text-white"
+                className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/25 text-white"
               >
                 <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />
-                <span className="sr-only">Loading video</span>
+                <span className="text-sm font-medium drop-shadow">Buffering video…</span>
+                {play.data?.path && play.data.path !== "direct" && (
+                  <span className="-mt-2 text-xs text-white/70">
+                    {play.data.path === "transcode"
+                      ? "Converting this local file for playback"
+                      : "Remuxing this local file for playback"}
+                  </span>
+                )}
               </div>
             )}
           </div>
         ) : (
-          <div
-            role="status"
-            aria-label="Preparing stream"
-            className="text-center text-white/60"
-          >
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-brand" />
-            <span className="sr-only">Preparing stream</span>
+          <div className="text-center text-ink-muted">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#E50914] mx-auto mb-3" />
+            <p className="text-sm">Preparing stream…</p>
           </div>
         )}
       </div>

@@ -9,6 +9,7 @@ export interface Watch {
 
 export interface ItemCard {
   id: number;
+  publicId: string;
   kind: string;
   name: string;
   year: number | null;
@@ -16,6 +17,7 @@ export interface ItemCard {
   episodeNumber?: number | null;
   fileId?: number | null;
   parentId?: number | null;
+  parentPublicId?: string | null;
   parentTitle?: string | null;
   poster: string | null;
   backdrop: string | null;
@@ -43,6 +45,10 @@ export interface AudioTrack {
   channels: number;
   language: string;
   isDefault: boolean;
+}
+
+export interface PlayerAudioTrack extends AudioTrack {
+  index: number;
 }
 
 export interface OptimizationState {
@@ -97,16 +103,53 @@ export interface TitleDetail {
 
 export type PlayPath = "direct" | "remux" | "transcode" | "unsupported";
 
+/** Scrub-preview state for one file. `trackUrl` is a WebVTT metadata track. */
+export interface Trickplay {
+  ready: boolean;
+  status: "none" | "queued" | "running" | "done" | "failed" | string;
+  trackUrl: string | null;
+  interval: number;
+  width: number;
+  height: number;
+  frameCount: number | null;
+  error: string | null;
+}
+
+/** The episode that follows the one currently playing. */
+export interface NextEpisode {
+  fileId: number;
+  itemId: number;
+  title: string;
+  subtitle: string;
+  poster: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+}
+
 export interface Playability {
   path: PlayPath;
   reason: string;
   fileId: number;
   itemId: number | null;
+  audioTracks?: PlayerAudioTrack[];
+  selectedAudioIndex?: number;
+  versions?: Array<{
+    fileId: number;
+    height: number | null;
+    codec: string | null;
+    hdr: string | null;
+    size: number;
+    label: string;
+  }>;
   title?: string;
   subtitle?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
   duration?: number | null;
   nextFileId?: number | null;
+  next?: NextEpisode | null;
   tracks?: SubtitleTrack[];
+  trickplay?: Trickplay;
   optimization?: OptimizationState;
   watch: { position: number; duration: number | null; played: boolean } | null;
 }

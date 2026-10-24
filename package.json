@@ -8,9 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n server,web \"bun run --filter @plexy/server dev\" \"bun run --filter @plexy/web dev\"",
+    "dev": "concurrently -n server,web \"bun run --filter @plexy/server dev\" \"bun run --filter @plexy/web dev --host\"",
     "dev:server": "bun run --filter @plexy/server dev",
-    "dev:web": "bun run --filter @plexy/web dev",
+    "dev:web": "bun run --filter @plexy/web dev --host",
     "build": "bun run build:web && bun run build:executable",
     "build:web": "bun run --filter @plexy/web build",
     "build:executable": "bun scripts/build-executable.ts",

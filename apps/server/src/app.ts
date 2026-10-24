@@ -31,6 +31,27 @@ export function buildApp() {
     .use(matchingRoutes)
     .use(mediaRoutes)
     .use(logsRoutes)
+    .onRequest(({ request }) => {
+      // Cheap start marker for the slow-request log below. Kept on the Request
+      // object so concurrent requests cannot race on a shared variable.
+      (request as Request & { __plexyStartedAt?: number }).__plexyStartedAt = performance.now();
+    })
+    .onAfterResponse({ as: "global" }, ({ request, set }) => {
+      const started = (request as Request & { __plexyStartedAt?: number }).__plexyStartedAt;
+      if (started == null) return;
+      const ms = performance.now() - started;
+      if (ms < 500) return;
+      const url = new URL(request.url);
+      // Streams and image bodies can legitimately run for a long time; log only
+      // slow API metadata calls, which is where lag actually shows up.
+      if (url.pathname.startsWith("/api/stream/")) return;
+      log.warn("http", "slow request", {
+        method: request.method,
+        path: url.pathname,
+        status: set.status ?? 200,
+        ms: Math.round(ms),
+      });
+    })
     .onError({ as: "global" }, ({ error, code }) => {
       // Validation errors are client bugs; everything else we log loudly.
       if (code === "VALIDATION") {

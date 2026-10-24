@@ -27,6 +27,7 @@ let child: ChildProcess | null = null;
 let nextId = 1;
 const pending = new Map<string, Pending>();
 let crashed = false;
+let shuttingDown = false;
 
 /** Called by scan.ts when the worker dies mid-request. */
 export let onWorkerCrash: ((exitCode: number | null, signal: string | null) => void) | null = null;
@@ -68,14 +69,23 @@ function spawnWorker(): ChildProcess {
     if (text) log.debug("media", "worker stderr", { text: text.slice(0, 400) });
   });
   proc.on("exit", (code, signal) => {
-    log.warn("media", `worker exited code=${code} signal=${signal}`);
-    crashed = true;
+    const wasShuttingDown = shuttingDown;
     child = null;
+    // A clean SIGTERM during shutdown is expected, not a crash. Reporting it as
+    // one made every restart look like the media worker had failed.
+    if (wasShuttingDown || (code === 0 && pending.size === 0)) {
+      log.debug("media", `worker stopped code=${code} signal=${signal}`);
+    } else {
+      log.warn("media", `worker exited unexpectedly code=${code} signal=${signal}`, {
+        pending: pending.size,
+      });
+      crashed = true;
+      onWorkerCrash?.(code, signal);
+    }
     for (const [id, wait] of pending) {
       wait.reject(new Error(`media worker exited before answering (code=${code})`));
       pending.delete(id);
     }
-    onWorkerCrash?.(code, signal);
   });
   return proc;
 }
@@ -121,6 +131,7 @@ export function createProbePool(limit = 2) {
 /** Terminate the worker on shutdown. The exit handler tolerates no-op exits. */
 export async function shutdownWorker(): Promise<void> {
   const proc = child;
+  shuttingDown = true;
   child = null;
   if (!proc) return;
   await new Promise<void>((res) => {

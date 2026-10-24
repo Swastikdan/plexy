@@ -3,21 +3,22 @@
 /// Walks each library's roots, classifies paths, parses names, probes media in
 /// the isolated worker, matches against TMDB and persists items. Files that are
 /// unchanged (size + mtime) are skipped for incremental rescans; locked manual
-/// matches are never overwritten. A missing root is reported and its records
-/// are preserved — never interpreted as deletions (PRD 5.2).
-import { lstat, readdir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+/// matches are never overwritten. Complete scans prune records for missing
+/// files; unavailable roots and incomplete walks preserve existing records.
+import { lstat, readdir, readFile, stat, unlink, rm } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { db, q, run, type Row } from "./db";
 import { log } from "./logger";
 import { setActiveScanJobId } from "./crash";
 import { getConfig } from "./config";
 import { VIDEO_EXTENSIONS, EXTRA_FOLDER, SEASON_FOLDER, parsePath, movieFolderKey, tvSeriesFolderKey, normalizeTitle, type LibraryType } from "./parse";
 import { match } from "./matcher";
-import { hydrateItemMetadata } from "./hydrate";
 import * as tmdb from "./tmdb";
 import { probe, createProbePool, setOnWorkerCrash, shutdownWorker } from "./worker-host";
 import { enqueueMissingOptimizations, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { cacheEmbeddedSubtitles } from "./subtitles";
+import { resolveOptimizedDir, resolveTrickplayDir } from "./paths";
+import { hydrateItemMetadata, hydrateEpisodeItem, hydrateMissingEpisodes } from "./hydrate";
 
 export interface ScanProgress {
   scanId: number;
@@ -215,16 +216,38 @@ async function runScan(libraryIds: number[]): Promise<void> {
 
       progress.libraryId = library.id;
       progress.libraryName = library.name;
+      const issuesBeforeLibrary = progress.issues;
+      let rootsComplete = true;
+      const seenPaths = new Set<string>();
 
       for (const root of roots) {
         // An unreachable root must not be read as "everything deleted" (PRD 5.2).
         let readable = true;
         try { await lstat(root); } catch {
           readable = false;
+          rootsComplete = false;
           log.error("scanner", "root unavailable, keeping records", { root });
           emit();
         }
-        if (readable) await scanFolder(root, root, type, roots, progress, emit, pool, seen, library.id);      }
+        if (readable) {
+          await scanFolder(root, root, type, roots, progress, emit, pool, seen, seenPaths, library.id);
+        }
+      }
+
+      // Only a complete, issue-free walk treats absent files as deletions.
+      // Inaccessible folders and failed file probes keep existing records.
+      if (roots.length > 0 && rootsComplete && progress.issues === issuesBeforeLibrary) {
+        const removed = await removeMissingLibraryFiles(library.id, seenPaths);
+        if (removed) log.info("scanner", "removed missing media records", {
+          libraryId: library.id, count: removed,
+        });
+      }
+
+      // Ensure all episodes discovered for this library have TMDB metadata and stills
+      await hydrateMissingEpisodes().catch((err) =>
+        log.warn("tmdb", "could not hydrate missing episodes after library scan", {
+          message: err instanceof Error ? err.message : String(err),
+        }));
     }
     progress.status = "done";
     progress.finishedAt = new Date().toISOString();
@@ -272,6 +295,7 @@ async function scanFolder(
   progress: ScanProgress, emit: () => void,
   pool: ReturnType<typeof createProbePool>,
   seen: { count: number },
+  seenPaths: Set<string>,
   libraryId: number,
 ): Promise<void> {
   let entries;
@@ -288,10 +312,11 @@ async function scanFolder(
     const path = join(dir, entry.name);
     if (entry.isDirectory() && EXTRA_FOLDER.test(entry.name)) continue;
     if (entry.isDirectory()) {
-      await scanFolder(root, path, type, roots, progress, emit, pool, seen, libraryId);
+      await scanFolder(root, path, type, roots, progress, emit, pool, seen, seenPaths, libraryId);
       continue;
     }
     if (!VIDEO_EXTENSIONS.has(basename(path).toLowerCase().match(/\.[^.]+$/)?.[0] ?? "")) continue;
+    seenPaths.add(path);
     seen.count++;
     progress.filesSeen = seen.count;
     progress.currentFile = relative(root, path);
@@ -311,6 +336,67 @@ async function scanFolder(
     }));
   }
   await Promise.all(tasks);
+}
+
+/** Remove records and generated caches for files absent from a complete walk. */
+async function removeMissingLibraryFiles(libraryId: number, seenPaths: Set<string>): Promise<number> {
+  const rows = q<Row>(
+    "SELECT id, path, mtime, optimized_path FROM media_files WHERE library_id = ?",
+  ).all(libraryId);
+  const missing = rows.filter((row) => !seenPaths.has(String(row.path)));
+  if (!missing.length) return 0;
+
+  const optimizedRoot = resolve(resolveOptimizedDir());
+  const trickplayRoot = resolveTrickplayDir();
+  const trickplayEntries = await readdir(trickplayRoot).catch(() => [] as string[]);
+  for (const row of missing) {
+    const fileId = Number(row.id);
+    const optimizedPath = row.optimized_path == null ? null : resolve(String(row.optimized_path));
+    if (optimizedPath?.startsWith(`${optimizedRoot}${sep}`)) {
+      await unlink(optimizedPath).catch(() => {});
+    }
+    const subtitles = q<{ path: string }, [number]>(
+      "SELECT path FROM subtitle_cache WHERE file_id = ?",
+    ).all(fileId);
+    for (const subtitle of subtitles) {
+      const subtitlePath = resolve(subtitle.path);
+      if (subtitlePath.startsWith(`${optimizedRoot}${sep}`)) await unlink(subtitlePath).catch(() => {});
+    }
+    for (const name of trickplayEntries) {
+      if (name.startsWith(`${fileId}-`)) {
+        await rm(join(trickplayRoot, name), { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  }
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const row of missing) run("DELETE FROM media_files WHERE id = ?", Number(row.id));
+    // Removing the final source file also removes its title and cascaded
+    // watch state, metadata, match candidates, artwork references and trailers.
+    run(
+      `DELETE FROM items WHERE library_id = ? AND kind IN ('movie', 'episode')
+       AND NOT EXISTS (SELECT 1 FROM media_files WHERE item_id = items.id)`,
+      libraryId,
+    );
+    run(
+      `DELETE FROM items WHERE library_id = ? AND kind = 'season'
+       AND NOT EXISTS (SELECT 1 FROM items child WHERE child.parent_id = items.id)`,
+      libraryId,
+    );
+    run(
+      `DELETE FROM items WHERE library_id = ? AND kind = 'series'
+       AND NOT EXISTS (SELECT 1 FROM items child WHERE child.parent_id = items.id)
+       AND NOT EXISTS (SELECT 1 FROM media_files WHERE item_id = items.id)`,
+      libraryId,
+    );
+    run("DELETE FROM people WHERE NOT EXISTS (SELECT 1 FROM item_people WHERE person_id = people.id)");
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return missing.length;
 }
 
 /**
@@ -334,14 +420,20 @@ async function processFile(
   const folderKey = type === "movies" ? movieFolderKey(path, roots)
     : tvSeriesFolderKey(path, roots);
   const itemId = existing?.item_id == null ? null : Number(existing.item_id);
-  const previousMatch = itemId
-    ? (q<{ match_status: string }, [number]>("SELECT match_status FROM items WHERE id=?").get(itemId)
-      ?? { match_status: "unmatched" }).match_status
-    : "unmatched";
+  const previousItem = itemId
+    ? q<{ match_status: string; folder_key: string | null; tmdb_id: number | null; kind: string }, [number]>(
+      "SELECT match_status, folder_key, tmdb_id, kind FROM items WHERE id=?",
+    ).get(itemId)
+    : undefined;
+  const previousMatch = previousItem?.match_status ?? "unmatched";
 
   // Fast path: the file is unchanged and fully matched. Nothing to re-probe,
   // re-match, or write — this is what keeps rescans quick.
-  if (alreadyProbed && previousMatch === "matched") return false;
+  // Note: an episode whose tmdb_id is null is not fully matched and needs hydration.
+  if (alreadyProbed && previousMatch === "matched"
+    && existing?.folder_key === folderKey
+    && previousItem?.folder_key === folderKey
+    && (previousItem?.kind !== "episode" || previousItem?.tmdb_id != null)) return false;
 
   // NFO sidecars provide explicit ids that outrank parsed titles (PRD 5.3).
   // Checked in the file's folder and its parent (season layouts).
@@ -467,6 +559,17 @@ async function ensureItemAndMatch(
     const itemId = await ensureMovie(folderKey, libraryId, parsed, path, nfoId);
     if (itemId) {
       run("UPDATE media_files SET item_id=? WHERE id=?", itemId, fileId);
+      const oldItemId = existing?.item_id == null ? null : Number(existing.item_id);
+      if (oldItemId != null && oldItemId !== itemId) {
+        // Remove the stale shared root item after its last file has been
+        // reassigned by a repair scan. Other old files keep it alive until
+        // their own incremental repair pass completes.
+        run(
+          `DELETE FROM items WHERE id=? AND kind='movie' AND folder_key='.'
+           AND NOT EXISTS (SELECT 1 FROM media_files WHERE item_id=?)`,
+          oldItemId, oldItemId,
+        );
+      }
       void attachLocalArtwork(itemId, dirname(path));
     }
     return;
@@ -540,16 +643,25 @@ async function ensureSeason(seriesId: number, seasonNumber: number, year: number
 async function ensureEpisode(
   seriesId: number, seasonId: number, seasonNumber: number, episodeNumber: number, seriesTitle: string,
 ): Promise<number | null> {
-  const existing = q<{ id: number }, [number, number, number]>(
-    "SELECT id FROM items WHERE parent_id=? AND kind='episode' AND season_number=? AND episode_number=?")
+  const existing = q<{ id: number; tmdb_id: number | null }, [number, number, number]>(
+    "SELECT id, tmdb_id FROM items WHERE parent_id=? AND kind='episode' AND season_number=? AND episode_number=?")
     .get(seriesId, seasonNumber, episodeNumber);
-  if (existing) return existing.id;
+  if (existing) {
+    if (!existing.tmdb_id) {
+      void hydrateEpisodeItem(existing.id, seriesId, seasonNumber, episodeNumber, seriesTitle).catch(() => {});
+    }
+    return existing.id;
+  }
   const name = `S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`;
   q("INSERT INTO items (library_id, parent_id, kind, name, sort_title, season_number, episode_number, match_status, matched_by) VALUES (?,?,?,?,?,?,?,?,?)")
     .run(libraryIdOfSeries(seriesId), seriesId, "episode", name, normalizeTitle(`${seriesTitle} ${name}`), seasonNumber, episodeNumber, "matched", "series");
-  return Number(q<{ id: number }>(
+  const row = q<{ id: number }>(
     "SELECT id FROM items WHERE parent_id=? AND kind='episode' AND season_number=? AND episode_number=?")
-    .get(seriesId, seasonNumber, episodeNumber)!.id);
+    .get(seriesId, seasonNumber, episodeNumber);
+  if (row) {
+    void hydrateEpisodeItem(row.id, seriesId, seasonNumber, episodeNumber, seriesTitle).catch(() => {});
+  }
+  return row ? Number(row.id) : null;
 }
 
 function libraryIdOfSeries(seriesId: number): number {

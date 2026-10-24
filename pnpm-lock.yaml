@@ -179,6 +179,9 @@ importers:
       lucide-react:
         specifier: ^1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
+      media-chrome:
+        specifier: ~4.19.0
+        version: 4.19.3(react@19.3.1)
       player.style:
         specifier: ^0.3.5
         version: 0.3.5(react@19.3.1)

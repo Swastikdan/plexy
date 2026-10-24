@@ -105,11 +105,25 @@ export interface ImageConfig {
 }
 
 const CONFIG_CACHE_KEY = "tmdb/images/config";
+const imageConfigFlights = new Map<string, Promise<ImageConfig>>();
 
 /** Image base URL + sizes, from TMDB's configuration endpoint (24 h cache). */
 export async function imageConfig(): Promise<ImageConfig> {
   const cfg = await getConfig();
-  const cached = await cacheGet(CONFIG_CACHE_KEY);
+  const cacheKey = `${CONFIG_CACHE_KEY}/${cfg.imageQuality}`;
+  const active = imageConfigFlights.get(cacheKey);
+  if (active) return active;
+
+  const request = loadImageConfig(cfg, cacheKey).catch((error) => {
+    imageConfigFlights.delete(cacheKey);
+    throw error;
+  });
+  imageConfigFlights.set(cacheKey, request);
+  return request;
+}
+
+async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cacheKey: string): Promise<ImageConfig> {
+  const cached = await cacheGet(cacheKey);
   if (cached) {
     try {
       const parsed = JSON.parse(cached) as ImageConfig;
@@ -164,8 +178,16 @@ export async function imageConfig(): Promise<ImageConfig> {
     stillSize,
     profileSize,
   };
-  await cachePut(CONFIG_CACHE_KEY, "configuration", JSON.stringify(value), 24 * 3600_000);
+  await cachePut(cacheKey, "configuration", JSON.stringify(value), 24 * 3600_000);
   return value;
+}
+
+/** Clear TMDB responses so the next metadata request fetches fresh values. */
+export function clearTmdbCache(): number {
+  const count = Number(q<{ count: number }>("SELECT COUNT(*) AS count FROM tmdb_cache").get()?.count ?? 0);
+  run("DELETE FROM tmdb_cache");
+  imageConfigFlights.clear();
+  return count;
 }
 
 /** Full URL for a TMDB image path, or null when there is none. */

@@ -5,18 +5,19 @@
 /// reports. The guard reads the socket address, which cannot be spoofed by
 /// request headers.
 import { Elysia, t } from "elysia";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { db, q, run, type Row } from "./db";
 import { getConfig, save, redactedView } from "./config";
 import { setLogLevel, getLogLevel, log } from "./logger";
 import { APP_VERSION, crashDir } from "./crash";
-import { testToken } from "./tmdb";
+import { clearTmdbCache, testToken } from "./tmdb";
 import { denyIfNotLocal, isLoopbackContext } from "./essentials";
 import { startScan, currentScan, onScanProgress } from "./scan";
-import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus } from "./optimize";
+import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { VIDEO_EXTENSIONS } from "./parse";
+import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
 
 const startedAt = Date.now();
 
@@ -126,6 +127,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.autoOptimize !== undefined) patch.autoOptimize = body.autoOptimize;
     if (body.optimizeMaxCacheGb !== undefined) patch.optimizeMaxCacheGb = body.optimizeMaxCacheGb;
     if (body.probeConcurrency !== undefined) patch.probeConcurrency = body.probeConcurrency;
+    if (body.bindAddress) patch.bindAddress = body.bindAddress;
     if (body.note !== undefined) patch.note = body.note;
     // Tokens only round-trip when genuinely provided; the UI never echoes the
     // stored value, so "{redacted}" sentinels are ignored.
@@ -149,8 +151,66 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       optimizeMaxCacheGb: t.Optional(t.Numeric()),
       probeConcurrency: t.Optional(t.Numeric()),
       tmdbToken: t.Optional(t.String()),
+      bindAddress: t.Optional(t.Union([t.Literal("127.0.0.1"), t.Literal("0.0.0.0")])),
       note: t.Optional(t.String()),
     }),
+  })
+
+  .post("/tmdb/cache/clear", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/tmdb/cache/clear");
+    if (denied) return denied;
+    const removed = clearTmdbCache();
+    log.info("tmdb", "response cache cleared", { removed });
+    return { removed };
+  })
+
+  /** Reset the catalog and generated caches while preserving media originals and config.json. */
+  .post("/database/reset", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/database/reset");
+    if (denied) return denied;
+    if (currentScan?.status === "running") {
+      return Response.json({ error: "Wait for the current library scan to finish before resetting Plexy data." }, { status: 409 });
+    }
+    const optimizer = await optimizerStatus();
+    if (optimizer.running) {
+      return Response.json({ error: "Wait for media preparation to finish before resetting Plexy data." }, { status: 409 });
+    }
+
+    pauseOptimizer();
+    try {
+      const counts = {
+        libraries: Number(q<{ n: number }>("SELECT COUNT(*) AS n FROM libraries").get()?.n ?? 0),
+        files: Number(q<{ n: number }>("SELECT COUNT(*) AS n FROM media_files").get()?.n ?? 0),
+        titles: Number(q<{ n: number }>("SELECT COUNT(*) AS n FROM items").get()?.n ?? 0),
+      };
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        run("DELETE FROM media_files");
+        run("DELETE FROM items");
+        run("DELETE FROM scans");
+        run("DELETE FROM people");
+        clearTmdbCache();
+        const hasLocalArtwork = q<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_artwork'",
+        ).get();
+        if (hasLocalArtwork) run("DELETE FROM local_artwork");
+        run("DELETE FROM sqlite_sequence WHERE name IN ('items','media_files','people','videos','scans')");
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+
+      await Promise.all([
+        rm(resolveArtworkDir(), { recursive: true, force: true }),
+        rm(resolveOptimizedDir(), { recursive: true, force: true }),
+        rm(resolveTrickplayDir(), { recursive: true, force: true }),
+      ]);
+      log.warn("server", "local Plexy data reset", counts);
+      return { ok: true, ...counts };
+    } finally {
+      resumeOptimizer();
+    }
   })
 
   /** Preparation queue state: what is running, how far along, cache size. */

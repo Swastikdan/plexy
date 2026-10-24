@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { queries } from "../queries";
 import { Poster } from "../components/poster";
+import { PageLoader } from "../components/page-loader";
 import { State } from "./index";
 
 function SearchRoute() {
@@ -11,8 +12,7 @@ function SearchRoute() {
   const [q, setQ] = useState(initial);
   const [debounced, setDebounced] = useState(initial);
 
-  // The top-nav search submits by updating the URL; keep this page in sync
-  // when that happens while the search screen is already open.
+  // Keep the input in sync when the search query changes in the URL.
   useEffect(() => {
     setQ(initial);
     setDebounced(initial);
@@ -52,6 +52,7 @@ function SearchRoute() {
           body="Type to find films and shows. Titles match first."
         />
       )}
+      {debounced && isFetching && !data && <PageLoader label="Searching" className="min-h-[36vh]" />}
       {debounced && data && data.items.length === 0 && (
         <State
           title="No matches"

@@ -33,7 +33,8 @@ export const Select = {
     <BaseSelect.Positioner {...p} sideOffset={sideOffset} className="z-50 outline-none">
       <BaseSelect.Popup
         className={cx(
-          "max-h-72 min-w-[var(--available-width)] overflow-y-auto rounded-xl border border-line",
+          "w-max min-w-[min(var(--anchor-width),20rem,var(--available-width))] max-w-[min(20rem,var(--available-width))]",
+          "max-h-[min(18rem,var(--available-height))] overflow-y-auto rounded-xl border border-line",
           "bg-surface-2 p-1",
           "outline-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 transition-opacity duration-100",
         )}

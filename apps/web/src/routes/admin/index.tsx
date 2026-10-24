@@ -9,8 +9,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trash2,
   ScanLine,
-  Moon,
-  Sun,
   CheckCircle2,
   RotateCw,
   Search,
@@ -22,14 +20,18 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Server,
+  HardDrive,
+  FileText,
+  X,
 } from "lucide-react";
 import { api, type ReviewEntry } from "../../client";
 import { queries } from "../../queries";
 import { Button, cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { Dialog } from "../../components/ui/dialog";
-import { getTheme, setTheme, type Theme } from "../../theme";
 import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
+import { PageLoader } from "../../components/page-loader";
 
 const ERROR_TEXT = "text-red-500";
 
@@ -42,6 +44,17 @@ function AdminRoute() {
   const queryClient = useQueryClient();
   const status = useQuery(queries.serverStatus());
   const [refreshing, setRefreshing] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+  const [visitedTabs, setVisitedTabs] = useState<Set<AdminTab>>(() => new Set([tab]));
+
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  }, [tab]);
 
   const tabs = [
     ["libraries", "Libraries"],
@@ -49,6 +62,28 @@ function AdminRoute() {
     ["settings", "Settings"],
     ["logs", "Logs"],
   ] as const;
+
+  const switchTab = (nextTab: AdminTab) => {
+    if (nextTab === tab) return;
+
+    // If scrolled past sticky navigation, gently align with tab header to prevent jump
+    if (navRef.current) {
+      const rect = navRef.current.getBoundingClientRect();
+      if (rect.top < 64) {
+        window.scrollTo({
+          top: window.scrollY + rect.top - 68,
+          behavior: "smooth",
+        });
+      }
+    }
+
+    void navigate({
+      to: "/admin",
+      search: { tab: nextTab },
+      replace: true,
+      resetScroll: false,
+    });
+  };
 
   const refresh = async () => {
     setRefreshing(true);
@@ -90,20 +125,24 @@ function AdminRoute() {
       </header>
 
       <nav
-        className="sticky top-16 z-30 -mx-4 mt-6 overflow-x-auto border-b border-line bg-canvas/95 px-4 backdrop-blur sm:-mx-8 sm:px-8"
+        ref={navRef}
+        className="sticky top-14 sm:top-16 z-30 -mx-4 mt-6 overflow-x-auto px-4 pb-3 pt-1 sm:-mx-8 sm:px-8 "
         aria-label="Admin sections"
       >
-        <div className="flex min-w-max gap-1">
+        <div className="inline-flex min-w-max items-center gap-1.5 p-1 rounded-xl bg-surface border border-line/60" role="tablist">
           {tabs.map(([key, label]) => (
             <button
               key={key}
-              onClick={() => void navigate({ to: "/admin", search: { tab: key }, replace: true })}
-              aria-current={tab === key ? "page" : undefined}
+              role="tab"
+              id={`tab-${key}`}
+              aria-controls={`panel-${key}`}
+              aria-selected={tab === key}
+              onClick={() => switchTab(key)}
               className={cx(
-                "-mb-px border-b-2 px-4 py-2 text-sm transition-colors",
+                "rounded-lg px-3.5 py-1.5 text-xs sm:text-sm font-semibold transition-all duration-150 active:scale-95",
                 tab === key
-                  ? "border-brand-text text-ink"
-                  : "border-transparent text-ink-muted hover:text-ink",
+                  ? "bg-brand text-white shadow-xs"
+                  : "text-ink-muted hover:text-ink hover:bg-surface-hover/60",
               )}
             >
               {label}
@@ -112,11 +151,47 @@ function AdminRoute() {
         </div>
       </nav>
 
-      <div className="mt-8">
-        {tab === "libraries" && <Libraries />}
-        {tab === "review" && <Review />}
-        {tab === "settings" && <Settings />}
-        {tab === "logs" && <Logs />}
+      <div className="mt-8 min-h-[520px]">
+        {visitedTabs.has("libraries") && (
+          <div
+            role="tabpanel"
+            id="panel-libraries"
+            aria-labelledby="tab-libraries"
+            className={tab === "libraries" ? "block animate-in fade-in duration-150" : "hidden"}
+          >
+            <Libraries />
+          </div>
+        )}
+        {visitedTabs.has("review") && (
+          <div
+            role="tabpanel"
+            id="panel-review"
+            aria-labelledby="tab-review"
+            className={tab === "review" ? "block animate-in fade-in duration-150" : "hidden"}
+          >
+            <Review />
+          </div>
+        )}
+        {visitedTabs.has("settings") && (
+          <div
+            role="tabpanel"
+            id="panel-settings"
+            aria-labelledby="tab-settings"
+            className={tab === "settings" ? "block animate-in fade-in duration-150" : "hidden"}
+          >
+            <Settings />
+          </div>
+        )}
+        {visitedTabs.has("logs") && (
+          <div
+            role="tabpanel"
+            id="panel-logs"
+            aria-labelledby="tab-logs"
+            className={tab === "logs" ? "block animate-in fade-in duration-150" : "hidden"}
+          >
+            <Logs />
+          </div>
+        )}
       </div>
       {status.data?.scan?.status === "running" && (
         <div className="mt-10 rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted" role="status">
@@ -182,7 +257,7 @@ function Libraries() {
           </Button>
         </a>
       </div>
-      {isLoading && <p className="text-sm text-ink-muted">Loading…</p>}
+      {isLoading && !data && <PageLoader />}
       {data?.map((lib) => (
         <div key={lib.id} className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4">
           <div className="min-w-0 flex-1">
@@ -211,37 +286,8 @@ function Libraries() {
       {data?.length === 0 && (
         <p className="text-sm text-ink-muted">No libraries yet. Head to the homepage to add one.</p>
       )}
-
-      {status.data?.recentScans && status.data.recentScans.length > 0 && (
-        <div className="pt-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-muted">Recent scans</h2>
-          <ul className="mt-2 divide-y divide-line rounded-xl border border-line bg-surface">
-            {status.data.recentScans.map((scan) => (
-              <li key={scan.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-xs">
-                <span className="flex items-center gap-2 text-ink">
-                  <span className={cx(
-                    "h-1.5 w-1.5 rounded-full",
-                    scan.status === "done" ? "bg-emerald-400" : scan.status === "failed" ? "bg-red-400" : "bg-amber-400",
-                  )} />
-                  Scan #{scan.id} · {scan.status}
-                </span>
-                <span className="text-ink-muted">
-                  {scan.files_seen ?? 0} files · {scan.issues ?? 0} issues
-                </span>
-                <span className="text-ink-muted">{formatDateTime(scan.started_at)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
-}
-
-function formatDateTime(value: string): string {
-  const d = new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
@@ -272,7 +318,7 @@ function Review() {
   const [filter, setFilter] = useState<ReviewFilter>("all");
   const [query, setQuery] = useState("");
   const debounced = useDebounce(query, 300);
-  const { data, isLoading, isError } = useQuery(
+  const { data, isLoading, isFetching, isError } = useQuery(
     queries.review({ status: filter, q: debounced || undefined }),
   );
   const [open, setOpen] = useState<ReviewEntry | null>(null);
@@ -283,24 +329,24 @@ function Review() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-line bg-surface p-1" role="group" aria-label="Match filter">
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-line/60 bg-surface p-1" role="group" aria-label="Match filter">
           {REVIEW_FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
               aria-pressed={filter === f.key}
               className={cx(
-                "inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-colors",
+                "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
                 filter === f.key
-                  ? "bg-surface-hover text-ink"
-                  : "text-ink-muted hover:text-ink",
+                  ? "bg-brand text-white shadow-xs"
+                  : "text-ink-muted hover:text-ink hover:bg-surface-hover/50",
               )}
             >
-              {f.label}
+              <span>{f.label}</span>
               {counts && (
                 <span className={cx(
-                  "rounded-full px-1.5 text-[10px] tabular-nums",
-                  filter === f.key ? "bg-brand/15 text-brand-text" : "bg-surface-2 text-ink-muted",
+                  "rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
+                  filter === f.key ? "bg-white/20 text-white" : "bg-surface-2 text-ink-muted",
                 )}>
                   {f.key === "attention" ? counts.attention : f.key === "matched" ? counts.matched : counts.all}
                 </span>
@@ -335,7 +381,7 @@ function Review() {
         </p>
       )}
 
-      {isLoading && <p className="text-sm text-ink-muted">Loading…</p>}
+      {isLoading && !data && <PageLoader />}
       {isError && (
         <p className={`text-sm ${ERROR_TEXT}`}>Could not load matches. Administrative tools work only on the machine running Plexy.</p>
       )}
@@ -349,41 +395,43 @@ function Review() {
         </p>
       )}
 
-      {items.map((entry) => (
-        <div key={entry.id} className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3">
-          <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-surface-2">
-            {entry.poster ? (
-              <img src={entry.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-ink-muted">
-                <Film size={16} aria-hidden />
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <p className="truncate font-display font-semibold">{entry.name}</p>
-              {entry.year && <span className="text-xs text-ink-muted">{entry.year}</span>}
-              <MatchBadge status={entry.matchStatus} />
+      <div className={cx("space-y-3 transition-opacity duration-150", isFetching && "opacity-70")}>
+        {items.map((entry) => (
+          <div key={entry.id} className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3">
+            <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-surface-2">
+              {entry.poster ? (
+                <img src={entry.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-ink-muted">
+                  <Film size={16} aria-hidden />
+                </div>
+              )}
             </div>
-            <p className="mt-0.5 truncate text-[13px] text-ink-muted" title={entry.fileName ?? entry.reason ?? undefined}>
-              {entry.fileName ?? entry.reason ?? `${entry.matchStatus} match`}
-            </p>
-            {entry.matchStatus === "matched" && (
-              <p className="mt-1 text-[11px] text-ink-muted">
-                Currently matched{entry.matchedBy ? ` by ${entry.matchedBy}` : ""}
-                {entry.score != null ? ` · ${Math.round(entry.score * 100)}% confidence` : ""}
-                {entry.tmdbId ? ` · TMDB ${entry.tmdbId}` : ""}
-              </p>
-            )}
-          </div>
 
-          <Button variant="surface" onClick={() => setOpen(entry)} className="shrink-0">
-            {entry.matchStatus === "matched" ? "Remap" : "Fix"}
-          </Button>
-        </div>
-      ))}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <p className="truncate font-display font-semibold">{entry.name}</p>
+                {entry.year && <span className="text-xs text-ink-muted">{entry.year}</span>}
+                <MatchBadge status={entry.matchStatus} />
+              </div>
+              <p className="mt-0.5 truncate text-[13px] text-ink-muted" title={entry.fileName ?? entry.reason ?? undefined}>
+                {entry.fileName ?? entry.reason ?? `${entry.matchStatus} match`}
+              </p>
+              {entry.matchStatus === "matched" && (
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  Currently matched{entry.matchedBy ? ` by ${entry.matchedBy}` : ""}
+                  {entry.score != null ? ` · ${Math.round(entry.score * 100)}% confidence` : ""}
+                  {entry.tmdbId ? ` · TMDB ${entry.tmdbId}` : ""}
+                </p>
+              )}
+            </div>
+
+            <Button variant="surface" onClick={() => setOpen(entry)} className="shrink-0">
+              {entry.matchStatus === "matched" ? "Remap" : "Fix"}
+            </Button>
+          </div>
+        ))}
+      </div>
 
       <Dialog.Root open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
         <Dialog.Portal>
@@ -561,113 +609,342 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 // --- settings ----------------------------------------------------------------
 
 function Settings() {
-  const { data, isError } = useQuery(queries.settings());
+  const { data, isError, isLoading } = useQuery(queries.settings());
   const queryClient = useQueryClient();
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
   const [token, setToken] = useState("");
-  const [theme, setThemeState] = useState<Theme>(() => getTheme());
+  const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetPhrase, setResetPhrase] = useState("");
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: api.updateSettings,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["settings"] }),
   });
 
-  const applyTheme = (next: Theme) => {
-    setTheme(next);
-    setThemeState(next);
-  };
+  const clearCache = useMutation({
+    mutationFn: api.clearTmdbCache,
+    onSuccess: ({ removed }) => setCacheMessage(`Cleared ${removed} cached TMDB response${removed === 1 ? "" : "s"}.`),
+  });
+
+  const resetLocalData = useMutation({
+    mutationFn: api.resetLocalData,
+    onSuccess: async ({ libraries, files, titles }) => {
+      setResetOpen(false);
+      setResetPhrase("");
+      setResetMessage(`Reset complete. Cleared ${titles} titles and ${files} indexed files. Kept ${libraries} configured libraries and their folders; rescan them to rebuild the catalog.`);
+      await queryClient.invalidateQueries();
+    },
+  });
+
+  if (isLoading && !data) return <PageLoader className="min-h-[36vh]" />;
 
   if (isError || !data) {
-    return <p className="text-sm text-ink-muted">Settings are only visible on the machine running Plexy.</p>;
+    return (
+      <div className="rounded-2xl border border-line bg-surface p-6 text-center text-sm text-ink-muted">
+        Settings are only accessible when connecting from the machine running Plexy.
+      </div>
+    );
   }
   const s = data.settings;
 
   return (
-    <div className="space-y-8">
-      <Section title="Appearance">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-ink-muted">Choose the interface look. The player always stays dark.</p>
-          <div
-            role="radiogroup"
-            aria-label="Theme"
-            className="flex shrink-0 items-center gap-1 rounded-none border border-line bg-surface p-1"
-          >
-            {(["dark", "light"] as const).map((mode) => (
-              <button
-                key={mode}
-                role="radio"
-                aria-checked={theme === mode}
-                onClick={() => applyTheme(mode)}
-                className={cx(
-                  "inline-flex h-8 items-center gap-1.5 rounded-none px-3 text-[13px] font-medium capitalize transition-colors",
-                  theme === mode
-                    ? "bg-brand text-white"
-                    : "text-ink-muted hover:text-ink",
-                )}
-              >
-                {mode === "dark" ? <Moon size={14} /> : <Sun size={14} />}
-                {mode}
-              </button>
-            ))}
+    <div className="space-y-6">
+
+      {/* TMDB Metadata Card */}
+      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
+              <Film size={17} className="text-brand-text" />
+              TMDB Metadata
+            </h2>
+            <p className="mt-1 text-xs text-ink-muted">
+              Matches files to TMDB. Titles, metadata, and watch progress stay in Plexy’s local database; images are cached locally after their first download.
+            </p>
+          </div>
+          <div className="shrink-0 self-start sm:self-auto">
+            {s.hasTmdbToken ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+                <Check size={13} />
+                Connected ({s.tokenSource})
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 text-xs font-semibold text-amber-300">
+                Token Required
+              </span>
+            )}
           </div>
         </div>
-      </Section>
 
-      <Section title="TMDB">
-        <p className="text-sm text-ink-muted">
-          Token {s.hasTmdbToken ? `present (${s.tokenSource})` : "missing"}. Metadata language {s.metadataLanguage}, region {s.metadataRegion}, posters {s.imageQuality}.
+        <div className="grid gap-3 sm:grid-cols-3">
+          {([
+            {
+              label: "Metadata language",
+              value: s.metadataLanguage,
+              options: [
+                { value: "en-US", label: "English (US)" },
+                { value: "en-GB", label: "English (UK)" },
+                { value: "hi-IN", label: "Hindi (India)" },
+                { value: "ja-JP", label: "Japanese" },
+                { value: "ko-KR", label: "Korean" },
+                { value: "fr-FR", label: "French" },
+                { value: "es-ES", label: "Spanish" },
+              ],
+              update: (value: string) => save.mutate({ metadataLanguage: value }),
+            },
+            {
+              label: "Region",
+              value: s.metadataRegion,
+              options: [
+                { value: "US", label: "United States" },
+                { value: "IN", label: "India" },
+                { value: "GB", label: "United Kingdom" },
+                { value: "CA", label: "Canada" },
+                { value: "AU", label: "Australia" },
+                { value: "JP", label: "Japan" },
+              ],
+              update: (value: string) => save.mutate({ metadataRegion: value }),
+            },
+            {
+              label: "Poster image size",
+              value: s.imageQuality,
+              options: [
+                { value: "w342", label: "342 px wide" },
+                { value: "w500", label: "500 px wide" },
+                { value: "w780", label: "780 px wide" },
+                { value: "original", label: "Original size" },
+              ],
+              update: (value: string) => save.mutate({ imageQuality: value }),
+            },
+          ] as const).map((setting) => {
+            const options = setting.options.some((option) => option.value === setting.value)
+              ? setting.options
+              : [{ value: setting.value, label: setting.value }, ...setting.options];
+            return (
+              <label key={setting.label} className="min-w-0 space-y-1.5">
+                <span className="block text-xs font-semibold text-ink-muted">{setting.label}</span>
+                <Select.Root
+                  value={setting.value}
+                  onValueChange={(value) => setting.update(String(value))}
+                  items={options}
+                >
+                  <Select.Trigger className="w-full min-w-0">
+                    <Select.Value />
+                    <Select.Icon />
+                  </Select.Trigger>
+                  <Select.Positioner>
+                    {options.map((option) => (
+                      <Select.Item key={option.value} value={option.value}>
+                        <Select.ItemText>{option.label}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </Select.Positioner>
+                </Select.Root>
+              </label>
+            );
+          })}
+        </div>
+
+        <p className="text-xs leading-relaxed text-ink-muted">
+          The selected width is the TMDB poster source size: <strong className="font-semibold text-ink">w500</strong> means about 500 pixels wide. Larger sources look sharper on big displays and use more storage. Changes apply when metadata is refreshed; existing cached images are kept until then.
         </p>
+
+        <div className="flex flex-col gap-2 border-t border-line/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-xl text-xs leading-relaxed text-ink-muted">
+            Clear TMDB responses if you need fresh data. This keeps your library and downloaded artwork.
+          </p>
+          <Button
+            variant="surface"
+            onClick={() => clearCache.mutate()}
+            disabled={clearCache.isPending}
+            className="h-9 shrink-0 px-3 text-xs font-semibold"
+          >
+            {clearCache.isPending && <RotateCw size={13} className="animate-spin" />}
+            {clearCache.isPending ? "Clearing…" : "Clear TMDB cache"}
+          </Button>
+        </div>
+        {cacheMessage && <p className="text-xs font-medium text-brand-text">{cacheMessage}</p>}
+
+        {/* Token input & test */}
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            if (token.trim()) { await api.updateSettings({ tmdbToken: token.trim() }); setToken(""); }
-            const r = await api.testTmdb();
-            setTest(r);
+            setTesting(true);
+            try {
+              if (token.trim()) {
+                await api.updateSettings({ tmdbToken: token.trim() });
+                setToken("");
+                void queryClient.invalidateQueries({ queryKey: ["settings"] });
+              }
+              const r = await api.testTmdb();
+              setTest(r);
+            } finally {
+              setTesting(false);
+            }
           }}
-          className="mt-3 flex gap-2"
+          className="flex flex-col sm:flex-row gap-2 pt-1"
         >
           <input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder={s.hasTmdbToken ? "Replace token" : "TMDB read-access token"}
-            className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 text-sm outline-none focus:border-brand/70"
+            placeholder={s.hasTmdbToken ? "Replace TMDB token…" : "Paste TMDB Read-Access Token…"}
+            className="h-10 min-w-0 flex-1 rounded-xl border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-ink-muted/70 outline-none focus:border-brand/70"
           />
-          <Button variant="surface">Save + test</Button>
-        </form>
-        {test && (
-          <p className={cx("mt-2 flex items-center gap-1.5 text-sm", test.ok ? "text-ink" : ERROR_TEXT)}>
-            {test.ok && <CheckCircle2 size={14} className="text-brand-text" />}
-            {test.message}
-          </p>
-        )}
-      </Section>
-
-      <Section title="Server">
-        <p className="text-sm text-ink-muted">Port {s.port}, binds {s.bindAddress}. The log tail below keeps the last {MAX_LOGS} lines.</p>
-        <div className="mt-3 flex items-center gap-3">
-          <span className="text-sm text-ink-muted">Log level</span>
-          <Select.Root
-            value={data.logLevel}
-            onValueChange={(v) => save.mutate({ logLevel: String(v) })}
-            items={["debug", "info", "warn", "error"].map((l) => ({ value: l, label: l }))}
+          <Button
+            variant="surface"
+            disabled={testing}
+            className="h-10 px-4 text-xs font-semibold shrink-0"
           >
-            <Select.Trigger className="min-w-32">
-              <Select.Value />
-              <Select.Icon />
-            </Select.Trigger>
-            <Select.Positioner>
-              {["debug", "info", "warn", "error"].map((l) => (
-                <Select.Item key={l} value={l}><Select.ItemText>{l}</Select.ItemText></Select.Item>
-              ))}
-            </Select.Positioner>
-          </Select.Root>
-        </div>
-      </Section>
+            {testing ? <RotateCw size={14} className="animate-spin" /> : null}
+            {testing ? "Testing…" : "Save & Test"}
+          </Button>
+        </form>
 
-      <Section title="Playback preparation">
+        {test && (
+          <div
+            className={cx(
+              "flex items-center gap-2 rounded-xl border p-3 text-xs font-medium",
+              test.ok
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                : "border-red-500/30 bg-red-500/10 text-red-300",
+            )}
+          >
+            {test.ok ? <CheckCircle2 size={15} className="shrink-0 text-emerald-400" /> : null}
+            <span>{test.message}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Network & Access Card */}
+      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+        <div>
+          <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
+            <Server size={17} className="text-brand-text" />
+            Network & Access
+          </h2>
+          <p className="mt-1 text-xs text-ink-muted">
+            Configure how Plexy is accessed on your local network.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
+            <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
+              LAN Access (Bind Address)
+            </span>
+            <p className="text-xs text-ink-muted">Control whether phones, tablets and TVs on Wi-Fi can connect.</p>
+            <div className="pt-1">
+              <Select.Root
+                value={s.bindAddress}
+                onValueChange={(v) => save.mutate({ bindAddress: String(v) })}
+                items={[
+                  { value: "127.0.0.1", label: "127.0.0.1 (Local loopback only)" },
+                  { value: "0.0.0.0", label: "0.0.0.0 (Allow LAN devices on Wi-Fi)" },
+                ]}
+              >
+                <Select.Trigger className="w-full">
+                  <Select.Value />
+                  <Select.Icon />
+                </Select.Trigger>
+                <Select.Positioner>
+                  {[
+                    { value: "127.0.0.1", label: "127.0.0.1 (Local loopback only)" },
+                    { value: "0.0.0.0", label: "0.0.0.0 (Allow LAN devices on Wi-Fi)" },
+                  ].map((opt) => (
+                    <Select.Item key={opt.value} value={opt.value}>
+                      <Select.ItemText>{opt.label}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.Positioner>
+              </Select.Root>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
+            <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
+              Logging Verbosity
+            </span>
+            <p className="text-xs text-ink-muted">Server port is {s.port}. Adjust detail level for server logs.</p>
+            <div className="pt-1">
+              <Select.Root
+                value={data.logLevel}
+                onValueChange={(v) => save.mutate({ logLevel: String(v) })}
+                items={["debug", "info", "warn", "error"].map((l) => ({ value: l, label: `Level: ${l.toUpperCase()}` }))}
+              >
+                <Select.Trigger className="w-full">
+                  <Select.Value />
+                  <Select.Icon />
+                </Select.Trigger>
+                <Select.Positioner>
+                  {["debug", "info", "warn", "error"].map((l) => (
+                    <Select.Item key={l} value={l}>
+                      <Select.ItemText>{`Level: ${l.toUpperCase()}`}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.Positioner>
+              </Select.Root>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Playback Preparation Card */}
+      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm">
+        <h2 className="font-display text-base font-bold text-ink flex items-center gap-2 mb-4">
+          <HardDrive size={17} className="text-brand-text" />
+          Playback Preparation
+        </h2>
         <OptimizerSettings />
-      </Section>
+      </div>
+
+      <section className="rounded-2xl border border-red-500/25 bg-surface p-5 sm:p-6 shadow-sm">
+        <h2 className="font-display text-base font-bold text-ink">Reset local Plexy data</h2>
+        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-muted">
+          Clears the local catalog, watch progress, match history, scan history, TMDB cache, and downloaded artwork and playback caches. Your configured libraries and folders, video files, and Plexy preferences are kept. Rescan to rebuild the catalog.
+        </p>
+        <div className="mt-4 flex flex-col items-start gap-2">
+          <Button variant="danger" onClick={() => { setResetPhrase(""); setResetOpen(true); }}>
+            <Trash2 size={14} /> Reset local data…
+          </Button>
+          {resetMessage && <p className="text-xs font-medium text-brand-text">{resetMessage}</p>}
+          {resetLocalData.isError && <p role="alert" className="text-xs text-red-400">{resetLocalData.error.message}</p>}
+        </div>
+        <Dialog.Root open={resetOpen} onOpenChange={(open) => { setResetOpen(open); if (!open) setResetPhrase(""); }}>
+          <Dialog.Portal>
+            <Dialog.Backdrop />
+            <Dialog.Popup>
+              <Dialog.Title>Reset local Plexy data?</Dialog.Title>
+              <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+                This permanently removes your catalog and watch progress, scan history, and cached images and playback files. Your configured libraries and folder paths, original media files, and Plexy preferences will remain untouched. Rescan your libraries to rebuild the catalog.
+              </p>
+              <label className="mt-5 block space-y-1.5">
+                <span className="text-xs font-semibold text-ink-muted">Type RESET to continue</span>
+                <input
+                  autoFocus
+                  value={resetPhrase}
+                  onChange={(event) => setResetPhrase(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-sm text-ink outline-none focus:border-red-500/60"
+                />
+              </label>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="surface" onClick={() => setResetOpen(false)}>Cancel</Button>
+                <Button
+                  variant="danger"
+                  disabled={resetPhrase !== "RESET" || resetLocalData.isPending}
+                  onClick={() => resetLocalData.mutate()}
+                >
+                  {resetLocalData.isPending ? <RotateCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {resetLocalData.isPending ? "Resetting…" : "Reset data"}
+                </Button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Portal>
+        </Dialog.Root>
+      </section>
 
       <Crashes />
     </div>
@@ -721,28 +998,58 @@ function OptimizerSettings() {
   const done = data.counts.done ?? 0;
   const total = Object.values(data.counts).reduce((sum, n) => sum + n, 0);
   const cacheGb = (data.cacheBytes / 1024 ** 3).toFixed(2);
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
   const current = data.current;
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-ink-muted">
-        {done} of {total} files ready, {cacheGb} GB cached
-        {data.running
-          ? current
-            ? `, preparing file ${current.fileId} (${Math.round(current.progress * 100)}%)`
-            : ", preparing"
-          : data.queued
-            ? `, ${data.queued} queued`
-            : ""}
-        . Original files are never modified or deleted.
-      </p>
+      {/* Metrics row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
+          <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Prepared Files</span>
+          <p className="mt-1 text-lg font-bold text-ink">{done} <span className="text-xs text-ink-muted font-normal">/ {total}</span></p>
+        </div>
+        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
+          <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Storage Used</span>
+          <p className="mt-1 text-lg font-bold text-ink">{cacheGb} <span className="text-xs text-ink-muted font-normal">GB</span></p>
+        </div>
+        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
+          <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Status</span>
+          <p className="mt-1 text-sm font-semibold text-brand-text truncate">
+            {data.running
+              ? current
+                ? `Preparing (${Math.round(current.progress * 100)}%)`
+                : "Preparing files…"
+              : data.queued
+                ? `${data.queued} in queue`
+                : "Idle"}
+          </p>
+        </div>
+      </div>
 
+      {/* Progress bar */}
+      {total > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs text-ink-muted">
+            <span>Overall completion</span>
+            <span>{percent}%</span>
+          </div>
+          <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden border border-line/40">
+            <div
+              className="bg-brand h-full rounded-full transition-all duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Local storage directory */}
       {data.cacheDir && (
-        <div className="rounded-xl border border-line bg-surface p-3.5 space-y-2">
+        <div className="rounded-xl border border-line/60 bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+            <div className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
               <Folder size={14} className="text-brand-text" />
-              <span>Local Storage Location</span>
+              <span>Storage Directory</span>
             </div>
             <button
               type="button"
@@ -751,33 +1058,34 @@ function OptimizerSettings() {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-hover transition-colors"
-              title="Copy cache directory path"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-hover active:scale-95 transition-all"
+              title="Copy path"
             >
-              {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-              <span>{copied ? "Copied" : "Copy path"}</span>
+              {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              <span>{copied ? "Copied" : "Copy"}</span>
             </button>
           </div>
-          <p className="font-mono text-xs text-ink break-all select-all bg-surface-2/60 rounded-lg p-2 border border-line/60">
+          <p className="font-mono text-xs text-ink break-all select-all bg-surface p-2 rounded-lg border border-line/50">
             {data.cacheDir}
           </p>
         </div>
       )}
 
+      {/* Prepared files collapsible list */}
       {data.files && data.files.length > 0 && (
         <div>
           <button
             type="button"
             onClick={() => setShowFiles(!showFiles)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-text hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:underline"
           >
             {showFiles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            <span>{showFiles ? "Hide prepared files" : `Show prepared local files (${data.files.length})`}</span>
+            <span>{showFiles ? "Hide prepared files" : `Show prepared files (${data.files.length})`}</span>
           </button>
           {showFiles && (
-            <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-line bg-surface divide-y divide-line text-xs">
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-line bg-surface divide-y divide-line text-xs">
               {data.files.map((file) => (
-                <div key={file.id} className="p-3 flex items-center justify-between gap-3">
+                <div key={file.id} className="p-2.5 flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-ink truncate">{file.title || file.path.split("/").pop()}</p>
                     <p className="font-mono text-[11px] text-ink-muted truncate" title={file.optimizedPath ?? file.path}>
@@ -785,7 +1093,7 @@ function OptimizerSettings() {
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="font-mono text-ink">{(file.optimizedSize / 1024 ** 2).toFixed(1)} MB</span>
+                    <span className="font-mono text-ink text-xs">{(file.optimizedSize / 1024 ** 2).toFixed(1)} MB</span>
                   </div>
                 </div>
               ))}
@@ -794,48 +1102,62 @@ function OptimizerSettings() {
         </div>
       )}
 
-      <label className="flex items-center gap-3 text-sm">
+      {/* Auto-optimize checkbox */}
+      <label className="flex items-center gap-2.5 text-xs sm:text-sm text-ink cursor-pointer select-none">
         <input
           type="checkbox"
           checked={data.enabled}
           onChange={(e) => save.mutate({ autoOptimize: e.target.checked })}
-          className="h-4 w-4 accent-[var(--color-brand)]"
+          className="h-4 w-4 rounded accent-[var(--color-brand)]"
         />
-        Prepare files automatically after scanning
+        <span>Automatically prepare files after scanning</span>
       </label>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm text-ink-muted">
-          <span className="block">Cache limit (GB, 0 = unlimited)</span>
-          <input
-            type="number"
-            min={0}
-            value={cap}
-            onChange={(e) => setCap(e.target.value)}
-            className="mt-1 h-9 w-32 rounded-lg border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand/70"
-          />
-        </label>
-        <Button
-          variant="surface"
-          onClick={() => save.mutate({ optimizeMaxCacheGb: Math.max(0, Math.round(Number(cap) || 0)) })}
-        >
-          Save limit
-        </Button>
-        <Button variant="surface" onClick={() => run.mutate()} disabled={run.isPending}>
-          Prepare now
-        </Button>
-        <Button
-          variant="danger"
-          onClick={() => {
-            if (confirm("Delete every prepared copy? Original media is untouched.")) clear.mutate();
-          }}
-          disabled={clear.isPending}
-        >
-          Clear cache
-        </Button>
+      {/* Actions and Cache limit */}
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3 pt-2">
+        <div className="space-y-1">
+          <span className="text-xs text-ink-muted font-medium">Cache limit (GB, 0 = unlimited)</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              value={cap}
+              onChange={(e) => setCap(e.target.value)}
+              className="h-9 w-28 rounded-lg border border-line bg-surface-2 px-3 text-xs sm:text-sm text-ink outline-none focus:border-brand/70"
+            />
+            <Button
+              variant="surface"
+              onClick={() => save.mutate({ optimizeMaxCacheGb: Math.max(0, Math.round(Number(cap) || 0)) })}
+              className="h-9 px-3 text-xs"
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Button
+            variant="surface"
+            onClick={() => run.mutate()}
+            disabled={run.isPending}
+            className="h-9 px-3 text-xs font-semibold"
+          >
+            Prepare Now
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (confirm("Delete every prepared copy? Original media is untouched.")) clear.mutate();
+            }}
+            disabled={clear.isPending}
+            className="h-9 px-3 text-xs"
+          >
+            Clear Cache
+          </Button>
+        </div>
       </div>
 
-      {message && <p className="text-sm text-ink">{message}</p>}
+      {message && <p className="text-xs text-brand-text font-medium">{message}</p>}
     </div>
   );
 }
@@ -882,10 +1204,10 @@ const LOG_LEVELS = ["all", "debug", "info", "warn", "error"] as const;
 type LogLevelFilter = (typeof LOG_LEVELS)[number];
 
 const LEVEL_STYLE: Record<string, string> = {
-  debug: "bg-surface-2 text-ink-muted",
-  info: "bg-brand/10 text-brand-text",
-  warn: "bg-amber/10 text-amber",
-  error: "bg-red-500/10 text-red-400",
+  debug: "bg-surface-2 text-ink-muted border border-white/10",
+  info: "bg-brand/15 text-brand-text border border-brand/25",
+  warn: "bg-amber/15 text-amber border border-amber/25",
+  error: "bg-red-500/15 text-red-400 border border-red-500/25",
 };
 
 function logTime(ts: string | null): string {
@@ -902,7 +1224,7 @@ function Logs() {
   const [follow, setFollow] = useState(true);
   const [copied, setCopied] = useState(false);
   const debounced = useDebounce(filter, 300);
-  const { data, isError } = useQuery(
+  const { data, isLoading, isFetching, isError } = useQuery(
     queries.logs({ search: debounced || undefined }),
   );
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -951,135 +1273,228 @@ function Logs() {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm text-ink-muted transition-colors focus-within:border-brand/70">
-          <Search size={15} className="shrink-0" aria-hidden />
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter log messages…"
-            aria-label="Filter log lines"
-            className="w-full min-w-0 bg-transparent text-ink placeholder:text-ink-muted/70 outline-none"
-          />
-        </label>
+    <div className="space-y-4">
+      {/* Console toolbar */}
+      <div className="rounded-2xl border border-line/70 bg-surface p-3.5 sm:p-4 space-y-3 shadow-sm">
+        {/* Row 1: Search & Component filter & Actions */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 text-xs sm:text-sm text-ink-muted transition-colors focus-within:border-brand/70">
+            <Search size={14} className="shrink-0 text-ink-muted/80" aria-hidden />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search log messages…"
+              aria-label="Filter log lines"
+              className="w-full min-w-0 bg-transparent text-ink placeholder:text-ink-muted/70 outline-none"
+            />
+            {filter && (
+              <button
+                type="button"
+                onClick={() => setFilter("")}
+                className="text-ink-muted hover:text-ink"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </label>
 
-        <Select.Root
-          value={component}
-          onValueChange={(v) => setComponent(String(v))}
-          items={[
-            { value: "all", label: "All components" },
-            ...components.map((c) => ({ value: c, label: c })),
-          ]}
-        >
-          <Select.Trigger aria-label="Filter by component" className="min-w-40">
-            <Select.Value />
-            <Select.Icon />
-          </Select.Trigger>
-          <Select.Positioner>
-            <Select.Item value="all"><Select.ItemText>All components</Select.ItemText></Select.Item>
-            {components.map((c) => (
-              <Select.Item key={c} value={c}><Select.ItemText>{c}</Select.ItemText></Select.Item>
-            ))}
-          </Select.Positioner>
-        </Select.Root>
-
-        <Button variant="surface" onClick={() => void copy()} className="h-9 shrink-0 px-3 text-xs">
-          {copied ? <CheckCircle2 size={14} /> : null}
-          {copied ? "Copied" : "Copy"}
-        </Button>
-        <Button variant="surface" onClick={download} disabled={entries.length === 0} className="h-9 shrink-0 px-3 text-xs">
-          <Download size={14} />
-          Download
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by level">
-          {LOG_LEVELS.map((l) => (
-            <button
-              key={l}
-              onClick={() => setLevel(l)}
-              aria-pressed={level === l}
-              className={cx(
-                "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium uppercase tracking-wide transition-colors",
-                level === l
-                  ? "border-line-strong bg-surface-hover text-ink"
-                  : "border-transparent text-ink-muted hover:text-ink",
-              )}
+          <div className="flex items-center gap-2 shrink-0">
+            <Select.Root
+              value={component}
+              onValueChange={(v) => setComponent(String(v))}
+              items={[
+                { value: "all", label: "All Components" },
+                ...components.map((c) => ({ value: c, label: c })),
+              ]}
             >
-              {l}
-              <span className="tabular-nums opacity-60">
-                {l === "all" ? allEntries.length : levelCounts[l] ?? 0}
-              </span>
-            </button>
-          ))}
+              <Select.Trigger aria-label="Filter by component" className="h-9 min-w-36 text-xs">
+                <Select.Value />
+                <Select.Icon />
+              </Select.Trigger>
+              <Select.Positioner>
+                <Select.Item value="all"><Select.ItemText>All Components</Select.ItemText></Select.Item>
+                {components.map((c) => (
+                  <Select.Item key={c} value={c}><Select.ItemText>{c}</Select.ItemText></Select.Item>
+                ))}
+              </Select.Positioner>
+            </Select.Root>
+
+            <Button
+              variant="surface"
+              onClick={() => void copy()}
+              className="h-9 px-3 text-xs font-medium"
+              title="Copy filtered logs"
+            >
+              {copied ? <CheckCircle2 size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              <span className="hidden min-[400px]:inline">{copied ? "Copied" : "Copy"}</span>
+            </Button>
+
+            <Button
+              variant="surface"
+              onClick={download}
+              disabled={entries.length === 0}
+              className="h-9 px-3 text-xs font-medium"
+              title="Download full log file"
+            >
+              <Download size={13} />
+              <span className="hidden min-[400px]:inline">Export</span>
+            </Button>
+          </div>
         </div>
 
-        <label className="inline-flex items-center gap-2 text-xs text-ink-muted">
-          <input
-            type="checkbox"
-            checked={follow}
-            onChange={(e) => setFollow(e.target.checked)}
-            className="h-3.5 w-3.5 accent-[var(--color-brand)]"
-          />
-          Follow newest
-        </label>
+        {/* Row 2: Level pills & Auto-scroll status */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-line/40">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by level">
+            {LOG_LEVELS.map((l) => (
+              <button
+                key={l}
+                onClick={() => setLevel(l)}
+                aria-pressed={level === l}
+                className={cx(
+                  "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-all active:scale-95",
+                  level === l
+                    ? "bg-brand text-white shadow-xs"
+                    : "bg-surface-2 text-ink-muted hover:text-ink hover:bg-surface-hover",
+                )}
+              >
+                <span>{l}</span>
+                <span className={cx(
+                  "tabular-nums text-[10px] px-1 py-0.2 rounded font-bold",
+                  level === l ? "bg-white/20 text-white" : "text-ink-muted/70",
+                )}>
+                  {l === "all" ? allEntries.length : levelCounts[l] ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-xs text-ink-muted cursor-pointer select-none">
+            <span className={cx(
+              "h-2 w-2 rounded-full transition-colors",
+              follow ? "bg-emerald-400 animate-pulse" : "bg-zinc-600",
+            )} />
+            <input
+              type="checkbox"
+              checked={follow}
+              onChange={(e) => setFollow(e.target.checked)}
+              className="h-3.5 w-3.5 rounded accent-[var(--color-brand)]"
+            />
+            <span>Follow newest</span>
+          </label>
+        </div>
       </div>
 
-      <p className="text-xs text-ink-muted">
-        Live tail · showing {entries.length} of {allEntries.length} kept lines (last {MAX_LOGS}) · refreshes every 3s
-        {isError && <span className="text-red-500"> · could not read logs</span>}
-      </p>
+      {/* Info indicator */}
+      <div className="flex items-center justify-between text-xs text-ink-muted px-1">
+        <span>Showing {entries.length} of {allEntries.length} lines (buffer {MAX_LOGS})</span>
+        {isError && <span className="text-red-400 font-medium">Failed to read live logs</span>}
+      </div>
 
-      <div
-        ref={scrollRef}
-        className="max-h-[560px] overflow-auto rounded-xl border border-line bg-surface font-mono"
-        role="log"
-        aria-live="polite"
-      >
-        {entries.length === 0 ? (
-          <p className="p-4 text-sm text-ink-muted">
-            {allEntries.length === 0 ? "No log lines yet." : "No lines match these filters."}
-          </p>
-        ) : (
-          entries.map((entry, i) => <LogRow key={`${entry.ts ?? "raw"}-${i}`} entry={entry} />)
-        )}
+      {/* Terminal Viewport */}
+      <div className="rounded-2xl border border-line/70 bg-[#0d0d0f] shadow-inner font-mono overflow-hidden">
+        {/* Header row on desktop */}
+        <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3 py-2 border-b border-white/10 bg-white/[0.03] text-[11px] font-semibold text-white/50 uppercase tracking-wider">
+          <span>Time</span>
+          <span>Level</span>
+          <span>Component</span>
+          <span>Message</span>
+        </div>
+
+        {/* Scrollable logs */}
+        <div
+          ref={scrollRef}
+          className="min-h-[360px] max-h-[540px] overflow-auto divide-y divide-white/[0.04]"
+          role="log"
+          aria-live="polite"
+        >
+          {isLoading && !data ? (
+            <PageLoader label="Loading logs" className="min-h-[360px]" />
+          ) : entries.length === 0 ? (
+            <div className="p-8 text-center text-xs text-white/50">
+              {allEntries.length === 0 ? "No server log messages recorded yet." : "No log messages match the active filters."}
+            </div>
+          ) : (
+            <div className={cx("transition-opacity duration-150", isFetching && "opacity-70")}>
+              {entries.map((entry, i) => <LogRow key={`${entry.ts ?? "raw"}-${i}`} entry={entry} />)}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 function LogRow({ entry }: { entry: LogEntry }) {
+  const [expanded, setExpanded] = useState(false);
   const hasContext = entry.context !== undefined && entry.context !== null;
+
   return (
-    <div className="border-b border-line/60 px-3 py-1.5 text-[12px] leading-relaxed last:border-b-0">
-      <div className="flex flex-wrap items-start gap-x-2 gap-y-0.5">
-        <span className="w-[68px] shrink-0 pt-px text-[11px] tabular-nums text-ink-muted/70">
+    <div className="hover:bg-white/[0.03] text-xs transition-colors">
+      {/* Desktop view: 4 clean aligned columns */}
+      <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] items-baseline gap-3 px-3 py-1.5 font-mono">
+        <span className="text-[11px] tabular-nums text-white/45 shrink-0">
           {logTime(entry.ts)}
         </span>
         <span className={cx(
-          "w-12 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-bold uppercase tracking-wide",
+          "rounded px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
           LEVEL_STYLE[entry.level] ?? "bg-surface-2 text-ink-muted",
         )}>
           {entry.level}
         </span>
-        <span className="w-20 shrink-0 truncate pt-px text-[11px] text-brand-text">
+        <span className="truncate text-[11px] font-semibold text-brand-text shrink-0" title={entry.component}>
           {entry.component}
         </span>
-        <span className="min-w-0 flex-1 basis-full whitespace-pre-wrap break-words text-ink sm:basis-0">
-          {entry.message}
-        </span>
+        <div className="min-w-0 break-words text-white/90 leading-relaxed">
+          <span>{entry.message}</span>
+          {hasContext && (
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              className="ml-2 text-[10px] text-brand-text hover:underline"
+            >
+              {expanded ? "[hide context]" : "[context]"}
+            </button>
+          )}
+        </div>
       </div>
-      {hasContext && (
-        <details className="mt-1 sm:pl-[108px]">
-          <summary className="cursor-pointer list-none text-[11px] text-ink-muted transition-colors hover:text-ink">
-            Details
-          </summary>
-          <pre className="mt-1 max-h-56 overflow-auto rounded bg-canvas p-2 text-[11px] leading-relaxed text-ink-muted">
-            {JSON.stringify(entry.context, null, 2)}
-          </pre>
-        </details>
+
+      {/* Mobile view: readable stacked card */}
+      <div className="sm:hidden p-2.5 space-y-1 font-mono">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className={cx(
+              "rounded px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
+              LEVEL_STYLE[entry.level] ?? "bg-surface-2 text-ink-muted",
+            )}>
+              {entry.level}
+            </span>
+            <span className="text-[11px] font-semibold text-brand-text">
+              {entry.component}
+            </span>
+          </div>
+          <span className="text-[10px] tabular-nums text-white/40">
+            {logTime(entry.ts)}
+          </span>
+        </div>
+        <p className="text-xs text-white/90 break-words leading-relaxed">
+          {entry.message}
+        </p>
+        {hasContext && (
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="text-[10px] text-brand-text hover:underline"
+          >
+            {expanded ? "Hide context" : "Show context details"}
+          </button>
+        )}
+      </div>
+
+      {/* Context JSON view */}
+      {hasContext && expanded && (
+        <pre className="mx-3 mb-2 p-2.5 rounded-lg bg-black/80 border border-white/10 text-[11px] text-white/80 overflow-x-auto whitespace-pre-wrap">
+          {JSON.stringify(entry.context, null, 2)}
+        </pre>
       )}
     </div>
   );
