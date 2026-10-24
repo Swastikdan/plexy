@@ -1,0 +1,100 @@
+/* Plexy Netflix-style viewer theme (PRD 10).
+ *
+ * Designed for a cinematic, immersive experience:
+ * - Deep dark canvas (#141414) letting artwork pop
+ * - Netflix crimson red (#E50914) & amber projector glow
+ * - Geometric Sora display font for cinematic headers & Inter Variable for clean UI
+ * - Fluid, responsive micro-interactions (press scale, smooth transitions)
+ */
+@import "tailwindcss";
+@import "@fontsource-variable/sora/index.css";
+@import "@fontsource-variable/inter/index.css";
+
+@theme {
+  --color-cinson: #141414;          /* Netflix canvas */
+  --color-surface: #181818;         /* cards on canvas */
+  --color-surface-2: #232323;       /* elevated popovers, modals */
+  --color-surface-hover: #2f2f2f;
+  --color-ink: #ffffff;             /* primary text */
+  --color-ink-muted: #a3a3a3;       /* secondary text */
+  --color-line: rgba(255, 255, 255, 0.12); /* hairline borders */
+  --color-amber: #e8a33d;           /* projector glow */
+  --color-amber-soft: #f0b95c;
+  --color-brand-red: #E50914;       /* Netflix red */
+  --color-brand-red-hover: #F40612;
+
+  --font-display: "Sora Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-hero: 16px;
+  --radius-poster: 8px;
+
+  --animate-rise: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* One orchestrated entrance: hero and rows rise on first paint */
+.staggered > * {
+  animation: var(--animate-rise);
+}
+.staggered > *:nth-child(2) { animation-delay: 50ms; }
+.staggered > *:nth-child(3) { animation-delay: 100ms; }
+.staggered > *:nth-child(4) { animation-delay: 150ms; }
+.staggered > *:nth-child(n+5) { animation-delay: 200ms; }
+
+@layer base {
+  html {
+    background: var(--color-cinson);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: #333333 transparent;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--color-cinson);
+  }
+
+  ::selection {
+    background: rgba(229, 9, 20, 0.4);
+    color: #ffffff;
+  }
+
+  /* Visible keyboard focus, consistent across the app */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-red);
+    outline-offset: 2px;
+  }
+
+  /* Interactive tactile response */
+  button:active:not(:disabled),
+  a:active:not([aria-disabled="true"]) {
+    transform: scale(0.97);
+    transition: transform 80ms ease-out;
+  }
+
+  /* Horizontal poster scrollers */
+  .scroll-row {
+    scrollbar-width: none;
+    scroll-behavior: smooth;
+  }
+  .scroll-row::-webkit-scrollbar { display: none; }
+  .scroll-row { scroll-snap-type: x proximity; }
+  .scroll-row > * { scroll-snap-align: start; }
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

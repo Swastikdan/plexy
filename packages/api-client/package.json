@@ -1,0 +1,17 @@
+{
+  "name": "@plexy/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@elysiajs/eden": "^1.4.9"
+  },
+  "peerDependencies": {
+    "elysia": "^1.4.30"
+  }
+}

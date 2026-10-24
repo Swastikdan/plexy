@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@plexy/api-client": ["./packages/api-client/src/index.ts"]
+    }
+  },
+  "references": [
+    { "path": "./packages/api-client" },
+    { "path": "./apps/server" },
+    { "path": "./apps/web" }
+  ]
+}
