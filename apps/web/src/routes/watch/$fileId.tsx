@@ -326,7 +326,7 @@ function WatchRoute() {
           <button
             onClick={() => void navigate({ to: "/" })}
             aria-label="Back"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-none bg-white/10 text-white hover:bg-white/20 transition-colors"
           >
             <ArrowLeft size={20} />
           </button>
@@ -452,24 +452,22 @@ function WatchRoute() {
               <div
                 role="status"
                 aria-live="polite"
-                className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/25 text-white"
+                aria-label="Loading video"
+                className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/25 text-white"
               >
                 <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />
-                <span className="text-sm font-medium drop-shadow">Buffering video…</span>
-                {play.data?.path && play.data.path !== "direct" && (
-                  <span className="-mt-2 text-xs text-white/70">
-                    {play.data.path === "transcode"
-                      ? "Converting this local file for playback"
-                      : "Remuxing this local file for playback"}
-                  </span>
-                )}
+                <span className="sr-only">Loading video</span>
               </div>
             )}
           </div>
         ) : (
-          <div className="text-center text-white/60">
-            <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-brand" />
-            <p className="text-sm">Preparing stream…</p>
+          <div
+            role="status"
+            aria-label="Preparing stream"
+            className="text-center text-white/60"
+          >
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-brand" />
+            <span className="sr-only">Preparing stream</span>
           </div>
         )}
       </div>
