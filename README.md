@@ -78,6 +78,38 @@ normally uses its bundled server and never shows this screen.
   change it from the Server icon in the top bar.
 - The backend already enables CORS for hosted clients.
 
+#### Deploy the web client from your machine
+
+The GitHub Actions workflow deploys automatically on `build`, but you can also
+deploy the same static build yourself:
+
+```sh
+cp .env.deploy.example .env.deploy   # optional; gitignored
+bun run deploy:web                   # build dist/web + wrangler deploy
+bun run deploy:web:dry               # build + validate, upload nothing
+```
+
+The command reads `.env.deploy`, builds `dist/web`, then runs
+`npx --yes wrangler@4 deploy` against `wrangler.json`. You only need Cloudflare
+credentials once:
+
+- **Browser login (easiest):** run `npx --yes wrangler@4 login` and leave the
+  Cloudflare lines in `.env.deploy` empty. Wrangler stores the session on your
+  Mac.
+- **API token:** put `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit) and
+  `CLOUDFLARE_ACCOUNT_ID` in `.env.deploy`, or export them in your shell.
+  Never commit them.
+
+`PLEXY_DEFAULT_SERVER_URL` is optional. Leave it empty and viewers are asked for
+their Plexy server on first launch; set it to pre-fill that field in the hosted
+build. It must be `https://` because the hosted page is HTTPS.
+
+If `wrangler deploy` succeeds but no public URL is printed, enable the free
+`workers.dev` subdomain once: Cloudflare dashboard → **Workers & Pages** →
+`plexy` → **Settings** → **Domains & Routes** → **workers.dev**. The local
+command has no release notes, so `PLEXY_SITE_URL` is not used here — it only
+tells the GitHub release notes which URL to link to.
+
 ---
 
 ## Scripts
@@ -92,6 +124,8 @@ normally uses its bundled server and never shows this screen.
 | `bun run build:web` | Build web client to `dist/web` |
 | `bun run build:desktop` | Build standalone backend server and package macOS `.app` + `.dmg` |
 | `bun run package:mac` | Package macOS Electron app, `.dmg`, and `.zip` distribution |
+| `bun run deploy:web` | Build `dist/web` and deploy it to Cloudflare Workers |
+| `bun run deploy:web:dry` | Build and validate the Worker bundle without uploading |
 | `bun run start` | Run server from source with Bun |
 | `bun run test` | Run backend test suite (`apps/server/tests`) |
 | `bun run typecheck` | Typecheck all packages with strict TypeScript |

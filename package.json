@@ -18,6 +18,8 @@
     "build:executable": "bun scripts/build-executable.ts",
     "build:server": "bun scripts/build-executable.ts",
     "package:mac": "bun scripts/build-desktop.ts",
+    "deploy:web": "bun scripts/deploy-web.ts",
+    "deploy:web:dry": "bun scripts/deploy-web.ts --dry-run",
     "start": "bun run --filter @plexy/server start",
     "test": "NODE_ENV=test bun test apps/server/tests",
     "test:server": "NODE_ENV=test bun test apps/server/tests",

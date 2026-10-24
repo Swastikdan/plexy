@@ -10,3 +10,4 @@ dist/
 apps/web/src/routeTree.gen.ts
 .env
 .env.local
+.env.deploy
