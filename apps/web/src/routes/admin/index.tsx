@@ -1,18 +1,20 @@
 /// Admin (PRD 10.4, loopback-only server-side): libraries + scans, the
-/// matching review queue, settings and the live log tail. Everything here is
-/// reachable only when the browser is the host machine; the server enforces
-/// this and reports `adminAvailable: false` otherwise.
-import { useState } from "react";
+/// matching review queue, settings (including the light/dark appearance
+/// toggle) and the live log tail. Everything here is reachable only when the
+/// browser is the host machine; the server enforces this and reports
+/// `adminAvailable: false` otherwise.
+import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, ScanLine } from "lucide-react";
-import { useEffect } from "react";
+import { Trash2, ScanLine, Moon, Sun, CheckCircle2 } from "lucide-react";
 import { api, type ReviewEntry } from "../../client";
 import { queries } from "../../queries";
-import { Button } from "../../components/ui/button";
-import { cx } from "../../components/poster";
+import { Button, cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { Dialog } from "../../components/ui/dialog";
+import { getTheme, setTheme, type Theme } from "../../theme";
+
+const ERROR_TEXT = "text-red-500";
 
 function AdminRoute() {
   const [tab, setTab] = useState<"libraries" | "review" | "settings" | "logs">("libraries");
@@ -29,9 +31,7 @@ function AdminRoute() {
     <main className="mx-auto min-h-dvh max-w-[1000px] px-4 pb-24 pt-8 sm:px-8">
       <header className="flex items-baseline justify-between">
         <h1 className="font-display text-2xl font-bold tracking-tight">Server</h1>
-        <span className="text-xs text-ink-muted">
-          v{status.data?.version ?? "…"} · loopback {status.data?.adminAvailable ? "yes" : "no"}
-        </span>
+        <span className="text-xs text-ink-muted">v{status.data?.version ?? "…"}</span>
       </header>
 
       <nav className="mt-6 flex gap-1 border-b border-line" aria-label="Admin sections">
@@ -43,7 +43,7 @@ function AdminRoute() {
             className={cx(
               "-mb-px border-b-2 px-4 py-2 text-sm transition-colors",
               tab === key
-                ? "border-amber text-ink"
+                ? "border-brand-text text-ink"
                 : "border-transparent text-ink-muted hover:text-ink",
             )}
           >
@@ -60,7 +60,7 @@ function AdminRoute() {
       </div>
       {status.data?.scan?.status === "running" && (
         <div className="mt-10 rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted" role="status">
-          Scanning · {status.data.scan.filesSeen} files seen · currently{" "}
+          Scanning: {status.data.scan.filesSeen} files seen, currently{" "}
           <span className="text-ink">{status.data.scan.currentFile}</span>
         </div>
       )}
@@ -83,7 +83,7 @@ function Libraries() {
   });
 
   if (isError) {
-    return <p className="text-sm text-[#e27d6e]">Administrative tools work only on the machine running Plexy.</p>;
+    return <p className={`text-sm ${ERROR_TEXT}`}>Administrative tools work only on the machine running Plexy.</p>;
   }
 
   return (
@@ -123,7 +123,7 @@ function Libraries() {
         </div>
       ))}
       {data?.length === 0 && (
-        <p className="text-sm text-ink-muted">No libraries yet — head to the homepage to add one.</p>
+        <p className="text-sm text-ink-muted">No libraries yet. Head to the homepage to add one.</p>
       )}
     </div>
   );
@@ -135,7 +135,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-2 hover:text-ink"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink"
     >
       {children}
     </button>
@@ -152,7 +152,7 @@ function Review() {
     <div className="space-y-3">
       {isLoading && <p className="text-sm text-ink-muted">Loading…</p>}
       {data && data.length === 0 && (
-        <p className="text-sm text-ink-muted">Nothing needs attention — every title is matched or clearly unmatched.</p>
+        <p className="text-sm text-ink-muted">Nothing needs attention. Every title is matched or clearly unmatched.</p>
       )}
       {data?.filter((i) => i.kind === "movie" || i.kind === "series").map((entry) => (
         <div key={entry.id} className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4">
@@ -160,7 +160,7 @@ function Review() {
             <p className="truncate">
               <span className="font-display font-semibold">{entry.name}</span>
               {entry.parentTitle && entry.parentTitle !== entry.name && (
-                <span className="text-ink-muted"> · from {entry.parentTitle}</span>
+                <span className="text-ink-muted"> ({entry.parentTitle})</span>
               )}
             </p>
             <p className="mt-0.5 truncate text-[13px] text-ink-muted">{entry.reason ?? `${entry.matchStatus} match`}</p>
@@ -211,13 +211,15 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm outline-none"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-brand/70"
         />
         <input
           value={year}
-          onChange={(e) => setYear(e.target.value)}
+          onChange={(e) => setYear(e.target.value.replace(/\D/g, ""))}
           placeholder="Year"
-          className="h-9 w-20 rounded-lg border border-line bg-surface px-3 text-sm outline-none"
+          aria-label="Year"
+          inputMode="numeric"
+          className="h-9 w-20 rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-brand/70"
         />
         <Button variant="surface" disabled={search.isPending}>Search</Button>
       </form>
@@ -228,9 +230,9 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
             <button
               key={r.tmdbId}
               onClick={() => apply.mutate({ tmdbId: r.tmdbId })}
-              className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-white/5"
+              className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-hover"
             >
-              {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded object-cover" />}
+              {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded object-cover" loading="lazy" />}
               <span className="min-w-0">
                 <span className="block truncate text-sm">{r.title}</span>
                 <span className="block text-[13px] text-ink-muted">{r.year} · {r.overview?.slice(0, 80) ?? ""}</span>
@@ -251,19 +253,19 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
               <button
                 key={c.tmdbId}
                 onClick={() => apply.mutate({ tmdbId: c.tmdbId })}
-                className="flex w-full items-center justify-between gap-3 rounded-xl p-2 text-left hover:bg-white/5"
+                className="flex w-full items-center justify-between gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-hover"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm">{c.title} {c.year ? `(${c.year})` : ""}</span>
                   <span className="block text-[13px] text-ink-muted" title={c.reason}>{c.reason}</span>
                 </span>
-                <span className="shrink-0 text-[13px] tabular-nums text-amber">{Math.round(c.score * 100)}%</span>
+                <span className="shrink-0 text-[13px] tabular-nums text-brand-text">{Math.round(c.score * 100)}%</span>
               </button>
             ))}
           </div>
         </div>
       )}
-      {apply.isError && <p className="text-sm text-[#e27d6e]">{apply.error.message}</p>}
+      {apply.isError && <p className={`text-sm ${ERROR_TEXT}`}>{apply.error.message}</p>}
     </div>
   );
 }
@@ -273,13 +275,19 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 function Settings() {
   const { data, isError } = useQuery(queries.settings());
   const queryClient = useQueryClient();
-  const [test, setTest] = useState<string | null>(null);
+  const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [token, setToken] = useState("");
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
 
   const save = useMutation({
     mutationFn: api.updateSettings,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["settings"] }),
   });
+
+  const applyTheme = (next: Theme) => {
+    setTheme(next);
+    setThemeState(next);
+  };
 
   if (isError || !data) {
     return <p className="text-sm text-ink-muted">Settings are only visible on the machine running Plexy.</p>;
@@ -288,6 +296,35 @@ function Settings() {
 
   return (
     <div className="space-y-8">
+      <Section title="Appearance">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-ink-muted">Choose the interface look. The player always stays dark.</p>
+          <div
+            role="radiogroup"
+            aria-label="Theme"
+            className="flex shrink-0 items-center gap-1 rounded-none border border-line bg-surface p-1"
+          >
+            {(["dark", "light"] as const).map((mode) => (
+              <button
+                key={mode}
+                role="radio"
+                aria-checked={theme === mode}
+                onClick={() => applyTheme(mode)}
+                className={cx(
+                  "inline-flex h-8 items-center gap-1.5 rounded-none px-3 text-[13px] font-medium capitalize transition-colors",
+                  theme === mode
+                    ? "bg-brand text-white"
+                    : "text-ink-muted hover:text-ink",
+                )}
+              >
+                {mode === "dark" ? <Moon size={14} /> : <Sun size={14} />}
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Section>
+
       <Section title="TMDB">
         <p className="text-sm text-ink-muted">
           Token {s.hasTmdbToken ? `present (${s.tokenSource})` : "missing"}. Metadata language {s.metadataLanguage}, region {s.metadataRegion}, posters {s.imageQuality}.
@@ -297,7 +334,7 @@ function Settings() {
             e.preventDefault();
             if (token.trim()) { await api.updateSettings({ tmdbToken: token.trim() }); setToken(""); }
             const r = await api.testTmdb();
-            setTest(r.message);
+            setTest(r);
           }}
           className="mt-3 flex gap-2"
         >
@@ -306,24 +343,30 @@ function Settings() {
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder={s.hasTmdbToken ? "Replace token" : "TMDB read-access token"}
-            className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 text-sm outline-none"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 text-sm outline-none focus:border-brand/70"
           />
           <Button variant="surface">Save + test</Button>
         </form>
-        {test && <p className={cx("mt-2 text-sm", test.startsWith("Connected") ? "text-amber" : "text-[#e27d6e]")}>{test}</p>}
+        {test && (
+          <p className={cx("mt-2 flex items-center gap-1.5 text-sm", test.ok ? "text-ink" : ERROR_TEXT)}>
+            {test.ok && <CheckCircle2 size={14} className="text-brand-text" />}
+            {test.message}
+          </p>
+        )}
       </Section>
 
       <Section title="Server">
-        <p className="text-sm text-ink-muted">Port {s.port} · binds {s.bindAddress} · log tail below keeps the last {MAX_LOGS} lines.</p>
+        <p className="text-sm text-ink-muted">Port {s.port}, binds {s.bindAddress}. The log tail below keeps the last {MAX_LOGS} lines.</p>
         <div className="mt-3 flex items-center gap-3">
           <span className="text-sm text-ink-muted">Log level</span>
           <Select.Root
             value={data.logLevel}
             onValueChange={(v) => save.mutate({ logLevel: String(v) })}
+            items={["debug", "info", "warn", "error"].map((l) => ({ value: l, label: l }))}
           >
             <Select.Trigger className="min-w-32">
               <Select.Value />
-              <Select.Icon className="text-ink-muted">▾</Select.Icon>
+              <Select.Icon />
             </Select.Trigger>
             <Select.Positioner>
               {["debug", "info", "warn", "error"].map((l) => (
@@ -334,7 +377,118 @@ function Settings() {
         </div>
       </Section>
 
+      <Section title="Playback preparation">
+        <OptimizerSettings />
+      </Section>
+
       <Crashes />
+    </div>
+  );
+}
+
+function OptimizerSettings() {
+  const { data } = useQuery(queries.optimizer());
+  const { data: settingsData } = useQuery(queries.settings());
+  const queryClient = useQueryClient();
+  const [cap, setCap] = useState("0");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (settingsData) setCap(String(settingsData.settings.optimizeMaxCacheGb ?? 0));
+  }, [settingsData]);
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["optimizer"] });
+    void queryClient.invalidateQueries({ queryKey: ["server-status"] });
+  };
+
+  const save = useMutation({
+    mutationFn: api.updateSettings,
+    onSuccess: () => {
+      refresh();
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+
+  const run = useMutation({
+    mutationFn: api.runOptimization,
+    onSuccess: (r) => {
+      setMessage(`Queued ${r.requested} file${r.requested === 1 ? "" : "s"}.`);
+      refresh();
+    },
+  });
+
+  const clear = useMutation({
+    mutationFn: api.clearOptimizationCache,
+    onSuccess: (r) => {
+      setMessage(`Removed ${r.removed} prepared cop${r.removed === 1 ? "y" : "ies"}.`);
+      refresh();
+    },
+  });
+
+  if (!data) return <p className="text-sm text-ink-muted">Preparation status unavailable.</p>;
+
+  const done = data.counts.done ?? 0;
+  const total = Object.values(data.counts).reduce((sum, n) => sum + n, 0);
+  const cacheGb = (data.cacheBytes / 1024 ** 3).toFixed(2);
+  const current = data.current;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-ink-muted">
+        {done} of {total} files ready, {cacheGb} GB cached
+        {data.running
+          ? current
+            ? `, preparing file ${current.fileId} (${Math.round(current.progress * 100)}%)`
+            : ", preparing"
+          : data.queued
+            ? `, ${data.queued} queued`
+            : ""}
+        . Original files are never modified or deleted.
+      </p>
+
+      <label className="flex items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          checked={data.enabled}
+          onChange={(e) => save.mutate({ autoOptimize: e.target.checked })}
+          className="h-4 w-4 accent-[var(--color-brand)]"
+        />
+        Prepare files automatically after scanning
+      </label>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm text-ink-muted">
+          <span className="block">Cache limit (GB, 0 = unlimited)</span>
+          <input
+            type="number"
+            min={0}
+            value={cap}
+            onChange={(e) => setCap(e.target.value)}
+            className="mt-1 h-9 w-32 rounded-lg border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand/70"
+          />
+        </label>
+        <Button
+          variant="surface"
+          onClick={() => save.mutate({ optimizeMaxCacheGb: Math.max(0, Math.round(Number(cap) || 0)) })}
+        >
+          Save limit
+        </Button>
+        <Button variant="surface" onClick={() => run.mutate()} disabled={run.isPending}>
+          Prepare now
+        </Button>
+        <Button
+          variant="danger"
+          onClick={() => {
+            if (confirm("Delete every prepared copy? Original media is untouched.")) clear.mutate();
+          }}
+          disabled={clear.isPending}
+        >
+          Clear cache
+        </Button>
+      </div>
+
+      {message && <p className="text-sm text-ink">{message}</p>}
     </div>
   );
 }
@@ -363,7 +517,8 @@ function Logs() {
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         placeholder="Filter lines…"
-        className="h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm outline-none"
+        aria-label="Filter log lines"
+        className="h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-brand/70"
       />
       <pre className="mt-3 max-h-[480px] overflow-auto rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-muted">
         {data?.length ? data.join("\n") : "No log lines yet."}
@@ -394,7 +549,7 @@ function Crashes() {
             <a
               href={`/api/crashes/${c.id}`}
               download
-              className="text-ink-muted hover:text-amber"
+              className="text-ink-muted transition-colors hover:text-brand-text"
             >
               {c.ts.replace("T", " ").replace("Z", "")}
             </a>

@@ -2,8 +2,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog } from "./ui/dialog";
-import { Button } from "./ui/button";
-import { api } from "../client";
+import { Button, cx } from "./ui/button";import { api } from "../client";
 import { Search, Check, X, Film, Tv, AlertCircle } from "lucide-react";
 
 function cleanSearchTitle(raw: string): string {
@@ -92,35 +91,39 @@ export function FixMatchModal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop />
-        <Dialog.Popup className="w-[min(94vw,680px)] max-h-[85vh] p-0 overflow-hidden bg-[#181818] border-white/15 text-white">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-            <Dialog.Title className="text-lg font-semibold text-white">
+        <Dialog.Popup className="w-[min(94vw,680px)] max-h-[85vh] p-0 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <Dialog.Title className="text-lg font-semibold text-ink">
               Fix Match
             </Dialog.Title>
-            <Dialog.Close className="inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-muted hover:bg-white/10 hover:text-white transition-colors">
+            <Dialog.Close className="inline-flex h-8 w-8 items-center justify-center rounded-none text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink">
               <X size={18} />
             </Dialog.Close>
           </div>
 
           <div className="p-5 space-y-4">
             {isEpisode ? (
-              <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-200">
-                <AlertCircle className="shrink-0 mt-0.5" size={18} />
+              <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-300">
+                <AlertCircle className="mt-0.5 shrink-0" size={18} />
                 <p className="text-sm">
-                  Individual episodes cannot be matched directly. Please open and match the parent TV series to automatically associate all seasons and episodes.
+                  Individual episodes cannot be matched directly. Open and match the parent series to associate all seasons and episodes.
                 </p>
               </div>
             ) : (
               <>
-                <div className="flex gap-2">
-                  <div className="flex rounded-lg border border-white/10 bg-white/5 p-1 shrink-0">
+                <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+                  <div className="flex shrink-0 rounded-lg border border-line bg-surface p-1">
                     {!isSeries && (
                       <button
                         type="button"
                         onClick={() => setType("movie")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                          type === "movie" ? "bg-white/20 text-white" : "text-ink-muted hover:text-white"
-                        }`}
+                        aria-pressed={type === "movie"}
+                        className={cx(
+                          "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          type === "movie"
+                            ? "bg-surface-hover text-ink"
+                            : "text-ink-muted hover:text-ink",
+                        )}
                       >
                         <Film size={14} /> Movie
                       </button>
@@ -129,33 +132,39 @@ export function FixMatchModal({
                       <button
                         type="button"
                         onClick={() => setType("tv")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                          type === "tv" ? "bg-white/20 text-white" : "text-ink-muted hover:text-white"
-                        }`}
+                        aria-pressed={type === "tv"}
+                        className={cx(
+                          "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          type === "tv"
+                            ? "bg-surface-hover text-ink"
+                            : "text-ink-muted hover:text-ink",
+                        )}
                       >
                         <Tv size={14} /> TV Show
                       </button>
                     )}
                   </div>
 
-                  <div className="flex-1 relative">
+                  <div className="min-w-0 flex-1">
                     <input
                       type="text"
                       placeholder="Search TMDB title…"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && searchMutation.mutate()}
-                      className="w-full h-10 rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white placeholder:text-ink-muted focus:border-white/40 focus:outline-none"
+                      className="h-10 w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-ink-muted/70 outline-none transition-[border-color] focus:border-brand/70"
                     />
                   </div>
 
                   <input
                     type="text"
                     placeholder="Year"
+                    aria-label="Year"
+                    inputMode="numeric"
                     value={year}
-                    onChange={(e) => setYear(e.target.value)}
+                    onChange={(e) => setYear(e.target.value.replace(/\D/g, ""))}
                     onKeyDown={(e) => e.key === "Enter" && searchMutation.mutate()}
-                    className="w-20 h-10 rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white placeholder:text-ink-muted focus:border-white/40 focus:outline-none"
+                    className="h-10 w-20 rounded-lg border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-ink-muted/70 outline-none transition-[border-color] focus:border-brand/70"
                   />
 
                   <Button
@@ -170,34 +179,34 @@ export function FixMatchModal({
                 </div>
 
                 {searchMutation.isError && (
-                  <p className="text-sm text-red-400">
-                    TMDB search failed. Verify server has TMDB token configured.
+                  <p className="text-sm text-red-500">
+                    TMDB search failed. Verify the server has a TMDB token configured.
                   </p>
                 )}
 
-                <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1">
+                <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
                   {results.map((c) => (
                     <div
                       key={c.tmdbId}
-                      className="flex items-center gap-4 p-3 rounded-xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.08] transition-colors"
+                      className="flex items-center gap-4 rounded-xl border border-line/60 bg-surface p-3 transition-colors hover:border-line"
                     >
-                      <div className="h-16 w-11 shrink-0 rounded bg-[#252525] overflow-hidden">
+                      <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-surface-2">
                         {c.poster ? (
-                          <img src={c.poster} alt="" className="h-full w-full object-cover" />
+                          <img src={c.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
                         ) : (
-                          <div className="h-full w-full flex items-center justify-center text-[10px] text-ink-muted">
+                          <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-muted">
                             No Art
                           </div>
                         )}
                       </div>
 
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-2">
-                          <p className="font-semibold text-sm text-white truncate">{c.title}</p>
+                          <p className="truncate text-sm font-semibold text-ink">{c.title}</p>
                           {c.year && <span className="text-xs text-ink-muted">{c.year}</span>}
                         </div>
                         {c.overview && (
-                          <p className="text-xs text-ink-muted line-clamp-2 mt-0.5">{c.overview}</p>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-ink-muted">{c.overview}</p>
                         )}
                       </div>
 
@@ -205,7 +214,7 @@ export function FixMatchModal({
                         variant="primary"
                         onClick={() => applyMutation.mutate(c.tmdbId)}
                         disabled={applyMutation.isPending}
-                        className="shrink-0 h-8 px-3 text-xs"
+                        className="h-8 shrink-0 px-3 text-xs"
                       >
                         <Check size={14} />
                         Match
@@ -214,7 +223,7 @@ export function FixMatchModal({
                   ))}
 
                   {results.length === 0 && !searchMutation.isPending && (
-                    <p className="text-center py-8 text-sm text-ink-muted">
+                    <p className="py-8 text-center text-sm text-ink-muted">
                       Search TMDB to find matching titles.
                     </p>
                   )}

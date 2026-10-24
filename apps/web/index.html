@@ -1,13 +1,25 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <title>Plexy · Personal Media</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Apply the saved theme before first paint so there is no flash.
+      // ?theme=light|dark in the URL wins over the saved choice.
+      try {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = q === "light" || q === "dark"
+          ? q
+          : localStorage.getItem("plexy-theme") === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+        document.querySelector('meta[name="color-scheme"]').setAttribute("content", t);
+      } catch (e) {}
+    </script>
   </head>
-  <body class="bg-[#141414] text-[#f2efe9] antialiased select-none selection:bg-[#E50914]/30 selection:text-white">
+  <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

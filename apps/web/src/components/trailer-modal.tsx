@@ -19,12 +19,12 @@ export function TrailerModal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop />
-        <Dialog.Popup className="w-[min(94vw,960px)] max-h-[90vh] p-0 overflow-hidden bg-black border-white/20">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 bg-[#181818]">
-            <Dialog.Title className="truncate text-base font-semibold text-white">
-              {title ? `${title} — Trailer` : "Trailer"}
+        <Dialog.Popup className="w-[min(94vw,960px)] max-h-[90vh] p-0 overflow-hidden bg-canvas border-line">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
+            <Dialog.Title className="truncate text-base font-semibold text-ink">
+              {title} Trailer
             </Dialog.Title>
-            <Dialog.Close className="inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-muted hover:bg-white/10 hover:text-white transition-colors">
+            <Dialog.Close className="inline-flex h-8 w-8 items-center justify-center rounded-none text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink">
               <X size={18} />
             </Dialog.Close>
           </div>

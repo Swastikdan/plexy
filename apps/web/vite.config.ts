@@ -21,6 +21,11 @@ export default defineConfig({
     outDir: resolve(here, "../../dist/web"),
     emptyOutDir: true,
   },
+  resolve: {
+    alias: {
+      "@": join(here, "src"),
+    },
+  },
   server: {
     port: 5173,
     proxy: {

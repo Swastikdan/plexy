@@ -14,6 +14,10 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
+      // Catalog responses are cheap but repeated navigation should not re-fetch
+      // them; live screens (scan, optimizer) opt into polling themselves.
+      staleTime: 30_000,
+      gcTime: 10 * 60_000,
     },
   },
 });
@@ -22,6 +26,7 @@ const router = createRouter({
   routeTree,
   context: { queryClient },
   defaultPreload: "intent",
+  defaultPreloadStaleTime: 15_000,
 });
 
 // Type the router for the rest of the app's route-aware calls.

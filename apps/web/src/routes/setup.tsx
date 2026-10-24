@@ -29,7 +29,7 @@ function SetupRoute() {
       <div className="staggered space-y-10">
         <header className="space-y-4">
           <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+            <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
               Set up your server
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
@@ -40,7 +40,7 @@ function SetupRoute() {
           {status.data?.setupComplete && (
             <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-400">
               <span>Your server setup is already complete and ready.</span>
-              <Link to="/" className="font-semibold underline hover:text-white">
+              <Link to="/" className="font-semibold underline hover:text-ink">
                 Go to Home →
               </Link>
             </div>
@@ -88,7 +88,7 @@ function TokenStep() {
   const hasTokenConfigured = settings.data?.settings.hasTmdbToken || isEnvToken;
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#1a1a1a]/80 p-6 shadow-xl backdrop-blur-sm">
+    <section className="rounded-2xl border border-line bg-surface p-6">
       <StepHeading
         n={1}
         title="TMDB Metadata Connection"
@@ -112,7 +112,7 @@ function TokenStep() {
             </div>
             <button
               onClick={() => setShowManualInput(true)}
-              className="text-xs text-ink-muted underline hover:text-white"
+              className="text-xs text-ink-muted underline hover:text-ink"
             >
               Change token
             </button>
@@ -134,8 +134,7 @@ function TokenStep() {
               href="https://www.themoviedb.org/settings/api"
               target="_blank"
               rel="noreferrer"
-              className="text-white underline hover:text-[#E50914]"
-            >
+              className="text-ink underline hover:text-brand-text"            >
               themoviedb.org Settings → API
             </a>
             .
@@ -147,7 +146,7 @@ function TokenStep() {
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
               placeholder="eyJhbGciOiJIUzI1NiJ9..."
-              className="h-10 flex-1 rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#E50914]"
+              className="h-10 flex-1 rounded-xl border border-line bg-surface-2 px-4 text-sm text-ink placeholder:text-ink-muted/70 outline-none focus:border-brand/70"
             />
             <Button
               variant="brand"
@@ -162,7 +161,7 @@ function TokenStep() {
           {showManualInput && isConnected && (
             <button
               onClick={() => setShowManualInput(false)}
-              className="text-xs text-ink-muted hover:text-white"
+              className="text-xs text-ink-muted hover:text-ink"
             >
               Cancel
             </button>
@@ -229,7 +228,7 @@ function FolderStep() {
   ];
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#1a1a1a]/80 p-6 shadow-xl backdrop-blur-sm">
+    <section className="rounded-2xl border border-line bg-surface p-6">
       <StepHeading
         n={2}
         title="Your Media Folders"
@@ -245,8 +244,8 @@ function FolderStep() {
             className={cx(
               "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition-all",
               type === "movies"
-                ? "border-[#E50914] bg-[#E50914]/15 text-white shadow-sm"
-                : "border-white/10 bg-white/5 text-ink-muted hover:border-white/20 hover:text-white",
+                ? "border-brand bg-brand/10 text-ink"
+                : "border-line bg-surface-2 text-ink-muted hover:border-line-strong hover:text-ink",
             )}
           >
             <Film className="h-4 w-4" />
@@ -258,8 +257,8 @@ function FolderStep() {
             className={cx(
               "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition-all",
               type === "tv"
-                ? "border-[#E50914] bg-[#E50914]/15 text-white shadow-sm"
-                : "border-white/10 bg-white/5 text-ink-muted hover:border-white/20 hover:text-white",
+                ? "border-brand bg-brand/10 text-ink"
+                : "border-line bg-surface-2 text-ink-muted hover:border-line-strong hover:text-ink",
             )}
           >
             <Tv className="h-4 w-4" />
@@ -274,7 +273,7 @@ function FolderStep() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Movies, TV Shows, 4K Cinema"
-            className="mt-1 h-10 w-full rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#E50914]"
+            className="mt-1 h-10 w-full rounded-xl border border-line bg-surface-2 px-4 text-sm text-ink placeholder:text-ink-muted/70 outline-none focus:border-brand/70"
           />
         </div>
       </div>
@@ -301,7 +300,7 @@ function FolderStep() {
                 setPath(sc.path);
                 setCustomInputPath(sc.path);
               }}
-              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/80 hover:border-white/25 hover:bg-white/10 hover:text-white transition-colors"
+              className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink-muted hover:border-line-strong hover:bg-surface-hover hover:text-ink transition-colors"
             >
               {sc.label}
             </button>
@@ -321,7 +320,7 @@ function FolderStep() {
               }
             }}
             placeholder="Enter or paste folder path (e.g. /Users/swastik/Movies)"
-            className="h-10 flex-1 rounded-xl border border-white/15 bg-white/5 px-3.5 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#E50914]"
+            className="h-10 flex-1 rounded-xl border border-line bg-surface-2 px-3.5 text-xs text-ink placeholder:text-ink-muted/70 outline-none focus:border-brand/70"
           />
           <Button
             variant="surface"
@@ -350,11 +349,11 @@ function FolderStep() {
         </div>
 
         {/* Directory Explorer Card */}
-        <div className="rounded-xl border border-white/10 bg-black/40 p-3">
+        <div className="rounded-xl border border-line bg-surface-2/50 p-3">
           {/* Active directory navigation header */}
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5 text-xs">
-            <div className="flex items-center gap-1.5 min-w-0 truncate text-white/90">
-              <Folder className="h-4 w-4 shrink-0 text-[#E50914]" />
+          <div className="flex items-center justify-between gap-2 border-b border-line pb-2.5 text-xs">
+            <div className="flex items-center gap-1.5 min-w-0 truncate text-ink">
+              <Folder className="h-4 w-4 shrink-0 text-brand-text" />
               <span className="truncate font-mono text-[11px]">
                 {browse.data?.path || path}
               </span>
@@ -364,7 +363,7 @@ function FolderStep() {
                 <button
                   type="button"
                   onClick={() => setPath(browse.data!.parent!)}
-                  className="flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-[11px] text-ink-muted hover:bg-white/10 hover:text-white transition-colors"
+                  className="flex items-center gap-1 rounded-md bg-surface-hover px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-hover hover:text-ink transition-colors"
                 >
                   <ArrowUp className="h-3 w-3" />
                   Up
@@ -373,7 +372,7 @@ function FolderStep() {
               <button
                 type="button"
                 onClick={() => addFolder(browse.data?.path || path)}
-                className="flex items-center gap-1 rounded-md bg-[#E50914]/20 border border-[#E50914]/40 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#E50914] transition-colors"
+                className="flex items-center gap-1 rounded-md border border-brand/40 bg-brand/15 px-2.5 py-1 text-[11px] font-semibold text-ink transition-colors hover:bg-brand hover:text-white"
               >
                 <FolderPlus className="h-3 w-3" />
                 Add this folder
@@ -387,7 +386,7 @@ function FolderStep() {
               <p className="py-6 text-center text-xs text-ink-muted">Reading directory…</p>
             )}
             {browse.isError && (
-              <p className="py-4 text-center text-xs text-red-400">
+              <p className="py-4 text-center text-xs text-red-500">
                 Cannot access directory: {browse.error.message}
               </p>
             )}
@@ -399,7 +398,7 @@ function FolderStep() {
               return (
                 <div
                   key={f.path}
-                  className="group flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs hover:bg-white/5 transition-colors"
+                  className="group flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs hover:bg-surface-hover transition-colors"
                 >
                   <button
                     type="button"
@@ -409,8 +408,8 @@ function FolderStep() {
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
-                    <Folder className="h-3.5 w-3.5 shrink-0 text-white/50 group-hover:text-white" />
-                    <span className="truncate text-white/90 group-hover:text-white">
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-ink-muted group-hover:text-ink" />
+                    <span className="truncate text-ink-muted group-hover:text-ink">
                       {f.name}
                     </span>
                     {f.hasVideos && (
@@ -426,8 +425,8 @@ function FolderStep() {
                     className={cx(
                       "ml-2 shrink-0 rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
                       isAdded
-                        ? "bg-white/10 text-white/60 hover:bg-red-500/20 hover:text-red-400"
-                        : "bg-white/10 text-white hover:bg-[#E50914] hover:text-white",
+                        ? "bg-surface-hover text-ink-muted hover:bg-red-500/20 hover:text-red-500"
+                        : "bg-surface-hover text-ink hover:bg-brand hover:text-white",
                     )}
                   >
                     {isAdded ? "Added ✓" : "+ Add"}
@@ -440,23 +439,23 @@ function FolderStep() {
 
         {/* Selected Folders List */}
         {picked.length > 0 && (
-          <div className="space-y-1.5 rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="space-y-1.5 rounded-xl border border-line bg-surface-2/50 p-3">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
               Folders to scan in this library:
             </span>
             {picked.map((folder) => (
               <div
                 key={folder}
-                className="flex items-center justify-between gap-2 rounded-lg bg-black/40 px-3 py-2 text-xs"
+                className="flex items-center justify-between gap-2 rounded-lg bg-surface-2/50 px-3 py-2 text-xs"
               >
                 <div className="flex items-center gap-2 min-w-0 truncate">
-                  <Folder className="h-4 w-4 shrink-0 text-[#E50914]" />
-                  <span className="truncate font-mono text-[11px] text-white">{folder}</span>
+                  <Folder className="h-4 w-4 shrink-0 text-brand-text" />
+                  <span className="truncate font-mono text-[11px] text-ink">{folder}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => removeFolder(folder)}
-                  className="rounded p-1 text-ink-muted hover:bg-white/10 hover:text-red-400 transition-colors"
+                  className="rounded p-1 text-ink-muted hover:bg-surface-hover hover:text-red-500 transition-colors"
                   title="Remove folder"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -469,13 +468,13 @@ function FolderStep() {
 
       {/* Error state */}
       {errorMsg && (
-        <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
+        <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
           {errorMsg}
         </div>
       )}
 
       {/* Submit / Finish button */}
-      <div className="mt-6 flex items-center justify-between gap-4 border-t border-white/10 pt-4">
+      <div className="mt-6 flex items-center justify-between gap-4 border-t border-line pt-4">
         <span className="text-xs text-ink-muted">
           {picked.length === 0 ? "Select at least 1 folder" : `${picked.length} folder selected`}
         </span>
@@ -483,9 +482,9 @@ function FolderStep() {
           variant="brand"
           disabled={!name.trim() || picked.length === 0 || submit.isPending}
           onClick={() => submit.mutate()}
-          className="h-11 px-6 text-sm font-semibold"
+          className="h-11 px-6 text-sm font-bold"
         >
-          {submit.isPending ? "Creating & Scanning…" : "Finish Setup & Start Scanning ▸"}
+          {submit.isPending ? "Creating & Scanning…" : "Finish Setup & Start Scanning"}
         </Button>
       </div>
     </section>
@@ -495,8 +494,8 @@ function FolderStep() {
 function StepHeading({ n, title, note }: { n: number; title: string; note?: string }) {
   return (
     <div>
-      <h2 className="flex items-baseline gap-2.5 font-display text-lg font-bold text-white">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white/80">
+      <h2 className="flex items-baseline gap-2.5 font-display text-lg font-bold text-ink">
+        <span className="flex h-6 w-6 items-center justify-center rounded-none bg-brand/15 text-xs font-semibold text-brand-text">
           {n}
         </span>
         {title}

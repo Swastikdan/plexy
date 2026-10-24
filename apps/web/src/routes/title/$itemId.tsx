@@ -1,4 +1,4 @@
-/// Title Detail (PRD 10.3): Movie & Series detail, seasons, episodes, trailer, playability specs, cast & fix match.
+/// Title Detail (PRD 10.3): movie & series detail, seasons, episodes, trailer, playability specs, cast & fix match.
 import { useState, useEffect } from "react";
 import { createFileRoute, useParams, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,18 +9,21 @@ import {
   Circle,
   Wrench,
   RotateCw,
-  Clock,
-  Film,
-  Tv,
   Sparkles,
-  ChevronDown,
+  PlayCircle,
   ArrowLeft,
 } from "lucide-react";
 import { queries } from "../../queries";
-import { api, type ItemCard, type TitleDetail } from "../../client";
+import { api, probeBrowserCaps, type TitleDetail } from "../../client";
 import { Button } from "../../components/ui/button";
+import { Select } from "../../components/ui/select";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
+import { cx } from "../../components/ui/button";
+
+// Capabilities do not change during a session; probing once keeps hover
+// prefetches free of layout work.
+const BROWSER_CAPS = typeof document === "undefined" ? "" : JSON.stringify(probeBrowserCaps());
 
 function TitleRoute() {
   const { itemId } = useParams({ from: Route.id });
@@ -30,7 +33,7 @@ function TitleRoute() {
   if (isLoading) {
     return (
       <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-6 sm:px-8">
-        <div className="aspect-[21/9] max-h-[500px] w-full animate-pulse rounded-[var(--radius-hero)] bg-[#1c1c1c]" />
+        <div className="aspect-[21/9] max-h-[500px] w-full animate-pulse rounded-[var(--radius-hero)] bg-surface" />
       </main>
     );
   }
@@ -39,7 +42,7 @@ function TitleRoute() {
     return (
       <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-16 sm:px-8">
         <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-          <h2 className="font-display text-xl font-bold text-white">Title not found</h2>
+          <h2 className="font-display text-xl font-bold text-ink">Title not found</h2>
           <p className="text-sm text-ink-muted">The requested title could not be loaded from Plexy.</p>
           <Link to="/">
             <Button variant="brand" className="mt-4">
@@ -112,6 +115,13 @@ function DetailView({
   const resumePos = item.watch?.position ?? 0;
   const hasResume = resumePos > 15 && !isPlayed;
 
+  // Warm the player manifest (and therefore the stream) as soon as the pointer
+  // lands on a play control, so the navigation has nothing left to wait for.
+  const prefetchPlay = (fileId: number | null | undefined) => {
+    if (!fileId || !BROWSER_CAPS) return;
+    void queryClient.prefetchQuery(queries.play(fileId, BROWSER_CAPS));
+  };
+
   const filteredEpisodes = episodes
     ? episodes.filter((ep) => {
         if (ep.seasonNumber != null) {
@@ -121,40 +131,44 @@ function DetailView({
       })
     : [];
 
-  const handlePrimaryPlay = () => {
+  const primaryFileId = (() => {
     if (item.kind === "series" && episodes && episodes.length > 0) {
-      const targetEp = filteredEpisodes.find((e) => !e.watch?.played) ?? filteredEpisodes[0] ?? episodes[0];
-      const playId = targetEp.fileId ?? targetEp.id;
-      if (playId) {
-        navigate({ to: "/watch/$fileId", params: { fileId: String(playId) } });
-        return;
-      }
+      const targetEp = filteredEpisodes.find((e) => !e.watch?.played)
+        ?? filteredEpisodes[0]
+        ?? episodes[0];
+      return targetEp?.fileId ?? targetEp?.id ?? null;
     }
-    const targetFile = file?.fileId ?? item.fileId ?? item.id;
-    if (targetFile) {
-      navigate({ to: "/watch/$fileId", params: { fileId: String(targetFile) } });
+    return file?.fileId ?? item.fileId ?? null;
+  })();
+
+  const handlePrimaryPlay = () => {
+    if (primaryFileId) {
+      navigate({ to: "/watch/$fileId", params: { fileId: String(primaryFileId) } });
     }
   };
 
   return (
     <div className="space-y-10">
-      {/* Detail Hero Banner */}
-      <section className="relative overflow-hidden rounded-[var(--radius-hero)] border border-white/5 bg-[#181818] shadow-2xl">
+      {/* Detail hero banner */}
+      <section className="relative overflow-hidden rounded-[var(--radius-hero)] border border-line/60 bg-surface">
         <div className="relative aspect-[16/9] max-h-[540px] w-full sm:aspect-[21/9]">
           <img
             src={item.backdrop ?? item.poster ?? ""}
             alt=""
+            fetchPriority="high"
+            loading="eager"
+            decoding="async"
             className="h-full w-full object-cover object-top"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";
             }}
           />
           <div
-            className="absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/50 to-transparent"
+            className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/50 to-transparent"
             aria-hidden
           />
           <div
-            className="absolute inset-0 bg-gradient-to-r from-[#141414] via-[#141414]/70 to-transparent"
+            className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/70 to-transparent"
             aria-hidden
           />
         </div>
@@ -164,7 +178,7 @@ function DetailView({
             <Link
               to="/title/$itemId"
               params={{ itemId: String(item.parentId) }}
-              className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur-md hover:bg-black/80 hover:text-[#E50914] transition-all"
+              className="mb-3 inline-flex items-center gap-1.5 rounded-none bg-black/70 px-3 py-1 text-xs font-semibold text-white/90 transition-colors hover:bg-black/85 hover:text-white"
             >
               <ArrowLeft size={13} />
               Back to {item.parentTitle || "Series"}
@@ -175,73 +189,79 @@ function DetailView({
             <img
               src={logo}
               alt={item.name}
-              className="mb-4 max-h-20 max-w-[340px] object-contain drop-shadow-lg"
+              className="mb-4 max-h-20 max-w-[340px] object-contain"
             />
           ) : (
-            <h1 className="font-display text-3xl font-black leading-tight text-white sm:text-5xl drop-shadow-md">
+            <h1 className="font-display text-3xl font-black leading-tight text-ink sm:text-5xl">
               {item.name}
             </h1>
           )}
 
           {metadata?.tagline && (
-            <p className="mt-2 text-sm italic text-ink-muted">{metadata.tagline}</p>
+            <p className="mt-2 max-w-[60ch] text-sm italic text-ink-muted">{metadata.tagline}</p>
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs sm:text-sm text-ink-muted">
-            {item.year && <span className="font-medium text-white">{item.year}</span>}
+            {item.year && <span className="font-medium text-ink">{item.year}</span>}
             {item.kind === "episode" && item.seasonNumber != null && item.episodeNumber != null && (
-              <span className="rounded bg-white/20 px-2 py-0.5 text-xs font-bold text-white">
+              <span className="rounded bg-canvas/60 px-2 py-0.5 text-xs font-bold text-ink">
                 S{item.seasonNumber} E{item.episodeNumber}
               </span>
             )}
             {metadata?.runtime && <span>{metadata.runtime} min</span>}
             {metadata?.certification && (
-              <span className="rounded border border-white/20 px-1.5 py-0.5 text-[11px] font-bold text-white">
+              <span className="rounded border border-line-strong px-1.5 py-0.5 text-[11px] font-bold text-ink">
                 {metadata.certification}
               </span>
             )}
             {item.rating && (
-              <span className="flex items-center gap-1 font-semibold text-amber-400">
+              <span className="flex items-center gap-1 font-semibold text-amber">
                 ★ {item.rating.toFixed(1)}
               </span>
             )}
             {metadata?.genres.slice(0, 4).map((g) => (
               <span
                 key={g}
-                className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-white backdrop-blur-sm"
+              className="rounded-none bg-canvas/70 px-2.5 py-0.5 text-xs text-ink"
               >
                 {g}
               </span>
             ))}
           </div>
 
-          {/* Unmatched / Review warning notice */}
+          {/* Unmatched / review notice */}
           {unmatched && item.kind !== "episode" && (
-            <div className="mt-4 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-300">
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
               <Sparkles size={18} className="shrink-0" />
               <span>
-                Not identified yet {matchReason ? `— ${matchReason}` : "— Fix match to attach TMDB artwork and details."}
+                Not identified yet{matchReason ? `: ${matchReason}` : ""}.
               </span>
               <Button
-                variant="amber"
+                variant="brand"
                 onClick={() => setFixMatchOpen(true)}
-                className="ml-auto h-7 px-3 text-xs"
+                className="ml-auto h-8 px-3 text-xs font-semibold"
               >
                 Fix Match
               </Button>
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Actions */}
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {(file || (item.kind === "series" && episodes && episodes.length > 0)) && (
               <Button
                 variant="primary"
                 onClick={handlePrimaryPlay}
-                className="h-11 px-7 text-base font-bold shadow-lg"
+                onPointerEnter={() => prefetchPlay(primaryFileId)}
+                onFocus={() => prefetchPlay(primaryFileId)}
+                className="h-11 px-6 text-sm font-bold"
               >
-                <Play size={18} fill="currentColor" />
-                {hasResume ? `Resume (${item.watch?.percent}%)` : "Play"}
+                {hasResume ? (
+                  <PlayCircle size={18} />
+                ) : (
+                  <Play size={18} fill="currentColor" />
+                )}
+                {hasResume ? `Resume ${Math.round(item.watch?.percent ?? 0)}%` : "Play"}
               </Button>
             )}
 
@@ -249,7 +269,7 @@ function DetailView({
               <Button
                 variant="secondary"
                 onClick={() => setTrailerOpen(true)}
-                className="h-11 px-5 text-sm font-semibold"
+                className="h-11 px-4 text-sm font-semibold"
               >
                 <Video size={18} />
                 Trailer
@@ -260,12 +280,12 @@ function DetailView({
               variant="secondary"
               onClick={() => markWatchedMutation.mutate(!isPlayed)}
               disabled={markWatchedMutation.isPending}
-              className="h-11 px-4 text-sm"
+              className="h-11 px-4 text-sm font-semibold"
               title={isPlayed ? "Mark as unwatched" : "Mark as watched"}
             >
               {isPlayed ? (
                 <>
-                  <CheckCircle2 size={18} className="text-[#E50914]" />
+                  <CheckCircle2 size={18} className="text-brand-text" />
                   Watched
                 </>
               ) : (
@@ -278,10 +298,10 @@ function DetailView({
 
             {item.kind !== "episode" && (
               <Button
-                variant="secondary"
+                variant="ghost"
                 onClick={() => setFixMatchOpen(true)}
-                className="h-11 px-4 text-sm"
-                title="Search and assign TMDB match"
+                className="h-11 px-4 text-sm text-ink-muted hover:text-ink"
+                title="Search and assign the correct TMDB match"
               >
                 <Wrench size={16} />
                 Fix Match
@@ -292,7 +312,7 @@ function DetailView({
               variant="ghost"
               onClick={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending}
-              className="h-11 px-3 text-ink-muted hover:text-white"
+              className="h-11 px-4 text-sm text-ink-muted hover:text-ink"
               title="Refresh metadata"
             >
               <RotateCw size={16} className={refreshMutation.isPending ? "animate-spin" : ""} />
@@ -301,83 +321,89 @@ function DetailView({
         </div>
       </section>
 
-      {/* Main Grid: Details / Episodes on Left + Technical Specs on Right */}
+      {/* Main grid: synopsis / episodes / cast on the left, technical specs on the right */}
       <div className="grid gap-12 lg:grid-cols-[1fr_380px]">
-        {/* Left Column: Synopsis, Seasons & Episodes, Cast */}
-        <div className="space-y-10 min-w-0">
+        <div className="min-w-0 space-y-10">
           {item.overview && (
             <div>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider text-ink-muted">
                 Synopsis
               </h2>
-              <p className="mt-3 text-base leading-relaxed text-[#d9d9d9] max-w-[75ch]">
+              <p className="mt-3 max-w-[75ch] text-base leading-relaxed text-ink-muted">
                 {item.overview}
               </p>
             </div>
           )}
 
-          {/* TV Shows: Seasons & Episodes (PRD 10.3) */}
+          {/* Series: seasons & episodes (PRD 10.3) */}
           {item.kind === "series" && (
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
                 <div className="flex items-center gap-3">
-                  <h2 className="font-display text-2xl font-bold text-white flex items-center gap-2">
-                    <Tv size={22} className="text-[#E50914]" />
-                    Episodes
-                  </h2>
+                  <h2 className="font-display text-2xl font-bold text-ink">Episodes</h2>
                   <span className="text-xs text-ink-muted">
                     {filteredEpisodes.length} {filteredEpisodes.length === 1 ? "episode" : "episodes"}
                   </span>
                 </div>
 
-                {seasonList.length > 0 && (
-                  <div className="relative inline-flex items-center">
-                    <select
-                      value={selectedSeason}
-                      onChange={(e) => setSelectedSeason(Number(e.target.value))}
-                      className="cursor-pointer appearance-none rounded-lg border border-white/20 bg-[#242424] px-4 py-2 pr-9 text-sm font-semibold text-white shadow-lg transition-colors hover:border-white/40 hover:bg-[#2c2c2c] focus:outline-none focus:ring-2 focus:ring-[#E50914]"
-                    >
+                {seasonList.length > 1 && (
+                  <Select.Root
+                    value={String(selectedSeason)}
+                    onValueChange={(v) => setSelectedSeason(Number(v))}
+                    items={seasonList.map((s) => ({
+                      value: String(s.number),
+                      label: s.name || `Season ${s.number}`,
+                    }))}
+                  >
+                    <Select.Trigger aria-label="Season" className="min-w-40">
+                      <Select.Value />
+                      <Select.Icon />
+                    </Select.Trigger>
+                    <Select.Positioner>
                       {seasonList.map((s) => (
-                        <option key={s.number} value={s.number} className="bg-[#1f1f1f] text-white py-1">
-                          {s.name || `Season ${s.number}`}
-                        </option>
+                        <Select.Item key={s.number} value={String(s.number)}>
+                          <Select.ItemText>{s.name || `Season ${s.number}`}</Select.ItemText>
+                        </Select.Item>
                       ))}
-                    </select>
-                    <ChevronDown size={16} className="pointer-events-none absolute right-3 text-white/70" />
-                  </div>
+                    </Select.Positioner>
+                  </Select.Root>
                 )}
               </div>
 
               {filteredEpisodes.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {filteredEpisodes.map((ep, idx) => {
                     const epNum = ep.episodeNumber ?? idx + 1;
                     const displayTitle = ep.name.replace(/^S\d+E\d+\s*[·\-:]\s*/i, "");
                     const targetFileId = ep.fileId ?? ep.id;
 
                     return (
-                      <div
+                      <button
                         key={ep.id}
+                        type="button"
+                        onPointerEnter={() => prefetchPlay(targetFileId)}
+                        onFocus={() => prefetchPlay(targetFileId)}
                         onClick={() => {
                           navigate({
                             to: "/watch/$fileId",
                             params: { fileId: String(targetFileId) },
                           });
                         }}
-                        className="group relative flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl border border-white/5 bg-[#181818] p-4 transition-all hover:border-white/20 hover:bg-[#222222] cursor-pointer"
+                        className="group flex w-full flex-col items-start gap-4 rounded-xl border border-line/60 bg-surface p-4 text-left transition-[border-color,background-color] hover:border-line hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-brand sm:flex-row sm:items-center"
                       >
-                        {/* Episode Number */}
-                        <div className="hidden sm:flex w-8 shrink-0 items-center justify-center font-display text-xl font-bold text-ink-muted group-hover:text-white transition-colors">
+                        {/* Episode number */}
+                        <div className="hidden w-8 shrink-0 justify-center font-display text-xl font-bold text-ink-muted transition-colors group-hover:text-ink sm:flex">
                           {epNum}
                         </div>
 
-                        {/* Episode Thumbnail */}
-                        <div className="relative aspect-video w-full sm:w-56 shrink-0 overflow-hidden rounded-lg bg-[#252525] shadow-md">
+                        {/* Episode thumbnail */}
+                        <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-lg bg-surface-2 sm:w-56">
                           {ep.poster ? (
                             <img
                               src={ep.poster}
                               alt={displayTitle}
                               loading="lazy"
+                              decoding="async"
                               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           ) : (
@@ -386,68 +412,68 @@ function DetailView({
                             </div>
                           )}
 
-                          {/* Play button overlay */}
+                          {/* Play affordance */}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-black shadow-xl transition-transform group-hover:scale-110">
-                              <Play size={20} className="ml-0.5" fill="black" />
+                            <div className="flex h-11 w-11 items-center justify-center rounded-none bg-white text-black transition-transform group-hover:scale-110">
+                              <Play size={20} className="ml-0.5" fill="currentColor" />
                             </div>
                           </div>
 
                           {/* Duration tag */}
                           {ep.runtime && (
-                            <div className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+                            <div className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                               {ep.runtime}m
                             </div>
                           )}
 
-                          {/* Red Watch progress bar */}
+                          {/* Watch progress */}
                           {ep.watch && ep.watch.percent > 0 && (
-                            <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60">
+                            <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden">
                               <div
-                                className="h-full bg-[#E50914]"
+                                className="h-full bg-brand"
                                 style={{ width: `${Math.min(100, Math.max(2, ep.watch.percent))}%` }}
                               />
                             </div>
                           )}
                         </div>
 
-                        {/* Episode Info: Title, duration, synopsis */}
-                        <div className="flex-1 min-w-0">
+                        {/* Episode info */}
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-3">
-                            <h3 className="font-semibold text-base text-white group-hover:text-[#E50914] transition-colors truncate">
-                              <span className="sm:hidden font-bold mr-2 text-ink-muted">{epNum}.</span>
+                            <h3 className="truncate text-base font-semibold text-ink transition-colors group-hover:text-ink">
+                              <span className="mr-2 font-bold text-ink-muted sm:hidden">{epNum}.</span>
                               {displayTitle}
                             </h3>
                             {ep.runtime && (
-                              <span className="hidden sm:inline-block shrink-0 text-xs font-medium text-ink-muted">
+                              <span className="hidden shrink-0 text-xs font-medium text-ink-muted sm:inline-block">
                                 {ep.runtime} min
                               </span>
                             )}
                           </div>
 
                           {ep.overview ? (
-                            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-[#a3a3a3]">
+                            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-ink-muted">
                               {ep.overview}
                             </p>
                           ) : (
-                            <p className="mt-2 text-xs italic text-ink-muted">
+                            <p className="mt-2 text-xs text-ink-muted">
                               No episode description available.
                             </p>
                           )}
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-ink-muted italic py-4">
+                <p className="py-4 text-sm text-ink-muted">
                   No individual episode records indexed for this season yet.
                 </p>
               )}
             </div>
           )}
 
-          {/* Cast & Crew (PRD 10.3) */}
+          {/* Cast */}
           {cast && cast.length > 0 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -457,30 +483,35 @@ function DetailView({
                 {cast.length > 6 && (
                   <button
                     onClick={() => setCastExpanded((v) => !v)}
-                    className="text-xs text-ink-muted hover:text-white transition-colors"
+                    className="text-xs text-ink-muted transition-colors hover:text-ink"
                   >
                     {castExpanded ? "Show Less" : `View All (${cast.length})`}
                   </button>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {(castExpanded ? cast : cast.slice(0, 6)).map((c) => (
                   <div
                     key={c.name}
-                    className="flex items-center gap-3 rounded-xl border border-white/5 bg-[#181818] p-2.5"
+                    className="flex items-center gap-3 rounded-xl border border-line/60 bg-surface p-2.5"
                   >
-                    <div className="h-10 w-10 shrink-0 rounded-full bg-[#2a2a2a] overflow-hidden">
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-none bg-surface-2">
                       {c.photo ? (
-                        <img src={c.photo} alt={c.name} className="h-full w-full object-cover" />
+                        <img
+                          src={c.photo}
+                          alt={c.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
-                        <div className="h-full w-full flex items-center justify-center text-xs font-bold text-ink-muted">
+                        <div className="flex h-full w-full items-center justify-center text-xs font-bold text-ink-muted">
                           {c.name[0]}
                         </div>
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold text-white">{c.name}</p>
+                      <p className="truncate text-xs font-semibold text-ink">{c.name}</p>
                       {c.character && (
                         <p className="truncate text-[11px] text-ink-muted">{c.character}</p>
                       )}
@@ -492,49 +523,18 @@ function DetailView({
           )}
         </div>
 
-        {/* Right Column: File Information & Playability Verdict (PRD 5.6, 10.3) */}
+        {/* Right column: technical media details (PRD 5.6, 10.3) */}
         {file && (
-          <aside className="h-fit rounded-2xl border border-white/10 bg-[#181818] p-6 shadow-xl space-y-6">
-            <div>
-              <h2 className="font-display text-xs font-bold uppercase tracking-widest text-ink-muted">
-                Playback Compatibility
-              </h2>
-              <div className="mt-3 flex items-center gap-3 rounded-xl p-3 border border-white/10 bg-white/[0.03]">
-                <div
-                  className={`flex h-3 w-3 shrink-0 rounded-full ${
-                    file.likelyPlayPath === "direct"
-                      ? "bg-green-500 shadow-green-500/50 shadow-sm"
-                      : file.likelyPlayPath === "remux"
-                        ? "bg-blue-500 shadow-blue-500/50 shadow-sm"
-                        : file.likelyPlayPath === "transcode"
-                          ? "bg-amber-500 shadow-amber-500/50 shadow-sm"
-                          : "bg-red-500"
-                  }`}
-                />
-                <div>
-                  <p className="text-sm font-bold text-white capitalize">
-                    {file.likelyPlayPath === "direct"
-                      ? "Direct Play"
-                      : file.likelyPlayPath === "remux"
-                        ? "Container Remux"
-                        : file.likelyPlayPath === "transcode"
-                          ? "Server Conversion"
-                          : "Unsupported"}
-                  </p>
-                  <p className="text-xs text-ink-muted mt-0.5">{file.likelyPlayReason}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-white/10 pt-4">
-              <h3 className="font-display text-xs font-bold uppercase tracking-widest text-ink-muted mb-3">
+          <aside className="h-fit space-y-6 rounded-2xl border border-line bg-surface p-6">
+            <div className="border-t border-line pt-4 first:border-t-0 first:pt-0">
+              <h3 className="mb-3 font-display text-xs font-bold uppercase tracking-widest text-ink-muted">
                 Media Details
               </h3>
               <dl className="space-y-2.5 text-xs">
                 {file.width && file.height && (
                   <div className="flex justify-between">
                     <dt className="text-ink-muted">Resolution</dt>
-                    <dd className="font-medium text-white">
+                    <dd className="font-medium text-ink">
                       {file.height >= 2160
                         ? "4K UHD"
                         : file.height >= 1080
@@ -547,7 +547,7 @@ function DetailView({
                 {file.videoCodec && (
                   <div className="flex justify-between">
                     <dt className="text-ink-muted">Video Codec</dt>
-                    <dd className="font-medium text-white uppercase">
+                    <dd className="font-medium uppercase text-ink">
                       {file.videoCodec} {file.videoProfile ? `(${file.videoProfile})` : ""}
                     </dd>
                   </div>
@@ -556,14 +556,14 @@ function DetailView({
                 {file.container && (
                   <div className="flex justify-between">
                     <dt className="text-ink-muted">Container</dt>
-                    <dd className="font-medium text-white uppercase">{file.container}</dd>
+                    <dd className="font-medium uppercase text-ink">{file.container}</dd>
                   </div>
                 )}
 
                 {file.audio && file.audio.length > 0 && (
-                  <div className="flex justify-between items-baseline">
-                    <dt className="text-ink-muted">Audio</dt>
-                    <dd className="font-medium text-white text-right">
+                  <div className="flex items-baseline justify-between gap-6">
+                    <dt className="shrink-0 text-ink-muted">Audio</dt>
+                    <dd className="text-right font-medium text-ink">
                       {file.audio
                         .map((a) => [a.codec.toUpperCase(), a.language].filter(Boolean).join(" · "))
                         .join(", ")}
@@ -574,14 +574,14 @@ function DetailView({
                 {file.subtitleCount > 0 && (
                   <div className="flex justify-between">
                     <dt className="text-ink-muted">Subtitles</dt>
-                    <dd className="font-medium text-white">{file.subtitleCount} tracks</dd>
+                    <dd className="font-medium text-ink">{file.subtitleCount} tracks</dd>
                   </div>
                 )}
 
                 {file.size > 0 && (
                   <div className="flex justify-between">
                     <dt className="text-ink-muted">File Size</dt>
-                    <dd className="font-medium text-white">
+                    <dd className="font-medium tabular-nums text-ink">
                       {(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB
                     </dd>
                   </div>
@@ -590,7 +590,7 @@ function DetailView({
                 {file.duration && (
                   <div className="flex justify-between">
                     <dt className="text-ink-muted">Duration</dt>
-                    <dd className="font-medium text-white">{Math.round(file.duration / 60)} min</dd>
+                    <dd className="font-medium tabular-nums text-ink">{Math.round(file.duration / 60)} min</dd>
                   </div>
                 )}
               </dl>

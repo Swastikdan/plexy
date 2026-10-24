@@ -15,10 +15,11 @@ export const Dialog = {
       {...p}
       className={cx(
         "fixed top-1/2 left-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2 -translate-y-1/2",
-        "rounded-2xl border border-line bg-surface-2 p-6 shadow-2xl shadow-black/60",
+        "rounded-2xl border border-line bg-surface-2 p-6",
         "max-h-[85vh] overflow-y-auto",
-        "outline-none data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-100",
-        "transition-[opacity,transform] duration-150",
+        "outline-none data-[starting-style]:scale-95 data-[starting-style]:opacity-0",
+        "data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
+        "transition-[opacity,transform] duration-150 ease-out",
         className,
       )}
     />
@@ -27,7 +28,7 @@ export const Dialog = {
     <BaseDialog.Backdrop
       {...p}
       className={cx(
-        "fixed inset-0 z-40 bg-black/70 backdrop-blur-[2px]",
+        "fixed inset-0 z-40 bg-black/75",
         "data-[ending-style]:opacity-0 transition-opacity duration-150",
         className,
       )}

@@ -3,13 +3,13 @@ import { useState } from "react";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { queries } from "../../queries";
-import { Poster, cx } from "../../components/poster";
+import { Poster } from "../../components/poster";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { State } from "../index";
 
 const SORTS = [
-  { value: "name", label: "A → Z" },
+  { value: "name", label: "Alphabetical" },
   { value: "added", label: "Recently added" },
   { value: "year", label: "Release year" },
   { value: "rating", label: "Rating" },
@@ -25,7 +25,7 @@ function LibraryRoute() {
     queries.items({ kind: apiKind, sort, unwatched }),
   );
 
-  const label = kind === "tv" ? "TV shows" : "Movies";
+  const label = kind === "tv" ? "TV Shows" : "Movies";
 
   return (
     <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 sm:px-8">
@@ -35,14 +35,19 @@ function LibraryRoute() {
           <Button
             variant={unwatched ? "primary" : "ghost"}
             onClick={() => setUnwatched((v) => !v)}
+            aria-pressed={unwatched}
             className="h-8 px-3 text-[13px]"
           >
             Unwatched only
           </Button>
-          <Select.Root value={sort} onValueChange={(v) => setSort(String(v))}>
-            <Select.Trigger aria-label="Sort order">
+          <Select.Root
+            value={sort}
+            onValueChange={(v) => setSort(String(v))}
+            items={SORTS as unknown as readonly { value: string; label: string }[]}
+          >
+            <Select.Trigger aria-label="Sort order" className="min-w-36">
               <Select.Value />
-              <Select.Icon className="text-ink-muted">▾</Select.Icon>
+              <Select.Icon />
             </Select.Trigger>
             <Select.Positioner>
               {SORTS.map((s) => (
@@ -61,7 +66,7 @@ function LibraryRoute() {
         <State title={`No ${label.toLowerCase()} yet`} body="Scan a library or wait for a match pass to finish." />}
 
       {data && data.items.length > 0 && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-4 sm:gap-y-6">
           {data.items.map((item) => (
             <Poster
               key={item.id}
@@ -77,7 +82,7 @@ function LibraryRoute() {
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-4">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-4 sm:gap-y-6">
       {Array.from({ length: 18 }, (_, i) => (
         <div key={i} className="aspect-[2/3] w-full animate-pulse rounded-[var(--radius-poster)] bg-surface" />
       ))}

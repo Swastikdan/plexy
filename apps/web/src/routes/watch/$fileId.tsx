@@ -38,6 +38,13 @@ function WatchRoute() {
   const [caps] = useState<string>(() => JSON.stringify(probeBrowserCaps()));
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
 
+  // Stream recovery: when a converted or dropped stream dies mid-playback, bump
+  // this to remount the media element and restart the stream at the same point.
+  const [reloadSeq, setReloadSeq] = useState(0);
+  const resumeOnRecoveryRef = useRef<number | null>(null);
+  const lastRecoveryAtRef = useRef(0);
+  const stallTicksRef = useRef(0);
+
   // One request carries the play path, title, resume point, next episode and
   // subtitle tracks. The old flow chained three requests before the first byte
   // of video could be requested, which is what made opening a title feel slow.
@@ -62,8 +69,9 @@ function WatchRoute() {
   }, []);
 
   const showBufferingAfterDelay = useCallback(() => {
+    // Debounced: short decoder hiccups and seeking must not flash the loader.
     if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
-    bufferingTimerRef.current = setTimeout(() => setIsBuffering(true), 180);
+    bufferingTimerRef.current = setTimeout(() => setIsBuffering(true), 600);
   }, []);
 
   const hideBuffering = useCallback(() => {
@@ -117,7 +125,7 @@ function WatchRoute() {
     style.textContent = `media-loading-indicator { display: none; }
       media-buffered-progress-bar {
         --media-range-track-background: rgba(255, 255, 255, 0.16);
-        --media-progress-bar-border-radius: 4px;
+        --media-progress-bar-border-radius: var(--radius);
         color: rgba(255, 255, 255, 0.22);
       }
       ${noSubtitles ? `
@@ -133,7 +141,7 @@ function WatchRoute() {
           width: max-content;
           max-width: 220px;
           padding: 6px 9px;
-          border-radius: 4px;
+          border-radius: var(--radius);
           background: #1f1f23;
           color: white;
           font: 12px/1.4 sans-serif;
@@ -178,6 +186,35 @@ function WatchRoute() {
   }, [streamUrl]);
 
   const isHls = Boolean(streamUrl && streamUrl.includes(".m3u8"));
+
+  /**
+   * Bring playback back after the stream dies (server hiccup, stalled media).
+   * Converted streams are rejoined server-side at the current source timestamp;
+   * direct files simply reload and re-seek (ranges are supported).
+   * Repeated calls are rate limited so a dead server cannot loop reloads.
+   */
+  const attemptRecovery = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.ended) return;
+    const now = Date.now();
+    if (now - lastRecoveryAtRef.current < 8000) return;
+    lastRecoveryAtRef.current = now;
+
+    const path = play.data?.path;
+    const displayTime = video.currentTime;
+    if (path && path !== "direct") {
+      // The media element's currentTime is the display timeline (source offset
+      // by streamStart) when the descriptor override is installed; restart the
+      // conversion at the matching source timestamp. A changed start also
+      // changes streamUrl, which remounts the media element by key.
+      const sourceSeconds = Math.max(0, displayTime - streamStart);
+      setRestartAt({ fileId: Number(fileId), seconds: sourceSeconds });
+    } else {
+      resumeOnRecoveryRef.current = displayTime;
+      setReloadSeq((s) => s + 1);
+    }
+    setIsBuffering(true);
+  }, [fileId, play.data?.path, streamStart]);
 
   // Converted fragmented MP4 streams report their duration as data arrives.
   // The player should use the scanned source duration from the first frame.
@@ -358,10 +395,66 @@ function WatchRoute() {
     };
   }, [fileId, play.data?.path, streamStart, duration]);
 
+  // Lock landscape while fullscreened on mobile, and leave cleanly on exit.
+  // Where the OS will not rotate (e.g. iOS), styles.css rotates the fullscreen
+  // element with CSS instead.
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const orientation = screen.orientation as
+        | (ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void })
+        | undefined;
+      if (document.fullscreenElement && orientation?.lock) {
+        orientation.lock("landscape").catch(() => {
+          // Unsupported or denied; CSS fallback handles the rotation.
+        });
+      } else {
+        orientation?.unlock?.();
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      onFullscreenChange();
+    };
+  }, []);
+
+  // Recover automatically when the media stops receiving data even though we
+  // expect it to be playing. Two consecutive quiet watchdog ticks (~8s) minus
+  // any user scrubbing means the stream went away and needs a restart.
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended || isScrubbingRef.current) {
+        stallTicksRef.current = 0;
+        return;
+      }
+      if (video.readyState < 2) {
+        stallTicksRef.current += 1;
+        if (stallTicksRef.current >= 2) {
+          stallTicksRef.current = 0;
+          attemptRecovery();
+        }
+      } else {
+        stallTicksRef.current = 0;
+      }
+    }, 4000);
+    return () => clearInterval(tick);
+  }, [attemptRecovery]);
+
   // Resume position callback
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLMediaElement>) => {
     const v = e.currentTarget;
     const resumeAt = play.data?.watch?.position ?? 0;
+    if (play.data?.path === "direct" && resumeOnRecoveryRef.current != null) {
+      // Recovered direct stream: jump back to where playback died.
+      try {
+        v.currentTime = resumeOnRecoveryRef.current;
+      } catch {
+        // Metadata is not always seekable at this exact moment; best effort.
+      }
+      resumeOnRecoveryRef.current = null;
+      return;
+    }
     if (resumeAt > 15 && !play.data?.watch?.played) {
       if (play.data?.path === "direct" && Math.abs(v.currentTime - resumeAt) > 3) {
         v.currentTime = resumeAt;
@@ -391,12 +484,9 @@ function WatchRoute() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="font-display text-base sm:text-lg font-bold text-white drop-shadow">
+            <h1 className="font-display text-base sm:text-lg font-bold text-white">
               {title ?? "Loading title…"}
             </h1>
-            {manifest.data?.subtitle && (
-              <p className="text-xs text-white/60">{manifest.data.subtitle}</p>
-            )}
           </div>
         </div>
 
@@ -406,7 +496,7 @@ function WatchRoute() {
               onClick={() =>
                 navigate({ to: "/watch/$fileId", params: { fileId: String(nextFileId) } })
               }
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/15 px-3 text-xs font-semibold text-white transition-colors hover:bg-white/25"
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-white/15 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/25"
               title="Next Episode"
             >
               <SkipForward size={15} />
@@ -419,12 +509,12 @@ function WatchRoute() {
       {/* Main Video View / Sutro Theme */}
       <div className="relative flex-1 flex items-center justify-center w-full h-full p-0">
         {play.data?.path === "unsupported" ? (
-          <div className="max-w-md rounded-2xl border border-surface/50 bg-[#161618] p-6 text-center text-white z-20 shadow-2xl">
+          <div className="max-w-md rounded-2xl border border-surface/50 bg-[#161618] p-6 text-center text-white z-20">
             <p className="font-display text-lg font-bold">Unsupported Format</p>
             <p className="mt-2 text-sm text-white/60">{play.data.reason}</p>
             <button
               onClick={() => void navigate({ to: "/" })}
-              className="mt-6 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
+              className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-brand px-6 text-sm font-bold text-white transition-colors hover:bg-brand-hover"
             >
               Return Home
             </button>
@@ -437,7 +527,7 @@ function WatchRoute() {
               style={{
                 width: "100%",
                 maxWidth: "100%",
-                maxHeight: "100vh",
+                maxHeight: "100dvh",
                 aspectRatio: "16 / 9",
                 ["--media-accent-color" as any]: BRAND_ACCENT,
                 ["--media-primary-color" as any]: "#ffffff",
@@ -446,11 +536,11 @@ function WatchRoute() {
                 ["--media-control-hover-background" as any]: "rgba(35, 35, 35, 0.95)",
                 ["--media-font-family" as any]: "inherit",
               } as React.CSSProperties}
-              className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
+              className="w-full h-full max-w-full max-h-full aspect-video"
             >
               {isHls ? (
                 <HlsVideo
-                  key={streamUrl}
+                  key={`${streamUrl}-${reloadSeq}`}
                   ref={(el: any) => { videoRef.current = el; }}
                   slot="media"
                   src={streamUrl}
@@ -460,10 +550,9 @@ function WatchRoute() {
                   crossOrigin="anonymous"
                   onLoadedMetadata={handleLoadedMetadata}
                   onWaiting={showBufferingAfterDelay}
-                  onStalled={showBufferingAfterDelay}
                   onCanPlay={hideBuffering}
                   onPlaying={hideBuffering}
-                  onError={hideBuffering}
+                  onError={attemptRecovery}
                   className="h-full w-full object-contain"
                 >
                   {tracks.map((t) => (
@@ -479,7 +568,7 @@ function WatchRoute() {
                 </HlsVideo>
               ) : (
                 <video
-                  key={streamUrl}
+                  key={`${streamUrl}-${reloadSeq}`}
                   ref={(el) => { videoRef.current = el; }}
                   slot="media"
                   src={streamUrl}
@@ -489,10 +578,9 @@ function WatchRoute() {
                   crossOrigin="anonymous"
                   onLoadedMetadata={handleLoadedMetadata}
                   onWaiting={showBufferingAfterDelay}
-                  onStalled={showBufferingAfterDelay}
                   onCanPlay={hideBuffering}
                   onPlaying={hideBuffering}
-                  onError={hideBuffering}
+                  onError={attemptRecovery}
                   className="h-full w-full object-contain"
                 >
                   {tracks.map((t) => (

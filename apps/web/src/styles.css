@@ -1,40 +1,193 @@
-/* Plexy Netflix-style viewer theme (PRD 10).
+/* Plexy theme (PRD 10).
  *
- * Designed for a cinematic, immersive experience:
- * - Deep dark canvas (#141414) letting artwork pop
- * - Netflix crimson red (#E50914) & amber projector glow
- * - Geometric Sora display font for cinematic headers & Inter Variable for clean UI
+ * - Deep dark canvas by default, with a real light theme both share one token set
+ * - shadcn base-nova preset: flat surfaces, single blue primary, soft corners
+ * - Single brand accent (blue) for actions, progress and focus; amber reserved for ratings/warnings
+ * - Sora Variable for display type, Geist Variable for UI text
  * - Fluid, responsive micro-interactions (press scale, smooth transitions)
  */
 @import "tailwindcss";
 @import "@fontsource-variable/sora/index.css";
-@import "@fontsource-variable/inter/index.css";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/public-sans";
+@custom-variant dark (&:is(.dark *));
 
-@theme {
-  --color-cinson: #141414;          /* Netflix canvas */
-  --color-surface: #181818;         /* cards on canvas */
-  --color-surface-2: #232323;       /* elevated popovers, modals */
-  --color-surface-hover: #2f2f2f;
-  --color-ink: #ffffff;             /* primary text */
-  --color-ink-muted: #a3a3a3;       /* secondary text */
-  --color-line: rgba(255, 255, 255, 0.12); /* hairline borders */
-  --color-amber: #e8a33d;           /* projector glow */
+@theme inline {
+  /* Plexy design tokens */
+  --color-canvas: var(--canvas);          /* app canvas */
+  --color-surface: var(--surface);        /* cards on canvas */
+  --color-surface-2: var(--surface-2);    /* elevated popovers, modals */
+  --color-surface-hover: var(--surface-hover);
+  --color-ink: var(--ink);                /* primary text */
+  --color-ink-muted: var(--ink-muted);    /* secondary text */
+  --color-line: var(--line);              /* hairline borders */
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);            /* fills: buttons, bars, focus */
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-active: var(--brand-active);
+  --color-brand-text: var(--brand-text);  /* brand-colored text on canvas */
+  --color-amber: #e8a33d;                 /* ratings and warnings only */
   --color-amber-soft: #f0b95c;
-  --color-brand-red: #E50914;       /* Netflix red */
-  --color-brand-red-hover: #F40612;
 
+  /* shadcn base-nova preset tokens */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Sora Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-sans);
 
-  --radius-hero: 16px;
-  --radius-poster: 8px;
+  /* Corner system: every radius derives from --radius (0rem = fully sharp) */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+  --radius-2xl: calc(var(--radius) * 1.5);
+  --radius-hero: var(--radius);
+  --radius-poster: var(--radius);
 
   --animate-rise: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Dark is the default theme; the Settings toggle flips data-theme on <html>. */
+:root {
+  color-scheme: dark;
+  --radius: 0rem;
+
+  /* Plexy tokens */
+  --canvas: #0d0d0f;
+  --surface: #161618;
+  --surface-2: #1f1f23;
+  --surface-hover: #27272b;
+  --ink: #f5f6f7;
+  --ink-muted: #9ba0aa;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.26);
+  --brand: #3b7df9;
+  --brand-hover: #5591fa;
+  --brand-active: #2f68e4;
+  --brand-text: #8db3ff;
+
+  /* shadcn dark palette (base-nova) */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.424 0.199 265.638);
+  --primary-foreground: oklch(0.97 0.014 254.604);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.623 0.214 259.815);
+  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  /* Plexy tokens */
+  --canvas: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --surface-hover: #eef0f4;
+  --ink: #16181c;
+  --ink-muted: #5c626e;
+  --line: rgba(22, 24, 28, 0.10);
+  --line-strong: rgba(22, 24, 28, 0.24);
+  --brand: #2262e1;
+  --brand-hover: #1d57c8;
+  --brand-active: #1747a4;
+  --brand-text: #1d5bc4;
+
+  /* shadcn light palette (base-nova) */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.488 0.243 264.376);
+  --primary-foreground: oklch(0.97 0.014 254.604);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.546 0.245 262.881);
+  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 /* One orchestrated entrance: hero and rows rise on first paint */
@@ -48,27 +201,29 @@
 
 @layer base {
   html {
-    background: var(--color-cinson);
+    background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
-    scrollbar-color: #333333 transparent;
+    scrollbar-color: var(--surface-hover) transparent;
+    @apply font-sans;
   }
 
   body {
     margin: 0;
     min-height: 100dvh;
-    background-color: var(--color-cinson);
+    background-color: var(--color-canvas);
+    @apply bg-background text-foreground;
   }
 
   ::selection {
-    background: rgba(229, 9, 20, 0.4);
-    color: #ffffff;
+    background: color-mix(in oklab, var(--color-brand) 40%, transparent);
+    color: var(--color-ink);
   }
 
-  /* Visible keyboard focus, consistent across the app */
+  /* Visible keyboard focus, consistent across the app and both themes */
   :focus-visible {
-    outline: 2px solid var(--color-brand-red);
+    outline: 2px solid var(--color-brand);
     outline-offset: 2px;
   }
 
@@ -79,7 +234,14 @@
     transition: transform 80ms ease-out;
   }
 
-  /* Horizontal poster scrollers */
+  /* Tailwind v4 preflight dropped the pointer cursor on buttons; restore it */
+  button:not(:disabled),
+  a,
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+/* Horizontal poster scrollers */
   .scroll-row {
     scrollbar-width: none;
     scroll-behavior: smooth;
@@ -87,6 +249,23 @@
   .scroll-row::-webkit-scrollbar { display: none; }
   .scroll-row { scroll-snap-type: x proximity; }
   .scroll-row > * { scroll-snap-align: start; }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
+/* Mobile fullscreen playback: when a browser fullscreen plays video but the
+ * device stays portrait (rotation unavailable), rotate the fullscreen element
+ * to landscape with CSS. The transform math maps the swapped box back onto the
+ * viewport:-width 100vh, height 100vw, shifted right by the rotated extent. */
+@media (orientation: portrait) {
+  :fullscreen {
+    width: 100vh;
+    height: 100vw;
+    transform: translateX(100vw) rotate(90deg);
+    transform-origin: top left;
+  }
 }
 
 /* Reduced motion accessibility */
