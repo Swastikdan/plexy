@@ -7,6 +7,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { hydrateServerUrl } from "./server-config";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -36,11 +37,19 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const app = document.getElementById("root")!;
-ReactDOM.createRoot(app).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+async function bootstrap() {
+  // Electron stores the chosen server outside the page origin so it survives
+  // the dynamic local port changing between launches.
+  await hydrateServerUrl();
+
+  const app = document.getElementById("root")!;
+  ReactDOM.createRoot(app).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+}
+
+void bootstrap();

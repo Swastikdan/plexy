@@ -18,6 +18,7 @@ const ConfigSchema = z.object({
   bindAddress: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
   metadataLanguage: z.string().default("en-US"),
+  preferredAudioLanguage: z.string().default("en"),
   metadataRegion: z.string().default("US"),
   imageQuality: z.enum(["w342", "w500", "w780", "original"]).default("w780"),
   // Keep new installs quiet until the owner opts into library-wide background
@@ -83,6 +84,7 @@ export function redactedView(cfg: Config) {
     bindAddress: cfg.bindAddress,
     logLevel: cfg.logLevel,
     metadataLanguage: cfg.metadataLanguage,
+    preferredAudioLanguage: cfg.preferredAudioLanguage,
     metadataRegion: cfg.metadataRegion,
     imageQuality: cfg.imageQuality,
     autoOptimize: cfg.autoOptimize,

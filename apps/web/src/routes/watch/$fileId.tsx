@@ -10,6 +10,7 @@ import { VideoSkin } from "@/components/videojs/video/skin";
 import { api, type Playability, type SubtitleTrack } from "../../client";
 import { probeBrowserCaps } from "@plexy/api-client";
 import { queries } from "../../queries";
+import { useIsFullscreen } from "../../lib/use-fullscreen";
 
 function WatchRoute() {
   const { fileId } = useParams({ from: Route.id });
@@ -28,7 +29,7 @@ function WatchRoute() {
   const [title, setTitle] = useState<string | null>(null);
   const [knownDuration, setKnownDuration] = useState<number | null>(null);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
-  const [nextFileId, setNextFileId] = useState<number | null>(null);
+  const autoAdvanceRef = useRef(false);
 
   // Audio track and subtitle sync state
   const [selectedAudioIndex, setSelectedAudioIndex] = useState<number>(0);
@@ -64,6 +65,16 @@ function WatchRoute() {
 
   // Fetch complete player manifest
   const hasInitializedAudioRef = useRef(false);
+  useEffect(() => {
+    hasInitializedAudioRef.current = false;
+    setSelectedAudioIndex(0);
+    setSubtitleOffset(0);
+    appliedSubtitleOffsetRef.current = 0;
+    setRestartAt(null);
+    setKnownDuration(null);
+    setTitle(null);
+  }, [fileId]);
+
   const play = useQuery({
     queryKey: ["play", fileId, caps],
     queryFn: async () => {
@@ -74,9 +85,6 @@ function WatchRoute() {
       if (manifest.duration) {
         setKnownDuration(manifest.duration);
       }
-      if (manifest.nextFileId) {
-        setNextFileId(manifest.nextFileId);
-      }
       return manifest;
     },
     enabled: !!caps,
@@ -86,10 +94,13 @@ function WatchRoute() {
   useEffect(() => {
     if (!hasInitializedAudioRef.current && play.data?.audioTracks && play.data.audioTracks.length > 0) {
       hasInitializedAudioRef.current = true;
+      const preferredIdx = play.data.selectedAudioIndex ?? -1;
       const defaultIdx = play.data.audioTracks.findIndex((t: any) => t.isDefault);
-      if (defaultIdx >= 0) setSelectedAudioIndex(defaultIdx);
+      setSelectedAudioIndex(Number.isInteger(preferredIdx) && preferredIdx >= 0
+        ? preferredIdx
+        : defaultIdx >= 0 ? defaultIdx : 0);
     }
-  }, [play.data?.audioTracks]);
+  }, [play.data?.audioTracks, play.data?.selectedAudioIndex]);
 
   // Subtitle tracks
   const tracksQuery = useQuery({ ...queries.subtitles(Number(fileId)), enabled: !!caps });
@@ -101,7 +112,8 @@ function WatchRoute() {
       : 0;
 
   const streamStart =
-    play.data?.path === "direct" && selectedAudioIndex === 0
+    (play.data?.path === "hls" && selectedAudioIndex === (play.data.selectedAudioIndex ?? 0))
+      || (play.data?.path === "direct" && selectedAudioIndex === 0)
       ? 0
       : restartAt?.fileId === Number(fileId)
         ? restartAt.seconds
@@ -111,6 +123,9 @@ function WatchRoute() {
     if (!play.data || play.data.path === "unsupported") return null;
     // If original direct play, but user selected an alternate audio track, remux to preserve choice
     if (play.data.path === "direct" && selectedAudioIndex > 0) return "remux";
+    // Prepared HLS bundles contain the preferred language selected at prepare
+    // time. Use the normal conversion path if the viewer chooses another track.
+    if (play.data.path === "hls" && selectedAudioIndex !== (play.data.selectedAudioIndex ?? 0)) return "transcode";
     return play.data.path;
   }, [play.data, selectedAudioIndex]);
 
@@ -147,6 +162,13 @@ function WatchRoute() {
 
   const isHls = Boolean(streamUrl && streamUrl.includes(".m3u8"));
   const duration = knownDuration ?? play.data?.watch?.duration ?? undefined;
+
+  const isFullscreen = useIsFullscreen();
+  const isElectronMac =
+    typeof window !== "undefined" &&
+    (Boolean(window.electronAPI?.isElectron) || /Electron/i.test(navigator.userAgent)) &&
+    (window.electronAPI?.platform === "darwin" || /Mac/i.test(navigator.userAgent));
+  const needsMacOffset = isElectronMac && !isFullscreen;
 
   // Converted fragmented MP4 streams report duration as data arrives.
   // Define source-timeline properties so seeking and duration stay in sync.
@@ -281,13 +303,30 @@ function WatchRoute() {
   // Resume position callback
   const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLMediaElement>) => {
     const v = e.currentTarget;
+    if (autoAdvanceRef.current) {
+      void v.play().then(() => {
+        autoAdvanceRef.current = false;
+      }).catch(() => {});
+    }
     const resumePos = play.data?.watch?.position ?? 0;
     if (resumePos > 15 && !play.data?.watch?.played) {
-      if (effectivePath === "direct" && Math.abs(v.currentTime - resumePos) > 3) {
+      if ((effectivePath === "direct" || effectivePath === "hls") && Math.abs(v.currentTime - resumePos) > 3) {
         v.currentTime = resumePos;
       }
     }
   }, [effectivePath, play.data?.watch]);
+
+  const handleEnded = useCallback(() => {
+    const next = play.data?.nextFileId;
+    if (!next) return;
+    autoAdvanceRef.current = true;
+    void navigate({ to: "/watch/$fileId", params: { fileId: String(next) } });
+  }, [navigate, play.data?.nextFileId]);
+
+  const playNextEpisode = useCallback(() => {
+    const next = play.data?.nextFileId;
+    if (next) void navigate({ to: "/watch/$fileId", params: { fileId: String(next) } });
+  }, [navigate, play.data?.nextFileId]);
 
   return (
     <div
@@ -296,41 +335,25 @@ function WatchRoute() {
       onClick={resetHideTimer}
       className="fixed inset-0 z-50 flex flex-col bg-black select-none overflow-hidden"
     >
-      {/* Top Header Bar */}
+      {/* Top Header Bar — reserves space for macOS traffic light buttons when windowed; moves flush left when fullscreen */}
       <div
-        className={`absolute top-0 inset-x-0 z-30 flex h-20 items-center justify-between px-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${
+        style={{
+          paddingLeft: needsMacOffset ? "88px" : undefined,
+        }}
+        className={`absolute top-0 inset-x-0 z-30 flex h-20 items-center gap-4 px-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-[opacity,padding] duration-300 ${
           controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       >
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => void navigate({ to: "/" })}
-            aria-label="Back"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="font-display text-base sm:text-lg font-bold text-white drop-shadow">
-              {title ?? "Loading title…"}
-            </h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {nextFileId && (
-            <button
-              onClick={() =>
-                navigate({ to: "/watch/$fileId", params: { fileId: String(nextFileId) } })
-              }
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/15 px-3 text-xs font-semibold text-white hover:bg-white/25 transition-colors"
-              title="Next Episode"
-            >
-              <SkipForward size={15} />
-              <span>Next Episode</span>
-            </button>
-          )}
-        </div>
+        <button
+          onClick={() => void navigate({ to: "/" })}
+          aria-label="Back"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <h1 className="font-display text-base sm:text-lg font-bold text-white drop-shadow truncate">
+          {title ?? ""}
+        </h1>
       </div>
 
       {/* Main Video View / Video.js 10 */}
@@ -346,7 +369,7 @@ function WatchRoute() {
               Return Home
             </button>
           </div>
-        ) : streamUrl ? (
+        ) : (
           <div className="w-full h-full flex items-center justify-center">
             <VideoPlayer>
               <VideoSkin
@@ -358,93 +381,112 @@ function WatchRoute() {
                 onAdjustSubtitleOffset={handleAdjustSubtitleOffset}
                 onResetSubtitleOffset={handleResetSubtitleOffset}
               >
-                {isHls ? (
-                  <HlsJsVideo
-                    key={streamUrl}
-                    ref={(el: HTMLVideoElement | null) => {
-                      videoRef.current = el;
-                    }}
-                    src={streamUrl}
-                    autoPlay
-                    playsInline
-                    crossOrigin="anonymous"
-                    onLoadedMetadata={handleLoadedMetadata}
-                    onLoadedData={hideBuffering}
-                    onTimeUpdate={hideBuffering}
-                    onPlay={hideBuffering}
-                    onWaiting={showBufferingAfterDelay}
-                    onStalled={showBufferingAfterDelay}
-                    onCanPlay={hideBuffering}
-                    onPlaying={hideBuffering}
-                    onError={hideBuffering}
-                    className="h-full w-full object-contain"
-                  >
-                    {/* Storyboard track for scrub preview trickplay */}
-                    {trickplayTrackUrl && (
-                      <track
-                        kind="metadata"
-                        label="thumbnails"
-                        src={trickplayTrackUrl}
-                        default
-                      />
-                    )}
-                    {/* WebVTT Subtitle tracks */}
-                    {tracks.map((t) => (
-                      <track
-                        key={t.track}
-                        label={t.title || t.language || `Track ${t.track}`}
-                        kind="subtitles"
-                        src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
-                        srcLang={t.language ?? undefined}
-                        default={t.isDefault}
-                      />
-                    ))}
-                  </HlsJsVideo>
-                ) : (
-                  <Video
-                    key={streamUrl}
-                    ref={(el: HTMLVideoElement | null) => {
-                      videoRef.current = el;
-                    }}
-                    src={streamUrl}
-                    autoPlay
-                    playsInline
-                    crossOrigin="anonymous"
-                    onLoadedMetadata={handleLoadedMetadata}
-                    onLoadedData={hideBuffering}
-                    onTimeUpdate={hideBuffering}
-                    onPlay={hideBuffering}
-                    onWaiting={showBufferingAfterDelay}
-                    onStalled={showBufferingAfterDelay}
-                    onCanPlay={hideBuffering}
-                    onPlaying={hideBuffering}
-                    onError={hideBuffering}
-                    className="h-full w-full object-contain"
-                  >
-                    {/* Storyboard track for scrub preview trickplay */}
-                    {trickplayTrackUrl && (
-                      <track
-                        kind="metadata"
-                        label="thumbnails"
-                        src={trickplayTrackUrl}
-                        default
-                      />
-                    )}
-                    {/* WebVTT Subtitle tracks */}
-                    {tracks.map((t) => (
-                      <track
-                        key={t.track}
-                        label={t.title || t.language || `Track ${t.track}`}
-                        kind="subtitles"
-                        src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
-                        srcLang={t.language ?? undefined}
-                        default={t.isDefault}
-                      />
-                    ))}
-                  </Video>
+                {streamUrl && (
+                  isHls ? (
+                    <HlsJsVideo
+                      key={streamUrl}
+                      ref={(el: HTMLVideoElement | null) => {
+                        videoRef.current = el;
+                      }}
+                      src={streamUrl}
+                      autoPlay
+                      playsInline
+                      crossOrigin="anonymous"
+                      onLoadedMetadata={handleLoadedMetadata}
+                      onLoadedData={hideBuffering}
+                      onEnded={handleEnded}
+                      onTimeUpdate={hideBuffering}
+                      onPlay={hideBuffering}
+                      onWaiting={showBufferingAfterDelay}
+                      onStalled={showBufferingAfterDelay}
+                      onCanPlay={hideBuffering}
+                      onPlaying={hideBuffering}
+                      onError={hideBuffering}
+                      className="h-full w-full object-contain"
+                    >
+                      {trickplayTrackUrl && (
+                        <track
+                          kind="metadata"
+                          label="thumbnails"
+                          src={trickplayTrackUrl}
+                          default
+                        />
+                      )}
+                      {tracks.map((t) => (
+                        <track
+                          key={t.track}
+                          label={t.title || t.language || `Track ${t.track}`}
+                          kind="subtitles"
+                          src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
+                          srcLang={t.language ?? undefined}
+                          default={t.isDefault}
+                        />
+                      ))}
+                    </HlsJsVideo>
+                  ) : (
+                    <Video
+                      key={streamUrl}
+                      ref={(el: HTMLVideoElement | null) => {
+                        videoRef.current = el;
+                      }}
+                      src={streamUrl}
+                      autoPlay
+                      playsInline
+                      crossOrigin="anonymous"
+                      onLoadedMetadata={handleLoadedMetadata}
+                      onLoadedData={hideBuffering}
+                      onEnded={handleEnded}
+                      onTimeUpdate={hideBuffering}
+                      onPlay={hideBuffering}
+                      onWaiting={showBufferingAfterDelay}
+                      onStalled={showBufferingAfterDelay}
+                      onCanPlay={hideBuffering}
+                      onPlaying={hideBuffering}
+                      onError={hideBuffering}
+                      className="h-full w-full object-contain"
+                    >
+                      {trickplayTrackUrl && (
+                        <track
+                          kind="metadata"
+                          label="thumbnails"
+                          src={trickplayTrackUrl}
+                          default
+                        />
+                      )}
+                      {tracks.map((t) => (
+                        <track
+                          key={t.track}
+                          label={t.title || t.language || `Track ${t.track}`}
+                          kind="subtitles"
+                          src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
+                          srcLang={t.language ?? undefined}
+                          default={t.isDefault}
+                        />
+                      ))}
+                    </Video>
+                  )
                 )}
               </VideoSkin>
             </VideoPlayer>
+
+            {/* Next Episode — lives outside VideoSkin/VideoPlayer so skin overlays never block pointer events */}
+            {play.data?.nextFileId && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  playNextEpisode();
+                }}
+                aria-label="Play next episode"
+                title="Next Episode"
+                className={`absolute right-5 top-5 z-50 inline-flex h-10 items-center gap-2 rounded-lg bg-black/70 px-4 text-sm font-semibold text-white shadow-lg backdrop-blur-sm hover:bg-black/90 focus-visible:outline-2 focus-visible:outline-white transition-opacity duration-300 ${
+                  controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+                }`}
+              >
+                <SkipForward size={16} />
+                <span>Next Episode</span>
+              </button>
+            )}
 
             {isBuffering && (
               <div
@@ -455,10 +497,6 @@ function WatchRoute() {
                 <div className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />
               </div>
             )}
-          </div>
-        ) : (
-          <div className="text-center text-ink-muted">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#E50914] mx-auto" />
           </div>
         )}
       </div>

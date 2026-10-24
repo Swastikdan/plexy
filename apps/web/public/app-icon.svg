@@ -1,15 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.45" />
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#181a24" />
+      <stop offset="50%" stop-color="#11131b" />
+      <stop offset="100%" stop-color="#090a0f" />
+    </linearGradient>
+    <linearGradient id="stroke-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.16" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.04" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.01" />
+    </linearGradient>
     <linearGradient id="plexy-blue" x1="0%" x2="100%" y1="0%" y2="100%">
       <stop offset="0%" stop-color="#6C9FFF" />
       <stop offset="50%" stop-color="#3B7DF9" />
       <stop offset="100%" stop-color="#1F4FCB" />
     </linearGradient>
+    <radialGradient id="inner-glow" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#3B7DF9" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#3B7DF9" stop-opacity="0" />
+    </radialGradient>
   </defs>
-  <rect width="1024" height="1024" rx="220" fill="#fff" />
+
+  <!-- macOS Big Sur/Sonoma Standard Squircle: 824x824 centered at (100,100) with r=185 -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg-grad)" filter="url(#shadow)" stroke="url(#stroke-grad)" stroke-width="2" />
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#inner-glow)" />
+
+  <!-- Plexy Medusa Emblem centered -->
   <path
     fill="url(#plexy-blue)"
-    transform="translate(162 133) scale(2.734375)"
+    transform="translate(269 249) scale(1.9)"
     d="M223.517 44.823 161.174 8.85a65.565 65.565 0 0 0-65.792 0l-62.63 35.973C12.642 56.623 0 78.495 0 101.806v72.235c0 23.6 12.641 45.183 32.752 56.982l62.343 36.263a65.565 65.565 0 0 0 65.791 0l62.343-36.263c20.399-11.799 32.752-33.383 32.752-56.982v-72.235c.575-23.311-12.066-45.183-32.464-56.983Zm-95.383 157.422c-35.337 0-64.067-28.78-64.067-64.177 0-35.399 28.73-64.178 64.067-64.178 35.338 0 64.355 28.779 64.355 64.178 0 35.398-28.73 64.177-64.355 64.177Z"
   />
 </svg>

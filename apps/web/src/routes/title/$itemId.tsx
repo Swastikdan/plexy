@@ -20,6 +20,7 @@ import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
+import { Dialog } from "../../components/ui/dialog";
 import { cx } from "../../components/ui/button";
 import { PageLoader } from "../../components/page-loader";
 
@@ -91,6 +92,7 @@ function DetailView({
   const queryClient = useQueryClient();
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [fixMatchOpen, setFixMatchOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const seasonList = seasons && seasons.length > 0
     ? seasons
@@ -106,6 +108,7 @@ function DetailView({
       setSelectedSeason(seasonList[0].number);
     }
   }, [seasonList, selectedSeason]);
+
 
   // Watch state mutations. `setWatched` can mark *and* unmark; clearing removes
   // the row so the title drops out of Continue Watching entirely.
@@ -133,6 +136,15 @@ function DetailView({
       queryClient.invalidateQueries({ queryKey: ["home"] });
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteTitle(item.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries();
+      await navigate({ to: "/" });
+    },
+  });
+
 
   const isPlayed = !!item.watch?.played;
   const resumePos = item.watch?.position ?? 0;
@@ -342,6 +354,16 @@ function DetailView({
                 <span className="hidden sm:inline">Remove Progress</span>
               </Button>
             )}
+
+            <Button
+              variant="danger"
+              onClick={() => setDeleteOpen(true)}
+              className="h-10 sm:h-11 px-3.5 sm:px-4 text-xs sm:text-sm font-semibold"
+              title="Delete this title and its original video files"
+            >
+              <Trash2 size={15} />
+              <span className="hidden sm:inline">Delete title</span>
+            </Button>
 
             {item.kind !== "episode" && (
               <Button
@@ -718,6 +740,26 @@ function DetailView({
         initialYear={item.year}
         kind={item.kind}
       />
+
+      <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <Dialog.Portal>
+          <Dialog.Backdrop />
+          <Dialog.Popup>
+            <Dialog.Title>Delete “{item.name}” and its video files?</Dialog.Title>
+            <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+              This permanently deletes the original video files from disk and removes the title from Plexy.
+              {item.kind === "series" ? " The files for its episodes will also be deleted." : ""}
+            </p>
+            {deleteMutation.isError && <p role="alert" className="mt-3 text-sm text-red-400">{deleteMutation.error.message}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setDeleteOpen(false)} disabled={deleteMutation.isPending}>Cancel</Button>
+              <Button variant="danger" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? "Deleting…" : "Delete title and files"}
+              </Button>
+            </div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

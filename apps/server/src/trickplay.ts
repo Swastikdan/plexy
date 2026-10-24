@@ -298,11 +298,11 @@ function runFfmpeg(ffmpeg: string, args: string[], fileId: number): Promise<void
     child.stderr!.on("data", (chunk: Buffer) => {
       if (stderr.length < 4_000) stderr += chunk.toString();
     });
-    child.on("error", (err) => {
+    child.on("error", (err: Error) => {
       if (active?.child === child) active = null;
       reject(err);
     });
-    child.on("exit", (code, signal) => {
+    child.on("exit", (code: number | null, signal: string | null) => {
       if (active?.child === child) active = null;
       if (stopping) {
         resolve();

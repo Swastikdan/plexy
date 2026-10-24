@@ -1,0 +1,17 @@
+{
+  "name": "@plexy/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build:main": "bun build.ts",
+    "dev": "bun run build:main && electron .",
+    "package": "bun run build:main && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "typescript": "^7.0.2"
+  }
+}

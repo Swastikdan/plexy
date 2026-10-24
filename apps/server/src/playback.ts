@@ -8,7 +8,7 @@
 /// - `transcode`   — codecs themselves are unsupported; re-encode on demand.
 /// - `unsupported` — none of the above is reliable; never claim it will play.
 
-export type PlayPath = "direct" | "remux" | "transcode" | "unsupported";
+export type PlayPath = "direct" | "remux" | "transcode" | "hls" | "unsupported";
 
 export interface BrowserCaps {
   videoCodecs: string[];   // e.g. ["avc1", "h264", "hevc", "vp9", "av1"]

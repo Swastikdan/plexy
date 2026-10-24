@@ -1,0 +1,80 @@
+{
+  "appId": "com.plexy.desktop",
+  "productName": "Plexy",
+  "artifactName": "${productName}-${version}-${arch}.${ext}",
+  "directories": {
+    "app": "apps/desktop",
+    "output": "dist/mac",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "dist/bin/plexy-server",
+      "to": "bin/plexy-server"
+    },
+    {
+      "from": "dist/bin/ffmpeg",
+      "to": "bin/ffmpeg"
+    },
+    {
+      "from": "dist/migrations",
+      "to": "migrations"
+    },
+    {
+      "from": "dist/web",
+      "to": "web"
+    },
+    {
+      "from": "build/icon.png",
+      "to": "icon.png"
+    },
+    {
+      "from": "build/icon.icns",
+      "to": "icon.icns"
+    }
+  ],
+  "icon": "build/icon.icns",
+  "mac": {
+    "category": "public.app-category.video",
+    "icon": "build/icon.icns",
+    "identity": "-",
+    "target": [
+      {
+        "target": "dir",
+        "arch": ["arm64"]
+      },
+      {
+        "target": "dmg",
+        "arch": ["arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["arm64"]
+      }
+    ],
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false
+  },
+  "dmg": {
+    "title": "${productName} ${version}",
+    "icon": null,
+    "backgroundColor": "#ffffff",
+    "contents": [
+      {
+        "x": 140,
+        "y": 180,
+        "type": "file"
+      },
+      {
+        "x": 400,
+        "y": 180,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  }
+}

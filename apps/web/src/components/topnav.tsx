@@ -4,13 +4,15 @@
 import { useEffect, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Search, Settings, Film, Tv, Home } from "lucide-react";
+import { ArrowLeft, Search, Settings, Film, Tv, Home, Server } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "./poster";
+import { useIsFullscreen } from "../lib/use-fullscreen";
 
 export function TopNav() {
   const [scrolled, setScrolled] = useState(false);
   const router = useRouter();
+  const isFullscreen = useIsFullscreen();
   const canGoBack = router.state.location.pathname !== "/";
 
   // Check libraries to see whether movies or TV shows have titles
@@ -35,6 +37,20 @@ export function TopNav() {
       : []),
   ];
 
+  const isElectronMac =
+    typeof window !== "undefined" &&
+    (Boolean(window.electronAPI?.isElectron) || /Electron/i.test(navigator.userAgent)) &&
+    (window.electronAPI?.platform === "darwin" || /Mac/i.test(navigator.userAgent));
+
+  useEffect(() => {
+    if (window.electronAPI?.onNavigate) {
+      const unsub = window.electronAPI.onNavigate((to) => {
+        router.navigate({ to: to as any });
+      });
+      return unsub;
+    }
+  }, [router]);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 15);
     onScroll();
@@ -44,8 +60,9 @@ export function TopNav() {
 
   return (
     <header
+      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       className={cx(
-        "sticky top-0 z-40 px-3 sm:px-6 md:px-8",
+        "sticky top-0 z-40 select-none px-3 sm:px-6 md:px-8",
         "transition-[background-color,border-color,backdrop-filter] duration-200 ease-out",
         scrolled
           ? "border-b border-line/80 bg-canvas/90 backdrop-blur-md shadow-xs shadow-black/20"
@@ -55,9 +72,16 @@ export function TopNav() {
       <div className="mx-auto max-w-[1500px]">
         {/* Main top header row */}
         <div className="flex h-14 sm:h-16 items-center justify-between gap-2 sm:gap-6">
-          {/* Left section: Back button + Plexy logo */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {canGoBack && (
+          {/* Left section: back button OR Plexy logo — never both at once */}
+          <div
+            style={{
+              WebkitAppRegion: "no-drag",
+              paddingLeft: isElectronMac && !isFullscreen ? "88px" : undefined,
+            } as React.CSSProperties}
+            className="flex items-center gap-2 sm:gap-3 shrink-0 transition-[padding] duration-200 ease-out"
+          >
+            {canGoBack ? (
+              /* On sub-pages: just the back button, no Plexy branding */
               <button
                 type="button"
                 onClick={() => router.history.back()}
@@ -67,25 +91,30 @@ export function TopNav() {
               >
                 <ArrowLeft size={18} />
               </button>
+            ) : (
+              /* On home: Plexy logo link */
+              <Link
+                to="/"
+                className="group flex items-center gap-2 rounded-lg p-1 transition-transform active:scale-97"
+              >
+                <img
+                  src="/icon.svg"
+                  alt="Plexy"
+                  className="h-7 w-7 transition-transform duration-200 group-hover:scale-105"
+                />
+                <span className="font-display text-lg sm:text-xl font-black tracking-wider text-brand-text transition-[filter] group-hover:brightness-110">
+                  PLEXY
+                </span>
+              </Link>
             )}
-
-            <Link
-              to="/"
-              className="group flex items-center gap-2 rounded-lg p-1 transition-transform active:scale-97"
-            >
-              <img
-                src="/icon.svg"
-                alt="Plexy"
-                className="h-7 w-7 transition-transform duration-200 group-hover:scale-105"
-              />
-              <span className="font-display text-lg sm:text-xl font-black tracking-wider text-brand-text transition-[filter] group-hover:brightness-110">
-                PLEXY
-              </span>
-            </Link>
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden sm:flex items-center gap-1.5" aria-label="Main Navigation">
+          <nav
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            className="hidden sm:flex items-center gap-1.5"
+            aria-label="Main Navigation"
+          >
             {navLinks.map((l) => (
               <Link
                 key={l.label}
@@ -100,7 +129,19 @@ export function TopNav() {
           </nav>
 
           {/* Right section: Search + Settings */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            className="flex items-center gap-1.5 sm:gap-2"
+          >
+            <Link
+              to="/connect"
+              aria-label="Server connection"
+              title="Server connection"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-all hover:bg-surface hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2 [&.active]:bg-surface [&.active]:text-ink"
+            >
+              <Server size={18} />
+            </Link>
+
             <Link
               to="/search"
               aria-label="Search"

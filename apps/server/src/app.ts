@@ -22,7 +22,10 @@ export function buildApp() {
       cors({
         origin: true,
         credentials: true,
-        allowedHeaders: ["Content-Type", "Authorization"],
+        // Range/If-Range matter for cross-origin HLS and seeking; the rest are
+        // the request headers used by the typed client.
+        allowedHeaders: ["Content-Type", "Authorization", "Range", "If-Range"],
+        exposeHeaders: ["Accept-Ranges", "Content-Range", "Content-Length"],
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
       }),
     )
@@ -73,13 +76,15 @@ export type App = ReturnType<typeof buildApp>;
 function resolveDistDir(): string {
   const exeDir = process.argv[1] ? dirname(process.argv[1]) : "";
   const candidates = [
+    process.env.PLEXY_RESOURCES_DIR ? join(process.env.PLEXY_RESOURCES_DIR, "web") : "",
+    process.env.PLEXY_WEB_DIR || "",
     join(exeDir, "web"),
     join(exeDir, "..", "Resources", "web"),
     join(process.cwd(), "dist", "web"),
     join(import.meta.dir, "..", "..", "..", "dist", "web"),
     join(import.meta.dir, "..", "..", "dist", "web"),
     join(import.meta.dir, "web"),
-  ];
+  ].filter(Boolean);
   for (const c of candidates) {
     if (existsSync(c)) return c;
   }

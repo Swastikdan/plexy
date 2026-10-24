@@ -1,23 +1,14 @@
-/// Media worker: the child-process entry (PRD 2, 6, 5.6).
+/// Metadata probe worker (PRD 2, 6, 5.6).
 ///
-/// Native media work (decoding/encoding bindings from `@mediabunny/server`)
-/// runs here instead of the HTTP server process: a native crash (segfault)
-/// kills its process without a catchable error, so isolation keeps the server
-/// alive and lets the parent record the exit code and mark the file
-/// `analysis_failed` instead of retrying forever.
+/// Probing reads container and packet metadata only; it does not need native
+/// codec bindings. Keeping those bindings out of the server bundle avoids
+/// platform-specific optional dependencies and native crash paths.
 ///
 /// Protocol: one JSON object per line.
 ///   request  { id, op: "probe", path, timeoutMs? }
 ///   response { id, ok, result? , error? }
-import { registerMediabunnyServer } from "@mediabunny/server";
 import { ALL_FORMATS, BlobSource, Input, type InputVideoTrack, type InputAudioTrack } from "mediabunny";
 import { probeMatroskaSubtitles } from "./mkv-subtitles";
-
-try {
-  registerMediabunnyServer();
-} catch {
-  // Pure-TS probe fallback
-}
 
 interface ProbeRequest { id: string; op: "probe"; path: string; timeoutMs?: number }
 

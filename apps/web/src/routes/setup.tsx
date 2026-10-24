@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Folder,
   FolderPlus,
+  FolderOpen,
   HardDrive,
   Trash2,
   ChevronRight,
@@ -306,6 +307,32 @@ function FolderStep() {
             </button>
           ))}
         </div>
+
+        {/* Native Finder Picker (Electron macOS) */}
+        {typeof window !== "undefined" && window.electronAPI?.selectFolder && (
+          <div className="flex items-center justify-between rounded-xl border border-brand/40 bg-brand/10 p-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <FolderOpen className="h-5 w-5 shrink-0 text-brand-text" />
+              <div>
+                <p className="text-xs font-semibold text-ink">Choose folder in Finder</p>
+                <p className="text-[11px] text-ink-muted">Select your Movies or TV Shows directory natively</p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              type="button"
+              onClick={async () => {
+                const selected = await window.electronAPI?.selectFolder();
+                if (selected) {
+                  addFolder(selected);
+                }
+              }}
+              className="h-8.5 shrink-0 px-3.5 text-xs font-medium"
+            >
+              Browse in Finder...
+            </Button>
+          </div>
+        )}
 
         {/* Direct Path Input */}
         <div className="flex gap-2">

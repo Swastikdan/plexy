@@ -41,7 +41,9 @@ function rejectAll(message: string) {
 function spawnWorker(): ChildProcess {
   const entry = join(import.meta.dir, "optimize-worker.ts");
   // Same runtime binary as the server so the packaged build needs nothing else.
-  const proc = spawn(process.execPath, [entry], {
+  const isBun = process.execPath.endsWith("bun");
+  const args = isBun ? [entry, "--worker=optimize"] : ["--worker=optimize"];
+  const proc = spawn(process.execPath, args, {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...Bun.env } as NodeJS.ProcessEnv,
   });
@@ -78,9 +80,12 @@ function spawnWorker(): ChildProcess {
       } catch { /* ignore malformed worker output */ }
     }
   });
+  let lastStderr = "";
   proc.stderr!.on("data", (chunk: Buffer) => {
-    const text = chunk.toString().trim();
-    if (text) log.debug("optimizer", "worker stderr", { text: text.slice(0, 400) });
+    const text = chunk.toString();
+    lastStderr = (lastStderr + text).slice(-4000);
+    const trimmed = text.trim();
+    if (trimmed) log.warn("optimizer", "worker stderr", { text: trimmed.slice(0, 500) });
   });
   // A dead worker makes `stdin.write` emit asynchronously; without a listener
   // that becomes an uncaught exception and takes the HTTP server down too.
@@ -100,10 +105,12 @@ function spawnWorker(): ChildProcess {
     } else {
       log.warn("optimizer", `worker exited unexpectedly code=${code} signal=${signal}`, {
         pending: pending.size,
+        stderr: lastStderr.trim().slice(-500),
       });
     }
     if (child === proc) child = null;
-    rejectAll(`optimizer worker exited before finishing (code=${code})`);
+    const detail = lastStderr.trim() ? `: ${lastStderr.trim().slice(-300)}` : "";
+    rejectAll(`optimizer worker exited before finishing (code=${code}${signal ? `, signal=${signal}` : ""})${detail}`);
   });
   return proc;
 }

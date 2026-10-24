@@ -4,11 +4,16 @@
 /// the shared watch state. Filesystem paths never leave the server through
 /// these routes (PRD 11) — media resolves only by file id.
 import { Elysia, t } from "elysia";
+import { readdir, rm, stat, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { db, q, run, type Row } from "./db";
 import { log } from "./logger";
 import { imageUrl } from "./tmdb";
 import { classifyPlayability } from "./playback";
 import { optimizationView } from "./optimize";
+import { denyIfNotLocal } from "./essentials";
+import { resolveOptimizedDir } from "./paths";
+import { cancelStreamPreparationsForFiles } from "./hls-preparation";
 
 // --- card assembly -----------------------------------------------------------
 
@@ -403,6 +408,56 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       unmatched: row.kind !== "episode" && row.match_status !== "matched",
       matchReason: (row.reason as string | null) ?? null,
     });
+  })
+
+  /** Remove a title and its indexed descendants; original video files stay on disk. */
+  .delete("/items/:id", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "DELETE /api/items/:id");
+    if (denied) return denied;
+    const itemId = Number(ctx.params.id);
+    if (!Number.isInteger(itemId) || itemId <= 0) return Response.json({ error: "Invalid title id" }, { status: 400 });
+    const exists = q<{ id: number }, [number]>("SELECT id FROM items WHERE id=?").get(itemId);
+    if (!exists) return Response.json({ error: "Title not found" }, { status: 404 });
+    const indexedFiles = q<{ id: number; path: string; size: number; mtime: number }>(
+      `WITH RECURSIVE descendants(id) AS (
+         SELECT ? UNION ALL SELECT i.id FROM items i JOIN descendants d ON i.parent_id=d.id
+       ) SELECT f.id, f.path, f.size, f.mtime FROM media_files f JOIN descendants d ON d.id=f.item_id`,
+    ).all(itemId);
+    const fileIds = indexedFiles.map((row) => Number(row.id));
+    await cancelStreamPreparationsForFiles(fileIds);
+    const existingFiles = [] as Array<{ id: number; path: string }>;
+    for (const file of indexedFiles) {
+      const source = await stat(file.path).catch(() => null);
+      if (!source?.isFile()) continue;
+      if (source.size !== Number(file.size) || Math.floor(source.mtimeMs) !== Number(file.mtime)) {
+        return Response.json({ error: "A source file changed since it was indexed. Rescan the library before deleting this title." }, { status: 409 });
+      }
+      existingFiles.push({ id: Number(file.id), path: file.path });
+    }
+    try {
+      for (const file of existingFiles) await unlink(file.path);
+    } catch {
+      return Response.json({ error: "Could not delete a source file. The title remains in the catalog." }, { status: 500 });
+    }
+    db.exec("BEGIN");
+    try {
+      if (fileIds.length) {
+        const placeholders = fileIds.map(() => "?").join(",");
+        run(`DELETE FROM media_files WHERE id IN (${placeholders})`, ...fileIds);
+      }
+      run("DELETE FROM items WHERE id=?", itemId);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    const hlsDir = join(resolveOptimizedDir(), "hls");
+    const dirs = await readdir(hlsDir, { withFileTypes: true }).catch(() => []);
+    await Promise.all(fileIds.flatMap((id) => dirs
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${id}-`))
+      .map((entry) => rm(join(hlsDir, entry.name), { recursive: true, force: true }))));
+    log.info("media", "title removed from catalog", { itemId, indexedFiles: fileIds.length });
+    return { ok: true };
   })
 
   /** Search titles (PRD 5.9). */

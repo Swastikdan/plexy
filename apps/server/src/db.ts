@@ -101,6 +101,8 @@ export function run(sql: string, ...params: unknown[]): void {
 function resolveMigrationsDir(): string {
   const exeDir = process.argv[1] ? dirname(process.argv[1]) : "";
   const candidates = [
+    process.env.PLEXY_RESOURCES_DIR ? join(process.env.PLEXY_RESOURCES_DIR, "migrations") : "",
+    process.env.PLEXY_MIGRATIONS_DIR || "",
     join(exeDir, "migrations"),
     join(exeDir, "..", "Resources", "migrations"),
     new URL("./migrations", import.meta.url).pathname,
@@ -108,7 +110,7 @@ function resolveMigrationsDir(): string {
     join(process.cwd(), "dist", "migrations"),
     join(import.meta.dir, "..", "apps", "server", "src", "migrations"),
     join(import.meta.dir, "migrations"),
-  ];
+  ].filter(Boolean);
   for (const c of candidates) {
     if (existsSync(c)) return c;
   }

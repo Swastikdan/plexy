@@ -3,11 +3,14 @@
 A personal, local-first home media server: point it at folders of movies and TV shows, and it organises them into a Netflix-style library with posters, backdrops, cast, trailers, watch progress, and intelligent browser playability routing.
 
 The repository is structured as a clean **monorepo**:
+- **`apps/desktop`**: Full native Electron desktop application for macOS, featuring integrated lifecycle management for the backend server, macOS `hiddenInset` traffic lights, native Finder directory selection, and menu bar shortcuts.
 - **`apps/server`**: Elysia backend API server with Mediabunny probe/transcode, SQLite storage, TMDB matcher, and embedded SPA static serving.
 - **`apps/web`**: Netflix-style web app built with React 19, TanStack Router & Query, Tailwind CSS 4, and Lucide icons.
 - **`packages/api-client`**: Typed RPC client powered by `@elysiajs/eden` Treaty, shared types, and browser capability probes.
-- **`dist/plexy`**: Standalone local executable that runs both the web server and backend API in a single process.
-- **`/Applications/Plexy.app`**: Native macOS application bundle built with the Medusa app icon; double-clicking launches the server and opens Plexy in your default browser.
+- **`dist/mac/mac-arm64/Plexy.app`**: Complete macOS Electron application bundle packaging both the compiled native backend binary and the optimized React UI.
+- **`dist/mac/Plexy-0.1.0-arm64.dmg`**: Production Apple Silicon macOS installer disk image with `/Applications` drag-and-drop link.
+- **`dist/mac/Plexy-0.1.0-arm64.zip`**: Portable macOS app zip archive.
+- **`/Applications/Plexy.app`**: Installed application bundle on your Mac.
 - **`dist/web`**: Statically exportable web build for hosting on any web host or CDN.
 
 ---
@@ -25,35 +28,55 @@ bun run dev
 - Starts the Vite frontend on `http://localhost:5173`, with proxy strictly routing `/api/*` to the backend.
 - Typed RPC via `@elysiajs/eden` Treaty connects frontend queries with zero manual boilerplate while keeping standard REST endpoints available for curl or network devices.
 
-### 2. Full Build (Web + Standalone Executable + macOS App)
+### 2. Full Build (macOS Electron App + DMG + Standalone Server + Web)
 
 ```sh
 bun run build
+# Or build specifically for macOS desktop:
+bun run build:desktop
 ```
 
 This compiles:
 1. `bun run build:web` → builds production SPA into `dist/web`.
-2. `bun run build:executable` →
-   - Generates standalone executable `./dist/plexy` (which bundles web server and backend).
-   - Generates `dist/Plexy.app` macOS application bundle using the Medusa icon (`AppIcon.icns`).
-   - Automatically installs `Plexy.app` into `/Applications/Plexy.app`.
+2. Copies database migrations to `dist/migrations`.
+3. Compiles self-contained native backend server executable (`dist/bin/plexy-server`) with Bun.
+4. Compiles Electron main & preload scripts (`apps/desktop/build.ts`).
+5. Packages with `electron-builder`:
+   - `dist/mac/Plexy-0.1.0-arm64.dmg` (macOS Installer Disk Image)
+   - `dist/mac/mac-arm64/Plexy.app` (macOS Application Bundle)
+   - `dist/mac/Plexy-0.1.0-arm64.zip` (macOS Archive)
 
 ### 3. Launching Plexy
 
-- **From macOS Applications / Spotlight / Dock**: Open `Plexy` in `/Applications`. It will start the server and open `http://localhost:8765` in your browser.
-- The packaged app stores its database, settings, artwork, and playback cache in `~/Library/Application Support/Plexy`, with logs in `~/Library/Logs/Plexy`. On first launch, newer data from the old `/tmp/plexy-dev` location is moved into Application Support; any previous Application Support folder is kept as a timestamped backup.
-- **From Terminal**:
+- **From DMG**: Open `dist/mac/Plexy-0.1.0-arm64.dmg` and drag `Plexy` to `Applications`.
+- **Desktop Development Mode**:
   ```sh
-  ./dist/plexy
+  bun run dev:desktop
+  ```
+- **From Terminal (Headless server mode)**:
+  ```sh
+  ./dist/bin/plexy-server
   # Or: bun run start
   ```
   Open `http://localhost:8765`. Both the web UI and API are served from that single process.
 
-### 4. Hosting Web Version on the Web
+### 4. Hosted Web Build (Cloudflare Workers)
 
-The frontend in `dist/web` is a static Single Page Application and can be hosted on Vercel, Netlify, Cloudflare Pages, S3, or Nginx:
-- Set `VITE_API_URL=https://your-plexy-server.com` in `apps/web/.env.production` or your build environment.
-- The backend has CORS enabled to accept requests from web-hosted clients with credentials support.
+`bun run build:web` produces `dist/web`, a static SPA. The GitHub Actions
+workflow deploys it as a Cloudflare Worker with static assets (see
+`wrangler.json`).
+
+A hosted client has no backend of its own. On first launch it shows a
+**Connect to your Plexy server** screen and saves the address on the device
+(localStorage; Electron also persists it in its userData directory). The Mac app
+normally uses its bundled server and never shows this screen.
+
+- If the hosted page is HTTPS, the server address must also be HTTPS. Browsers
+  block an `https://…` page from calling a plain `http://192.168.x.x` server.
+  Use a Cloudflare Tunnel (or Tailscale HTTPS) for the server, or use the Mac app.
+- `VITE_API_URL` can seed a default address at build time. Viewers can still
+  change it from the Server icon in the top bar.
+- The backend already enables CORS for hosted clients.
 
 ---
 
@@ -64,9 +87,11 @@ The frontend in `dist/web` is a static Single Page Application and can be hosted
 | `bun run dev` | Run server and Vite web client concurrently |
 | `bun run dev:server` | Run Elysia server alone (`apps/server`) with watch mode |
 | `bun run dev:web` | Run Vite web dev server alone (`apps/web`) |
-| `bun run build` | Build `dist/web`, `dist/plexy`, and install `/Applications/Plexy.app` |
+| `bun run dev:desktop` | Run native Electron desktop application in development |
+| `bun run build` | Build web UI and package full macOS Electron app |
 | `bun run build:web` | Build web client to `dist/web` |
-| `bun run build:executable` | Build local standalone executable and macOS `.app` bundle |
+| `bun run build:desktop` | Build standalone backend server and package macOS `.app` + `.dmg` |
+| `bun run package:mac` | Package macOS Electron app, `.dmg`, and `.zip` distribution |
 | `bun run start` | Run server from source with Bun |
 | `bun run test` | Run backend test suite (`apps/server/tests`) |
 | `bun run typecheck` | Typecheck all packages with strict TypeScript |
@@ -85,10 +110,61 @@ The frontend in `dist/web` is a static Single Page Application and can be hosted
 
 ---
 
+## CI/CD (`build` branch → Cloudflare + GitHub Release)
+
+`.github/workflows/build.yml` runs only on pushes to `build` (manual
+`workflow_dispatch` runs are also restricted to the `build` branch). Merging
+`main` into `build` is the release switch.
+
+What it does:
+
+1. Builds `dist/web` and deploys it with `wrangler deploy` to the Worker
+   described by `wrangler.json`.
+2. Builds the Apple Silicon macOS `.dmg` and `.zip` on `macos-15`.
+3. Creates a GitHub Release tagged `v<version>-build.<run>` containing the site
+   URL in the notes and both macOS files as assets.
+
+### Repository secrets
+
+| Secret | Purpose |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | API token with **Workers Scripts: Edit** (and account read) |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+
+### Repository variables (optional)
+
+| Variable | Purpose |
+| --- | --- |
+| `PLEXY_SITE_URL` | Public URL of the Worker or custom domain used in release notes. If omitted, the workflow uses the deployed `workers.dev` URL. |
+| `PLEXY_DEFAULT_SERVER_URL` | Optional server address baked into the hosted web build as the default. Viewers can still change it. |
+| `RELEASE_ACTORS` | Comma-separated GitHub logins allowed to publish (no spaces). Defaults to the repository owner. |
+
+### One-time setup
+
+1. Create a Cloudflare API token with **Workers Scripts: Edit**.
+2. Add the two secrets above.
+3. Enable a `workers.dev` subdomain for the account, or set `PLEXY_SITE_URL` to
+   a custom domain.
+4. Protect the `build` branch so only you can push or merge into it. The
+   workflow also checks `RELEASE_ACTORS`.
+
+`wrangler.json` sets the Worker name (`plexy`) and points static assets at
+`dist/web` with SPA fallback routing.
+
+### TMDB token
+
+The TMDB token belongs to the Plexy **server**, not the web or Mac client, so it
+is not baked into either build. Enter it in the Mac app's first-run setup (it is
+stored in the local config) or in the server's `.env` / Settings page. The
+Cloudflare Worker serves only static files and never sees the token.
+
+---
+
 ## Key Features
 
 - **RPC & REST Endpoints**: Frontend connects via `@elysiajs/eden` Treaty typed RPC client, while all individual REST endpoints (`/api/items`, `/api/home`, `/api/stream/:fileId`, `/api/subtitles/:fileId/:track.vtt`, `/api/local-folders`, `/api/settings/tmdb/test`, etc.) remain fully accessible.
 - **Smart Setup Flow**:
+  - Hosted web clients show a server connection screen when no API is reachable, verify the address, and remember it on the device.
   - Automatically redirects to `/setup` on initial launch if setup is incomplete, and returns to Home (`/`) once completed.
   - Automatically verifies TMDB connection if configured via environment, showing a verified badge without asking for redundant input.
   - File browser with quick shortcuts (`Movies`, `Downloads`, `Desktop`, `Home`, `Drives`), direct path input field, breadcrumbs navigation, and "+ Add this folder" button.

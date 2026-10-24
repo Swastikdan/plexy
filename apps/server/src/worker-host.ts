@@ -39,7 +39,9 @@ function spawnWorker(): ChildProcess {
   const entry = join(import.meta.dir, "media-worker.ts");
   // Run the worker with the same binary that runs the server, so a packaged
   // build needs no additional runtime. `bun` on PATH covers dev.
-  const proc = spawn(process.execPath, [entry], {
+  const isBun = process.execPath.endsWith("bun");
+  const args = isBun ? [entry, "--worker=media"] : ["--worker=media"];
+  const proc = spawn(process.execPath, args, {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...Bun.env } as NodeJS.ProcessEnv,
   });

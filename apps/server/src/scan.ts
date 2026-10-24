@@ -18,6 +18,7 @@ import { probe, createProbePool, setOnWorkerCrash, shutdownWorker } from "./work
 import { enqueueMissingOptimizations, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { cacheEmbeddedSubtitles } from "./subtitles";
 import { resolveOptimizedDir, resolveTrickplayDir } from "./paths";
+import { enqueueConfiguredStreamPreparations } from "./hls-preparation";
 import { hydrateItemMetadata, hydrateEpisodeItem, hydrateMissingEpisodes } from "./hydrate";
 
 export interface ScanProgress {
@@ -277,6 +278,10 @@ async function runScan(libraryIds: number[]): Promise<void> {
     resumeOptimizer("scan");
     void enqueueMissingOptimizations().catch((err) =>
       log.warn("optimizer", "could not queue preparation after scan", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+    void enqueueConfiguredStreamPreparations().catch((err) =>
+      log.warn("media", "could not queue configured quality streams after scan", {
         message: err instanceof Error ? err.message : String(err),
       }));
     // Libraries created (or manual scans requested) while this run was

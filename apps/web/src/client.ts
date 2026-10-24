@@ -5,6 +5,7 @@
 /// WebVTT subtitles, images, and SSE feeds.
 import { treaty } from "@elysiajs/eden";
 import type { App } from "../../server/src/app";
+import { getApiBase } from "./server-config";
 import {
   type BrowserCaps,
   type FileFacts,
@@ -34,19 +35,21 @@ export class ApiError extends Error {
   }
 }
 
-// Configurable base URL:
-// In development: Vite proxies /api/ to backend, so window.location.origin works seamlessly.
-// In web-hosted mode: VITE_API_URL specifies the remote Plexy backend.
-export const API_BASE = (
-  typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
-    ? String(import.meta.env.VITE_API_URL).replace(/\/+$/, "")
-    : typeof window !== "undefined"
-      ? window.location.origin
-      : "http://localhost:8765"
-);
+// The base URL is resolved per call: a hosted web build lets the viewer pick
+// their server at runtime, and the desktop app can fall back to a remote one.
+const createTreaty = (base: string) => treaty<App>(base);
 
-// Low-level Eden Treaty client
-export const rpc = treaty<App>(API_BASE);
+let treatyClient: ReturnType<typeof createTreaty> | null = null;
+let treatyBase = "";
+
+function rpc() {
+  const base = getApiBase();
+  if (!treatyClient || treatyBase !== base) {
+    treatyClient = createTreaty(base);
+    treatyBase = base;
+  }
+  return treatyClient;
+}
 
 // Unwrap Eden responses into data or throw ApiError
 async function unwrap<T>(promise: Promise<{ data: unknown; error: unknown; status: number }>): Promise<T> {
@@ -69,13 +72,14 @@ async function unwrap<T>(promise: Promise<{ data: unknown; error: unknown; statu
     return res.data as T;
   } catch (err) {
     if (err instanceof ApiError) throw err;
-    throw new ApiError(503, "Cannot reach Plexy server. Make sure the server is running on port 8765.");
+    throw new ApiError(503, `Cannot reach the Plexy server at ${getApiBase()}.`);
   }
 }
 
 // Direct fetch for plain REST endpoints with safe JSON parsing
 async function restFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  const base = getApiBase();
+  const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? "" : "/"}${path}`;
   try {
     const res = await fetch(url, init);
     const text = await res.text();
@@ -92,7 +96,7 @@ async function restFetch<T>(path: string, init?: RequestInit): Promise<T> {
     return body as T;
   } catch (err) {
     if (err instanceof ApiError) throw err;
-    throw new ApiError(503, "Cannot reach Plexy server. Make sure the server is running on port 8765.");
+    throw new ApiError(503, `Cannot reach the Plexy server at ${base}.`);
   }
 }
 
@@ -104,7 +108,7 @@ export const api = {
   },
 
   home: async (): Promise<HomePayload> => {
-    return unwrap<HomePayload>(rpc.api.home.get());
+    return unwrap<HomePayload>(rpc().api.home.get());
   },
 
   items: async (query: {
@@ -117,7 +121,7 @@ export const api = {
     offset?: number;
   }): Promise<{ items: ItemCard[] }> => {
     return unwrap<{ items: ItemCard[] }>(
-      rpc.api.items.get({
+      rpc().api.items.get({
         query: {
           kind: query.kind,
           libraryId: query.libraryId,
@@ -132,16 +136,16 @@ export const api = {
   },
 
   title: async (id: number | string): Promise<TitleDetail> => {
-    return unwrap<TitleDetail>(rpc.api.items({ id: String(id) }).get());
+    return unwrap<TitleDetail>(rpc().api.items({ id: String(id) }).get());
   },
 
   search: async (q: string): Promise<{ items: ItemCard[] }> => {
-    return unwrap<{ items: ItemCard[] }>(rpc.api.search.get({ query: { q } }));
+    return unwrap<{ items: ItemCard[] }>(rpc().api.search.get({ query: { q } }));
   },
 
   playability: async (fileId: number, caps: BrowserCaps): Promise<Playability> => {
     const query = { caps: JSON.stringify(caps) };
-    return unwrap<Playability>(rpc.api.playability({ fileId: String(fileId) }).get({ query }));
+    return unwrap<Playability>(rpc().api.playability({ fileId: String(fileId) }).get({ query }));
   },
 
   /**
@@ -158,7 +162,7 @@ export const api = {
   },
 
   subtitles: async (fileId: number): Promise<{ tracks: SubtitleTrack[] }> => {
-    return unwrap<{ tracks: SubtitleTrack[] }>(rpc.api.subtitles({ fileId: String(fileId) }).get());
+    return unwrap<{ tracks: SubtitleTrack[] }>(rpc().api.subtitles({ fileId: String(fileId) }).get());
   },
 
   progress: async (
@@ -168,7 +172,7 @@ export const api = {
     played: boolean,
   ): Promise<{ ok: boolean }> => {
     return unwrap<{ ok: boolean }>(
-      rpc.api.progress.post({
+      rpc().api.progress.post({
         itemId,
         position,
         duration: duration ?? undefined,
@@ -238,6 +242,44 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+  },
+
+  streamPreparationStatus: async (): Promise<{
+    total: number;
+    ready: number;
+    queued: number;
+    running: number;
+    failed: number;
+    cancelled: number;
+    error: string | null;
+    progress: number;
+    current: { title: string; progress: number } | null;
+  }> => restFetch<{
+    total: number;
+    ready: number;
+    queued: number;
+    running: number;
+    failed: number;
+    cancelled: number;
+    error: string | null;
+    progress: number;
+    current: { title: string; progress: number } | null;
+  }>("/api/stream-preparation/status"),
+
+  runStreamPreparation: async (itemIds: number[]): Promise<{ started: boolean }> => {
+    return restFetch<{ started: boolean }>("/api/stream-preparation/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemIds }),
+    });
+  },
+
+  deleteTitle: async (itemId: number): Promise<{ ok: boolean }> => {
+    return restFetch<{ ok: boolean }>(`/api/items/${itemId}`, { method: "DELETE" });
+  },
+
+  cancelStreamPreparation: async (): Promise<void> => {
+    await restFetch("/api/stream-preparation/cancel", { method: "POST" });
   },
 
   clearTmdbCache: async (): Promise<{ removed: number }> => {
@@ -346,37 +388,39 @@ export const api = {
 
   streamUrl: (fileId: number, playPath: string, start?: number, audioIndex = 0): string => {
     const base = (
-      playPath === "remux"
+      playPath === "hls"
+        ? `/api/stream/${fileId}/hls/master.m3u8`
+        : playPath === "remux"
         ? `/api/stream/${fileId}/remux`
         : playPath === "transcode"
           ? `/api/stream/${fileId}/transcode`
           : `/api/stream/${fileId}`
     );
     const params = new URLSearchParams();
-    if (start && start > 0) params.set("start", String(Math.floor(start)));
+    if (playPath !== "hls" && start && start > 0) params.set("start", String(Math.floor(start)));
     if (audioIndex > 0 || (audioIndex === 0 && playPath !== "direct")) params.set("audio", String(audioIndex));
     const query = params.size ? `?${params.toString()}` : "";
-    return `${API_BASE}${base}${query}`;
+    return `${getApiBase()}${base}${query}`;
   },
 
   subtitlesUrl: (fileId: number, track: string): string => {
-    return `${API_BASE}/api/subtitles/${fileId}/${track}`;
+    return `${getApiBase()}/api/subtitles/${fileId}/${track}`;
   },
 
   trickplayTrackUrl: (fileId: number): string => {
-    return `${API_BASE}/api/trickplay/${fileId}/track.vtt`;
+    return `${getApiBase()}/api/trickplay/${fileId}/track.vtt`;
   },
 
   imageUrl: (artworkId: number): string => {
-    return `${API_BASE}/api/images/${artworkId}`;
+    return `${getApiBase()}/api/images/${artworkId}`;
   },
 
   scanEventsUrl: (scanId: number): string => {
-    return `${API_BASE}/api/scans/${scanId}/events`;
+    return `${getApiBase()}/api/scans/${scanId}/events`;
   },
 
   logsStreamUrl: (): string => {
-    return `${API_BASE}/api/logs/stream`;
+    return `${getApiBase()}/api/logs/stream`;
   },
 };
 

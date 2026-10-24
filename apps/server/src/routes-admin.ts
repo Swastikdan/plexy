@@ -18,6 +18,12 @@ import { startScan, currentScan, onScanProgress } from "./scan";
 import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { VIDEO_EXTENSIONS } from "./parse";
 import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
+import {
+  enqueueStreamPreparationsForTitles,
+  enqueueConfiguredStreamPreparations,
+  cancelStreamPreparation,
+  streamPreparationStatus,
+} from "./hls-preparation";
 
 const startedAt = Date.now();
 
@@ -122,6 +128,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const patch: Record<string, unknown> = {};
     if (body.logLevel) setLogLevel(body.logLevel);
     if (body.metadataLanguage) patch.metadataLanguage = body.metadataLanguage;
+    if (body.preferredAudioLanguage) patch.preferredAudioLanguage = body.preferredAudioLanguage;
     if (body.metadataRegion) patch.metadataRegion = body.metadataRegion;
     if (body.imageQuality) patch.imageQuality = body.imageQuality;
     if (body.autoOptimize !== undefined) patch.autoOptimize = body.autoOptimize;
@@ -139,12 +146,19 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.autoOptimize) {
       void enqueueMissingOptimizations().catch(() => {});
     }
+    if (body.preferredAudioLanguage) {
+      void enqueueConfiguredStreamPreparations().catch((err) =>
+        log.warn("media", "could not re-prepare titles for the new audio preference", {
+          message: err instanceof Error ? err.message : String(err),
+        }));
+    }
     log.info("server", "settings updated", { logLevel: body.logLevel ?? undefined });
     return { settings: redactedView(cfg) };
   }, {
     body: t.Object({
       logLevel: t.Optional(t.Union([t.Literal("debug"), t.Literal("info"), t.Literal("warn"), t.Literal("error")])),
       metadataLanguage: t.Optional(t.String()),
+      preferredAudioLanguage: t.Optional(t.String()),
       metadataRegion: t.Optional(t.String()),
       imageQuality: t.Optional(t.Union([t.Literal("w342"), t.Literal("w500"), t.Literal("w780"), t.Literal("original")])),
       autoOptimize: t.Optional(t.Boolean()),
@@ -223,6 +237,33 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const requested = await enqueueMissingOptimizations({ includeFailed: true });
     log.info("optimizer", "manual preparation run requested", { queued: requested });
     return { ...(await optimizerStatus()), requested };
+  })
+
+  .get("/stream-preparation/status", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "GET /api/stream-preparation/status");
+    if (denied) return denied;
+    return streamPreparationStatus();
+  })
+
+  .post("/stream-preparation/run", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/stream-preparation/run");
+    if (denied) return denied;
+    const itemIds = ctx.body.itemIds;
+    if (!itemIds.length) return Response.json({ error: "Select at least one title" }, { status: 400 });
+    void enqueueStreamPreparationsForTitles(itemIds).catch((err) =>
+      log.error("media", "selected-title adaptive stream preparation could not start", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+    log.info("media", "selected-title adaptive stream preparation requested", { titles: itemIds.length });
+    return { started: true };
+  }, { body: t.Object({ itemIds: t.Array(t.Number({ minimum: 1 })) }) })
+
+  .post("/stream-preparation/cancel", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/stream-preparation/cancel");
+    if (denied) return denied;
+    cancelStreamPreparation();
+    log.info("media", "adaptive stream preparation cancelled");
+    return streamPreparationStatus();
   })
 
   /** Delete every prepared copy; the originals are untouched. */

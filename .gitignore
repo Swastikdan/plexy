@@ -6,6 +6,7 @@ dist/
 .DS_Store
 .vite-temp/
 .tanstack/
+.wrangler/
 apps/web/src/routeTree.gen.ts
 .env
 .env.local

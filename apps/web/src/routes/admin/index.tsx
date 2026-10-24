@@ -4,7 +4,7 @@
 /// browser is the host machine; the server enforces this and reports
 /// `adminAvailable: false` otherwise.
 import { useState, useEffect, useMemo, useRef } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trash2,
@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { api, type ReviewEntry } from "../../client";
+import { getApiBase, hasServerOverride } from "../../server-config";
 import { queries } from "../../queries";
 import { Button, cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
@@ -610,6 +611,15 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 
 function Settings() {
   const { data, isError, isLoading } = useQuery(queries.settings());
+  const { data: streamTitles } = useQuery({
+    queryKey: ["stream-preparation-titles"],
+    queryFn: () => api.items({ limit: 5000 }),
+  });
+  const { data: streamStatus } = useQuery({
+    queryKey: ["stream-preparation"],
+    queryFn: api.streamPreparationStatus,
+    refetchInterval: 2000,
+  });
   const queryClient = useQueryClient();
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -618,6 +628,8 @@ function Settings() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPhrase, setResetPhrase] = useState("");
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [streamTitleSearch, setStreamTitleSearch] = useState("");
+  const [selectedStreamTitleIds, setSelectedStreamTitleIds] = useState<number[]>([]);
 
   const save = useMutation({
     mutationFn: api.updateSettings,
@@ -627,6 +639,20 @@ function Settings() {
   const clearCache = useMutation({
     mutationFn: api.clearTmdbCache,
     onSuccess: ({ removed }) => setCacheMessage(`Cleared ${removed} cached TMDB response${removed === 1 ? "" : "s"}.`),
+  });
+
+  const generateStreamVariants = useMutation({
+    mutationFn: api.runStreamPreparation,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["stream-preparation"] });
+    },
+  });
+
+  const cancelStreamVariants = useMutation({
+    mutationFn: api.cancelStreamPreparation,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["stream-preparation"] });
+    },
   });
 
   const resetLocalData = useMutation({
@@ -649,6 +675,12 @@ function Settings() {
     );
   }
   const s = data.settings;
+  const selectableStreamTitles = (streamTitles?.items ?? []).filter((item) => item.kind === "movie" || item.kind === "series");
+  const filteredStreamTitles = selectableStreamTitles.filter((item) => item.name.toLowerCase().includes(streamTitleSearch.trim().toLowerCase()));
+  const selectedStreamTitleSet = new Set(selectedStreamTitleIds);
+  const toggleStreamTitle = (id: number) => setSelectedStreamTitleIds((ids) =>
+    ids.includes(id) ? ids.filter((existing) => existing !== id) : [...ids, id],
+  );
 
   return (
     <div className="space-y-6">
@@ -892,12 +924,167 @@ function Settings() {
         </div>
       </div>
 
+      {/* Server Connection Card */}
+      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
+              <Server size={17} className="text-brand-text" />
+              Server connection
+            </h2>
+            <p className="mt-1 text-xs text-ink-muted">
+              This client is connected to{" "}
+              <span className="font-medium text-ink">{getApiBase()}</span>.
+              {hasServerOverride()
+                ? " The address is saved on this device."
+                : " It follows the address this page was opened from."}
+            </p>
+          </div>
+          <Link
+            to="/connect"
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-surface-2 px-3 text-xs font-semibold text-ink transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-surface-hover active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
+          >
+            Change server…
+          </Link>
+        </div>
+        <p className="text-xs leading-relaxed text-ink-muted">
+          Use this when Plexy is hosted on the web and should connect to a
+          different Mac or home server. Playback, images and metadata all follow
+          the selected address.
+        </p>
+      </div>
+
       {/* Playback Preparation Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm">
         <h2 className="font-display text-base font-bold text-ink flex items-center gap-2 mb-4">
           <HardDrive size={17} className="text-brand-text" />
-          Playback Preparation
+          Playback Preferences
         </h2>
+        <div className="mb-5 grid gap-4 md:grid-cols-1">
+          <label className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
+            <span className="block text-xs font-semibold text-ink-muted">Preferred audio language</span>
+            <p className="text-xs text-ink-muted">Plexy selects the matching audio track when playback starts. English is the default.</p>
+            <Select.Root
+              value={s.preferredAudioLanguage}
+              onValueChange={(value) => save.mutate({ preferredAudioLanguage: String(value) })}
+              items={[
+                { value: "en", label: "English" },
+                { value: "hi", label: "Hindi" },
+                { value: "es", label: "Spanish" },
+                { value: "fr", label: "French" },
+                { value: "de", label: "German" },
+                { value: "ja", label: "Japanese" },
+                { value: "ko", label: "Korean" },
+                { value: "zh", label: "Chinese" },
+                { value: "pt", label: "Portuguese" },
+                { value: "it", label: "Italian" },
+              ]}
+            >
+              <Select.Trigger className="w-full"><Select.Value /><Select.Icon /></Select.Trigger>
+              <Select.Positioner>
+                {[
+                  { value: "en", label: "English" }, { value: "hi", label: "Hindi" },
+                  { value: "es", label: "Spanish" }, { value: "fr", label: "French" },
+                  { value: "de", label: "German" }, { value: "ja", label: "Japanese" },
+                  { value: "ko", label: "Korean" }, { value: "zh", label: "Chinese" },
+                  { value: "pt", label: "Portuguese" }, { value: "it", label: "Italian" },
+                ].map((option) => (
+                  <Select.Item key={option.value} value={option.value}>
+                    <Select.ItemText>{option.label}</Select.ItemText>
+                  </Select.Item>
+                ))}
+              </Select.Positioner>
+            </Select.Root>
+          </label>
+          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-3">
+            <div>
+              <span className="block text-xs font-semibold text-ink">Generate quality streams</span>
+              <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                Select the titles to prepare at 360p, 480p, 720p, 1080p, and each video’s maximum source resolution. Choose Auto or a specific quality in the player. Plexy uses hardware acceleration when available and pauses background preparation so this finishes sooner. 4K encoding can still take a while and use extra storage.
+              </p>
+            </div>
+            <label className="block">
+              <span className="sr-only">Search titles to prepare</span>
+              <input
+                type="search"
+                value={streamTitleSearch}
+                onChange={(event) => setStreamTitleSearch(event.target.value)}
+                placeholder="Search titles…"
+                className="h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+              />
+            </label>
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-line/60 bg-surface/60">
+              {filteredStreamTitles.length ? filteredStreamTitles.map((item) => (
+                <label key={item.id} className="flex cursor-pointer items-center gap-3 border-b border-line/40 px-3 py-2 last:border-b-0 hover:bg-surface-hover">
+                  <input
+                    type="checkbox"
+                    checked={selectedStreamTitleSet.has(item.id)}
+                    onChange={() => toggleStreamTitle(item.id)}
+                    className="accent-brand"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink">{item.name}{item.year ? ` (${item.year})` : ""}</span>
+                  <span className="shrink-0 text-[11px] text-ink-muted">{item.kind === "series" ? "Series" : "Movie"}</span>
+                </label>
+              )) : <p className="p-3 text-sm text-ink-muted">{streamTitles ? "No titles match that search." : "Loading titles…"}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <button
+                type="button"
+                className="font-medium text-brand-text hover:underline disabled:opacity-50"
+                disabled={!filteredStreamTitles.length}
+                onClick={() => setSelectedStreamTitleIds((ids) => [...new Set([...ids, ...filteredStreamTitles.map((item) => item.id)])])}
+              >Select shown</button>
+              <button
+                type="button"
+                className="font-medium text-ink-muted hover:text-ink disabled:opacity-50"
+                disabled={!selectedStreamTitleIds.length}
+                onClick={() => setSelectedStreamTitleIds([])}
+              >Clear selection</button>
+              <span className="ml-auto text-ink-muted">{selectedStreamTitleIds.length} selected</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="brand"
+                disabled={!selectedStreamTitleIds.length || generateStreamVariants.isPending || Boolean(streamStatus?.queued || streamStatus?.running)}
+                onClick={() => generateStreamVariants.mutate(selectedStreamTitleIds)}
+                className="h-9 px-3 text-xs font-semibold"
+              >
+                {generateStreamVariants.isPending ? "Queueing…" : "Generate selected titles"}
+              </Button>
+              {Boolean(streamStatus?.queued || streamStatus?.running || generateStreamVariants.isPending) && (
+                <Button
+                  variant="danger"
+                  disabled={cancelStreamVariants.isPending}
+                  onClick={() => cancelStreamVariants.mutate()}
+                  className="h-9 px-3 text-xs"
+                >{cancelStreamVariants.isPending ? "Cancelling…" : "Cancel generation"}</Button>
+              )}
+              {streamStatus && streamStatus.total > 0 && (
+                <span className="text-xs text-ink-muted">
+                  {streamStatus.ready}/{streamStatus.total} ready
+                  {streamStatus.queued ? ` · ${streamStatus.queued} queued` : ""}
+                  {streamStatus.failed ? ` · ${streamStatus.failed} failed` : ""}
+                  {streamStatus.cancelled ? ` · ${streamStatus.cancelled} cancelled` : ""}
+                </span>
+              )}
+            </div>
+            {streamStatus?.current && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between gap-3 text-xs text-ink-muted">
+                  <span className="truncate">Preparing {streamStatus.current.title}</span>
+                  <span className="shrink-0">{Math.round(streamStatus.current.progress * 100)}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface">
+                  <div className="h-full rounded-full bg-brand transition-[width]" style={{ width: `${Math.round(streamStatus.current.progress * 100)}%` }} />
+                </div>
+              </div>
+            )}
+            {streamStatus?.error && <p role="alert" className="text-xs text-red-400">Last preparation error: {streamStatus.error}</p>}
+            {generateStreamVariants.isError && <p role="alert" className="text-xs text-red-400">{generateStreamVariants.error.message}</p>}
+            {cancelStreamVariants.isError && <p role="alert" className="text-xs text-red-400">{cancelStreamVariants.error.message}</p>}
+          </div>
+        </div>
+        <h3 className="mb-3 text-sm font-semibold text-ink">Preparation cache</h3>
         <OptimizerSettings />
       </div>
 
@@ -1339,6 +1526,18 @@ function Logs() {
               <Download size={13} />
               <span className="hidden min-[400px]:inline">Export</span>
             </Button>
+
+            {typeof window !== "undefined" && window.electronAPI?.openLogs && (
+              <Button
+                variant="surface"
+                onClick={() => void window.electronAPI?.openLogs()}
+                className="h-9 px-3 text-xs font-medium"
+                title="Reveal Logs in Finder"
+              >
+                <Folder size={13} />
+                <span className="hidden min-[400px]:inline">Finder</span>
+              </Button>
+            )}
           </div>
         </div>
 

@@ -13,7 +13,7 @@ export const Select = {
       className={cx(
         "inline-flex h-9 min-w-44 items-center justify-between gap-2 rounded-lg",
         "border border-line bg-surface-2 px-3 text-sm text-ink",
-        "hover:border-line-strong transition-colors",
+        "hover:border-line-strong transition-colors duration-150",
         "focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2",
         className,
       )}
@@ -36,7 +36,11 @@ export const Select = {
           "w-max min-w-[min(var(--anchor-width),20rem,var(--available-width))] max-w-[min(20rem,var(--available-width))]",
           "max-h-[min(18rem,var(--available-height))] overflow-y-auto rounded-xl border border-line",
           "bg-surface-2 p-1",
-          "outline-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 transition-opacity duration-100",
+          "outline-none",
+          // Smooth scale+fade on open/close
+          "transition-[opacity,transform,scale] duration-[150ms] ease-out origin-top",
+          "data-[starting-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:-translate-y-0.5",
+          "data-[ending-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:-translate-y-0.5",
         )}
       >
         {p.children}
@@ -50,6 +54,7 @@ export const Select = {
         "flex min-h-8 cursor-default select-none items-center justify-between gap-4 rounded-lg px-3 text-sm",
         "data-[highlighted]:bg-brand/10 data-[highlighted]:text-ink",
         "data-[selected]:text-brand-text",
+        "transition-colors duration-100",
         className,
       )}
     >

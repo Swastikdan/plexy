@@ -10,13 +10,29 @@ import { prepareLogDir, log, closeLog, setLogLevel } from "./logger";
 import { buildApp } from "./app";
 import { shutdownWorker } from "./worker-host";
 import { startOptimizer, stopOptimizer } from "./optimize";
+import { startStreamPreparation } from "./hls-preparation";
 import { resetInterruptedTrickplay, shutdownTrickplay } from "./trickplay";
 import type { Level } from "./logger";
 import { networkInterfaces } from "node:os";
 import { migrateLegacyPackagedData } from "./paths";
 
-installCrashHandlers();
-prepareLogDir();
+const isMediaWorker = process.argv.includes("--worker=media") || process.argv.some(a => a.endsWith("media-worker.ts") || a.endsWith("media-worker"));
+const isOptimizeWorker = process.argv.includes("--worker=optimize") || process.argv.some(a => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"));
+
+if (isMediaWorker) {
+  await import("./media-worker");
+} else if (isOptimizeWorker) {
+  await import("./optimize-worker");
+} else {
+  installCrashHandlers();
+  prepareLogDir();
+
+  main().catch((err) => {
+    log.error("server", "failed to start", { message: err instanceof Error ? err.message : String(err) });
+    console.error(err);
+    process.exit(1);
+  });
+}
 
 async function main(): Promise<void> {
   await migrateLegacyPackagedData();
@@ -37,6 +53,8 @@ async function main(): Promise<void> {
          WHERE kind = 'episode' AND match_status != 'matched'
            AND parent_id IN (SELECT id FROM items WHERE kind = 'series' AND match_status = 'matched')`);
     run(`DELETE FROM tmdb_cache WHERE key = 'tmdb/images/config'`);
+    // Self-healing: reset any failed analysis files where video_codec is missing
+    run(`UPDATE media_files SET analysis_status = 'pending', analysis_error = NULL WHERE (analysis_status = 'analysis_failed' OR analysis_status = 'pending') AND video_codec IS NULL`);
 
   } catch { /* non-fatal */ }
 
@@ -76,6 +94,13 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
+  // In desktop mode, if parent Electron process exits, terminate backend cleanly
+  if (process.env.PLEXY_DESKTOP) {
+    process.stdin.resume();
+    process.stdin.on("end", () => shutdown("parent-disconnect"));
+    process.stdin.on("close", () => shutdown("parent-disconnect"));
+  }
+
   // Prepare the library in the background after the first paint of the UI.
   // Interrupted jobs are re-queued, so an unclean exit loses no work.
   setTimeout(() => {
@@ -85,15 +110,29 @@ async function main(): Promise<void> {
       }));
   }, 3000);
 
+  setTimeout(() => {
+    void startStreamPreparation().catch((err) =>
+      log.warn("media", "could not resume adaptive stream preparation", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+  }, 3000);
+
+  // Trigger library scan if any media files are unprobed
+  setTimeout(async () => {
+    try {
+      const { q } = await import("./db");
+      const unprobed = q<{ c: number }>("SELECT COUNT(*) as c FROM media_files WHERE analysis_status != 'probed' OR video_codec IS NULL").get()?.c ?? 0;
+      if (unprobed > 0) {
+        log.info("scanner", `found ${unprobed} unprobed media files, triggering background scan`);
+        const { startScan } = await import("./scan");
+        startScan();
+      }
+    } catch {}
+  }, 1500);
+
   log.info("server", `Plexy v${APP_VERSION} listening`, {
     url: `http://localhost:${port}`,
     bind: hostname,
   });
   console.log(`▸ Plexy v${APP_VERSION} → http://localhost:${port}`);
 }
-
-main().catch((err) => {
-  log.error("server", "failed to start", { message: err instanceof Error ? err.message : String(err) });
-  console.error(err);
-  process.exit(1);
-});

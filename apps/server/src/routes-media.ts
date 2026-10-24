@@ -18,7 +18,7 @@
 import { Elysia, t } from "elysia";
 import { stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { q, type Row } from "./db";
+import { q, run, type Row } from "./db";
 import { log } from "./logger";
 import {
   canonicalCodec, classifyPlayability, preferredAudioBitrate, preferredVideoBitrate,
@@ -29,6 +29,8 @@ import {
 } from "./optimize";
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { resolveFfmpeg } from "./ffmpeg";
+import { getConfig } from "./config";
+import { isPreparedHlsAsset, preparedStreamAvailable, readPreparedPlaylist } from "./hls-preparation";
 import {
   enqueueTrickplay, trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
@@ -41,6 +43,47 @@ function getFile(fileOrItemId: number): Row | null {
     q<Row, [number]>("SELECT * FROM media_files WHERE item_id = ? AND unavailable = 0 ORDER BY id DESC LIMIT 1").get(fileOrItemId) ??
     null
   );
+}
+
+/** Just-in-time probe helper: if a file has not been analyzed or previously failed, probe it on-demand before playback. */
+async function ensureFileProbed(row: Row): Promise<Row> {
+  if (row.video_codec || !row.path) return row;
+  try {
+    const { existsSync } = await import("node:fs");
+    if (!existsSync(row.path as string)) return row;
+    const { probe } = await import("./worker-host");
+    const facts = await probe(row.path as string, { timeoutMs: 20_000 });
+    if (facts) {
+      run(
+        `UPDATE media_files SET
+          container=$container, duration=$duration, bitrate=$bitrate,
+          video_codec=$vc, video_profile=$vp, width=$w, height=$h, fps=$fps, hdr=$hdr,
+          audio_json=$audio, subtitles_json=$subs, analysis_status='probed',
+          analysis_error=NULL, probed_at=$at
+         WHERE id=$id`,
+        {
+          $id: row.id,
+          $container: facts.container,
+          $duration: facts.duration,
+          $bitrate: facts.bitrate,
+          $vc: facts.video?.codec ?? null,
+          $vp: facts.video?.profile ?? null,
+          $w: facts.video?.width ?? null,
+          $h: facts.video?.height ?? null,
+          $fps: facts.video?.fps ?? null,
+          $hdr: facts.video?.hdr ?? null,
+          $audio: JSON.stringify(facts.audio),
+          $subs: JSON.stringify(facts.subtitles),
+          $at: new Date().toISOString(),
+        },
+      );
+      const fresh = getFile(Number(row.id));
+      if (fresh) return fresh;
+    }
+  } catch (err) {
+    log.warn("media", "just-in-time probe failed", { fileId: row.id, message: String(err) });
+  }
+  return row;
 }
 
 /** Null exactly when the file cannot be opened (missing disk = unavailable). */
@@ -225,6 +268,7 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
       "Content-Type": "video/mp4",
       "Cache-Control": "no-store",
       "X-Plexy-Path": options.mode,
+      "Accept-Ranges": "none",
     },
   });
 }
@@ -275,6 +319,17 @@ function firstAudioCodec(row: Row, index = 0): string | null {
   } catch {
     return null;
   }
+}
+
+function normalizedLanguage(language: unknown): string {
+  const value = String(language ?? "").trim().toLowerCase().split(/[-_]/, 1)[0];
+  const aliases: Record<string, string> = {
+    eng: "en", spa: "es", fre: "fr", fra: "fr", deu: "de", ger: "de", hin: "hi",
+    jpn: "ja", kor: "ko", chi: "zh", zho: "zh", por: "pt", ita: "it", rus: "ru",
+    english: "en", spanish: "es", french: "fr", german: "de", hindi: "hi", japanese: "ja",
+    korean: "ko", chinese: "zh", portuguese: "pt", italian: "it", russian: "ru",
+  };
+  return aliases[value] ?? value;
 }
 
 export interface NextEpisode {
@@ -389,11 +444,17 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
    * path and lets the browser begin fetching bytes immediately.
    */
   .get("/play/:fileId", async (ctx) => {
-    const row = getFile(Number(ctx.params.fileId));
+    let row = getFile(Number(ctx.params.fileId));
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    row = await ensureFileProbed(row);
 
     const audioTracks = audioTracksFor(row).map((track, index) => ({ ...track, index }));
-    const defaultAudioIndex = Math.max(0, audioTracks.findIndex((track) => track.isDefault));
+    const config = await getConfig();
+    const requestedLanguage = normalizedLanguage(config.preferredAudioLanguage || "en");
+    const languageIndex = audioTracks.findIndex((track) => normalizedLanguage(track.language) === requestedLanguage);
+    const defaultAudioIndex = languageIndex >= 0
+      ? languageIndex
+      : Math.max(0, audioTracks.findIndex((track) => track.isDefault));
     const requestedAudioIndex = ctx.query.audio;
     const selectedAudioIndex = requestedAudioIndex != null
       && Number.isInteger(requestedAudioIndex)
@@ -418,6 +479,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     }
     if (selectedAudioNeedsConversion && verdict.path === "direct") {
       verdict = { path: "remux", reason: "Remuxing with selected audio track" };
+    }
+    if (await preparedStreamAvailable(row, selectedAudioIndex)) {
+      verdict = { path: "hls", reason: "Prepared adaptive quality streams are ready" };
     }
 
     const watch = row.item_id
@@ -492,8 +556,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Playpath judgment for the current browser (kept for older clients). */
   .get("/playability/:fileId", async (ctx) => {
-    const row = getFile(Number(ctx.params.fileId));
+    let row = getFile(Number(ctx.params.fileId));
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    row = await ensureFileProbed(row);
     const verdict = classifyPlayability({
       container: (row.container as string | null) ?? "",
       videoCodec: row.video_codec as string | null,
@@ -617,6 +682,26 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     }
   }, {
     params: t.Object({ fileId: t.Numeric() }),
+    query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
+  })
+
+  /** Cached adaptive HLS stream with several server-generated resolutions. */
+  .get("/stream/:fileId/hls/:asset", async (ctx) => {
+    const fileId = Number(ctx.params.fileId);
+    const path = await openablePath(fileId);
+    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
+    const row = getFile(fileId)!;
+    const asset = String(ctx.params.asset);
+    if (!isPreparedHlsAsset(asset)) {
+      return Response.json({ error: "Invalid HLS asset" }, { status: 404 });
+    }
+    const audioIndex = Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
+      ? Number(ctx.query.audio)
+      : 0;
+    const response = await readPreparedPlaylist(row, asset, new URL(ctx.request.url).origin, audioIndex);
+    return response ?? Response.json({ error: "Prepared quality streams are not available for this title." }, { status: 404 });
+  }, {
+    params: t.Object({ fileId: t.Numeric(), asset: t.String() }),
     query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
   })
 

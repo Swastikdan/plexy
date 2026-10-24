@@ -69,6 +69,18 @@ export function resolveFfmpeg(): string | null {
     return cached;
   }
 
+  // Electron places bundled runtime tools in Resources/bin. The backend
+  // executable lives beside that directory, so node_modules/PATH lookup is
+  // not reliable in a GUI-launched packaged app.
+  const resourcesDir = Bun.env.PLEXY_RESOURCES_DIR;
+  if (resourcesDir) {
+    const candidate = join(resourcesDir, "bin", "ffmpeg");
+    if (isExecutable(candidate)) {
+      cached = candidate;
+      return cached;
+    }
+  }
+
   for (const dir of new Set([
     dirname(process.execPath),
     process.argv[1] ? dirname(process.argv[1]) : "",

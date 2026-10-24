@@ -15,6 +15,7 @@
   "references": [
     { "path": "./packages/api-client" },
     { "path": "./apps/server" },
-    { "path": "./apps/web" }
+    { "path": "./apps/web" },
+    { "path": "./apps/desktop" }
   ]
 }

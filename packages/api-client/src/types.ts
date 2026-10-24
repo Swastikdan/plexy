@@ -101,7 +101,7 @@ export interface TitleDetail {
   matchReason: string | null;
 }
 
-export type PlayPath = "direct" | "remux" | "transcode" | "unsupported";
+export type PlayPath = "direct" | "remux" | "transcode" | "hls" | "unsupported";
 
 /** Scrub-preview state for one file. `trackUrl` is a WebVTT metadata track. */
 export interface Trickplay {
@@ -278,6 +278,7 @@ export interface ServerSettings {
   bindAddress: string;
   logLevel: string;
   metadataLanguage: string;
+  preferredAudioLanguage: string;
   metadataRegion: string;
   imageQuality: string;
   autoOptimize: boolean;
