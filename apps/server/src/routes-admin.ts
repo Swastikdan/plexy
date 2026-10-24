@@ -18,6 +18,7 @@ import { startScan, currentScan, onScanProgress } from "./scan";
 import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { VIDEO_EXTENSIONS } from "./parse";
 import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
+import { getLiveBinding } from "./runtime";
 import {
   enqueueStreamPreparationsForTitles,
   enqueueConfiguredStreamPreparations,
@@ -94,6 +95,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Read-only status for both admin and viewer shells. */
   .get("/server/status", async (ctx) => {
     const cfg = await getConfig();
+    const live = getLiveBinding();
     const recentScans = q<Row>(
       "SELECT id, status, files_seen, issues, started_at, finished_at FROM scans ORDER BY id DESC LIMIT 5",
     ).all();
@@ -105,8 +107,13 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       startedAt: new Date(startedAt).toISOString(),
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
       adminAvailable: isLoopbackContext(ctx),
-      bind: cfg.bindAddress,
-      port: cfg.port,
+      // Report the address the listener actually bound to, not just what is
+      // saved: the owner can change the setting while the server is running.
+      bind: live.bind || cfg.bindAddress,
+      savedBind: cfg.bindAddress,
+      restartRequired: Boolean(live.bind) && live.bind !== cfg.bindAddress,
+      port: live.port || cfg.port,
+      lanUrls: live.lanUrls,
       hasTmdbToken,
       hasLibraries,
       setupComplete: hasTmdbToken && hasLibraries,

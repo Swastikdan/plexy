@@ -221,6 +221,11 @@ export interface ServerStatus {
   adminAvailable: boolean;
   uptimeSeconds: number;
   bind?: string;
+  /** Bind address saved in config; differs from `bind` until a restart applies it. */
+  savedBind?: string;
+  restartRequired?: boolean;
+  /** Reachable `http://<lan-ip>:<port>` URLs while bound to 0.0.0.0. */
+  lanUrls?: string[];
   port?: number;
   hasTmdbToken?: boolean;
   hasLibraries?: boolean;

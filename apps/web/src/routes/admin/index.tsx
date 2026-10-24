@@ -611,6 +611,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 
 function Settings() {
   const { data, isError, isLoading } = useQuery(queries.settings());
+  const status = useQuery(queries.serverStatus());
   const { data: streamTitles } = useQuery({
     queryKey: ["stream-preparation-titles"],
     queryFn: () => api.items({ limit: 5000 }),
@@ -630,10 +631,27 @@ function Settings() {
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [streamTitleSearch, setStreamTitleSearch] = useState("");
   const [selectedStreamTitleIds, setSelectedStreamTitleIds] = useState<number[]>([]);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
+  const copyLanUrl = (url: string) => {
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopiedUrl(url);
+        window.setTimeout(() => setCopiedUrl((cur) => (cur === url ? null : cur)), 1500);
+      })
+      .catch(() => {
+        /* clipboard permission denied */
+      });
+  };
 
   const save = useMutation({
     mutationFn: api.updateSettings,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+      // Bind changes only apply on restart; refresh status so the hint appears.
+      void queryClient.invalidateQueries({ queryKey: ["server-status"] });
+    },
   });
 
   const clearCache = useMutation({
@@ -900,7 +918,7 @@ function Settings() {
             <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
               Logging Verbosity
             </span>
-            <p className="text-xs text-ink-muted">Server port is {s.port}. Adjust detail level for server logs.</p>
+            <p className="text-xs text-ink-muted">Server port is {status.data?.port ?? s.port}. Adjust detail level for server logs.</p>
             <div className="pt-1">
               <Select.Root
                 value={data.logLevel}
@@ -922,6 +940,58 @@ function Settings() {
             </div>
           </div>
         </div>
+
+        {/* Live binding: LAN addresses plus a restart hint when settings and
+            the running listener disagree. */}
+        {status.data?.restartRequired ? (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-medium text-amber-300">
+            Restart Plexy to apply the new bind address. It is still listening on{" "}
+            <span className="font-mono">{status.data.bind}:{status.data.port}</span>.
+          </p>
+        ) : status.data?.bind === "0.0.0.0" ? (
+          status.data.lanUrls?.length ? (
+            <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-2">
+              <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+                Open on your Wi-Fi devices
+              </span>
+              <ul className="space-y-1.5">
+                {status.data.lanUrls.map((url) => (
+                  <li key={url} className="flex items-center justify-between gap-2">
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs text-brand-text hover:underline break-all"
+                    >
+                      {url}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => copyLanUrl(url)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-hover active:scale-95 transition-all"
+                      title="Copy address"
+                    >
+                      {copiedUrl === url ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      <span>{copiedUrl === url ? "Copied" : "Copy"}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-ink-muted">
+                Browsing and playback work on these addresses. Admin actions stay limited to this Mac.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-ink-muted">
+              No Wi-Fi or Ethernet address detected. Connect this Mac to your network, then refresh.
+            </p>
+          )
+        ) : (
+          <p className="text-xs text-ink-muted">
+            Bound to this Mac only. Choose <span className="font-mono">0.0.0.0</span> above and restart
+            Plexy to let phones and TVs connect.
+          </p>
+        )}
       </div>
 
       {/* Server Connection Card */}
