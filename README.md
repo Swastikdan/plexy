@@ -60,6 +60,30 @@ This compiles:
   ```
   Open `http://localhost:8765`. Both the web UI and API are served from that single process.
 
+### First launch on macOS (Gatekeeper)
+
+Release builds are ad-hoc signed but **not notarized** — notarization requires an
+Apple Developer Program membership — so macOS shows:
+
+> Apple could not verify "Plexy" is free of malware that may harm your Mac or compromise your privacy.
+
+This is expected. To open the app:
+
+1. Drag **Plexy** into **Applications**.
+2. Open **System Settings → Privacy & Security** and scroll to the Security section.
+3. Click **Open Anyway** next to the blocked Plexy message, then confirm with
+   your password or Touch ID.
+
+On macOS 14 and earlier, right-clicking **Plexy.app** and choosing **Open** also
+works. From Terminal:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Plexy.app
+```
+
+Only bypass Gatekeeper for builds you produced yourself or downloaded from this
+repository's releases.
+
 ### 4. Hosted Web Build (Cloudflare Workers)
 
 `bun run build:web` produces `dist/web`, a static SPA. The GitHub Actions

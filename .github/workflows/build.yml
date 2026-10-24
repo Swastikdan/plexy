@@ -177,7 +177,18 @@ jobs:
 
           **macOS (Apple Silicon):** download the DMG below, or the ZIP for a portable copy.
 
-          The Mac app is ad-hoc signed but not notarized. On first launch, right-click **Plexy.app** and choose **Open**.
+          The Mac app is ad-hoc signed, not notarized, so macOS shows "Apple could not verify Plexy" on first launch. This is expected for an unsigned build.
+
+          To open it:
+          1. Drag **Plexy** into **Applications**.
+          2. Open **System Settings → Privacy & Security** and scroll to the Security section.
+          3. Click **Open Anyway** next to the blocked Plexy message, then confirm with your password or Touch ID.
+
+          On macOS 14 or earlier you can instead right-click **Plexy.app** and choose **Open**.
+
+          Terminal alternative:
+
+              xattr -dr com.apple.quarantine /Applications/Plexy.app
 
           The web app asks for your Plexy server address on first launch and remembers it on that device. The Mac app includes its own server.
 
