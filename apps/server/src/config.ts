@@ -20,6 +20,12 @@ const ConfigSchema = z.object({
   metadataLanguage: z.string().default("en-US"),
   metadataRegion: z.string().default("US"),
   imageQuality: z.enum(["w342", "w500", "w780", "original"]).default("w780"),
+  /** Prepare non-direct files in the background so playback and seeking are instant. */
+  autoOptimize: z.boolean().default(true),
+  /** 0 = use all available space. Otherwise prune the oldest prepared copies. */
+  optimizeMaxCacheGb: z.number().int().min(0).default(0),
+  /** Files probed in parallel during a scan. Higher is faster on fast disks. */
+  probeConcurrency: z.number().int().min(1).max(16).default(4),
   tmdbToken: z.string().default(""),
   /** Free-form admin notes to self. */
   note: z.string().default(""),
@@ -78,6 +84,9 @@ export function redactedView(cfg: Config) {
     metadataLanguage: cfg.metadataLanguage,
     metadataRegion: cfg.metadataRegion,
     imageQuality: cfg.imageQuality,
+    autoOptimize: cfg.autoOptimize,
+    optimizeMaxCacheGb: cfg.optimizeMaxCacheGb,
+    probeConcurrency: cfg.probeConcurrency,
     hasTmdbToken: cfg.tmdbToken.length > 0,
     tokenSource:
       (Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || Bun.env.TMDB_TOKEN) &&

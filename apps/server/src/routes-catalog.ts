@@ -8,6 +8,7 @@ import { db, q, run, type Row } from "./db";
 import { log } from "./logger";
 import { imageUrl } from "./tmdb";
 import { classifyPlayability } from "./playback";
+import { optimizationView } from "./optimize";
 
 // --- card assembly -----------------------------------------------------------
 
@@ -46,6 +47,13 @@ export function upgradeArtworkUrl(url: string | null, kind: string): string | nu
   return url;
 }
 
+const ART_WIDTH: Record<string, number> = { poster: 500, backdrop: 1600, thumb: 300 };
+
+/** Request exactly the pixels a card renders, not the full-size original. */
+function sizedImageUrl(artworkId: number, kind: string): string {
+  return `/api/images/${artworkId}?w=${ART_WIDTH[kind] ?? 500}`;
+}
+
 /**
  * Decorate raw item rows with artwork, metadata, files and watch state. Three indexed
  * queries beat a correlated subquery per row on large libraries.
@@ -80,8 +88,8 @@ async function attachArt(rows: Row[]): Promise<ItemCard[]> {
   for (const a of artRows) {
     const id = Number(a.item_id);
     const m = art.get(id) ?? {};
-    const url = `/api/images/${Number(a.id)}`;
-    m[String(a.kind)] = url;
+    const kind = String(a.kind);
+    m[kind] = sizedImageUrl(Number(a.id), kind);
     art.set(id, m);
   }
   const meta = new Map(metaRows.map((m) => [Number(m.item_id), m]));
@@ -150,6 +158,7 @@ function fileInfoView(file: Row) {
     analysisError: file.analysis_error as string | null,
     likelyPlayPath: classification.path,
     likelyPlayReason: classification.reason,
+    optimization: optimizationView(file),
   };
 }
 

@@ -21,6 +21,12 @@ db.run("PRAGMA journal_mode = WAL");
 db.run("PRAGMA foreign_keys = ON");
 // Medium is a good WAL trade-off for a laptop that can lose power.
 db.run("PRAGMA synchronous = NORMAL");
+// Keep more of the hot catalog in memory and avoid temp-file churn for the
+// many small GROUP BY / ORDER BY queries the catalog screens issue.
+db.run("PRAGMA cache_size = -65536");      // 64 MiB page cache
+db.run("PRAGMA mmap_size = 268435456");    // 256 MiB memory-mapped reads
+db.run("PRAGMA temp_store = MEMORY");
+db.run("PRAGMA busy_timeout = 5000");
 
 {
   // Bun's `Database.run` is not variadic (`run(sql, bindings[])`), but writing
@@ -40,6 +46,29 @@ db.run("PRAGMA synchronous = NORMAL");
 export type Row = Record<string, unknown>;
 
 /**
+ * Prepared-statement cache. `db.query()` parses and prepares the SQL each time
+ * it is called; the scanner and catalog reuse the same handful of statements
+ * thousands of times, so keeping them is a measurable win. Dynamic SQL (the
+ * `IN (?,?,…)` lists in the catalog) is bounded to keep memory flat.
+ */
+const statementCache = new Map<string, Statement>();
+const STATEMENT_CACHE_LIMIT = 512;
+
+function prepare(sql: string): Statement {
+  const cached = statementCache.get(sql);
+  if (cached) return cached;
+  const stmt = db.query(sql) as unknown as Statement;
+  if (statementCache.size >= STATEMENT_CACHE_LIMIT) statementCache.clear();
+  statementCache.set(sql, stmt);
+  return stmt;
+}
+
+/** Called after migrations so cached statements never point at an old schema. */
+export function clearStatementCache(): void {
+  statementCache.clear();
+}
+
+/**
  * Prepare a statement once and expose `.get` / `.all` / `.run`.
  * Parameters are `any` at the type level (SQLite accepts null-and-boolean
  * mixes) while the row shape stays typed at each call site.
@@ -51,7 +80,7 @@ export function q<A = Row, _P = never[]>(
   all: (...params: any[]) => A[];
   run: (...params: any[]) => void;
 } {
-  const stmt = db.query(sql) as unknown as Statement;
+  const stmt = prepare(sql);
   return {
     get: stmt.get.bind(stmt) as never,
     all: stmt.all.bind(stmt) as never,
@@ -112,5 +141,6 @@ export async function runMigrations(): Promise<string[]> {
       run("INSERT OR IGNORE INTO schema_migrations (file) VALUES (?)", file);
     })();
   }
+  clearStatementCache();
   return files;
 }

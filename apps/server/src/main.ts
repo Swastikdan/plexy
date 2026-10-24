@@ -9,6 +9,7 @@ import { installCrashHandlers, APP_VERSION } from "./crash";
 import { prepareLogDir, log, closeLog, setLogLevel } from "./logger";
 import { buildApp } from "./app";
 import { shutdownWorker } from "./worker-host";
+import { startOptimizer, stopOptimizer } from "./optimize";
 import type { Level } from "./logger";
 
 installCrashHandlers();
@@ -61,17 +62,28 @@ async function main(): Promise<void> {
   const port = Number(Bun.env.PORT ?? cfg.port);
   app.listen({ port, hostname });
 
-  // Soft shutdown: finish writes, close the worker, close logs (PRD 5.1).
+  // Soft shutdown: finish writes, close the workers, close logs (PRD 5.1).
   const shutdown = (signal: string) => {
     log.info("server", `received ${signal}, shutting down`);
     app.stop(true);
-    void shutdownWorker().then(() => {
-      closeLog();
-      process.exit(0);
-    });
+    void stopOptimizer()
+      .then(() => shutdownWorker())
+      .then(() => {
+        closeLog();
+        process.exit(0);
+      });
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  // Prepare the library in the background after the first paint of the UI.
+  // Interrupted jobs are re-queued, so an unclean exit loses no work.
+  setTimeout(() => {
+    void startOptimizer().catch((err) =>
+      log.warn("optimizer", "could not resume preparation queue", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+  }, 3000);
 
   log.info("server", `Plexy v${APP_VERSION} listening`, {
     url: `http://localhost:${port}`,

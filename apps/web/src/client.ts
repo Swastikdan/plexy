@@ -11,6 +11,7 @@ import {
   type HomePayload,
   type ItemCard,
   type LibraryItem,
+  type OptimizerStatus,
   type Playability,
   type PlayPath,
   type ReviewEntry,
@@ -141,6 +142,16 @@ export const api = {
   playability: async (fileId: number, caps: BrowserCaps): Promise<Playability> => {
     const query = { caps: JSON.stringify(caps) };
     return unwrap<Playability>(rpc.api.playability({ fileId: String(fileId) }).get({ query }));
+  },
+
+  /**
+   * Everything the player needs in one request: play path, title, resume point,
+   * next episode, subtitle tracks and preparation state. Uses REST rather than
+   * Eden so the response shape is not coupled to route type inference.
+   */
+  play: async (fileId: number, caps?: BrowserCaps): Promise<Playability> => {
+    const query = caps ? `?caps=${encodeURIComponent(JSON.stringify(caps))}` : "";
+    return restFetch<Playability>(`/api/play/${fileId}${query}`);
   },
 
   subtitles: async (fileId: number): Promise<{ tracks: SubtitleTrack[] }> => {
@@ -287,6 +298,18 @@ export const api = {
     return restFetch<{ crashes: Array<{ id: string; ts: string }> }>("/api/crashes");
   },
 
+  optimizeStatus: async (): Promise<OptimizerStatus> => {
+    return restFetch<OptimizerStatus>("/api/optimize/status");
+  },
+
+  runOptimization: async (): Promise<{ requested: number } & OptimizerStatus> => {
+    return restFetch<{ requested: number } & OptimizerStatus>("/api/optimize/run", { method: "POST" });
+  },
+
+  clearOptimizationCache: async (): Promise<{ removed: number }> => {
+    return restFetch<{ removed: number }>("/api/optimize/clear", { method: "POST" });
+  },
+
   // --- Direct Streaming & Media REST URLs ---
 
   streamUrl: (fileId: number, playPath: string, start?: number): string => {
@@ -328,6 +351,7 @@ export type {
   HomePayload,
   ItemCard,
   LibraryItem,
+  OptimizerStatus,
   Playability,
   PlayPath,
   ReviewEntry,

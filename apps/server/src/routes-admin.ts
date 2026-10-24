@@ -15,6 +15,7 @@ import { APP_VERSION, crashDir } from "./crash";
 import { testToken } from "./tmdb";
 import { denyIfNotLocal, isLoopbackContext } from "./essentials";
 import { startScan, currentScan, onScanProgress } from "./scan";
+import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus } from "./optimize";
 import { VIDEO_EXTENSIONS } from "./parse";
 
 const startedAt = Date.now();
@@ -104,6 +105,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       setupComplete: hasTmdbToken && hasLibraries,
       scan: currentScan,
       recentScans,
+      optimizer: await optimizerStatus(),
     };
   })
 
@@ -121,6 +123,9 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.metadataLanguage) patch.metadataLanguage = body.metadataLanguage;
     if (body.metadataRegion) patch.metadataRegion = body.metadataRegion;
     if (body.imageQuality) patch.imageQuality = body.imageQuality;
+    if (body.autoOptimize !== undefined) patch.autoOptimize = body.autoOptimize;
+    if (body.optimizeMaxCacheGb !== undefined) patch.optimizeMaxCacheGb = body.optimizeMaxCacheGb;
+    if (body.probeConcurrency !== undefined) patch.probeConcurrency = body.probeConcurrency;
     if (body.note !== undefined) patch.note = body.note;
     // Tokens only round-trip when genuinely provided; the UI never echoes the
     // stored value, so "{redacted}" sentinels are ignored.
@@ -129,6 +134,9 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       patch.tmdbToken = body.tmdbToken.trim();
     }
     const cfg = await save(patch);
+    if (body.autoOptimize) {
+      void enqueueMissingOptimizations().catch(() => {});
+    }
     log.info("server", "settings updated", { logLevel: body.logLevel ?? undefined });
     return { settings: redactedView(cfg) };
   }, {
@@ -137,9 +145,33 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       metadataLanguage: t.Optional(t.String()),
       metadataRegion: t.Optional(t.String()),
       imageQuality: t.Optional(t.Union([t.Literal("w342"), t.Literal("w500"), t.Literal("w780"), t.Literal("original")])),
+      autoOptimize: t.Optional(t.Boolean()),
+      optimizeMaxCacheGb: t.Optional(t.Numeric()),
+      probeConcurrency: t.Optional(t.Numeric()),
       tmdbToken: t.Optional(t.String()),
       note: t.Optional(t.String()),
     }),
+  })
+
+  /** Preparation queue state: what is running, how far along, cache size. */
+  .get("/optimize/status", async () => optimizerStatus())
+
+  /** Queue every probed file again, including previous failures. */
+  .post("/optimize/run", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/optimize/run");
+    if (denied) return denied;
+    const requested = await enqueueMissingOptimizations({ includeFailed: true });
+    log.info("optimizer", "manual preparation run requested", { queued: requested });
+    return { ...(await optimizerStatus()), requested };
+  })
+
+  /** Delete every prepared copy; the originals are untouched. */
+  .post("/optimize/clear", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/optimize/clear");
+    if (denied) return denied;
+    const removed = await clearOptimizerCache();
+    log.info("optimizer", "prepared copies cleared", { removed });
+    return { removed };
   })
 
   /** "Test TMDB token": success message or the exact failure (PRD 5.1). */

@@ -30,7 +30,7 @@ const CODEC_ALIASES: Record<string, string> = {
   vp8: "vp8", vp9: "vp9", av01: "av1", av1: "av1", theora: "theora",
 };
 
-function canonical(codec: string | null | undefined): string | null {
+export function canonicalCodec(codec: string | null | undefined): string | null {
   if (!codec) return null;
   const key = codec.toLowerCase().replace(/[^a-z0-9-]/g, "");
   if (key.startsWith("avc1") || key.startsWith("h264")) return "h264";
@@ -45,7 +45,7 @@ function canonical(codec: string | null | undefined): string | null {
 function setOf(caps: BrowserCaps | null, kind: "video" | "audio"): Set<string> {
   if (!caps) return kind === "video" ? CONSERVATIVE_VIDEO : CONSERVATIVE_AUDIO;
   const reported = kind === "video" ? caps.videoCodecs : caps.audioCodecs;
-  return new Set(reported.map((c) => canonical(c) ?? c.toLowerCase()));
+  return new Set(reported.map((c) => canonicalCodec(c) ?? c.toLowerCase()));
 }
 
 export interface FileFacts {
@@ -64,10 +64,10 @@ export function classifyPlayability(
   caps: BrowserCaps | null,
 ): { path: PlayPath; reason: string } {
   const container = (facts.container ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const video = canonical(facts.videoCodec);
+  const video = canonicalCodec(facts.videoCodec);
   const audioTracks: Array<{ codec: string }> = facts.audioJson
     ? JSON.parse(facts.audioJson) : [];
-  const audio = audioTracks.map((t) => canonical(t.codec));
+  const audio = audioTracks.map((t) => canonicalCodec(t.codec));
 
   const videoOk = video !== null && setOf(caps, "video").has(video);
   const hasAudio = audio.length > 0;
@@ -90,6 +90,32 @@ export function classifyPlayability(
     return { path: "remux", reason: `${container.toUpperCase()} works after repacking to MP4 — no re-encoding, it's nearly instant` };
   }
   return { path: "transcode", reason: `The ${facts.container ?? "source"} container isn't streamable, so Plexy will transcode` };
+}
+
+/**
+ * Video bitrate for a real re-encode.
+ *
+ * The owner plays locally and asked for source quality, so this never lowers
+ * the resolution and never targets a bitrate below what the source used. A
+ * codec change (HEVC → AVC) loses some efficiency, hence the headroom factor.
+ * The cap only guards against pathological probe values.
+ */
+export function preferredVideoBitrate(height: number | null, sourceBitrate: number | null): number {
+  const floor = !height
+    ? 6_000_000
+    : height > 1600 ? 20_000_000
+      : height > 1000 ? 10_000_000
+        : height > 600 ? 5_000_000
+          : 2_500_000;
+  const fromSource = sourceBitrate && sourceBitrate > 0
+    ? Math.round(sourceBitrate * 1.6)
+    : 0;
+  return Math.min(60_000_000, Math.max(floor, fromSource));
+}
+
+/** Audio bitrate for a real re-encode; surround gets more room than stereo. */
+export function preferredAudioBitrate(channels: number | null): number {
+  return channels && channels > 2 ? 384_000 : 256_000;
 }
 
 /** Compute a quick HTTP Range response for the watch player, backed by a lazy file slice. */

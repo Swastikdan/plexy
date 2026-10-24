@@ -18,7 +18,8 @@ import { resolveLogDir } from "./paths";
 
 export type Level = "debug" | "info" | "warn" | "error";
 export type Component =
-  | "scanner" | "matcher" | "tmdb" | "media" | "http" | "player" | "server" | "artwork";
+  | "scanner" | "matcher" | "tmdb" | "media" | "http" | "player" | "server" | "artwork"
+  | "optimizer";
 
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 const MAX_ROTATED = 5; // keep plexy-1 … plexy-5

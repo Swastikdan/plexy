@@ -45,6 +45,14 @@ export interface AudioTrack {
   isDefault: boolean;
 }
 
+export interface OptimizationState {
+  status: "none" | "queued" | "running" | "done" | "failed" | "skipped" | string;
+  mode: "remux" | "transcode" | null;
+  progress: number | null;
+  size: number | null;
+  error: string | null;
+}
+
 export interface FileFacts {
   fileId: number;
   itemId: number | null;
@@ -63,6 +71,7 @@ export interface FileFacts {
   analysisError: string | null;
   likelyPlayPath: string;
   likelyPlayReason: string;
+  optimization?: OptimizationState;
 }
 
 export interface TitleDetail {
@@ -91,9 +100,14 @@ export type PlayPath = "direct" | "remux" | "transcode" | "unsupported";
 export interface Playability {
   path: PlayPath;
   reason: string;
-  predictedSmoother: boolean;
   fileId: number;
   itemId: number | null;
+  title?: string;
+  subtitle?: string | null;
+  duration?: number | null;
+  nextFileId?: number | null;
+  tracks?: SubtitleTrack[];
+  optimization?: OptimizationState;
   watch: { position: number; duration: number | null; played: boolean } | null;
 }
 
@@ -102,6 +116,7 @@ export interface SubtitleTrack {
   kind: "embedded" | "sidecar";
   language: string | null;
   title: string;
+  isDefault?: boolean;
 }
 
 export interface ReviewEntry {
@@ -174,6 +189,17 @@ export interface ServerStatus {
     started_at: string;
     finished_at: string | null;
   }>;
+  optimizer?: OptimizerStatus;
+}
+
+export interface OptimizerStatus {
+  enabled: boolean;
+  running: boolean;
+  paused: boolean;
+  queued: number;
+  current: { fileId: number; progress: number } | null;
+  counts: Record<string, number>;
+  cacheBytes: number;
 }
 
 export interface LibraryItem {
@@ -192,6 +218,9 @@ export interface ServerSettings {
   metadataLanguage: string;
   metadataRegion: string;
   imageQuality: string;
+  autoOptimize: boolean;
+  optimizeMaxCacheGb: number;
+  probeConcurrency: number;
   hasTmdbToken: boolean;
   tokenSource: string;
   note: string;

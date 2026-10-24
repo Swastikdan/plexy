@@ -11,6 +11,7 @@
 ///   response { id, ok, result? , error? }
 import { registerMediabunnyServer } from "@mediabunny/server";
 import { ALL_FORMATS, BlobSource, Input, type InputVideoTrack, type InputAudioTrack } from "mediabunny";
+import { probeMatroskaSubtitles } from "./mkv-subtitles";
 
 try {
   registerMediabunnyServer();
@@ -50,13 +51,22 @@ async function probeFile(path: string): Promise<ProbeResult> {
     const duration = await input.getDurationFromMetadata();
 
     const videoTrack = await input.getPrimaryVideoTrack();
-    const video = videoTrack ? await describeVideo(videoTrack) : null;
+    // One stats pass per file: it is the most expensive probe call (it walks
+    // the packets), and both bitrate and frame rate come from it.
+    const stats = videoTrack
+      ? await videoTrack.computePacketStats().catch(() => null)
+      : null;
+    const video = videoTrack ? await describeVideo(videoTrack, stats) : null;
 
     const audio: ProbeResult["audio"] = [];
     for (const track of await input.getAudioTracks()) {
       audio.push(await describeAudio(track));
     }
 
+    // Mediabunny does not expose subtitle *input* tracks (only video/audio),
+    // so embedded subtitles are read from the Matroska container directly.
+    // Keep the generic loop as a fallback for formats mediabunny may support
+    // in the future.
     const subtitles: ProbeResult["subtitles"] = [];
     for (const track of await input.getTracks()) {
       if (track.type !== "subtitle") continue;
@@ -67,11 +77,24 @@ async function probeFile(path: string): Promise<ProbeResult> {
         isDefault: (await track.getDisposition()).default,
       });
     }
+    if (!subtitles.length) {
+      const matroska = await probeMatroskaSubtitles(path).catch(() => null);
+      if (matroska) {
+        for (const track of matroska) {
+          subtitles.push({
+            codec: track.codec,
+            language: track.language || "",
+            title: track.title,
+            isDefault: track.isDefault,
+          });
+        }
+      }
+    }
 
     return {
       container: format.name,
       duration,
-      bitrate: video ? (await videoTrack!.computePacketStats().then((s) => s.averageBitrate).catch(() => null)) : null,
+      bitrate: stats ? stats.averageBitrate : null,
       video,
       audio,
       subtitles,
@@ -81,8 +104,10 @@ async function probeFile(path: string): Promise<ProbeResult> {
   }
 }
 
-async function describeVideo(track: InputVideoTrack): Promise<ProbeResult["video"]> {
-  const stats = await track.computePacketStats().catch(() => null);
+async function describeVideo(
+  track: InputVideoTrack,
+  stats: Awaited<ReturnType<InputVideoTrack["computePacketStats"]>> | null,
+): Promise<ProbeResult["video"]> {
   const codec = await track.getCodec();
   // Codec parameter strings carry profiles like "h264:6" (High profile) where
   // supported; report them verbatim as a display hint.
@@ -117,7 +142,10 @@ function classifyHdr(colorSpace: string | null): string | null {
 
 // --- request loop ------------------------------------------------------------
 
-const CONCURRENCY = 2; // PRD 5.6 default worker concurrency
+// The parent bounds how many probes it sends, but the worker also enforces its
+// own limit so a runaway caller cannot exhaust file descriptors. Keep in step
+// with `probeConcurrency` in config (passed through the environment).
+const CONCURRENCY = Math.max(1, Math.min(16, Number(Bun.env.PLEXY_PROBE_CONCURRENCY) || 4));
 const queue: ProbeRequest[] = [];
 let running = 0;
 

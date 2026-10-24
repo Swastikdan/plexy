@@ -91,14 +91,19 @@ async function staticFallback({ request }: { request: Request }): Promise<Respon
       });
     }
   }
-  // Assets: prevent traversal, then serve with a small cache lifetime.
+  // Assets: prevent traversal, then serve with a cache lifetime. Vite output
+  // under /assets is content-hashed, so it can be cached forever; the rest is
+  // short-lived so a rebuild is picked up.
   const rel = url.pathname.replace(/^\/+/, "").replace(/\.\./g, "");
   const file = Bun.file(join(distDir, rel));
   if (await file.exists()) {
+    const immutable = url.pathname.startsWith("/assets/");
     return new Response(file, {
       headers: {
         ...(file.type ? { "Content-Type": file.type } : {}),
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": immutable
+          ? "public, max-age=31536000, immutable"
+          : "public, max-age=3600",
       },
     });
   }

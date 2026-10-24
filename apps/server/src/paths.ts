@@ -52,3 +52,15 @@ export function resolveOriginalsDir(): string {
 export function resolveDerivedDir(): string {
   return join(resolveArtworkDir(), "derived");
 }
+
+/**
+ * Prepared-playback cache: fast-start MP4 copies and extracted WebVTT tracks.
+ * Never written inside media folders; safe to delete when Plexy is stopped.
+ */
+export function resolveOptimizedDir(): string {
+  return join(resolveDataDir(), "optimized");
+}
+
+export function resolveSubtitleCacheDir(): string {
+  return join(resolveOptimizedDir(), "subtitles");
+}

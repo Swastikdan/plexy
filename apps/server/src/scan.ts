@@ -16,6 +16,8 @@ import { match } from "./matcher";
 import { hydrateItemMetadata } from "./hydrate";
 import * as tmdb from "./tmdb";
 import { probe, createProbePool, setOnWorkerCrash, shutdownWorker } from "./worker-host";
+import { enqueueMissingOptimizations, pauseOptimizer, resumeOptimizer } from "./optimize";
+import { cacheEmbeddedSubtitles } from "./subtitles";
 
 export interface ScanProgress {
   scanId: number;
@@ -170,14 +172,39 @@ async function runScan(libraryIds: number[]): Promise<void> {
     currentFile: null,
     startedAt,
   };
-  const emit = () => {
+  let lastEmitAt = 0;
+  let trailingEmit: ReturnType<typeof setTimeout> | null = null;
+  const publish = () => {
     currentScan = { ...progress };
     for (const fn of listeners) { try { fn(currentScan); } catch {} }
   };
-  emit();
+  // SSE listeners do not need one frame per file; a trailing emit guarantees
+  // the final position and status are delivered.
+  const emit = (force = false) => {
+    currentScan = { ...progress };
+    const now = Date.now();
+    if (!force && now - lastEmitAt < 120) {
+      if (!trailingEmit) {
+        trailingEmit = setTimeout(() => { trailingEmit = null; emit(true); }, 120);
+      }
+      return;
+    }
+    clearTimeout(trailingEmit ?? undefined);
+    trailingEmit = null;
+    lastEmitAt = now;
+    publish();
+  };
+  emit(true);
+
+  // Preparation jobs would compete with scanning for CPU and disk; keep the
+  // queue for after the walk (it resumes in `finally`).
+  pauseOptimizer();
 
   const seen = { count: 0 };
-  const pool = createProbePool(2); // PRD 5.6 worker concurrency default
+  const cfg = await getConfig();
+  // The probe worker enforces the same ceiling internally.
+  Bun.env.PLEXY_PROBE_CONCURRENCY = String(cfg.probeConcurrency);
+  const pool = createProbePool(cfg.probeConcurrency);
 
   try {
     for (const library of libraryRows) {
@@ -218,9 +245,17 @@ async function runScan(libraryIds: number[]): Promise<void> {
     log.error("scanner", "scan failed", { error: progress.error });
   } finally {
     setActiveScanJobId(null);
-    emit();
+    if (trailingEmit) { clearTimeout(trailingEmit); trailingEmit = null; }
+    emit(true);
     await shutdownWorker();
     scanning = false;
+    // Start preparing everything the walk just discovered. Optimizer jobs run
+    // one at a time in a child process, so this never blocks the event loop.
+    resumeOptimizer();
+    void enqueueMissingOptimizations().catch((err) =>
+      log.warn("optimizer", "could not queue preparation after scan", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
     // Libraries created (or manual scans requested) while this run was
     // underway get their own pass instead of being silently dropped.
     if (queuedLibraries.size) {
@@ -248,6 +283,7 @@ async function scanFolder(
     emit();
     return;
   }
+  const tasks: Promise<void>[] = [];
   for (const entry of entries) {
     const path = join(dir, entry.name);
     if (entry.isDirectory() && EXTRA_FOLDER.test(entry.name)) continue;
@@ -260,16 +296,21 @@ async function scanFolder(
     progress.filesSeen = seen.count;
     progress.currentFile = relative(root, path);
     emit();
-    try {
-      const changed = await processFile(path, root, type, roots, libraryId, pool);
-      if (changed) progress.filesUpdated++;
-      emit();
-    } catch (err) {
-      progress.issues++;
-      log.error("scanner", "file failed", { path, message: err instanceof Error ? err.message : String(err) });
-      emit();
-    }
+    // Files are probed/matched concurrently; the pool bounds how many probes
+    // the worker receives at once (configurable, default 4).
+    tasks.push(pool(async () => {
+      try {
+        const changed = await processFile(path, root, type, roots, libraryId);
+        if (changed) progress.filesUpdated++;
+        emit();
+      } catch (err) {
+        progress.issues++;
+        log.error("scanner", "file failed", { path, message: err instanceof Error ? err.message : String(err) });
+        emit();
+      }
+    }));
   }
+  await Promise.all(tasks);
 }
 
 /**
@@ -279,71 +320,94 @@ async function scanFolder(
  */
 async function processFile(
   path: string, root: string, type: LibraryType, roots: string[],
-  libraryId: number, pool: ReturnType<typeof createProbePool>,
+  libraryId: number,
 ): Promise<boolean> {
   const info = await stat(path);
   const existing = q<Row>("SELECT * FROM media_files WHERE path = ?").get(path);
 
-  if (existing) {
-    const sameStamp = Number(existing.size) === info.size && Number(existing.mtime) === Math.floor(info.mtimeMs);
-    if (sameStamp && existing.item_id && existing.analysis_status !== "pending") {
-      // Unmatched items get a fresh matching attempt on every scan pass, so a
-      // transient TMDB outage or a review-queue resolution doesn't need a
-      // manual reset. Fully matched items are skipped (PRD 5.2 incremental).
-      const status = q<{ match_status: string }, [number]>("SELECT match_status FROM items WHERE id=?")
-        .get(existing.item_id as number) ?? { match_status: "matched" };
-      if (status.match_status === "matched") return false;
-    }
-  }
+  const sameStamp = !!existing
+    && Number(existing.size) === info.size
+    && Number(existing.mtime) === Math.floor(info.mtimeMs);
+  const alreadyProbed = sameStamp && existing?.analysis_status === "probed";
 
   const parsed = parsePath(path, type, roots);
   const folderKey = type === "movies" ? movieFolderKey(path, roots)
     : tvSeriesFolderKey(path, roots);
+  const itemId = existing?.item_id == null ? null : Number(existing.item_id);
+  const previousMatch = itemId
+    ? (q<{ match_status: string }, [number]>("SELECT match_status FROM items WHERE id=?").get(itemId)
+      ?? { match_status: "unmatched" }).match_status
+    : "unmatched";
+
+  // Fast path: the file is unchanged and fully matched. Nothing to re-probe,
+  // re-match, or write — this is what keeps rescans quick.
+  if (alreadyProbed && previousMatch === "matched") return false;
 
   // NFO sidecars provide explicit ids that outrank parsed titles (PRD 5.3).
   // Checked in the file's folder and its parent (season layouts).
   const nfoId = await readNfoId(dirname(path)) ?? await readNfoId(dirname(dirname(path)));
 
-  // 1) upsert the file row, 2) ensure the item, 3) match, 4) probe
+  if (alreadyProbed && existing) {
+    // Unchanged but not matched yet: retry matching without touching the media
+    // file again. A transient TMDB outage should not require a manual reset.
+    const fileId = ensureFileRow(path, libraryId, folderKey, info.size, Math.floor(info.mtimeMs), parsed, existing);
+    await ensureItemAndMatch(fileId, path, type, roots, libraryId, parsed, folderKey, existing, nfoId);
+    const current = q<{ match_status: string }, [number]>("SELECT match_status FROM items WHERE id=?")
+      .get(itemId ?? 0);
+    return (current?.match_status ?? previousMatch) !== previousMatch;
+  }
+
+  // 1) upsert the file row, 2) probe, 3) ensure the item, 4) match
   const fileId = ensureFileRow(path, libraryId, folderKey, info.size, Math.floor(info.mtimeMs), parsed, existing);
 
-  // Probing runs in the worker so native crashes don't take the server down.
-  await pool(async () => {
-    try {
-      const facts = await probe(path, { timeoutMs: 60_000 });
-      run(
-        `UPDATE media_files SET
-          container=$container, duration=$duration, bitrate=$bitrate,
-          video_codec=$vc, video_profile=$vp, width=$w, height=$h, fps=$fps, hdr=$hdr,
-          audio_json=$audio, subtitles_json=$subs, analysis_status='probed',
-          analysis_error=NULL, probed_at=$at
-         WHERE id=$id`,
-        {
-          $id: fileId,
-          $container: facts.container,
-          $duration: facts.duration,
-          $bitrate: facts.bitrate,
-          $vc: facts.video?.codec ?? null,
-          $vp: facts.video?.profile ?? null,
-          $w: facts.video?.width ?? null,
-          $h: facts.video?.height ?? null,
-          $fps: facts.video?.fps ?? null,
-          $hdr: facts.video?.hdr ?? null,
-          $audio: JSON.stringify(facts.audio),
-          $subs: JSON.stringify(facts.subtitles),
-          $at: new Date().toISOString(),
-        },
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // analysis_failed is terminal for this scan; manual rescan retries (PRD 6).
-      run("UPDATE media_files SET analysis_status='analysis_failed', analysis_error=? WHERE id=?", message, fileId);
-      log.warn("media", "probe failed", { path, message });
-      return;
-    }
-  });
+  let subtitles: unknown[] = [];
+  try {
+    const facts = await probe(path, { timeoutMs: 60_000 });
+    subtitles = facts.subtitles;
+    run(
+      `UPDATE media_files SET
+        container=$container, duration=$duration, bitrate=$bitrate,
+        video_codec=$vc, video_profile=$vp, width=$w, height=$h, fps=$fps, hdr=$hdr,
+        audio_json=$audio, subtitles_json=$subs, analysis_status='probed',
+        analysis_error=NULL, probed_at=$at
+       WHERE id=$id`,
+      {
+        $id: fileId,
+        $container: facts.container,
+        $duration: facts.duration,
+        $bitrate: facts.bitrate,
+        $vc: facts.video?.codec ?? null,
+        $vp: facts.video?.profile ?? null,
+        $w: facts.video?.width ?? null,
+        $h: facts.video?.height ?? null,
+        $fps: facts.video?.fps ?? null,
+        $hdr: facts.video?.hdr ?? null,
+        $audio: JSON.stringify(facts.audio),
+        $subs: JSON.stringify(facts.subtitles),
+        $at: new Date().toISOString(),
+      },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // analysis_failed is terminal for this scan; manual rescan retries (PRD 6).
+    run("UPDATE media_files SET analysis_status='analysis_failed', analysis_error=? WHERE id=?", message, fileId);
+    log.warn("media", "probe failed", { path, message });
+  }
 
   await ensureItemAndMatch(fileId, path, type, roots, libraryId, parsed, folderKey, existing, nfoId);
+
+  // Extract embedded tracks while the file is already open in the scanner's
+  // mind: the player then never has to demux the video to show subtitles.
+  if (subtitles.length) {
+    const fresh = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
+    if (fresh) {
+      void cacheEmbeddedSubtitles(fresh).catch((err) =>
+        log.warn("player", "subtitle caching failed", {
+          fileId, message: err instanceof Error ? err.message : String(err),
+        }));
+    }
+  }
+
   return true;
 }
 
@@ -429,11 +493,13 @@ async function ensureItemAndMatch(
 
 /** Look up or create a movie item keyed by folder (PRD 8: items.folder_key). */
 async function ensureMovie(folderKey: string, libraryId: number, parsed: ReturnType<typeof parsePath>, path: string, nfoId: number | null): Promise<number | null> {
-  const existing = q<{ id: number; locked: number }, [number, string]>
-    ("SELECT id, locked FROM items WHERE library_id=? AND kind='movie' AND folder_key=?")
+  const existing = q<{ id: number; locked: number; match_status: string }, [number, string]>
+    ("SELECT id, locked, match_status FROM items WHERE library_id=? AND kind='movie' AND folder_key=?")
     .get(libraryId, folderKey);
   if (existing) {
-    if (!existing.locked) await runMatchForItem(existing.id, "movie", parsed, path, nfoId);
+    if (!existing.locked && existing.match_status !== "matched") {
+      await runMatchForItem(existing.id, "movie", parsed, path, nfoId);
+    }
     return existing.id;
   }
   const row = q<{ id: number }>(
@@ -446,10 +512,12 @@ async function ensureMovie(folderKey: string, libraryId: number, parsed: ReturnT
 
 /** Ensure the series item for a TV folder, matching it if unlocked. */
 async function ensureSeries(folderKey: string, libraryId: number, parsed: ReturnType<typeof parsePath>, path: string, nfoId: number | null): Promise<number | null> {
-  const existing = q<{ id: number; locked: number }>(
-    "SELECT id, locked FROM items WHERE library_id=? AND kind='series' AND folder_key=?").get(libraryId, folderKey);
+  const existing = q<{ id: number; locked: number; match_status: string }>(
+    "SELECT id, locked, match_status FROM items WHERE library_id=? AND kind='series' AND folder_key=?").get(libraryId, folderKey);
   if (existing) {
-    if (!existing.locked) await runMatchForItem(existing.id, "series", parsed, path, nfoId, seriesDirFor(path));
+    if (!existing.locked && existing.match_status !== "matched") {
+      await runMatchForItem(existing.id, "series", parsed, path, nfoId, seriesDirFor(path));
+    }
     return existing.id;
   }
   const row = q<{ id: number }>(
@@ -498,10 +566,26 @@ function storeCandidates(itemId: number, candidates: Array<{ tmdbId: number; tmd
   });
 }
 
+/** Items currently being matched; prevents duplicate TMDB calls during a parallel scan. */
+const matchingItems = new Set<number>();
+
 /** Run the matching pipeline for one item and persist the decision. */
 async function runMatchForItem(
   itemId: number, kind: "movie" | "series", parsed: ReturnType<typeof parsePath>,
   path: string, nfoId: number | null, artDir: string = dirname(path),
+): Promise<void> {
+  if (matchingItems.has(itemId)) return;
+  matchingItems.add(itemId);
+  try {
+    await matchItemOnce(itemId, kind, parsed, path, nfoId, artDir);
+  } finally {
+    matchingItems.delete(itemId);
+  }
+}
+
+async function matchItemOnce(
+  itemId: number, kind: "movie" | "series", parsed: ReturnType<typeof parsePath>,
+  path: string, nfoId: number | null, artDir: string,
 ): Promise<void> {
   const item = q<{ locked: number; match_status: string }, [number]>("SELECT locked, match_status FROM items WHERE id=?").get(itemId);
   if (!item || item.locked) return; // locked manual matches never rerun (PRD 5.4.8)

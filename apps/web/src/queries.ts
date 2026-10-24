@@ -11,9 +11,13 @@ export const queries = {
     queryOptions({
       queryKey: ["server-status"],
       queryFn: api.serverStatus,
-      refetchInterval: (q) =>
-        // Poll faster while a scan runs; lazy when idle.
-        q.state.data?.scan?.status === "running" ? 1500 : 15_000,
+      refetchInterval: (q) => {
+        // Poll faster while a scan or preparation job is running; lazy when idle.
+        const data = q.state.data;
+        if (data?.scan?.status === "running") return 1500;
+        if (data?.optimizer?.running || (data?.optimizer?.queued ?? 0) > 0) return 2500;
+        return 15_000;
+      },
     }),
 
   home: () =>
@@ -51,11 +55,27 @@ export const queries = {
       staleTime: Infinity,
     }),
 
+  play: (fileId: number, caps?: string) =>
+    queryOptions({
+      queryKey: ["play", fileId, caps ?? ""],
+      queryFn: () => api.play(fileId, caps ? JSON.parse(caps) : undefined),
+      staleTime: 30_000,
+      gcTime: 10 * 60_000,
+    }),
+
   playability: (fileId: number, caps: string) =>
     queryOptions({
-      queryKey: ["playability", fileId, caps],
-      queryFn: () => api.playability(fileId, JSON.parse(caps)),
-      staleTime: 10_000,
+      queryKey: ["play", fileId, caps],
+      queryFn: () => api.play(fileId, JSON.parse(caps)),
+      staleTime: 30_000,
+    }),
+
+  optimizer: () =>
+    queryOptions({
+      queryKey: ["optimizer"],
+      queryFn: api.optimizeStatus,
+      refetchInterval: (q) =>
+        q.state.data?.running || q.state.data?.queued ? 2000 : 15_000,
     }),
 
   // --- admin ---
