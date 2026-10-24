@@ -1,11 +1,12 @@
 name: Build & Release
 
-# Runs only when the `build` branch receives a commit (for example after the
-# owner merges main into build). Manual runs must target the `build` branch.
+# Runs on every push to `main`: builds the web client, deploys it to
+# Cloudflare Workers, packages the macOS app, and publishes a GitHub release.
+# Manual runs must target `main`.
 on:
   push:
     branches:
-      - build
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -24,8 +25,8 @@ jobs:
     name: Web → Cloudflare Workers
     runs-on: ubuntu-latest
     # Only the owner (or logins listed in the RELEASE_ACTORS repository
-    # variable) can publish. Branch protection should also restrict `build`.
-    if: github.ref == 'refs/heads/build' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    # variable) can publish. Branch protection should also restrict `main`.
+    if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -101,7 +102,7 @@ jobs:
   mac:
     name: macOS app (Apple Silicon)
     runs-on: macos-15
-    if: github.ref == 'refs/heads/build' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -149,7 +150,7 @@ jobs:
     needs:
       - web
       - mac
-    if: github.ref == 'refs/heads/build' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     steps:
       - name: Check out
         uses: actions/checkout@v4

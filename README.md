@@ -173,11 +173,11 @@ tells the GitHub release notes which URL to link to.
 
 ---
 
-## CI/CD (`build` branch → Cloudflare + GitHub Release)
+## CI/CD (`main` → Cloudflare + GitHub Release)
 
-`.github/workflows/build.yml` runs only on pushes to `build` (manual
-`workflow_dispatch` runs are also restricted to the `build` branch). Merging
-`main` into `build` is the release switch.
+`.github/workflows/build.yml` runs on every push to `main` (manual
+`workflow_dispatch` runs are also restricted to `main`). Pushing to `main` is the
+release switch.
 
 What it does:
 
@@ -208,8 +208,8 @@ What it does:
 2. Add the two secrets above.
 3. Enable a `workers.dev` subdomain for the account, or set `PLEXY_SITE_URL` to
    a custom domain.
-4. Protect the `build` branch so only you can push or merge into it. The
-   workflow also checks `RELEASE_ACTORS`.
+4. Protect the `main` branch so only you can push to it. The workflow also
+   checks `RELEASE_ACTORS`.
 
 `wrangler.json` sets the Worker name (`plexy`) and points static assets at
 `dist/web` with SPA fallback routing.
