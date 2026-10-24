@@ -300,6 +300,14 @@ function WatchRoute() {
       if (event.defaultPrevented) return;
 
       const path = event.composedPath();
+      // Never steal arrows while typing in a field (e.g. a search box).
+      const isTyping = path.some((target) => {
+        if (!(target instanceof HTMLElement)) return false;
+        if (target.isContentEditable || target.tagName === "TEXTAREA") return true;
+        return target.tagName === "INPUT" && (target as HTMLInputElement).type !== "range";
+      });
+      if (isTyping) return;
+
       // Leave volume sliders and open menus/dialogs to their own controls.
       const usesArrow = path.some((target) => {
         if (!(target instanceof Element) || target.localName === "media-time-range") return false;
@@ -336,13 +344,15 @@ function WatchRoute() {
 
     container.addEventListener("pointerdown", onPointerDown, true);
     container.addEventListener("mediaseekrequest", onSeekRequest, true);
-    container.addEventListener("keydown", onKeyDown, true);
+    // Listen on the window, not the player container: the first arrow press
+    // should seek without requiring a click to move focus into the player.
+    window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("pointerup", onPointerUp, true);
     window.addEventListener("pointercancel", onPointerUp, true);
     return () => {
       container.removeEventListener("pointerdown", onPointerDown, true);
       container.removeEventListener("mediaseekrequest", onSeekRequest, true);
-      container.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("pointerup", onPointerUp, true);
       window.removeEventListener("pointercancel", onPointerUp, true);
     };
