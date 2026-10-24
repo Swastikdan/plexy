@@ -102,6 +102,47 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(episodeEntries.length).toBe(0);
   });
 
+  test("GET /api/logs returns a lines array", async () => {
+    const res = await app.handle(new Request("http://localhost:8765/api/logs"));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(Array.isArray(data.lines)).toBe(true);
+  });
+
+  test("GET /api/matches/review?status=all exposes matched titles for manual remapping", async () => {
+    run("INSERT OR IGNORE INTO items (id, library_id, kind, folder_key, name, sort_title, match_status, tmdb_type, tmdb_id, matched_by, score) VALUES (20, 1, 'movie', 'Inception (2010)', 'Wrongly Matched Film', 'wrongly matched film', 'matched', 'movie', 999, 'search', 0.61)");
+    run("UPDATE items SET folder_key = 'Inception (2010)' WHERE id = 20");
+    run("INSERT OR IGNORE INTO media_files (id, library_id, item_id, path, folder_key, size, mtime) VALUES (200, 1, 20, '/tmp/Movies/Inception (2010)/Inception.2010.1080p.mkv', 'Inception (2010)', 1, 1)");
+    run("UPDATE media_files SET item_id = 20, unavailable = 0 WHERE id = 200");
+
+    const attention = await app.handle(new Request("http://localhost:8765/api/matches/review"));
+    const attentionData = await attention.json();
+    expect(attentionData.items.some((i: any) => i.id === 20)).toBe(false);
+    expect(typeof attentionData.counts.all).toBe("number");
+    expect(attentionData.counts.attention).toBe(attentionData.counts.review + attentionData.counts.unmatched);
+
+    const all = await app.handle(new Request("http://localhost:8765/api/matches/review?status=all"));
+    const allData = await all.json();
+    const entry = allData.items.find((i: any) => i.id === 20);
+    expect(entry).toBeTruthy();
+    expect(entry.matchStatus).toBe("matched");
+    expect(entry.matchedBy).toBe("search");
+    expect(entry.tmdbId).toBe(999);
+    expect(entry.originalName).toBe("Inception (2010)");
+    expect(entry.fileName).toBe("Inception.2010.1080p.mkv");
+
+    const searched = await app.handle(new Request("http://localhost:8765/api/matches/review?status=all&q=Wrongly"));
+    const searchedData = await searched.json();
+    expect(searchedData.items.some((i: any) => i.id === 20)).toBe(true);
+    expect(searchedData.items.every((i: any) => /wrongly/i.test(i.name) || /wrongly/i.test(i.sort_title ?? ""))).toBe(true);
+
+    // A wrong match replaces the title, so searching by the on-disk folder name
+    // must still find the item through its file path.
+    const byFolder = await app.handle(new Request("http://localhost:8765/api/matches/review?status=all&q=Inception"));
+    const byFolderData = await byFolder.json();
+    expect(byFolderData.items.some((i: any) => i.id === 20)).toBe(true);
+  });
+
   test("nextUpEpisodes and GET /api/home handles played episodes without crashing", async () => {
     // Mark episode 12 as played
     run("INSERT OR REPLACE INTO watch_state (item_id, position_seconds, duration_seconds, played) VALUES (12, 2700, 2700, 1)");

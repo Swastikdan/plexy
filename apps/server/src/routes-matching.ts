@@ -3,6 +3,7 @@
 /// Review queue listing, TMDB search for the "Fix match" dialog, applying a
 /// locked manual match, per-item metadata refresh, and the name-parser "test a
 /// file name" helper. All loopback-only.
+import { basename, isAbsolute } from "node:path";
 import { Elysia, t } from "elysia";
 import { db, q, run, type Row } from "./db";
 import { log } from "./logger";
@@ -12,41 +13,69 @@ import { match, refineWithRuntime, type Candidate } from "./matcher";
 import { parsePath } from "./parse";
 import { normalizeTitle } from "./parse";
 
-/** View of one item in the review queue. */
-function reviewRow(row: Row): Record<string, unknown> {
-  const candidates = q<Row>(
-    "SELECT * FROM match_candidates WHERE item_id = ? ORDER BY position LIMIT 3",
-  ).all(Number(row.id));
-  return {
-    id: Number(row.id),
-    kind: String(row.kind),
-    name: String(row.name),
-    year: row.year as number | null,
-    parsedTitle: row.reason as string | null,
-    matchStatus: String(row.match_status),
-    score: row.score as number | null,
-    matchedBy: row.matched_by as string | null,
-    reason: row.reason as string | null,
-    tmdbId: row.tmdb_id as number | null,
-    candidatesScroll: candidates.length,
-  };
+const REVIEW_FILTERS = ["attention", "all", "matched", "review", "unmatched"] as const;
+type ReviewFilter = (typeof REVIEW_FILTERS)[number];
+
+/** Local poster thumbnail for an item, if artwork has been cached. */
+function itemPoster(itemId: number): string | null {
+  const row = q<Row>(
+    "SELECT id FROM artwork WHERE item_id = ? AND kind = 'poster' ORDER BY id LIMIT 1",
+  ).get(itemId);
+  return row ? `/api/images/${Number(row.id)}?w=300` : null;
 }
 
 export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
-  /** Items to fix: review + unmatched, with their stored candidates. */
+  /**
+   * Titles for the Fix matches screen. By default this is the attention queue
+   * (review + unmatched); `?status=all` lists every movie/series so a wrong
+   * auto-match can be found and remapped manually, and `?q=` narrows the list.
+   */
   .get("/matches/review", async (ctx) => {
     const denied = denyIfNotLocal(ctx, "GET /api/matches/review");
     if (denied) return denied;
+
+    const filter = (ctx.query.status ?? "attention") as ReviewFilter;
+    const text = (ctx.query.q ?? "").trim();
+    const limit = Math.min(Math.max(Number(ctx.query.limit ?? 400), 1), 1000);
+
+    const where = ["i.kind IN ('movie','series')"];
+    const params: unknown[] = [];
+    if (filter === "attention") {
+      where.push("i.match_status IN ('review','unmatched')");
+    } else if (filter !== "all") {
+      where.push("i.match_status = ?");
+      params.push(filter);
+    }
+    if (text) {
+      where.push(`(
+        i.name LIKE ? OR i.sort_title LIKE ? OR COALESCE(i.reason, '') LIKE ?
+        OR EXISTS (SELECT 1 FROM media_files f WHERE f.item_id = i.id AND f.path LIKE ?)
+      )`);
+      const like = `%${text}%`;
+      params.push(like, like, like, like);
+    }
+
     const rows = q<Row>(
-      `SELECT * FROM items
-       WHERE match_status IN ('review','unmatched') AND kind IN ('movie','series')
-       ORDER BY CASE match_status WHEN 'review' THEN 0 ELSE 1 END, sort_title
-       LIMIT 200`,
-    ).all();
+      `SELECT i.*,
+         (SELECT f.path FROM media_files f
+           WHERE f.item_id = i.id AND f.unavailable = 0
+           ORDER BY f.id DESC LIMIT 1) AS sample_path
+       FROM items i
+       WHERE ${where.join(" AND ")}
+       ORDER BY CASE i.match_status
+                  WHEN 'review' THEN 0
+                  WHEN 'unmatched' THEN 1
+                  ELSE 2
+                END,
+                i.sort_title
+       LIMIT ?`,
+    ).all(...params, limit);
+
     const out = await Promise.all(rows.map(async (row) => {
+      const id = Number(row.id);
       const candidates = q<Row>(
         "SELECT * FROM match_candidates WHERE item_id = ? ORDER BY position LIMIT 3",
-      ).all(Number(row.id)).map(async (c) => ({
+      ).all(id).map(async (c) => ({
         tmdbId: Number(c.tmdb_id),
         tmdbType: String(c.tmdb_type),
         title: String(c.title),
@@ -55,8 +84,19 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
         reason: String(c.reason),
         poster: await imageUrl(c.poster_path as string | null, "poster"),
       }));
+      const samplePath = row.sample_path == null ? null : String(row.sample_path);
+      const folderKey = row.folder_key == null ? null : String(row.folder_key);
+      // Series stored at a library root keep the absolute root as their folder
+      // key, which says nothing about the title, so prefer the file name then.
+      const originalName = folderKey && !isAbsolute(folderKey)
+        ? basename(folderKey)
+        : samplePath
+          ? basename(samplePath)
+          : folderKey
+            ? basename(folderKey)
+            : null;
       return {
-        id: Number(row.id),
+        id,
         kind: String(row.kind),
         parentTitle: row.parent_id ? (q<Row>("SELECT name FROM items WHERE id = ?").get(Number(row.parent_id))?.name ?? null) : null,
         name: String(row.name),
@@ -65,11 +105,41 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
         episodeNumber: row.episode_number as number | null,
         matchStatus: String(row.match_status),
         score: row.score as number | null,
+        matchedBy: row.matched_by as string | null,
+        tmdbId: row.tmdb_id as number | null,
         reason: row.reason as string | null,
+        fileName: samplePath ? basename(samplePath) : null,
+        originalName,
+        poster: itemPoster(id),
         candidates: await Promise.all(candidates),
       };
     }));
-    return { items: out };
+
+    // Counts power the filter chips and stay correct even while a search is
+    // active (they describe the whole library, not the current result page).
+    const countRows = q<Row>(
+      "SELECT match_status, COUNT(*) AS n FROM items WHERE kind IN ('movie','series') GROUP BY match_status",
+    ).all();
+    const counts = { all: 0, matched: 0, review: 0, unmatched: 0 };
+    for (const row of countRows) {
+      const n = Number(row.n);
+      counts.all += n;
+      const status = String(row.match_status) as keyof typeof counts;
+      if (status in counts) counts[status] = n;
+    }
+
+    return {
+      items: out,
+      counts: { ...counts, attention: counts.review + counts.unmatched },
+      filter,
+      query: text,
+    };
+  }, {
+    query: t.Object({
+      status: t.Optional(t.Union(REVIEW_FILTERS.map((f) => t.Literal(f)))),
+      q: t.Optional(t.String()),
+      limit: t.Optional(t.Numeric()),
+    }),
   })
 
   /** TMDB search straight from the fix-match dialog (no saved state). */

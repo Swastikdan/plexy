@@ -1,7 +1,8 @@
 /// Library grid (PRD 5.9, 10.2): everything in one library with sort/filter.
 import { useState } from "react";
-import { createFileRoute, useParams } from "@tanstack/react-router";
+import { createFileRoute, useParams, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { Wrench } from "lucide-react";
 import { queries } from "../../queries";
 import { Poster } from "../../components/poster";
 import { Button } from "../../components/ui/button";
@@ -19,6 +20,7 @@ function LibraryRoute() {
   const { kind } = useParams({ from: Route.id });
   const [sort, setSort] = useState<string>("added");
   const [unwatched, setUnwatched] = useState(false);
+  const status = useQuery(queries.serverStatus());
 
   const apiKind: "movie" | "series" = kind === "tv" ? "series" : "movie";
   const { data, isLoading, isError } = useQuery(
@@ -32,6 +34,17 @@ function LibraryRoute() {
       <div className="flex flex-wrap items-center justify-between gap-4 pt-6 pb-8">
         <h1 className="font-display text-2xl font-bold tracking-tight">{label}</h1>
         <div className="flex items-center gap-3">
+          {status.data?.adminAvailable && (
+            <Button
+              variant="ghost"
+              render={<Link to="/admin" search={{ tab: "review" }} />}
+              className="h-8 px-3 text-[13px]"
+              title="Search all titles and remap wrong matches"
+            >
+              <Wrench size={14} />
+              Fix matches
+            </Button>
+          )}
           <Button
             variant={unwatched ? "primary" : "ghost"}
             onClick={() => setUnwatched((v) => !v)}

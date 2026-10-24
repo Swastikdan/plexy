@@ -311,13 +311,20 @@ function DetailView({
             <Button
               variant="ghost"
               onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending}
+              disabled={refreshMutation.isPending || unmatched}
               className="h-11 px-4 text-sm text-ink-muted hover:text-ink"
-              title="Refresh metadata"
+              title={unmatched ? "Match this title first, then refresh metadata" : "Refresh metadata"}
             >
               <RotateCw size={16} className={refreshMutation.isPending ? "animate-spin" : ""} />
             </Button>
           </div>
+
+          {refreshMutation.isError && (
+            <p className="mt-3 text-sm text-red-400">{refreshMutation.error.message}</p>
+          )}
+          {refreshMutation.isSuccess && (
+            <p className="mt-3 text-sm text-ink-muted">Metadata refreshed from TMDB.</p>
+          )}
         </div>
       </section>
 

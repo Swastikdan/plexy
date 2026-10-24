@@ -5,7 +5,7 @@ import { Dialog } from "./ui/dialog";
 import { Button, cx } from "./ui/button";import { api } from "../client";
 import { Search, Check, X, Film, Tv, AlertCircle } from "lucide-react";
 
-function cleanSearchTitle(raw: string): string {
+export function cleanSearchTitle(raw: string): string {
   if (!raw) return "";
   return raw
     .replace(/\.[a-z0-9]{2,4}$/i, "")
@@ -15,7 +15,7 @@ function cleanSearchTitle(raw: string): string {
     .trim();
 }
 
-function extractYear(raw: string, defaultYear?: number | null): string {
+export function extractYear(raw: string, defaultYear?: number | null): string {
   if (defaultYear) return String(defaultYear);
   const m = raw.match(/\b(19\d{2}|20\d{2})\b/);
   return m ? m[1]! : "";

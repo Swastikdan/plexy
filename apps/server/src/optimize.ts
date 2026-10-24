@@ -537,6 +537,16 @@ export interface OptimizerStatus {
   current: { fileId: number; progress: number } | null;
   counts: Record<string, number>;
   cacheBytes: number;
+  cacheDir: string;
+  files?: Array<{
+    id: number;
+    path: string;
+    optimizedPath: string | null;
+    size: number;
+    optimizedSize: number;
+    mtime: number | null;
+    title?: string;
+  }>;
 }
 
 export async function optimizerStatus(): Promise<OptimizerStatus> {
@@ -552,6 +562,22 @@ export async function optimizerStatus(): Promise<OptimizerStatus> {
   const cache = q<{ bytes: number | null }>(
     "SELECT SUM(optimized_size) AS bytes FROM media_files WHERE optimized_status = 'done'",
   ).get();
+  const preparedRows = q<{
+    id: number;
+    path: string;
+    size: number;
+    optimized_path: string | null;
+    optimized_size: number | null;
+    optimized_mtime: number | null;
+    title: string | null;
+  }>(
+    `SELECT f.id, f.path, f.size, f.optimized_path, f.optimized_size, f.optimized_mtime,
+            COALESCE(i.name, f.path) AS title
+     FROM media_files f
+     LEFT JOIN items i ON i.id = f.item_id
+     WHERE f.optimized_status = 'done'
+     ORDER BY f.id ASC`,
+  ).all();
   return {
     enabled: cfg.autoOptimize,
     running,
@@ -560,6 +586,16 @@ export async function optimizerStatus(): Promise<OptimizerStatus> {
     current: current ? { ...current } : null,
     counts,
     cacheBytes: Number(cache?.bytes ?? 0),
+    cacheDir: resolveOptimizedDir(),
+    files: preparedRows.map((r) => ({
+      id: Number(r.id),
+      path: String(r.path),
+      optimizedPath: r.optimized_path ? String(r.optimized_path) : null,
+      size: Number(r.size),
+      optimizedSize: Number(r.optimized_size ?? 0),
+      mtime: r.optimized_mtime ? Number(r.optimized_mtime) : null,
+      title: r.title ? String(r.title) : undefined,
+    })),
   };
 }
 

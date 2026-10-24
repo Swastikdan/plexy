@@ -125,8 +125,15 @@ export interface ReviewEntry {
   parentTitle: string | null;
   name: string;
   year: number | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
   matchStatus: string;
   score: number | null;
+  matchedBy: string | null;
+  tmdbId: number | null;
+  fileName: string | null;
+  originalName: string | null;
+  poster: string | null;
   reason: string | null;
   candidates: Array<{
     tmdbId: number;
@@ -139,22 +146,19 @@ export interface ReviewEntry {
   }>;
 }
 
+export interface ReviewCounts {
+  all: number;
+  attention: number;
+  matched: number;
+  review: number;
+  unmatched: number;
+}
+
 export interface ReviewPayload {
-  items: Array<
-    ReviewEntry & {
-      seasonNumber: number | null;
-      episodeNumber: number | null;
-      candidates: Array<{
-        tmdbId: number;
-        tmdbType: string;
-        title: string;
-        year: number | null;
-        score: number;
-        reason: string;
-        poster: string | null;
-      }>;
-    }
-  >;
+  items: ReviewEntry[];
+  counts: ReviewCounts;
+  filter: string;
+  query: string;
 }
 
 export interface BrowserCaps {
@@ -168,8 +172,12 @@ export interface BrowserCaps {
 
 export interface ServerStatus {
   version: string;
+  bun?: string;
+  startedAt?: string;
   adminAvailable: boolean;
   uptimeSeconds: number;
+  bind?: string;
+  port?: number;
   hasTmdbToken?: boolean;
   hasLibraries?: boolean;
   setupComplete?: boolean;
@@ -200,6 +208,16 @@ export interface OptimizerStatus {
   current: { fileId: number; progress: number } | null;
   counts: Record<string, number>;
   cacheBytes: number;
+  cacheDir?: string;
+  files?: Array<{
+    id: number;
+    path: string;
+    optimizedPath: string | null;
+    size: number;
+    optimizedSize: number;
+    mtime: number | null;
+    title?: string;
+  }>;
 }
 
 export interface LibraryItem {

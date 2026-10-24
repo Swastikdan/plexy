@@ -90,17 +90,20 @@ export const queries = {
   settings: () =>
     queryOptions({ queryKey: ["settings"], queryFn: api.settings }),
 
-  review: () =>
+  review: (params?: {
+    status?: "attention" | "all" | "matched" | "review" | "unmatched";
+    q?: string;
+  }) =>
     queryOptions({
-      queryKey: ["review"],
-      queryFn: () => api.review().then((r) => r.items),
+      queryKey: ["review", params?.status ?? "attention", params?.q ?? ""],
+      queryFn: () => api.review(params),
       refetchInterval: 8000,
     }),
 
-  logs: (search?: string) =>
+  logs: (filter?: { level?: string; component?: string; search?: string }) =>
     queryOptions({
-      queryKey: ["logs", search ?? ""],
-      queryFn: () => api.logs(search ? { search } : undefined).then((r) => r.lines),
+      queryKey: ["logs", filter?.level ?? "", filter?.component ?? "", filter?.search ?? ""],
+      queryFn: () => api.logs(filter).then((r) => r.lines),
       refetchInterval: 3000,
     }),
 

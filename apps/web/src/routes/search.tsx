@@ -11,6 +11,13 @@ function SearchRoute() {
   const [q, setQ] = useState(initial);
   const [debounced, setDebounced] = useState(initial);
 
+  // The top-nav search submits by updating the URL; keep this page in sync
+  // when that happens while the search screen is already open.
+  useEffect(() => {
+    setQ(initial);
+    setDebounced(initial);
+  }, [initial]);
+
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q), 250);
     return () => clearTimeout(t);

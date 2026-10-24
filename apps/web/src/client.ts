@@ -239,8 +239,14 @@ export const api = {
     return restFetch(`/api/local-folders${path ? `?path=${encodeURIComponent(path)}` : ""}`);
   },
 
-  review: async (): Promise<ReviewPayload> => {
-    return restFetch<ReviewPayload>("/api/matches/review");
+  review: async (params?: {
+    status?: "attention" | "all" | "matched" | "review" | "unmatched";
+    q?: string;
+  }): Promise<ReviewPayload> => {
+    const p = new URLSearchParams();
+    if (params?.status && params.status !== "attention") p.set("status", params.status);
+    if (params?.q?.trim()) p.set("q", params.q.trim());
+    return restFetch<ReviewPayload>(`/api/matches/review${p.size ? `?${p}` : ""}`);
   },
 
   matchSearch: async (
@@ -287,9 +293,10 @@ export const api = {
     });
   },
 
-  logs: async (filter?: { level?: string; search?: string }): Promise<{ lines: string[] }> => {
+  logs: async (filter?: { level?: string; component?: string; search?: string }): Promise<{ lines: string[] }> => {
     const p = new URLSearchParams();
     if (filter?.level) p.set("level", filter.level);
+    if (filter?.component) p.set("component", filter.component);
     if (filter?.search) p.set("search", filter.search);
     return restFetch<{ lines: string[] }>(`/api/logs${p.size ? `?${p}` : ""}`);
   },

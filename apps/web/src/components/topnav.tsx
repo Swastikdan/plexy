@@ -16,9 +16,14 @@ export function TopNav() {
   const navigate = useNavigate();
   const router = useRouter();
   const search = useSearch({ from: "/search", shouldThrow: false }) as { q?: string } | undefined;
-  const q = search?.q ?? "";
+  const routeQ = search?.q ?? "";
+  const [q, setQ] = useState(routeQ);
   // The back affordance appears everywhere except Home itself.
   const canGoBack = router.state.location.pathname !== "/";
+
+  useEffect(() => {
+    setQ(routeQ);
+  }, [routeQ]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 15);
@@ -75,7 +80,11 @@ export function TopNav() {
         </nav>
 
         <div className="ml-auto flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none sm:gap-2">
-          <label
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void navigate({ to: "/search", search: { q } });
+            }}
             className={cx(
               "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-none border border-line bg-surface/70 px-3 sm:flex-none sm:w-44 sm:px-3.5",
               "text-ink-muted text-sm transition-[border-color,background-color,width] duration-200 ease-out",
@@ -83,18 +92,24 @@ export function TopNav() {
               "focus-within:outline-1 focus-within:outline-transparent sm:focus-within:w-72",
             )}
           >
-            <Search size={15} className="shrink-0 text-ink-muted" aria-hidden />
+            <button
+              type="submit"
+              aria-label="Search"
+              title="Search"
+              className="-ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:text-ink"
+            >
+              <Search size={15} aria-hidden />
+            </button>
             <input
               type="search"
               value={q}
               placeholder="Search titles…"
               aria-label="Search your library"
-              onChange={(e) =>
-                navigate({ to: "/search", search: { q: e.target.value }, replace: true })
-              }
-              className="w-full min-w-0 bg-transparent text-ink placeholder:text-ink-muted/70 outline-none sm:w-40"
+              enterKeyHint="search"
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full min-w-0 bg-transparent text-ink placeholder:text-ink-muted/70 outline-none"
             />
-          </label>
+          </form>
           <Link
             to="/admin"
             aria-label="Settings"

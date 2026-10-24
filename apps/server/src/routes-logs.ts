@@ -1,15 +1,54 @@
 /// Logs + diagnostics routes (PRD 6, 9).
 ///
 /// `GET /api/logs/stream` tails structured log lines over SSE,
-/// `GET /api/logs` filters recent lines from memory, crash listing and
-/// reports are served from the crash dir. All loopback-only because logs and
-/// crash reports can contain sensitive local details.
+/// `GET /api/logs` filters the active log file's recent tail (falling back to
+/// the in-memory ring), crash listing and reports are served from the crash
+/// dir. All loopback-only because logs and crash reports can contain sensitive
+/// local details.
 import { Elysia, t } from "elysia";
-import { readFile, readdir } from "node:fs/promises";
+import { open, readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { subscribe, recentLogLines, log } from "./logger";
 import { crashDir } from "./crash";
 import { denyIfNotLocal } from "./essentials";
+
+/** Read enough of the active log file for a useful tail, not just the ring. */
+const LOG_TAIL_BYTES = 2 * 1024 * 1024;
+const LOG_TAIL_LINES = 500;
+
+let tailCache: { path: string; mtimeMs: number; size: number; lines: string[] } | null = null;
+
+async function recentLinesFromFile(): Promise<string[]> {
+  const path = log.currentFile;
+  try {
+    const info = await stat(path);
+    if (tailCache && tailCache.path === path && tailCache.mtimeMs === info.mtimeMs && tailCache.size === info.size) {
+      return tailCache.lines;
+    }
+    const start = Math.max(0, info.size - LOG_TAIL_BYTES);
+    const length = info.size - start;
+    if (length <= 0) return recentLogLines();
+    const handle = await open(path, "r");
+    try {
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, start);
+      let text = buffer.toString("utf8");
+      if (start > 0) {
+        const firstNewline = text.indexOf("\n");
+        if (firstNewline >= 0) text = text.slice(firstNewline + 1);
+      }
+      const lines = text.split("\n").filter(Boolean);
+      tailCache = { path, mtimeMs: info.mtimeMs, size: info.size, lines };
+      return lines;
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    // Before the first write (or if the file is unavailable) the ring buffer
+    // still has the most recent lines.
+    return recentLogLines();
+  }
+}
 
 export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/logs/stream", (ctx) => {
@@ -40,14 +79,14 @@ export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     });
   })
 
-  .get("/logs", ({ query, server, request }) => {
+  .get("/logs", async ({ query, server, request }) => {
     const denied = denyIfNotLocal({ server, request }, "GET /api/logs");
     if (denied) return denied;
-    let lines = recentLogLines();
+    let lines = await recentLinesFromFile();
     if (query.level) lines = lines.filter((l) => l.includes(`"level":"${query.level}"`));
     if (query.component) lines = lines.filter((l) => l.includes(`"component":"${query.component}"`));
     if (query.search) lines = lines.filter((l) => l.toLowerCase().includes(query.search!.toLowerCase()));
-    return { lines: lines.slice(-500) };
+    return { lines: lines.slice(-LOG_TAIL_LINES) };
   }, {
     query: t.Object({
       level: t.Optional(t.String()),
