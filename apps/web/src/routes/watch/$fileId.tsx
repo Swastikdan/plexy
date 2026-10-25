@@ -78,11 +78,16 @@ function WatchRoute() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
   const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryAttemptsRef = useRef(0);
+  const recoveryTargetRef = useRef<number | null>(null);
+  const recoverPlaybackRef = useRef<() => void>(() => {});
 
   // Synchronously probe browser capabilities so query is enabled immediately on mount (prevents deadlock)
   const [caps] = useState<string>(() => JSON.stringify(probeBrowserCaps()));
   const [knownDuration, setKnownDuration] = useState<number | null>(null);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
+  const [mediaRetryKey, setMediaRetryKey] = useState(0);
   const seekDragRef = useRef(false);
   const deferredSeekRef = useRef<number | null>(null);
   const restartPlaybackRef = useRef(true);
@@ -107,11 +112,20 @@ function WatchRoute() {
   const showBufferingAfterDelay = useCallback(() => {
     if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
     bufferingTimerRef.current = setTimeout(() => setIsBuffering(true), 180);
+    if (stallRecoveryTimerRef.current) clearTimeout(stallRecoveryTimerRef.current);
+    stallRecoveryTimerRef.current = setTimeout(() => {
+      const video = videoRef.current;
+      if (video && (!video.paused || video.seeking) && video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+        recoverPlaybackRef.current();
+      }
+    }, 12_000);
   }, []);
 
   const hideBuffering = useCallback(() => {
     if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
+    if (stallRecoveryTimerRef.current) clearTimeout(stallRecoveryTimerRef.current);
     bufferingTimerRef.current = null;
+    stallRecoveryTimerRef.current = null;
     setIsBuffering(false);
   }, []);
 
@@ -130,6 +144,9 @@ function WatchRoute() {
     setSubtitleOffset(0);
     appliedSubtitleOffsetRef.current = 0;
     setRestartAt(null);
+    recoveryAttemptsRef.current = 0;
+    recoveryTargetRef.current = null;
+    setMediaRetryKey(0);
     setKnownDuration(null);
     setShowNextPrompt(false);
     setActiveSkipSegment(null);
@@ -270,6 +287,7 @@ function WatchRoute() {
     setIsBuffering(true);
     return () => {
       if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
+      if (stallRecoveryTimerRef.current) clearTimeout(stallRecoveryTimerRef.current);
     };
   }, [streamUrl]);
 
@@ -463,19 +481,84 @@ function WatchRoute() {
   // Resume position callback
   const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLMediaElement>) => {
     const v = e.currentTarget;
-    if (restartAt?.fileId === Number(fileId) && !restartPlaybackRef.current) v.pause();
+    if ((restartAt?.fileId === Number(fileId) || mediaRetryKey > 0) && !restartPlaybackRef.current) v.pause();
+    if (recoveryTargetRef.current != null) {
+      const target = recoveryTargetRef.current;
+      recoveryTargetRef.current = null;
+      v.currentTime = target;
+    }
     if (autoAdvanceRef.current) {
       void v.play().then(() => {
         autoAdvanceRef.current = false;
       }).catch(() => {});
     }
     const resumePos = play.data?.watch?.position ?? 0;
-    if (resumePos > 15 && !play.data?.watch?.played) {
+    if (mediaRetryKey === 0 && restartAt?.fileId !== Number(fileId) && resumePos > 15 && !play.data?.watch?.played) {
       if ((effectivePath === "direct" || effectivePath === "hls") && Math.abs(v.currentTime - resumePos) > 3) {
         v.currentTime = resumePos;
       }
     }
-  }, [effectivePath, fileId, play.data?.watch, restartAt]);
+  }, [effectivePath, fileId, mediaRetryKey, play.data?.watch, restartAt]);
+
+  const handleLoadedData = useCallback(() => {
+    recoveryAttemptsRef.current = 0;
+    hideBuffering();
+  }, [hideBuffering]);
+
+  const recoverPlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    restartPlaybackRef.current = !video.paused;
+    if (recoveryAttemptsRef.current === 0) {
+      recoveryAttemptsRef.current = 1;
+      setIsBuffering(true);
+      setMediaRetryKey((key) => key + 1);
+      return;
+    }
+    if (recoveryAttemptsRef.current >= 2) {
+      setIsBuffering(false);
+      return;
+    }
+    recoveryAttemptsRef.current = 2;
+
+    const currentTime = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")?.get?.call(video) ?? 0;
+    let nearest: number | null = null;
+    let distance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < video.buffered.length; i++) {
+      for (const point of [video.buffered.start(i), video.buffered.end(i)]) {
+        const nextDistance = Math.abs(point - currentTime);
+        if (nextDistance < distance) {
+          nearest = point;
+          distance = nextDistance;
+        }
+      }
+    }
+    if (nearest != null) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")?.set;
+      try {
+        setter?.call(video, nearest);
+        recoveryAttemptsRef.current = 0;
+        setIsBuffering(false);
+        return;
+      } catch { /* Try a new source below. */ }
+    }
+    if (effectivePath === "remux" || effectivePath === "transcode") {
+      setRestartAt({ fileId: Number(fileId), seconds: video.currentTime });
+      setMediaRetryKey((key) => key + 1);
+      return;
+    }
+    recoveryTargetRef.current = video.currentTime;
+    setIsBuffering(true);
+    setMediaRetryKey((key) => key + 1);
+  }, [effectivePath, fileId]);
+
+  useEffect(() => {
+    recoverPlaybackRef.current = recoverPlayback;
+  }, [recoverPlayback]);
+
+  const handleMediaError = useCallback(() => {
+    recoverPlayback();
+  }, [recoverPlayback]);
 
   const handleEnded = useCallback(() => {
     const next = play.data?.nextFileId;
@@ -764,16 +847,16 @@ function WatchRoute() {
                 {streamUrl && (
                   isHls ? (
                     <HlsJsVideo
-                      key={streamUrl}
+                      key={`${streamUrl}:${mediaRetryKey}`}
                       ref={(el: HTMLVideoElement | null) => {
                         videoRef.current = el;
                       }}
                       src={streamUrl}
-                      autoPlay={restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current}
+                      autoPlay={mediaRetryKey === 0 ? restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current : restartPlaybackRef.current}
                       playsInline
                       crossOrigin="anonymous"
                       onLoadedMetadata={handleLoadedMetadata}
-                      onLoadedData={hideBuffering}
+                      onLoadedData={handleLoadedData}
                       onEnded={handleEnded}
                       onTimeUpdate={handleTimeUpdate}
                       onPlay={hideBuffering}
@@ -781,7 +864,7 @@ function WatchRoute() {
                       onStalled={showBufferingAfterDelay}
                       onCanPlay={hideBuffering}
                       onPlaying={hideBuffering}
-                      onError={hideBuffering}
+                      onError={handleMediaError}
                       className="h-full w-full object-contain"
                     >
                       {trickplayTrackUrl && (
@@ -805,16 +888,16 @@ function WatchRoute() {
                     </HlsJsVideo>
                   ) : (
                     <Video
-                      key={streamUrl}
+                      key={`${streamUrl}:${mediaRetryKey}`}
                       ref={(el: HTMLVideoElement | null) => {
                         videoRef.current = el;
                       }}
                       src={streamUrl}
-                      autoPlay={restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current}
+                      autoPlay={mediaRetryKey === 0 ? restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current : restartPlaybackRef.current}
                       playsInline
                       crossOrigin="anonymous"
                       onLoadedMetadata={handleLoadedMetadata}
-                      onLoadedData={hideBuffering}
+                      onLoadedData={handleLoadedData}
                       onEnded={handleEnded}
                       onTimeUpdate={handleTimeUpdate}
                       onPlay={hideBuffering}
@@ -822,7 +905,7 @@ function WatchRoute() {
                       onStalled={showBufferingAfterDelay}
                       onCanPlay={hideBuffering}
                       onPlaying={hideBuffering}
-                      onError={hideBuffering}
+                      onError={handleMediaError}
                       className="h-full w-full object-contain"
                     >
                       {trickplayTrackUrl && (
