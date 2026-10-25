@@ -83,6 +83,12 @@ function WatchRoute() {
   const [caps] = useState<string>(() => JSON.stringify(probeBrowserCaps()));
   const [knownDuration, setKnownDuration] = useState<number | null>(null);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
+  const seekDragRef = useRef(false);
+  const deferredSeekRef = useRef<number | null>(null);
+  const restartPlaybackRef = useRef(true);
+  const commitSeekNowRef = useRef(false);
+  const pendingRestartRef = useRef<{ fileId: number; seconds: number } | null>(null);
+  const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoAdvanceRef = useRef(false);
   const autoAdvanceTriggeredRef = useRef(false);
 
@@ -111,6 +117,11 @@ function WatchRoute() {
   const hasInitializedAudioRef = useRef(false);
   useEffect(() => {
     hasInitializedAudioRef.current = false;
+    seekDragRef.current = false;
+    deferredSeekRef.current = null;
+    restartPlaybackRef.current = true;
+    pendingRestartRef.current = null;
+    if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
     setSelectedAudioIndex(0);
     setSubtitleOffset(0);
     appliedSubtitleOffsetRef.current = 0;
@@ -184,6 +195,22 @@ function WatchRoute() {
     return api.streamUrl(Number(fileId), effectivePath, streamStart || undefined, selectedAudioIndex);
   }, [fileId, effectivePath, streamStart, selectedAudioIndex]);
 
+  const handleSeekDragStart = useCallback(() => {
+    seekDragRef.current = true;
+    deferredSeekRef.current = null;
+  }, []);
+
+  const handleSeekDragEnd = useCallback(() => {
+    seekDragRef.current = false;
+    const target = deferredSeekRef.current;
+    deferredSeekRef.current = null;
+    if (target != null && videoRef.current) {
+      commitSeekNowRef.current = true;
+      videoRef.current.currentTime = target;
+      commitSeekNowRef.current = false;
+    }
+  }, []);
+
   // Fast trickplay track URL for scrub previews
   const trickplayTrackUrl = useMemo(() => {
     if (!play.data || play.data.path === "unsupported") return null;
@@ -238,10 +265,39 @@ function WatchRoute() {
       },
       currentTime: {
         configurable: true,
-        get: () => streamStart + currentTimeDescriptor.get!.call(video),
+        get: () => seekDragRef.current && deferredSeekRef.current != null
+          ? deferredSeekRef.current
+          : pendingRestartRef.current?.fileId === Number(fileId)
+            ? pendingRestartRef.current.seconds
+            : streamStart + currentTimeDescriptor.get!.call(video),
         set: (sourceTime: number) => {
-          if (Math.abs(sourceTime - (streamStart + currentTimeDescriptor.get!.call(video))) > 2) {
-            setRestartAt({ fileId: Number(fileId), seconds: sourceTime });
+          if (seekDragRef.current) {
+            deferredSeekRef.current = sourceTime;
+            return;
+          }
+          // Prepared HLS and fragmented MP4 are genuinely seekable in the
+          // browser. Only live conversions need a new source at distant times.
+          if (effectivePath === "hls") {
+            currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart));
+            return;
+          }
+          const currentSourceTime = pendingRestartRef.current?.fileId === Number(fileId)
+            ? pendingRestartRef.current.seconds
+            : streamStart + currentTimeDescriptor.get!.call(video);
+          if (Math.abs(sourceTime - currentSourceTime) > 2) {
+            restartPlaybackRef.current = !video.paused;
+            const next = { fileId: Number(fileId), seconds: sourceTime };
+            pendingRestartRef.current = next;
+            if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
+            if (commitSeekNowRef.current) {
+              setRestartAt(next);
+              restartDebounceRef.current = null;
+            } else {
+              restartDebounceRef.current = setTimeout(() => {
+                if (pendingRestartRef.current === next) setRestartAt(next);
+                restartDebounceRef.current = null;
+              }, 140);
+            }
           } else {
             currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart));
           }
@@ -276,6 +332,12 @@ function WatchRoute() {
       Reflect.deleteProperty(video, "seekable");
     };
   }, [streamUrl, streamStart, duration, effectivePath, fileId]);
+
+  useEffect(() => {
+    if (pendingRestartRef.current?.fileId === Number(fileId) && restartAt === pendingRestartRef.current) {
+      pendingRestartRef.current = null;
+    }
+  }, [restartAt, fileId]);
 
   // Subtitle Synchronization Adjustment Engine
   const handleAdjustSubtitleOffset = useCallback((delta: number) => {
@@ -353,7 +415,9 @@ function WatchRoute() {
   // Audio track switching handler
   const handleSelectAudioTrack = useCallback((index: number) => {
     if (index === selectedAudioIndex) return;
-    const currentPos = videoRef.current?.currentTime ?? streamStart;
+    const video = videoRef.current;
+    const currentPos = video?.currentTime ?? streamStart;
+    restartPlaybackRef.current = !video?.paused;
     setSelectedAudioIndex(index);
     setRestartAt({ fileId: Number(fileId), seconds: currentPos });
   }, [fileId, selectedAudioIndex, streamStart]);
@@ -361,6 +425,7 @@ function WatchRoute() {
   // Resume position callback
   const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLMediaElement>) => {
     const v = e.currentTarget;
+    if (restartAt?.fileId === Number(fileId) && !restartPlaybackRef.current) v.pause();
     if (autoAdvanceRef.current) {
       void v.play().then(() => {
         autoAdvanceRef.current = false;
@@ -372,7 +437,7 @@ function WatchRoute() {
         v.currentTime = resumePos;
       }
     }
-  }, [effectivePath, play.data?.watch]);
+  }, [effectivePath, fileId, play.data?.watch, restartAt]);
 
   const handleEnded = useCallback(() => {
     const next = play.data?.nextFileId;
@@ -496,11 +561,13 @@ function WatchRoute() {
     };
 
     const stop = () => {
+      const wasSeeking = direction != null;
       direction = null;
       if (ticker) {
         clearInterval(ticker);
         ticker = null;
       }
+      if (wasSeeking) handleSeekDragEnd();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -516,6 +583,7 @@ function WatchRoute() {
       event.preventDefault();
       if (event.repeat) return;
       stop();
+      handleSeekDragStart();
       direction = nextDirection;
       startedAt = performance.now();
       seekBy(nextDirection * 10);
@@ -538,7 +606,7 @@ function WatchRoute() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", stop);
     };
-  }, [knownDuration, effectivePath]);
+  }, [knownDuration, effectivePath, handleSeekDragEnd, handleSeekDragStart]);
 
   const nextEpisode = play.data?.next ?? null;
 
@@ -569,6 +637,8 @@ function WatchRoute() {
                 serverAudioTracks={play.data?.audioTracks}
                 selectedAudioIndex={selectedAudioIndex}
                 onSelectAudioTrack={handleSelectAudioTrack}
+                onSeekDragStart={handleSeekDragStart}
+                onSeekDragEnd={handleSeekDragEnd}
                 subtitleOffset={subtitleOffset}
                 onAdjustSubtitleOffset={handleAdjustSubtitleOffset}
                 onResetSubtitleOffset={handleResetSubtitleOffset}
@@ -659,7 +729,7 @@ function WatchRoute() {
                         videoRef.current = el;
                       }}
                       src={streamUrl}
-                      autoPlay
+                      autoPlay={restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current}
                       playsInline
                       crossOrigin="anonymous"
                       onLoadedMetadata={handleLoadedMetadata}
@@ -700,7 +770,7 @@ function WatchRoute() {
                         videoRef.current = el;
                       }}
                       src={streamUrl}
-                      autoPlay
+                      autoPlay={restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current}
                       playsInline
                       crossOrigin="anonymous"
                       onLoadedMetadata={handleLoadedMetadata}

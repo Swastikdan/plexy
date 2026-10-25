@@ -19,6 +19,8 @@ export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof C
   children?: ReactNode;
   renderPoster?: NonNullable<ComponentProps<typeof Poster>>['renderImage'];
   renderThumbnail?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['renderThumbnail'];
+  onSeekDragStart?: () => void;
+  onSeekDragEnd?: () => void;
   serverAudioTracks?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['serverAudioTracks'];
   selectedAudioIndex?: number;
   onSelectAudioTrack?: (index: number) => void;
@@ -35,6 +37,8 @@ export function VideoSkin({
   className,
   renderPoster,
   renderThumbnail,
+  onSeekDragStart,
+  onSeekDragEnd,
   serverAudioTracks,
   selectedAudioIndex,
   onSelectAudioTrack,
@@ -61,6 +65,8 @@ export function VideoSkin({
 
       <NeutralVideoControls
         renderThumbnail={renderThumbnail}
+        onSeekDragStart={onSeekDragStart}
+        onSeekDragEnd={onSeekDragEnd}
         serverAudioTracks={serverAudioTracks}
         selectedAudioIndex={selectedAudioIndex}
         onSelectAudioTrack={onSelectAudioTrack}

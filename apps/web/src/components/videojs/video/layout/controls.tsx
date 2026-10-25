@@ -18,6 +18,8 @@ import { VideoSettingsMenu, type VideoSettingsMenuProps } from '../menus/setting
 
 export interface NeutralVideoControlsProps {
   renderThumbnail?: NonNullable<ComponentProps<typeof TimeSlider>>['renderThumbnail'];
+  onSeekDragStart?: () => void;
+  onSeekDragEnd?: () => void;
   serverAudioTracks?: VideoSettingsMenuProps['serverAudioTracks'];
   selectedAudioIndex?: number;
   onSelectAudioTrack?: (index: number) => void;
@@ -31,6 +33,8 @@ export interface NeutralVideoControlsProps {
 
 export function NeutralVideoControls({
   renderThumbnail,
+  onSeekDragStart,
+  onSeekDragEnd,
   serverAudioTracks,
   selectedAudioIndex,
   onSelectAudioTrack,
@@ -105,7 +109,12 @@ export function NeutralVideoControls({
                 type="duration"
               />
             </Time.Group>
-            <TimeSlider previewOverflow="clamp" renderThumbnail={renderThumbnail} />
+            <TimeSlider
+              previewOverflow="clamp"
+              renderThumbnail={renderThumbnail}
+              onDragStart={onSeekDragStart}
+              onDragEnd={onSeekDragEnd}
+            />
           </Controls.Group>
 
           <Controls.Group
