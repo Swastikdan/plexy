@@ -305,7 +305,7 @@ function WatchRoute() {
   // Define source-timeline properties so seeking and duration stay in sync.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || effectivePath === "direct") return;
+    if (!video) return;
 
     const durationDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "duration");
     const currentTimeDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
@@ -331,9 +331,9 @@ function WatchRoute() {
             deferredSeekRef.current = sourceTime;
             return;
           }
-          // Prepared HLS and fragmented MP4 are genuinely seekable in the
-          // browser. Only live conversions need a new source at distant times.
-          if (effectivePath === "hls") {
+          // Direct and prepared HLS sources are seekable in the browser. Only
+          // live conversions need a new source at distant times.
+          if (effectivePath === "direct" || effectivePath === "hls") {
             currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart));
             return;
           }
