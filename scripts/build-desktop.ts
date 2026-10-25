@@ -70,11 +70,21 @@ async function buildDesktop() {
   }
   console.log("✓ Migrations copied to dist/migrations");
 
-  // Bundle the FFmpeg binary installed by node-av. The backend uses this
-  // executable for live transcodes and trickplay sprite extraction.
-  const ffmpegSource = await findFfmpeg(rootDir);
+  // Keep node-av as the default and rollback path. Set
+  // PLEXY_FFMPEG_VARIANT=custom to package the LGPL-only minimal build from
+  // scripts/build-minimal-ffmpeg.sh after building it separately.
+  const ffmpegVariant = process.env.PLEXY_FFMPEG_VARIANT ?? "node-av";
+  const ffmpegSource = ffmpegVariant === "custom"
+    ? join(distBin, "ffmpeg-custom")
+    : ffmpegVariant === "node-av"
+      ? await findFfmpeg(rootDir)
+      : null;
   if (!ffmpegSource) {
-    throw new Error("FFmpeg binary missing; install the project dependencies before packaging the desktop app.");
+    throw new Error(ffmpegVariant === "custom"
+      ? "Custom FFmpeg missing; run scripts/build-minimal-ffmpeg.sh first."
+      : ffmpegVariant === "node-av"
+        ? "FFmpeg binary missing; install the project dependencies before packaging the desktop app."
+        : `Unknown PLEXY_FFMPEG_VARIANT: ${ffmpegVariant} (expected node-av or custom).`);
   }
   const ffmpegOut = join(distBin, "ffmpeg");
   await copyFile(ffmpegSource, ffmpegOut);
