@@ -655,13 +655,15 @@ function WatchRoute() {
     };
   }, [fileId, streamUrl]);
 
-  // Arrow/J/L scrubbing with hold acceleration. Holding a key seeks in small,
-  // smooth increments that grow the longer the key is held instead of firing
-  // one huge jump per OS key-repeat.
+  // Keep keyboard seeks in the same local transaction as a scrub. Capture
+  // before the slider's own key handler so focus on the seek thumb behaves the
+  // same as focus on the player, and only the key that started a seek can end it.
   useEffect(() => {
+    let activeKey: string | null = null;
     let direction: 1 | -1 | null = null;
     let startedAt = 0;
-    let ticker: ReturnType<typeof setInterval> | null = null;
+    let transactionOpen = false;
+    let commitTimer: ReturnType<typeof setTimeout> | null = null;
 
     const seekBy = (delta: number) => {
       const video = videoRef.current;
@@ -671,30 +673,32 @@ function WatchRoute() {
       video.currentTime = total == null ? Math.max(0, target) : Math.min(total, Math.max(0, target));
     };
 
-    const tick = () => {
+    const applyStep = (initial: boolean) => {
       if (!direction) return;
+      if (initial) {
+        seekBy(direction * 10);
+        return;
+      }
       const heldFor = performance.now() - startedAt;
-      // Converted streams restart when the jump is large, so keep those ticks
-      // small and let direct/HLS playback move faster.
       const maxStep = effectivePath === "direct" || effectivePath === "hls" ? 6 : 2;
       const step = Math.min(maxStep, 1 + Math.floor(heldFor / 900));
       seekBy(direction * step);
     };
 
     const stop = () => {
-      const wasSeeking = direction != null;
+      const wasSeeking = transactionOpen;
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = null;
+      transactionOpen = false;
+      activeKey = null;
       direction = null;
-      if (ticker) {
-        clearInterval(ticker);
-        ticker = null;
-      }
       if (wasSeeking) handleSeekDragEnd();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='menu'], [role='slider'], [role='listbox']")) return;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='menu'], [role='listbox']")) return;
       const key = event.key.toLowerCase();
       const nextDirection: 1 | -1 | null =
         event.key === "ArrowRight" || key === "l" ? 1
@@ -702,29 +706,43 @@ function WatchRoute() {
             : null;
       if (!nextDirection) return;
       event.preventDefault();
-      if (event.repeat) return;
-      stop();
-      handleSeekDragStart();
+      event.stopPropagation();
+      if (activeKey === key) {
+        applyStep(false);
+        return;
+      }
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = null;
+      if (!transactionOpen) {
+        handleSeekDragStart();
+        transactionOpen = true;
+      }
+      activeKey = key;
       direction = nextDirection;
       startedAt = performance.now();
-      seekBy(nextDirection * 10);
-      ticker = setInterval(tick, 90);
+      applyStep(true);
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight" || key === "j" || key === "l") {
-        stop();
-      }
+      if (key !== activeKey) return;
+      activeKey = null;
+      direction = null;
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = setTimeout(() => {
+        commitTimer = null;
+        transactionOpen = false;
+        handleSeekDragEnd();
+      }, 160);
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("blur", stop);
     return () => {
       stop();
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", stop);
     };
   }, [knownDuration, effectivePath, handleSeekDragEnd, handleSeekDragStart]);
