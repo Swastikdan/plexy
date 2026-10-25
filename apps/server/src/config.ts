@@ -24,6 +24,8 @@ const ConfigSchema = z.object({
   // Keep new installs quiet until the owner opts into library-wide background
   // preparation. Manual "Prepare Now" remains available.
   autoOptimize: z.boolean().default(false),
+  /** Fetch community intro, recap, and credit markers during playback. */
+  skipSegmentsEnabled: z.boolean().default(false),
   /** 0 = use all available space. Otherwise prune the oldest prepared copies. */
   optimizeMaxCacheGb: z.number().int().min(0).default(0),
   /** Files probed in parallel during a scan. Higher is faster on fast disks. */
@@ -88,6 +90,7 @@ export function redactedView(cfg: Config) {
     metadataRegion: cfg.metadataRegion,
     imageQuality: cfg.imageQuality,
     autoOptimize: cfg.autoOptimize,
+    skipSegmentsEnabled: cfg.skipSegmentsEnabled,
     optimizeMaxCacheGb: cfg.optimizeMaxCacheGb,
     probeConcurrency: cfg.probeConcurrency,
     hasTmdbToken: cfg.tmdbToken.length > 0,

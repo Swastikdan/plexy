@@ -179,15 +179,41 @@ const ITEM_ORDER: Record<string, string> = {
   rating: "m.rating DESC, i.sort_title",
 };
 
-/** "Next up": the unplayed episode that immediately follows a watched one. */
+/**
+ * "Next up": the episode that immediately follows a finished one.
+ *
+ * An episode that is only partially watched belongs to Continue watching, not
+ * Next up — otherwise the same episode shows in both rows. It becomes "next"
+ * only once the one before it is finished.
+ */
 async function nextUpEpisodes(): Promise<ItemCard[]> {
-  const played = new Set(
-    q<Row>("SELECT item_id FROM watch_state WHERE played = 1").all().map((r) => Number(r.item_id)),
-  );
+  const watchRows = q<Row>("SELECT item_id, position_seconds, played FROM watch_state").all();
+  const played = new Set<number>();
+  const started = new Set<number>();
+  for (const w of watchRows) {
+    const id = Number(w.item_id);
+    if (Number(w.played)) played.add(id);
+    else if (Number(w.position_seconds) > 0) started.add(id);
+  }
   if (played.size === 0) return [];
-  const episodes = q<Row>(
-    `SELECT * FROM items WHERE kind = 'episode' ORDER BY parent_id, season_number, episode_number LIMIT 2000`,
+
+  // Scoped query: fetch episodes ONLY for the series where the user has watched an episode
+  const parentSeriesRows = q<Row>(
+    `SELECT DISTINCT parent_id FROM items
+     JOIN watch_state ON watch_state.item_id = items.id
+     WHERE items.kind = 'episode' AND items.parent_id IS NOT NULL
+       AND (watch_state.played = 1 OR watch_state.position_seconds > 0)`,
   ).all();
+
+  const seriesIds = parentSeriesRows.map((r) => Number(r.parent_id)).filter((id) => !Number.isNaN(id));
+  if (seriesIds.length === 0) return [];
+
+  const placeholders = seriesIds.map(() => "?").join(",");
+  const episodes = q<Row>(
+    `SELECT * FROM items
+     WHERE kind = 'episode' AND parent_id IN (${placeholders})
+     ORDER BY parent_id, season_number, episode_number`,
+  ).all(...seriesIds);
 
   // index episodes by their parent series for O(1) neighbor lookup
   const bySeries = new Map<number | null, Row[]>();
@@ -206,8 +232,9 @@ async function nextUpEpisodes(): Promise<ItemCard[]> {
       const sameSeason = Number(prev.season_number) === Number(ep.season_number);
       const sequential = Number(prev.episode_number) === Number(ep.episode_number) - 1;
       const prevWatched = played.has(Number(prev.id));
+      const thisStarted = started.has(Number(ep.id));
       const thisWatched = played.has(Number(ep.id));
-      if ((sameSeason && sequential || !sameSeason) && prevWatched && !thisWatched) {
+      if ((sameSeason && sequential || !sameSeason) && prevWatched && !thisStarted && !thisWatched) {
         picks.push(ep);
         break; // one "next" per series keeps rows tidy
       }

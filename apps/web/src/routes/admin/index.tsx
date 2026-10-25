@@ -869,6 +869,27 @@ function Settings() {
         )}
       </div>
 
+      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-3">
+        <div>
+          <h2 className="font-display text-base font-bold text-ink">Intro, recap &amp; credits</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-ink-muted">
+            Look up episode markers from IntroDB while playing. Plexy uses the show’s IMDb ID and episode numbers; when a marker is available, the player offers a skip button. Lookup is off until enabled.
+          </p>
+        </div>
+        <label className="flex items-start gap-2.5 text-sm text-ink cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={s.skipSegmentsEnabled}
+            onChange={(e) => save.mutate({ skipSegmentsEnabled: e.target.checked })}
+            className="mt-0.5 h-4 w-4 rounded accent-[var(--color-brand)]"
+          />
+          <span>Enable community skip markers (IntroDB)</span>
+        </label>
+        <p className="text-[11px] text-ink-muted">
+          Playback continues normally if the title has no marker, TMDB cannot resolve its IMDb ID, or the service is unavailable.
+        </p>
+      </div>
+
       {/* Network & Access Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div>

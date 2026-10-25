@@ -1,6 +1,7 @@
 node_modules/
 .data/
 .data-*/
+.plans/
 dist/
 *.log
 .DS_Store
@@ -11,3 +12,4 @@ apps/web/src/routeTree.gen.ts
 .env
 .env.local
 .env.deploy
+.build/

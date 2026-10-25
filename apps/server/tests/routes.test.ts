@@ -152,6 +152,44 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(data).toHaveProperty("rows");
   });
 
+  test("Next up never repeats the in-progress episode from Continue watching", async () => {
+    // Use a dedicated series so this test never changes the series fixture above.
+    run("INSERT OR IGNORE INTO items (id, library_id, parent_id, kind, name, sort_title, season_number) VALUES (910, 1, NULL, 'season', 'Nested Season 1', 'nested season 1', 1)");
+    run("INSERT OR IGNORE INTO items (id, library_id, parent_id, kind, name, sort_title, season_number, episode_number, match_status) VALUES (911, 1, 910, 'episode', 'S01E01 · First', 'nested first', 1, 1, 'matched')");
+    run("INSERT OR IGNORE INTO items (id, library_id, parent_id, kind, name, sort_title, season_number, episode_number, match_status) VALUES (912, 1, 910, 'episode', 'S01E02 · Second', 'nested second', 1, 2, 'matched')");
+    run("INSERT OR IGNORE INTO items (id, library_id, parent_id, kind, name, sort_title, season_number, episode_number, match_status) VALUES (913, 1, 910, 'episode', 'S01E03 · Third', 'nested third', 1, 3, 'matched')");
+
+    const rowsOf = (data: any, key: string) =>
+      (data.rows.find((r: any) => r.key === key)?.items ?? []).map((i: any) => i.id);
+
+    try {
+      // Episode 911 is finished; episode 912 is mid-playback.
+      run("INSERT OR REPLACE INTO watch_state (item_id, position_seconds, duration_seconds, played) VALUES (911, 2700, 2700, 1)");
+      run("INSERT OR REPLACE INTO watch_state (item_id, position_seconds, duration_seconds, played) VALUES (912, 600, 2700, 0)");
+
+      const inProgress = await (await app.handle(new Request("http://localhost:8765/api/home"))).json();
+      expect(rowsOf(inProgress, "continue")).toContain(912);
+      expect(rowsOf(inProgress, "next")).not.toContain(912);
+      expect(rowsOf(inProgress, "next")).not.toContain(913);
+
+      // Once episode 912 is finished, episode 913 becomes Next up.
+      await app.handle(
+        new Request("http://localhost:8765/api/watch/912/played", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ played: true }),
+        }),
+      );
+      const finished = await (await app.handle(new Request("http://localhost:8765/api/home"))).json();
+      expect(rowsOf(finished, "next")).toContain(913);
+      expect(rowsOf(finished, "next")).not.toContain(912);
+      expect(rowsOf(finished, "continue")).not.toContain(912);
+    } finally {
+      run("DELETE FROM watch_state WHERE item_id IN (911, 912, 913)");
+      run("DELETE FROM items WHERE id IN (913, 912, 911, 910)");
+    }
+  });
+
   test("POST /api/items/:id/match strictly rejects cross-type matching and episode matching", async () => {
     // 1. Movie matching as tv should be rejected with 400
     const resMovieAsTv = await app.handle(

@@ -17,23 +17,26 @@ import { networkInterfaces } from "node:os";
 import { migrateLegacyPackagedData } from "./paths";
 import { setLiveBinding } from "./runtime";
 
-const isMediaWorker = process.argv.includes("--worker=media") || process.argv.some(a => a.endsWith("media-worker.ts") || a.endsWith("media-worker"));
-const isOptimizeWorker = process.argv.includes("--worker=optimize") || process.argv.some(a => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"));
+async function bootstrap(): Promise<void> {
+  const isMediaWorker = process.argv.includes("--worker=media") || process.argv.some(a => a.endsWith("media-worker.ts") || a.endsWith("media-worker"));
+  const isOptimizeWorker = process.argv.includes("--worker=optimize") || process.argv.some(a => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"));
 
-if (isMediaWorker) {
-  await import("./media-worker");
-} else if (isOptimizeWorker) {
-  await import("./optimize-worker");
-} else {
-  installCrashHandlers();
-  prepareLogDir();
-
-  main().catch((err) => {
-    log.error("server", "failed to start", { message: err instanceof Error ? err.message : String(err) });
-    console.error(err);
-    process.exit(1);
-  });
+  if (isMediaWorker) {
+    await import("./media-worker");
+  } else if (isOptimizeWorker) {
+    await import("./optimize-worker");
+  } else {
+    installCrashHandlers();
+    prepareLogDir();
+    await main();
+  }
 }
+
+bootstrap().catch((err) => {
+  log.error("server", "failed to start", { message: err instanceof Error ? err.message : String(err) });
+  console.error(err);
+  process.exit(1);
+});
 
 async function main(): Promise<void> {
   await migrateLegacyPackagedData();

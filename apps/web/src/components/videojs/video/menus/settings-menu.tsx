@@ -5,6 +5,7 @@ import { CaptionsSubmenu } from '@/components/videojs/ui/captions-submenu';
 import { PlaybackRateSubmenu } from '@/components/videojs/ui/playback-rate-submenu';
 import { QualityMenu } from '@/components/videojs/ui/quality-menu';
 import { SettingsMenu } from '@/components/videojs/ui/settings-menu';
+import { SubtitlePositionSubmenu } from '@/components/videojs/ui/subtitle-position-submenu';
 import { SubtitleSyncSubmenu } from '@/components/videojs/ui/subtitle-sync-submenu';
 
 export interface VideoSettingsMenuProps
@@ -15,6 +16,9 @@ export interface VideoSettingsMenuProps
   subtitleOffset?: number;
   onAdjustSubtitleOffset?: (delta: number) => void;
   onResetSubtitleOffset?: () => void;
+  subtitlePosition?: number;
+  onAdjustSubtitlePosition?: (delta: number) => void;
+  onResetSubtitlePosition?: () => void;
 }
 
 export function VideoSettingsMenu({
@@ -24,6 +28,9 @@ export function VideoSettingsMenu({
   subtitleOffset = 0,
   onAdjustSubtitleOffset,
   onResetSubtitleOffset,
+  subtitlePosition = 0,
+  onAdjustSubtitlePosition,
+  onResetSubtitlePosition,
   ...props
 }: VideoSettingsMenuProps = {}) {
   return (
@@ -41,6 +48,13 @@ export function VideoSettingsMenu({
           offset={subtitleOffset}
           onAdjustOffset={onAdjustSubtitleOffset}
           onResetOffset={onResetSubtitleOffset}
+        />
+      )}
+      {onAdjustSubtitlePosition && onResetSubtitlePosition && (
+        <SubtitlePositionSubmenu
+          position={subtitlePosition}
+          onAdjustPosition={onAdjustSubtitlePosition}
+          onResetPosition={onResetSubtitlePosition}
         />
       )}
     </SettingsMenu>

@@ -3,11 +3,12 @@
 /// Optional `showKind` pins a small type chip (movie / series / episode) at the
 /// top of the artwork, and hovering any poster quietly prefetches its detail
 /// page so opening a title is instant.
+import { useRef, useEffect } from "react";
 import clsx, { type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle } from "lucide-react";
+import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle, Star } from "lucide-react";
 import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
 import { Menu } from "./ui/menu";
@@ -92,17 +93,34 @@ export function Poster({
     },
   });
 
-  // Quiet prefetch: the first hover warms the destination so navigation has
-  // nothing left to wait for. Direct-play cards warm the player manifest.
-  const prefetch = () => {
-    if (canPlayDirect) {
-      if (BROWSER_CAPS) {
-        void queryClient.prefetchQuery(queries.play(item.fileId!, BROWSER_CAPS));
+  // Quiet prefetch with hover dwell delay (100ms) so rapid scrolling doesn't flood the network
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startPrefetch = () => {
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    prefetchTimerRef.current = setTimeout(() => {
+      if (canPlayDirect) {
+        if (BROWSER_CAPS) {
+          void queryClient.prefetchQuery(queries.play(item.fileId!, BROWSER_CAPS));
+        }
+        return;
       }
-      return;
-    }
-    void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
+      void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
+    }, 100);
   };
+
+  const cancelPrefetch = () => {
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    };
+  }, []);
 
   const destination = canPlayDirect
     ? ({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } } as const)
@@ -120,14 +138,25 @@ export function Poster({
     >
       <Link
         {...destination}
-        onPointerEnter={prefetch}
-        onFocus={prefetch}
+        onPointerEnter={startPrefetch}
+        onPointerLeave={cancelPrefetch}
+        onFocus={startPrefetch}
+        onBlur={cancelPrefetch}
         onContextMenu={(e) => e.preventDefault()}
         className="absolute inset-0 z-0 outline-none"
         aria-label={item.name}
       />
 
       {showKind && <KindChip kind={item.kind} />}
+      {item.rating != null && !wide && (
+        <span
+          className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber"
+          aria-label={`Rated ${item.rating.toFixed(1)} out of 10`}
+        >
+          <Star size={10} fill="currentColor" />
+          {item.rating.toFixed(1)}
+        </span>
+      )}
       {imgSrc ? (
         <img
           src={imgSrc}

@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import { FullscreenButton as FullscreenButtonPrimitive } from '@videojs/react';
 import {
   FullscreenEnterIcon as FullscreenEnterIconPrimitive,

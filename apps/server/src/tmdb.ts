@@ -89,6 +89,7 @@ const EpisodeResults = z.object({ episodes: z.array(z.object({
   air_date: z.string().nullish(),
   order: z.number().optional(),
 })) });
+const ExternalIds = z.object({ imdb_id: z.string().nullable().optional() });
 
 export type TmdbSearchResult = z.infer<typeof SearchResults>["results"][number];
 export type TmdbDetail = z.infer<typeof Detail>;
@@ -343,6 +344,12 @@ export async function season(seriesId: number, season: number): Promise<TmdbEpis
   const path = `/tv/${seriesId}/season/${season}?language=${cfg.metadataLanguage}`;
   const parsed = EpisodeResults.parse(await requestJson(path, `season/${seriesId}/${season}`, DETAIL_TTL));
   return parsed.episodes;
+}
+
+/** IMDb id used by community skip-segment databases; cached by the normal TMDB layer. */
+export async function externalImdbId(kind: "movie" | "tv", id: number): Promise<string | null> {
+  const parsed = ExternalIds.safeParse(await requestJson(`/${kind}/${id}/external_ids`, `external-ids/${kind}`, DETAIL_TTL));
+  return parsed.success ? parsed.data.imdb_id ?? null : null;
 }
 
 /** Validate the stored token by hitting the configuration endpoint (PRD 5.1). */

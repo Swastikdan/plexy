@@ -24,6 +24,9 @@ export interface NeutralVideoControlsProps {
   subtitleOffset?: number;
   onAdjustSubtitleOffset?: (delta: number) => void;
   onResetSubtitleOffset?: () => void;
+  subtitlePosition?: number;
+  onAdjustSubtitlePosition?: (delta: number) => void;
+  onResetSubtitlePosition?: () => void;
 }
 
 export function NeutralVideoControls({
@@ -34,6 +37,9 @@ export function NeutralVideoControls({
   subtitleOffset,
   onAdjustSubtitleOffset,
   onResetSubtitleOffset,
+  subtitlePosition,
+  onAdjustSubtitlePosition,
+  onResetSubtitlePosition,
 }: NeutralVideoControlsProps = {}) {
   return (
     <Controls.Root>
@@ -48,12 +54,12 @@ export function NeutralVideoControls({
           'video-controls',
           'group/controls text-media-controls-foreground text-shadow-media',
           'duration-media-controls-enter ease-out',
-          'absolute inset-x-0.5 bottom-0.5 z-30 flex items-center rtl:flex-row-reverse gap-x-2 rounded-media-controls bg-transparent p-1 media-high-contrast:bg-media-background',
+          'absolute inset-x-4 bottom-0.5 z-30 flex items-center rtl:flex-row-reverse gap-x-2 rounded-media-controls bg-transparent p-1 media-high-contrast:bg-media-background',
           'transition-[filter,opacity,translate]',
           'not-data-visible:pointer-events-none not-data-visible:opacity-0',
           'not-data-visible:duration-media-controls',
           'not-data-visible:translate-y-media-hidden-offset pointer-fine:not-data-visible:blur-media-hidden',
-          'media-2xl:inset-x-2 media-2xl:bottom-2',
+          'media-2xl:bottom-2',
           'media-2xl:[--media-popover-side-offset:--spacing(3)]',
           'media-2xl:[--media-tooltip-side-offset:var(--media-popover-side-offset)]',
           'flex-wrap media-2xl:flex-nowrap'
@@ -124,6 +130,9 @@ export function NeutralVideoControls({
               subtitleOffset={subtitleOffset}
               onAdjustSubtitleOffset={onAdjustSubtitleOffset}
               onResetSubtitleOffset={onResetSubtitleOffset}
+              subtitlePosition={subtitlePosition}
+              onAdjustSubtitlePosition={onAdjustSubtitlePosition}
+              onResetSubtitlePosition={onResetSubtitlePosition}
             />
             <Controls.Group className={'flex items-center rtl:flex-row-reverse gap-px'}>
               <ButtonTooltip side="top">

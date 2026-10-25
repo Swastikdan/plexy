@@ -98,7 +98,7 @@ async function buildDesktop() {
   // 4. Compile Standalone Server Binary
   console.log("\n4. Compiling Standalone Backend Server (Bun native compilation)...");
   const serverOut = join(distBin, "plexy-server");
-  execSync(`bun build --compile --outfile="${serverOut}" apps/server/src/main.ts`, { stdio: "inherit" });
+  execSync(`bun build --compile --minify --outfile="${serverOut}" apps/server/src/main.ts`, { stdio: "inherit" });
   await chmod(serverOut, 0o755);
   console.log(`✓ Standalone server compiled: ${serverOut}`);
 

@@ -25,6 +25,9 @@ export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof C
   subtitleOffset?: number;
   onAdjustSubtitleOffset?: (delta: number) => void;
   onResetSubtitleOffset?: () => void;
+  subtitlePosition?: number;
+  onAdjustSubtitlePosition?: (delta: number) => void;
+  onResetSubtitlePosition?: () => void;
 }
 
 export function VideoSkin({
@@ -38,6 +41,9 @@ export function VideoSkin({
   subtitleOffset,
   onAdjustSubtitleOffset,
   onResetSubtitleOffset,
+  subtitlePosition,
+  onAdjustSubtitlePosition,
+  onResetSubtitlePosition,
   ...props
 }: VideoSkinProps = {}) {
   return (
@@ -61,6 +67,9 @@ export function VideoSkin({
         subtitleOffset={subtitleOffset}
         onAdjustSubtitleOffset={onAdjustSubtitleOffset}
         onResetSubtitleOffset={onResetSubtitleOffset}
+        subtitlePosition={subtitlePosition}
+        onAdjustSubtitlePosition={onAdjustSubtitlePosition}
+        onResetSubtitlePosition={onResetSubtitlePosition}
       />
 
       <VideoHotkeys />

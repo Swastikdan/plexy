@@ -70,13 +70,6 @@ export const queries = {
       },
     }),
 
-  playability: (fileId: number, caps: string) =>
-    queryOptions({
-      queryKey: ["play", fileId, caps],
-      queryFn: () => api.play(fileId, JSON.parse(caps)),
-      staleTime: 30_000,
-    }),
-
   optimizer: () =>
     queryOptions({
       queryKey: ["optimizer"],

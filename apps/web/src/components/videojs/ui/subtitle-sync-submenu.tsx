@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import { Menu } from '@videojs/react';
 import { Timer } from 'lucide-react';
 import { MenuChevron } from '@/components/videojs/ui/menu-chevron';

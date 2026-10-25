@@ -10,10 +10,6 @@ export function PlaybackHotkeys({ disabled = false }: PlaybackHotkeysProps = {})
       <Hotkey disabled={disabled} keys="Space" action="togglePaused" />
       <Hotkey disabled={disabled} keys="k" action="togglePaused" />
       <Hotkey disabled={disabled} keys="m" action="toggleMuted" />
-      <Hotkey disabled={disabled} keys="ArrowRight" action="seekStep" />
-      <Hotkey disabled={disabled} keys="ArrowLeft" action="seekStep" />
-      <Hotkey disabled={disabled} keys="l" action="seekStep" />
-      <Hotkey disabled={disabled} keys="j" action="seekStep" />
       <Hotkey disabled={disabled} keys="ArrowUp" action="volumeStep" />
       <Hotkey disabled={disabled} keys="ArrowDown" action="volumeStep" />
       <Hotkey disabled={disabled} keys="0-9" action="seekToPercent" />

@@ -7,9 +7,11 @@
     "output": "dist/mac",
     "buildResources": "build"
   },
+  "electronLanguages": ["en"],
   "files": [
     "dist/**/*",
-    "package.json"
+    "package.json",
+    "!**/node_modules/**"
   ],
   "extraResources": [
     {
@@ -60,6 +62,7 @@
     "gatekeeperAssess": false
   },
   "dmg": {
+    "format": "ULFO",
     "title": "${productName} ${version}",
     "icon": null,
     "backgroundColor": "#ffffff",

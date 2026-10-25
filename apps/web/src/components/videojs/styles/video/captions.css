@@ -10,7 +10,7 @@
       z-index: 20;
       font-family: inherit;
       scale: 0.98;
-      translate: 0 var(--media-caption-track-y);
+      translate: 0 calc(var(--media-caption-track-y) - var(--plexy-caption-offset, 0px));
       transition: translate var(--media-caption-track-duration) ease-out;
       transition-delay: var(--media-caption-track-delay);
     }
@@ -23,7 +23,7 @@
     :scope[data-theme="compat"] video::-webkit-media-text-track-container {
       scale: none;
       translate: none;
-      transform: translateY(var(--media-caption-track-y, 0px)) scale(0.98);
+      transform: translateY(calc(var(--media-caption-track-y, 0px) - var(--plexy-caption-offset, 0px))) scale(0.98);
       transition-property: transform;
     }
 

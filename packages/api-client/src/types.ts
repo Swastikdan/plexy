@@ -155,6 +155,12 @@ export interface Playability {
   watch: { position: number; duration: number | null; played: boolean } | null;
 }
 
+export interface SkipSegments {
+  intro: { start: number; end: number } | null;
+  recap: { start: number; end: number } | null;
+  outro: { start: number; end: number } | null;
+}
+
 export interface SubtitleTrack {
   track: string;
   kind: "embedded" | "sidecar";
@@ -287,6 +293,7 @@ export interface ServerSettings {
   metadataRegion: string;
   imageQuality: string;
   autoOptimize: boolean;
+  skipSegmentsEnabled: boolean;
   optimizeMaxCacheGb: number;
   probeConcurrency: number;
   hasTmdbToken: boolean;

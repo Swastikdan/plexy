@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import { BufferingIndicator as BufferingIndicatorPrimitive } from '@videojs/react';
 import { SpinnerIcon as SpinnerIconPrimitive } from '@videojs/react/icons/neutral';
 

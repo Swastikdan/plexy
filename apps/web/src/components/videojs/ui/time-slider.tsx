@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import type { SliderPreviewOverflow } from '@videojs/core';
 import { Slider as SliderPrimitive, TimeSlider as TimeSliderPrimitive } from '@videojs/react';
 import { SpinnerIcon as SpinnerIconPrimitive } from '@videojs/react/icons/neutral';

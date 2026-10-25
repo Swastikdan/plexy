@@ -20,6 +20,7 @@ import {
   type ServerSettings,
   type ServerStatus,
   type SubtitleTrack,
+  type SkipSegments,
   type TitleDetail,
   type Watch,
   probeBrowserCaps,
@@ -143,11 +144,6 @@ export const api = {
     return unwrap<{ items: ItemCard[] }>(rpc().api.search.get({ query: { q } }));
   },
 
-  playability: async (fileId: number, caps: BrowserCaps): Promise<Playability> => {
-    const query = { caps: JSON.stringify(caps) };
-    return unwrap<Playability>(rpc().api.playability({ fileId: String(fileId) }).get({ query }));
-  },
-
   /**
    * Everything the player needs in one request: play path, title, resume point,
    * next episode, subtitle tracks and preparation state. Uses REST rather than
@@ -159,6 +155,10 @@ export const api = {
     if (audioIndex >= 0) params.set("audio", String(audioIndex));
     const query = params.size ? `?${params.toString()}` : "";
     return restFetch<Playability>(`/api/play/${fileId}${query}`);
+  },
+
+  skipSegments: async (fileId: number): Promise<{ enabled: boolean } & SkipSegments> => {
+    return restFetch<{ enabled: boolean } & SkipSegments>(`/api/skip-segments/${fileId}`);
   },
 
   subtitles: async (fileId: number): Promise<{ tracks: SubtitleTrack[] }> => {

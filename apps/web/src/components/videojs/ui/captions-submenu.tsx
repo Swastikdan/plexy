@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import { captionsText } from '@videojs/core/i18n/text/menu';
 import { Menu } from '@videojs/react';
 import { Text as TextPrimitive } from '@videojs/react';

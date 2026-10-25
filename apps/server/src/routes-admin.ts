@@ -139,6 +139,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.metadataRegion) patch.metadataRegion = body.metadataRegion;
     if (body.imageQuality) patch.imageQuality = body.imageQuality;
     if (body.autoOptimize !== undefined) patch.autoOptimize = body.autoOptimize;
+    if (body.skipSegmentsEnabled !== undefined) patch.skipSegmentsEnabled = body.skipSegmentsEnabled;
     if (body.optimizeMaxCacheGb !== undefined) patch.optimizeMaxCacheGb = body.optimizeMaxCacheGb;
     if (body.probeConcurrency !== undefined) patch.probeConcurrency = body.probeConcurrency;
     if (body.bindAddress) patch.bindAddress = body.bindAddress;
@@ -169,6 +170,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       metadataRegion: t.Optional(t.String()),
       imageQuality: t.Optional(t.Union([t.Literal("w342"), t.Literal("w500"), t.Literal("w780"), t.Literal("original")])),
       autoOptimize: t.Optional(t.Boolean()),
+      skipSegmentsEnabled: t.Optional(t.Boolean()),
       optimizeMaxCacheGb: t.Optional(t.Numeric()),
       probeConcurrency: t.Optional(t.Numeric()),
       tmdbToken: t.Optional(t.String()),

@@ -30,10 +30,75 @@ import {
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { resolveFfmpeg } from "./ffmpeg";
 import { getConfig } from "./config";
+import { externalImdbId } from "./tmdb";
 import { isPreparedHlsAsset, preparedStreamAvailable, readPreparedPlaylist } from "./hls-preparation";
 import {
   enqueueTrickplay, trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
+
+type SegmentWindow = { start: number; end: number } | null;
+type EpisodeSegments = { intro: SegmentWindow; recap: SegmentWindow; outro: SegmentWindow };
+const segmentCache = new Map<string, { expires: number; value: EpisodeSegments }>();
+
+function parseSegment(value: unknown, duration: number | null): SegmentWindow {
+  if (!value || typeof value !== "object") return null;
+  const segment = value as Record<string, unknown>;
+  const start = typeof segment.start_sec === "number" ? segment.start_sec
+    : typeof segment.start_ms === "number" ? segment.start_ms / 1000
+      : 0;
+  const end = typeof segment.end_sec === "number" ? segment.end_sec
+    : typeof segment.end_ms === "number" ? segment.end_ms / 1000
+      : null;
+  if (end == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < 0) return null;
+  if (duration && (start > duration || end > duration + 15)) return null;
+  return { start, end: duration ? Math.min(end, duration) : end };
+}
+
+async function episodeSegments(fileId: number): Promise<EpisodeSegments> {
+  const empty: EpisodeSegments = { intro: null, recap: null, outro: null };
+  const cached = segmentCache.get(String(fileId));
+  if (cached && cached.expires > Date.now()) return cached.value;
+  const file = getFile(fileId);
+  if (!file?.item_id) return empty;
+  const episode = q<Row, [number]>("SELECT kind, parent_id, season_number, episode_number FROM items WHERE id = ?")
+    .get(Number(file.item_id));
+  if (!episode || episode.kind !== "episode" || episode.parent_id == null
+    || episode.season_number == null || episode.episode_number == null) return empty;
+  const series = q<{ tmdb_id: number | null }, [number]>("SELECT tmdb_id FROM items WHERE id = ?")
+    .get(Number(episode.parent_id));
+  if (!series?.tmdb_id) return empty;
+  const key = `${series.tmdb_id}/${episode.season_number}/${episode.episode_number}`;
+  const seriesCache = segmentCache.get(key);
+  if (seriesCache && seriesCache.expires > Date.now()) return seriesCache.value;
+
+  try {
+    const imdbId = await externalImdbId("tv", Number(series.tmdb_id));
+    if (!imdbId) return empty;
+    const params = new URLSearchParams({
+      imdb_id: imdbId,
+      season: String(episode.season_number),
+      episode: String(episode.episode_number),
+    });
+    const response = await fetch(`https://api.introdb.app/segments?${params}`, {
+      signal: AbortSignal.timeout(1800),
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return empty;
+    const data = await response.json() as Record<string, unknown>;
+    const value: EpisodeSegments = {
+      intro: parseSegment(data.intro, file.duration == null ? null : Number(file.duration)),
+      recap: parseSegment(data.recap, file.duration == null ? null : Number(file.duration)),
+      outro: parseSegment(data.outro, file.duration == null ? null : Number(file.duration)),
+    };
+    const cacheKey = `${series.tmdb_id}/${episode.season_number}/${episode.episode_number}`;
+    segmentCache.set(cacheKey, { value, expires: Date.now() + (value.intro || value.recap || value.outro ? 24 : 4) * 3600_000 });
+    segmentCache.set(String(fileId), { value, expires: Date.now() + 24 * 3600_000 });
+    return value;
+  } catch (error) {
+    log.debug("player", "skip segment lookup unavailable", { fileId, message: String(error) });
+    return empty;
+  }
+}
 
 // --- helpers -----------------------------------------------------------------
 
@@ -553,6 +618,15 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     params: t.Object({ fileId: t.Numeric() }),
     query: t.Object({ caps: t.Optional(t.String()), audio: t.Optional(t.Numeric()) }),
   })
+
+  /** Community segment lookup is separately opt-in and never blocks stream startup. */
+  .get("/skip-segments/:fileId", async ({ params }) => {
+    const config = await getConfig();
+    if (!config.skipSegmentsEnabled) {
+      return { enabled: false, intro: null, recap: null, outro: null };
+    }
+    return { enabled: true, ...await episodeSegments(Number(params.fileId)) };
+  }, { params: t.Object({ fileId: t.Numeric() }) })
 
   /** Playpath judgment for the current browser (kept for older clients). */
   .get("/playability/:fileId", async (ctx) => {

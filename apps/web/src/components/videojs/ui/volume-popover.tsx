@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import type { VolumeSliderProps as CoreVolumeSliderProps } from '@videojs/core';
 import { VolumePopover as VolumePopoverPrimitive } from '@videojs/react';
 import type { ClassValue } from 'cn';

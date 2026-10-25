@@ -1,10 +1,5 @@
 'use client';
 
-import '../styles/themes/neutral.css';
-import '../styles/base.css';
-import '../styles/audio/theme.css';
-import '../styles/video/captions.css';
-import '../styles/video/theme.css';
 import { Container as ContainerPrimitive } from '@videojs/react';
 
 import { cn } from '@/lib/resolve-class-name';
