@@ -89,6 +89,8 @@ function WatchRoute() {
   const commitSeekNowRef = useRef(false);
   const pendingRestartRef = useRef<{ fileId: number; seconds: number } | null>(null);
   const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queuedButtonSeekRef = useRef<number | null>(null);
+  const buttonSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoAdvanceRef = useRef(false);
   const autoAdvanceTriggeredRef = useRef(false);
 
@@ -122,6 +124,8 @@ function WatchRoute() {
     restartPlaybackRef.current = true;
     pendingRestartRef.current = null;
     if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
+    queuedButtonSeekRef.current = null;
+    if (buttonSeekTimerRef.current) clearTimeout(buttonSeekTimerRef.current);
     setSelectedAudioIndex(0);
     setSubtitleOffset(0);
     appliedSubtitleOffsetRef.current = 0;
@@ -211,6 +215,38 @@ function WatchRoute() {
     }
   }, []);
 
+  const handleSeekCommitStart = useCallback(() => {
+    // The slider calls its media seek synchronously after pointerup capture.
+    // Force that final value to commit now, then allow other inputs to debounce.
+    seekDragRef.current = false;
+    deferredSeekRef.current = null;
+    commitSeekNowRef.current = true;
+    queueMicrotask(() => { commitSeekNowRef.current = false; });
+  }, []);
+
+  const handleSeekBy = useCallback((delta: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const total = knownDuration ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null);
+    const current = queuedButtonSeekRef.current ?? video.currentTime;
+    const target = total == null
+      ? Math.max(0, current + delta)
+      : Math.min(total, Math.max(0, current + delta));
+    if (queuedButtonSeekRef.current == null) restartPlaybackRef.current = !video.paused;
+    queuedButtonSeekRef.current = target;
+    video.dispatchEvent(new Event("timeupdate"));
+    if (buttonSeekTimerRef.current) clearTimeout(buttonSeekTimerRef.current);
+    buttonSeekTimerRef.current = setTimeout(() => {
+      const latestTarget = queuedButtonSeekRef.current;
+      queuedButtonSeekRef.current = null;
+      buttonSeekTimerRef.current = null;
+      if (latestTarget == null || !videoRef.current) return;
+      commitSeekNowRef.current = true;
+      videoRef.current.currentTime = latestTarget;
+      queueMicrotask(() => { commitSeekNowRef.current = false; });
+    }, 220);
+  }, [knownDuration]);
+
   // Fast trickplay track URL for scrub previews
   const trickplayTrackUrl = useMemo(() => {
     if (!play.data || play.data.path === "unsupported") return null;
@@ -265,8 +301,10 @@ function WatchRoute() {
       },
       currentTime: {
         configurable: true,
-        get: () => seekDragRef.current && deferredSeekRef.current != null
-          ? deferredSeekRef.current
+        get: () => queuedButtonSeekRef.current != null
+          ? queuedButtonSeekRef.current
+          : seekDragRef.current && deferredSeekRef.current != null
+            ? deferredSeekRef.current
           : pendingRestartRef.current?.fileId === Number(fileId)
             ? pendingRestartRef.current.seconds
             : streamStart + currentTimeDescriptor.get!.call(video),
@@ -639,6 +677,8 @@ function WatchRoute() {
                 onSelectAudioTrack={handleSelectAudioTrack}
                 onSeekDragStart={handleSeekDragStart}
                 onSeekDragEnd={handleSeekDragEnd}
+                onSeekCommitStart={handleSeekCommitStart}
+                onSeekBy={handleSeekBy}
                 subtitleOffset={subtitleOffset}
                 onAdjustSubtitleOffset={handleAdjustSubtitleOffset}
                 onResetSubtitleOffset={handleResetSubtitleOffset}

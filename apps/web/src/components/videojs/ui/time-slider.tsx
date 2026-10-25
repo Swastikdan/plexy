@@ -11,12 +11,14 @@ export interface TimeSliderProps extends Omit<TimeSliderPrimitive.RootProps, 'ch
   previewOverflow?: SliderPreviewOverflow | undefined;
   /** Draws the thumbnail preview image in place of the one the skin renders. */
   renderThumbnail?: SliderPrimitive.Thumbnail.ImageProps['render'];
+  onSeekCommitStart?: () => void;
 }
 
 export function TimeSlider({
   className,
   previewOverflow = 'visible',
   renderThumbnail,
+  onSeekCommitStart,
   ...props
 }: TimeSliderProps = {}) {
   return (
@@ -35,6 +37,7 @@ export function TimeSlider({
         )
       }
       {...props}
+      onPointerUpCapture={onSeekCommitStart}
     >
       <TimeSliderPrimitive.Chapters
         className={'relative flex size-full min-h-0 min-w-0 flex-1 items-center rounded-[inherit]'}

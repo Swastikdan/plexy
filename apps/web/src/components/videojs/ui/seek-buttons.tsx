@@ -10,12 +10,23 @@ import { cn } from '@/lib/resolve-class-name';
 export interface SeekButtonProps {
   seconds?: number;
   className?: string;
+  onSeekBy?: (seconds: number) => void;
 }
 
-export function SeekBackwardButton({ seconds = -10, className }: SeekButtonProps) {
+export function SeekBackwardButton({ seconds = -10, className, onSeekBy }: SeekButtonProps) {
   const abs = Math.abs(seconds);
   return (
     <ButtonTooltip side="top" label={`Rewind ${abs}s`}>
+      {onSeekBy ? (
+        <Button
+          className={cn('relative', className)}
+          aria-label={`Rewind ${abs} seconds`}
+          onClick={(event) => { event.stopPropagation(); onSeekBy(seconds); }}
+        >
+          <RotateCcw className="size-media-icon drop-shadow-media-icon [text-shadow:inherit]" />
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold select-none leading-none pt-0.5">{abs}</span>
+        </Button>
+      ) : (
       <SeekButtonPrimitive
         seconds={seconds}
         render={<Button className={cn('relative', className)} />}
@@ -26,14 +37,25 @@ export function SeekBackwardButton({ seconds = -10, className }: SeekButtonProps
           {abs}
         </span>
       </SeekButtonPrimitive>
+      )}
     </ButtonTooltip>
   );
 }
 
-export function SeekForwardButton({ seconds = 10, className }: SeekButtonProps) {
+export function SeekForwardButton({ seconds = 10, className, onSeekBy }: SeekButtonProps) {
   const abs = Math.abs(seconds);
   return (
     <ButtonTooltip side="top" label={`Forward ${abs}s`}>
+      {onSeekBy ? (
+        <Button
+          className={cn('relative', className)}
+          aria-label={`Forward ${abs} seconds`}
+          onClick={(event) => { event.stopPropagation(); onSeekBy(seconds); }}
+        >
+          <RotateCw className="size-media-icon drop-shadow-media-icon [text-shadow:inherit]" />
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold select-none leading-none pt-0.5">{abs}</span>
+        </Button>
+      ) : (
       <SeekButtonPrimitive
         seconds={seconds}
         render={<Button className={cn('relative', className)} />}
@@ -44,6 +66,7 @@ export function SeekForwardButton({ seconds = 10, className }: SeekButtonProps) 
           {abs}
         </span>
       </SeekButtonPrimitive>
+      )}
     </ButtonTooltip>
   );
 }

@@ -20,6 +20,8 @@ export interface NeutralVideoControlsProps {
   renderThumbnail?: NonNullable<ComponentProps<typeof TimeSlider>>['renderThumbnail'];
   onSeekDragStart?: () => void;
   onSeekDragEnd?: () => void;
+  onSeekCommitStart?: () => void;
+  onSeekBy?: (seconds: number) => void;
   serverAudioTracks?: VideoSettingsMenuProps['serverAudioTracks'];
   selectedAudioIndex?: number;
   onSelectAudioTrack?: (index: number) => void;
@@ -35,6 +37,8 @@ export function NeutralVideoControls({
   renderThumbnail,
   onSeekDragStart,
   onSeekDragEnd,
+  onSeekCommitStart,
+  onSeekBy,
   serverAudioTracks,
   selectedAudioIndex,
   onSelectAudioTrack,
@@ -71,11 +75,11 @@ export function NeutralVideoControls({
       >
         <Tooltip.Provider>
           <Controls.Group className={'flex flex-1 items-center rtl:flex-row-reverse gap-0.5 media-2xl:flex-none'}>
-            <SeekBackwardButton seconds={-10} />
+            <SeekBackwardButton seconds={-10} onSeekBy={onSeekBy} />
             <ButtonTooltip side="top">
               <PlayButton />
             </ButtonTooltip>
-            <SeekForwardButton seconds={10} />
+            <SeekForwardButton seconds={10} onSeekBy={onSeekBy} />
             <VolumePopover showTooltip side="right" orientation="horizontal" />
           </Controls.Group>
 
@@ -114,6 +118,7 @@ export function NeutralVideoControls({
               renderThumbnail={renderThumbnail}
               onDragStart={onSeekDragStart}
               onDragEnd={onSeekDragEnd}
+              onSeekCommitStart={onSeekCommitStart}
             />
           </Controls.Group>
 
