@@ -4,7 +4,12 @@ import path from "node:path";
 import { setupApplicationMenu } from "./menu";
 import { startServer, stopServer } from "./server";
 import { startStaticUi } from "./static";
+import { ensureDesktopAuth } from "./auth";
 
+// Deliberately no auto-updater. Releases are manual downloads (the build uses
+// `electron-builder --publish never`) and this app is not signed, so an in-app
+// update would be both unreliable and a security downgrade. Replacing the .app
+// leaves userData (database + keychain token) untouched.
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let stopStaticUi: (() => Promise<void>) | null = null;
@@ -272,6 +277,12 @@ async function openMainWindow(): Promise<void> {
 
   try {
     const { url } = await startServer();
+    // Authenticate before the window loads so the first API call already has a
+    // session cookie. A failure is not fatal: the app shows the pairing screen.
+    const authenticated = await ensureDesktopAuth(url);
+    if (!authenticated) {
+      console.warn("[Plexy Desktop] Opening unauthenticated; the pairing screen will be shown.");
+    }
     mainWindow = createWindow(url);
   } catch (err) {
     console.error("[Plexy Desktop] Backend unavailable, opening the connection screen:", err);

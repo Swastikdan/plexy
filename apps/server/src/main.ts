@@ -82,6 +82,25 @@ async function main(): Promise<void> {
 
   resetInterruptedTrickplay();
 
+  // A headless server (home box or VPS) has no desktop app to pair from. When
+  // LAN access is on and nothing is paired yet, print a one-time code at boot
+  // so the owner can register their first viewing device.
+  if (hostname === "0.0.0.0") {
+    try {
+      const { createPairingCode, hasAnyDevice } = await import("./auth");
+      if (!hasAnyDevice()) {
+        const { code, expiresAt } = createPairingCode("First device");
+        console.log(`\n▸ Pair your first device with this code: ${code}`);
+        console.log(`  Valid until ${expiresAt}. Generate a new code in Settings → Security.\n`);
+        log.info("auth", "first-device pairing code issued", { expiresAt });
+      }
+    } catch (error) {
+      log.warn("auth", "could not issue a first-device pairing code", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   for (const url of lanUrls) {
     log.info("server", "LAN playback address", { url });
     console.log(`▸ LAN → ${url}`);

@@ -7,11 +7,14 @@
 /// same connection form.
 import { useEffect, useState, type ReactNode } from "react";
 import { ConnectScreen } from "./connect-screen";
+import { PairScreen } from "./pair-screen";
 import { getApiBase, isElectron, probeServer } from "../server-config";
+import { getAuthDevice } from "../auth";
 
 type GateState =
   | { phase: "checking" }
   | { phase: "ready" }
+  | { phase: "auth"; serverUrl: string }
   | { phase: "down"; error?: string; originUrl?: string };
 
 export function ServerGate({ children }: { children: ReactNode }) {
@@ -26,6 +29,12 @@ export function ServerGate({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       if (primary.ok) {
+        const device = await getAuthDevice();
+        if (cancelled) return;
+        if (!device) {
+          setState({ phase: "auth", serverUrl: primary.url });
+          return;
+        }
         setState({ phase: "ready" });
         return;
       }
@@ -61,6 +70,21 @@ export function ServerGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // A revoked token during a session: drop back to the pairing screen instead
+  // of leaving every page showing request errors.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setState({ phase: "auth", serverUrl: getApiBase() });
+    };
+    window.addEventListener("plexy:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("plexy:unauthorized", onUnauthorized);
+  }, []);
+
+  // The dedicated connection page must stay reachable from the pairing screen.
+  if (typeof window !== "undefined" && window.location.pathname === "/connect") {
+    return <>{children}</>;
+  }
+
   if (state.phase === "checking") {
     return <ConnectionSplash />;
   }
@@ -68,6 +92,15 @@ export function ServerGate({ children }: { children: ReactNode }) {
   if (state.phase === "down") {
     return (
       <ConnectScreen initialError={state.error} originUrl={state.originUrl} />
+    );
+  }
+
+  if (state.phase === "auth") {
+    return (
+      <PairScreen
+        serverUrl={state.serverUrl}
+        onPaired={() => window.location.reload()}
+      />
     );
   }
 

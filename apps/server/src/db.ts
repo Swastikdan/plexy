@@ -6,7 +6,7 @@
 /// sites stay terse; correctness of the SQL itself is runtime-checked by
 /// SQLite's strict mode typing and exercised by the scan tests.
 import { Database, type Statement } from "bun:sqlite";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { resolveDataDir } from "./paths";
@@ -135,8 +135,10 @@ export async function runMigrations(): Promise<string[]> {
   const applied = new Set(
     q<{ file: string }>("SELECT file FROM schema_migrations").all().map((r) => String(r.file)),
   );
-  for (const file of files) {
-    if (applied.has(file)) continue;
+  const pending = files.filter((file) => !applied.has(file));
+  if (pending.length > 0 && applied.size > 0) backupBeforeMigrations(pending);
+
+  for (const file of pending) {
     const sql = await readFile(join(dir, file), "utf8");
     db.transaction(() => {
       db.exec(sql);
@@ -145,4 +147,49 @@ export async function runMigrations(): Promise<string[]> {
   }
   clearStatementCache();
   return files;
+}
+
+/**
+ * Snapshot the database before any schema change.
+ *
+ * Replacing the unsigned .app installs a new bundled server and therefore new
+ * migrations. Those are additive by policy, but a botched upgrade must never be
+ * able to destroy a library: `VACUUM INTO` writes a consistent copy first, and
+ * the two most recent snapshots stay next to the database in `backups/`.
+ */
+function backupBeforeMigrations(pending: string[]): void {
+  if (Bun.env.NODE_ENV === "test" || Bun.env.PLEXY_SKIP_DB_BACKUP === "1") return;
+
+  const dataDir = resolveDataDir();
+  const dbFile = join(dataDir, "library.sqlite");
+  if (!existsSync(dbFile)) return;
+
+  try {
+    const backupDir = join(dataDir, "backups");
+    mkdirSync(backupDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const label = (pending[pending.length - 1] ?? "migration").replace(/\.sql$/, "");
+    const target = join(backupDir, `library-before-${stamp}-${label}.sqlite`);
+    run("VACUUM INTO ?", target);
+
+    const snapshots = readdirSync(backupDir)
+      .filter((name) => name.startsWith("library-before-") && name.endsWith(".sqlite"))
+      .map((name) => ({ name, mtime: statSync(join(backupDir, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const old of snapshots.slice(2)) {
+      try {
+        unlinkSync(join(backupDir, old.name));
+      } catch {
+        /* best effort */
+      }
+    }
+    console.log(`[Plexy] Database snapshot created before migrations: ${target}`);
+  } catch (error) {
+    // A missing snapshot must not block an otherwise valid upgrade, but the
+    // failure has to be visible in the packaged app's log.
+    console.warn(
+      "[Plexy] Could not snapshot the database before migrations:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }

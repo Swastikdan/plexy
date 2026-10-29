@@ -84,6 +84,53 @@ xattr -dr com.apple.quarantine /Applications/Plexy.app
 Only bypass Gatekeeper for builds you produced yourself or downloaded from this
 repository's releases.
 
+### Updating Plexy (manual, no in-app updater)
+
+Plexy has **no auto-updater**. The app never downloads or installs a new
+version, and release builds are produced with `--publish never`. To update,
+download the new DMG and replace `Plexy.app` in **Applications** — the same
+drag-and-drop as a first install.
+
+Your data is not part of the `.app` bundle. Everything writable lives outside
+it, so replacing the app keeps your library, watch state, and paired devices:
+
+| Path | Contents |
+| --- | --- |
+| `~/Library/Application Support/Plexy/library.sqlite` | Catalog, watch state, settings, auth tokens (hashed) |
+| `~/Library/Application Support/Plexy/backups/` | Automatic snapshot taken before any schema migration |
+| `~/Library/Application Support/Plexy/auth-token.bin` | Desktop token, encrypted with the macOS Keychain |
+| `~/Library/Logs/Plexy/` | Logs |
+
+Because the build is not signed, macOS may block the replacement app again;
+repeat the Gatekeeper step above (or `xattr -dr com.apple.quarantine
+/Applications/Plexy.app`). The bundled server runs migrations on startup and
+takes a database snapshot first, so an interrupted upgrade can be rolled back by
+copying the newest file from `backups/` over `library.sqlite` while Plexy is
+stopped.
+
+### Device authentication
+
+Every `/api/*` route now requires a paired device. The only public endpoint is
+`/api/server/status`, which the connection screen uses to probe an address.
+
+- **Desktop app** — signs in automatically. On launch it asks its bundled server
+  for a token over loopback, stores it with Electron `safeStorage` (macOS
+  Keychain), and installs it as an HttpOnly cookie so images, video, HLS
+  segments, and event streams authenticate without any URL changes.
+- **This machine in a browser** — the pairing screen offers **This is the server
+  machine**, which signs in with one click (loopback is the owner boundary here).
+- **Phones, TVs, other computers** — open **Settings → Security** on the server,
+  click **Generate pairing code**, and enter the six-digit code on the other
+  device. Codes are single-use and expire after 10 minutes. A headless server
+  with LAN access enabled prints a first-device code at startup when nothing is
+  paired yet.
+- **Revoking** — Settings → Security lists paired devices and can revoke any of
+  them. Changing the database or replacing the app does not sign devices out,
+  because only token hashes are stored in `library.sqlite`.
+
+Admin screens (settings, libraries, scans, matching, logs) remain restricted to
+the computer running Plexy, independent of the device token.
+
 ### 4. Hosted Web Build (Cloudflare Workers)
 
 `bun run build:web` produces `dist/web`, a static SPA. The GitHub Actions
@@ -94,6 +141,12 @@ A hosted client has no backend of its own. On first launch it shows a
 **Connect to your Plexy server** screen and saves the address on the device
 (localStorage; Electron also persists it in its userData directory). The Mac app
 normally uses its bundled server and never shows this screen.
+
+After connecting, a hosted client must be paired once (see **Device
+authentication** above): the server's `/api/*` routes reject unauthenticated
+requests, so enter a pairing code from **Settings → Security** on the server.
+The cookie is HttpOnly, so images, streams, and HLS segments keep working
+without tokens in URLs.
 
 - If the hosted page is HTTPS, the server address must also be HTTPS. Browsers
   block an `https://…` page from calling a plain `http://192.168.x.x` server.

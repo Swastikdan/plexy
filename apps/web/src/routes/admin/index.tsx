@@ -24,9 +24,12 @@ import {
   HardDrive,
   FileText,
   X,
+  KeyRound,
+  ShieldCheck,
 } from "lucide-react";
 import { api, type ReviewEntry } from "../../client";
 import { getApiBase, hasServerOverride } from "../../server-config";
+import { createPairingCode, listDevices, revokeDevice } from "../../auth";
 import { queries } from "../../queries";
 import { Button, cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
@@ -1015,6 +1018,9 @@ function Settings() {
         )}
       </div>
 
+      {/* Security Card */}
+      <SecuritySettings />
+
       {/* Server Connection Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1227,6 +1233,164 @@ function Settings() {
       <Crashes />
     </div>
   );
+}
+
+// --- security ----------------------------------------------------------------
+
+/**
+ * Device pairing. The server stores only token hashes, so this card is the
+ * owner's control surface for remote viewers: mint a one-time code, see who is
+ * paired, and revoke a device.
+ */
+function SecuritySettings() {
+  const queryClient = useQueryClient();
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const devices = useQuery({ queryKey: ["auth-devices"], queryFn: listDevices });
+
+  const mint = useMutation({
+    mutationFn: () => createPairingCode("New device"),
+    onSuccess: (result) => {
+      setPairing(result);
+      setCopied(false);
+    },
+  });
+
+  const revoke = useMutation({
+    mutationFn: (id: number) => revokeDevice(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["auth-devices"] }),
+  });
+
+  const copyCode = () => {
+    if (!pairing) return;
+    void navigator.clipboard
+      .writeText(pairing.code)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
+  };
+
+  return (
+    <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+      <div>
+        <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
+          <ShieldCheck size={17} className="text-brand-text" />
+          Security
+        </h2>
+        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-muted">
+          Phones, TVs, and other computers must pair once before they can browse
+          or stream. The desktop app signs in automatically. Paired devices stay
+          signed in across app updates.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-2 rounded-xl border border-line/60 bg-surface-2/60 p-3.5">
+          <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+            Pair a new device
+          </span>
+          <p className="text-xs leading-relaxed text-ink-muted">
+            Generate a six-digit code, then enter it on the other device. Each
+            code works once and expires after 10 minutes.
+          </p>
+          <Button
+            variant="surface"
+            disabled={mint.isPending}
+            onClick={() => mint.mutate()}
+            className="mt-1"
+          >
+            {mint.isPending ? <RotateCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
+            {mint.isPending ? "Generating…" : "Generate pairing code"}
+          </Button>
+
+          {pairing && (
+            <div className="mt-2 rounded-xl border border-brand/30 bg-brand/10 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-2xl tracking-[0.35em] text-ink">
+                  {pairing.code}
+                </span>
+                <button
+                  type="button"
+                  onClick={copyCode}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink transition-all hover:bg-surface-hover active:scale-95"
+                >
+                  {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-ink-muted">
+                Valid until {formatPairingExpiry(pairing.expiresAt)}.
+              </p>
+            </div>
+          )}
+          {mint.isError && (
+            <p role="alert" className="text-xs text-red-400">{mint.error.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-2 rounded-xl border border-line/60 bg-surface-2/60 p-3.5">
+          <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+            Paired devices
+          </span>
+          {devices.isLoading ? (
+            <p className="text-xs text-ink-muted">Loading…</p>
+          ) : devices.data?.length ? (
+            <ul className="space-y-2">
+              {devices.data.map((device) => (
+                <li key={device.id} className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="block truncate text-xs font-medium text-ink">
+                      {device.name}
+                    </span>
+                    <span className="block text-[11px] text-ink-muted">
+                      {device.revoked
+                        ? "Revoked"
+                        : device.lastSeen
+                          ? `Last seen ${formatPairingExpiry(device.lastSeen)}`
+                          : "Not used yet"}
+                    </span>
+                  </div>
+                  {!device.revoked && (
+                    <button
+                      type="button"
+                      onClick={() => revoke.mutate(device.id)}
+                      disabled={revoke.isPending}
+                      className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-300 transition-all hover:bg-red-500/20 active:scale-95 disabled:opacity-50"
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-ink-muted">No devices paired yet.</p>
+          )}
+          {devices.isError && (
+            <p role="alert" className="text-xs text-red-400">{devices.error.message}</p>
+          )}
+          {revoke.isError && (
+            <p role="alert" className="text-xs text-red-400">{revoke.error.message}</p>
+          )}
+        </div>
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-ink-muted">
+        Credentials are stored as hashes in the library database and survive app
+        updates. Admin actions still work only from this computer.
+      </p>
+    </div>
+  );
+}
+
+/** SQLite timestamps are UTC without a timezone suffix. */
+function formatPairingExpiry(value: string): string {
+  try {
+    const date = new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return value;
+  }
 }
 
 function OptimizerSettings() {

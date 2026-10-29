@@ -10,13 +10,15 @@ import { join, dirname } from "node:path";
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { adminRoutes } from "./routes-admin";
+import { authRoutes } from "./routes-auth";
 import { catalogRoutes } from "./routes-catalog";
 import { matchingRoutes } from "./routes-matching";
 import { mediaRoutes } from "./routes-media";
 import { logsRoutes } from "./routes-logs";
 import { log } from "./logger";
+import { authGuard } from "./auth";
 
-export function buildApp() {
+export function buildApp(options: { requireAuth?: boolean } = {}) {
   const app = new Elysia({ normalize: "typebox" })
     .use(
       cors({
@@ -29,6 +31,10 @@ export function buildApp() {
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
       }),
     )
+    // Credential gate runs after CORS so 401 responses still carry the CORS
+    // headers a hosted client needs to read them.
+    .onRequest((ctx) => authGuard(ctx, options.requireAuth))
+    .use(authRoutes)
     .use(adminRoutes)
     .use(catalogRoutes)
     .use(matchingRoutes)

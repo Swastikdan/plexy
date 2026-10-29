@@ -36,9 +36,17 @@ export class ApiError extends Error {
   }
 }
 
+/** Let the connection gate replace the UI with the pairing screen. */
+function notifyUnauthorized(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("plexy:unauthorized"));
+  }
+}
+
 // The base URL is resolved per call: a hosted web build lets the viewer pick
 // their server at runtime, and the desktop app can fall back to a remote one.
-const createTreaty = (base: string) => treaty<App>(base);
+const createTreaty = (base: string) =>
+  treaty<App>(base, { fetch: { credentials: "include" } });
 
 let treatyClient: ReturnType<typeof createTreaty> | null = null;
 let treatyBase = "";
@@ -56,6 +64,7 @@ function rpc() {
 async function unwrap<T>(promise: Promise<{ data: unknown; error: unknown; status: number }>): Promise<T> {
   try {
     const res = await promise;
+    if (res.status === 401) notifyUnauthorized();
     if (res.error || res.data === null || res.data === undefined) {
       let msg = `Request failed (${res.status || 500})`;
       if (res.error) {
@@ -82,8 +91,9 @@ async function restFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const base = getApiBase();
   const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? "" : "/"}${path}`;
   try {
-    const res = await fetch(url, init);
+    const res = await fetch(url, { credentials: "include", ...init });
     const text = await res.text();
+    if (res.status === 401) notifyUnauthorized();
     let body: unknown = null;
     try {
       body = text ? JSON.parse(text) : null;
