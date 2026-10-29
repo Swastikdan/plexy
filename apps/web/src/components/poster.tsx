@@ -1,4 +1,4 @@
-/// Poster card with smooth zoom and hover overlay.
+/// Poster card with a title label and an optional wide-card hover overlay.
 ///
 /// Optional `showKind` pins a small type chip (movie / series / episode) at the
 /// top of the artwork, and hovering any poster quietly prefetches its detail
@@ -11,6 +11,8 @@ import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle, Star } from "lucide-react";
 import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
+import { prefetchAssets } from "../lib/asset-prefetch";
+import { prefetchTriggerEnabled } from "../lib/prefetch-config";
 import { Menu } from "./ui/menu";
 
 export function cx(...parts: ClassValue[]) {
@@ -36,7 +38,7 @@ function KindChip({ kind }: { kind?: string }) {
   if (kind === "episode") {
     return (
       <span
-        className="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white/90"
+        className="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white/80"
         aria-hidden
       >
         <MonitorPlay size={10} />
@@ -47,7 +49,7 @@ function KindChip({ kind }: { kind?: string }) {
   const isSeries = kind === "series";
   return (
     <span
-      className="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white/90"
+      className="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white/80"
       aria-hidden
     >
       {isSeries ? <Tv size={10} /> : <Film size={10} />}
@@ -70,6 +72,7 @@ export function Poster({
   directPlay?: boolean;
 }) {
   const imgSrc = wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop;
+  const showTitleBelow = !wide || item.kind === "series";
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canPlayDirect = directPlay && item.fileId != null;
@@ -103,9 +106,14 @@ export function Poster({
         if (BROWSER_CAPS) {
           void queryClient.prefetchQuery(queries.play(item.fileId!, BROWSER_CAPS));
         }
-        return;
+      } else {
+        void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
       }
-      void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
+      // Only artwork this card actually renders is warmed; trickplay needs real
+      // file/play metadata and is never invented from a catalog card.
+      if (prefetchTriggerEnabled("hover")) {
+        prefetchAssets([item.poster, item.backdrop]);
+      }
     }, 100);
   };
 
@@ -127,15 +135,16 @@ export function Poster({
     : ({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } } as const);
 
   return (
-    <div
-      className={cx(
-        "group relative block overflow-hidden rounded-[var(--radius-poster)]",
-        "bg-surface border border-line/60",
-        "transition-[transform,border-color] duration-300 ease-out hover:z-20 hover:scale-[1.04] hover:border-line",
-        "focus-within:ring-2 focus-within:ring-brand/40",
-        className,
-      )}
-    >
+    <div className="min-w-0">
+      <div
+        className={cx(
+          "group relative block overflow-hidden rounded-[var(--radius-poster)]",
+          "bg-surface border border-line/40",
+          "transition-[transform,border-color] duration-200 ease-out hover:z-20 hover:scale-[1.03] hover:border-line-strong",
+          "focus-within:ring-2 focus-within:ring-white/20",
+          className,
+        )}
+      >
       <Link
         {...destination}
         onPointerEnter={startPrefetch}
@@ -150,7 +159,7 @@ export function Poster({
       {showKind && <KindChip kind={item.kind} />}
       {item.rating != null && !wide && (
         <span
-          className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber"
+          className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-amber"
           aria-label={`Rated ${item.rating.toFixed(1)} out of 10`}
         >
           <Star size={10} fill="currentColor" />
@@ -166,36 +175,25 @@ export function Poster({
           className="h-full w-full object-cover transition-transform duration-300 ease-out pointer-events-none"
         />
       ) : (
-        <div className="flex h-full w-full flex-col justify-end p-4 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none">
-          <span className="font-display text-sm font-semibold text-ink line-clamp-2">
-            {item.name}
-          </span>
-          {item.year && (
-            <span className="text-xs text-ink-muted mt-1">{item.year}</span>
-          )}
+        <div className="flex h-full w-full items-center justify-center bg-surface-2 text-ink-muted pointer-events-none">
+          {item.kind === "series" ? <Tv size={24} /> : <Film size={24} />}
         </div>
       )}
 
-      {/* Hover overlay with title and rating; always visible on wide cards */}
-      <div
-        className={cx(
-          "pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent transition-opacity duration-300",
-          wide ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-        )}
-        aria-hidden
-      >
-        <div className="absolute bottom-0 left-0 right-0 p-3">
-          <p className="truncate text-xs font-semibold text-white">
-            {item.name}
-          </p>
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted">
-            {item.year && <span>{item.year}</span>}
-            {item.rating && (
-              <span className="text-amber">★ {item.rating.toFixed(1)}</span>
-            )}
+      {/* Landscape cards retain the title treatment; poster cards identify
+          themselves below the artwork instead of covering it with a Details icon. */}
+      {wide && (
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 p-3">
+            <p className="truncate text-xs font-semibold text-white">{item.name}</p>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-white/70">
+              {item.year && <span>{item.year}</span>}
+              {item.rating != null && <span className="text-amber">★ {item.rating.toFixed(1)}</span>}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Watch progress for continuing titles */}
       {item.watch && item.watch.percent > 0 && (
@@ -270,6 +268,12 @@ export function Poster({
             </Menu.Positioner>
           </Menu.Root>
         </div>
+      )}
+      </div>
+      {showTitleBelow && (
+        <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-ink" title={item.name}>
+          {item.name}
+        </p>
       )}
     </div>
   );

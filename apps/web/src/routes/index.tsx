@@ -30,10 +30,10 @@ export default function HomeRoute() {
     return (
       <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-12 sm:px-8">
         <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-          <h2 className="font-display text-xl font-bold text-ink">Home failed to load</h2>
+          <h2 className="font-sans text-xl font-bold text-ink">Home failed to load</h2>
           <p className="text-sm text-ink-muted">The server didn't answer. Is Plexy running?</p>
           <Link to="/setup">
-            <Button variant="brand" className="mt-4">
+            <Button variant="primary" className="mt-4">
               Server Setup
             </Button>
           </Link>
@@ -54,15 +54,15 @@ export default function HomeRoute() {
     <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 sm:px-8">
       {empty ? (
         <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-4 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-surface border border-line text-brand-text">
-            <Plus size={32} />
+          <div className="flex h-14 w-14 items-center justify-center rounded-sm bg-surface border border-line text-ink-muted">
+            <Plus size={28} />
           </div>
-          <h2 className="font-display text-2xl font-bold text-ink">Your library is ready</h2>
+          <h2 className="font-sans text-2xl font-bold text-ink">Your library is ready</h2>
           <p className="text-sm text-ink-muted leading-relaxed">
             Add a movie or TV folder and Plexy will organize your media with posters, metadata, and watch progress.
           </p>
-          <Link to="/admin">
-            <Button variant="brand" className="mt-2 h-11 px-6 text-sm font-bold">
+          <Link to="/add-library">
+            <Button variant="primary" className="mt-2 h-10 px-6 text-sm font-semibold">
               Add a Library
             </Button>
           </Link>
@@ -99,7 +99,7 @@ export function State({
 }) {
   return (
     <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-      <h2 className="font-display text-xl font-bold text-ink">{title}</h2>
+      <h2 className="font-sans text-xl font-bold text-ink">{title}</h2>
       <p className="text-sm text-ink-muted leading-relaxed">{body}</p>
       {action}
     </div>

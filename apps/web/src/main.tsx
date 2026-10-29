@@ -13,8 +13,12 @@ import "./styles.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
+      // API reads own their bounded retry policy. Avoid stacking TanStack's
+      // retries on top of transport retries, while refreshing cached data when
+      // the browser returns online or to the foreground.
+      retry: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
       // Catalog responses are cheap but repeated navigation should not re-fetch
       // them; live screens (scan, optimizer) opt into polling themselves.
       staleTime: 30_000,

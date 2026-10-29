@@ -69,26 +69,21 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
 
   return (
     <main className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-[-160px] h-[420px] w-[720px] -translate-x-1/2 rounded-full bg-brand/15 blur-3xl" />
-        <div className="absolute bottom-[-220px] right-[-120px] h-[380px] w-[520px] rounded-full bg-brand/10 blur-3xl" />
-      </div>
-
-      <section className="relative w-full max-w-lg">
-        <div className="mb-7 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-line/80 bg-surface shadow-lg shadow-black/25">
-            <img src="/icon.svg" alt="" className="h-9 w-9" />
+      <section className="relative w-full max-w-md">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-sm border border-line bg-surface">
+            <img src="/icon.svg" alt="" className="h-8 w-8" />
           </div>
-          <h1 className="font-display text-2xl font-black tracking-tight text-ink sm:text-3xl">
+          <h1 className="font-sans text-2xl font-bold tracking-tight text-ink sm:text-3xl">
             Pair this device
           </h1>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">
-            Your Plexy server now requires a sign-in. Pair once and this device
+            Your Plexy server requires a sign-in. Pair once and this device
             stays signed in.
           </p>
         </div>
 
-        <div className="rounded-2xl border border-line/80 bg-surface/95 p-5 shadow-2xl shadow-black/30 backdrop-blur sm:p-7">
+        <div className="border border-line bg-surface p-5 sm:p-7">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -97,8 +92,8 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
             className="space-y-3"
           >
             <label htmlFor="plexy-pair-code" className="block space-y-2">
-              <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">
-                <KeyRound size={13} className="text-brand-text" />
+              <span className="flex items-center gap-2 text-xs font-medium text-ink-muted">
+                <KeyRound size={13} />
                 Pairing code
               </span>
               <input
@@ -115,15 +110,15 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
                   if (error) setError(null);
                 }}
                 placeholder="123456"
-                className="h-14 w-full rounded-xl border border-line bg-surface-2 px-3.5 text-center font-mono text-2xl tracking-[0.5em] text-ink placeholder:text-ink-muted/40 outline-none transition-colors focus:border-brand/70 disabled:opacity-60"
+                className="h-14 w-full rounded-sm border border-line bg-surface-2 px-3.5 text-center font-mono text-2xl tracking-[0.5em] text-ink placeholder:text-ink-muted/40 outline-none transition-colors focus:border-line-strong disabled:opacity-50"
               />
             </label>
 
             <Button
               type="submit"
-              variant="brand"
+              variant="primary"
               disabled={!canPair}
-              className="h-11 w-full px-5 text-sm font-semibold"
+              className="h-10 w-full px-5 text-sm font-semibold"
             >
               {done ? (
                 <>
@@ -145,8 +140,8 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
           </form>
 
           {error && (
-            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300">
-              <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-400" />
+            <div className="mt-3 flex items-start gap-2.5 border border-red-500/20 bg-red-500/8 p-3 text-xs leading-relaxed text-red-400">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
@@ -156,10 +151,10 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
               type="button"
               onClick={() => void useThisMachine()}
               disabled={busy || done}
-              className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-line/70 bg-surface-2 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover disabled:opacity-60"
+              className="mt-3 flex w-full items-center justify-between gap-3 border border-line bg-surface-2 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover disabled:opacity-50"
             >
               <span className="flex min-w-0 items-center gap-2.5">
-                <Laptop size={15} className="shrink-0 text-brand-text" />
+                <Laptop size={14} className="shrink-0 text-ink-muted" />
                 <span className="min-w-0">
                   <span className="block text-xs font-semibold text-ink">
                     This is the server machine
@@ -169,18 +164,17 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
                   </span>
                 </span>
               </span>
-              <ArrowRight size={15} className="shrink-0 text-ink-muted" />
+              <ArrowRight size={14} className="shrink-0 text-ink-muted" />
             </button>
           )}
 
-          <div className="mt-5 space-y-2.5 border-t border-line/60 pt-4 text-xs leading-relaxed text-ink-muted">
+          <div className="mt-5 space-y-2.5 border-t border-line pt-4 text-xs leading-relaxed text-ink-muted">
             <p className="flex items-start gap-2">
-              <ShieldCheck size={13} className="mt-0.5 shrink-0 text-brand-text" />
+              <ShieldCheck size={13} className="mt-0.5 shrink-0" />
               <span>
                 Find the code in{" "}
                 <span className="font-medium text-ink">Plexy → Settings → Security</span>{" "}
-                on the computer or home server that runs Plexy. Codes are valid
-                for 10 minutes and work once.
+                on the computer that runs Plexy. Codes are valid for 10 minutes and work once.
               </span>
             </p>
             <p>
@@ -189,7 +183,7 @@ export function PairScreen({ serverUrl, onPaired }: PairScreenProps) {
             <button
               type="button"
               onClick={() => window.location.assign("/connect")}
-              className="inline-flex items-center gap-1.5 rounded-lg text-xs font-medium text-brand-text transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2"
             >
               Use a different server
               <ArrowRight size={13} />

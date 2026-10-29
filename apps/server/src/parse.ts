@@ -6,7 +6,7 @@
 /// and never leaks into the search query.
 import { basename, dirname, extname, join, relative } from "node:path";
 
-export type LibraryType = "movies" | "tv";
+export type LibraryType = "movies" | "tv" | "anime";
 
 export interface Parsed {
   title: string;
@@ -88,7 +88,7 @@ export function parsePath(path: string, type: LibraryType, libraryRoots: string[
   const rel = relative(root, path);
   const segments = rel.split(/[/\\]/).filter(Boolean);
 
-  if (type === "tv") return parseTvPath(segments, file, explicitId, basename(root));
+  if (type !== "movies") return parseTvPath(segments, file, explicitId, basename(root));
   return parseMoviePath(segments, file, explicitId);
 }
 

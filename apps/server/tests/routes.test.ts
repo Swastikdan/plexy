@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { buildApp } from "../src/app";
 import { runMigrations, run } from "../src/db";
 import { initConfig, APP_VERSION } from "../src/config";
+import { createDevice } from "../src/auth";
 
 describe("Elysia API Routes (PRD 9)", () => {
   let app: ReturnType<typeof buildApp>;
@@ -14,14 +15,38 @@ describe("Elysia API Routes (PRD 9)", () => {
     app = buildApp();
   });
 
-  test("GET /api/server/status returns server metadata and version", async () => {
+  test("public status probe omits operational details; paired status includes them", async () => {
     const res = await app.handle(new Request("http://localhost:8765/api/server/status"));
     expect(res.status).toBe(200);
 
     const data = await res.json();
     expect(data.version).toBe(APP_VERSION);
-    expect(typeof data.adminAvailable).toBe("boolean");
-    expect(Array.isArray(data.recentScans)).toBe(true);
+    expect(typeof data.serverId).toBe("string");
+    expect(typeof data.setupComplete).toBe("boolean");
+    expect(data).not.toHaveProperty("recentScans");
+
+    const { token } = createDevice("Status test device");
+    const paired = await app.handle(new Request("http://localhost:8765/api/server/status", {
+      headers: { Authorization: `Bearer ${token}` },
+    }));
+    const privateStatus = await paired.json();
+    expect(typeof privateStatus.adminAvailable).toBe("boolean");
+    expect(privateStatus.serverId).toBe(data.serverId);
+    expect(Array.isArray(privateStatus.recentScans)).toBe(true);
+  });
+
+  test("playback diagnostics retain bounded metadata without media paths", async () => {
+    const reported = await app.handle(new Request("http://localhost:8765/api/diagnostics/playback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "rebuffer", path: "hls", durationMs: 850 }),
+    }));
+    expect(reported.status).toBe(200);
+
+    const response = await app.handle(new Request("http://localhost:8765/api/diagnostics/playback"));
+    const { events } = await response.json();
+    expect(events[0]).toMatchObject({ kind: "rebuffer", path: "hls", durationMs: 850 });
+    expect(events[0]).not.toHaveProperty("filePath");
   });
 
   test("GET /api/home returns home payload structure", async () => {
@@ -60,13 +85,14 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(data.ok).toBe(true);
   });
 
-  test("GET /api/search returns results array for query", async () => {
+  test("GET /api/search splits titles and episodes for query", async () => {
     const res = await app.handle(
       new Request("http://localhost:8765/api/search?q=Avatar"),
     );
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(Array.isArray(data.items)).toBe(true);
+    expect(Array.isArray(data.titles)).toBe(true);
+    expect(Array.isArray(data.episodes)).toBe(true);
   });
 
   test("GET /api/items/:id returns series with seasons and episodes", async () => {
@@ -229,6 +255,64 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(data).toHaveProperty("originalsCount");
     expect(data).toHaveProperty("derivedCount");
     expect(data).toHaveProperty("totalBytes");
+  });
+
+  test("PUT /api/settings persists local prefetch preferences and rejects out-of-range values", async () => {
+    try {
+      const res = await app.handle(
+        new Request("http://localhost:8765/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prefetchAggressiveLocal: false,
+            prefetchMaxConcurrent: 4,
+            prefetchMaxCacheMb: 120,
+            prefetchOnHover: false,
+            prefetchOnScroll: true,
+            prefetchNextCount: 7,
+          }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const saved = await res.json();
+      expect(saved.settings).toMatchObject({
+        prefetchAggressiveLocal: false,
+        prefetchMaxConcurrent: 4,
+        prefetchMaxCacheMb: 120,
+        prefetchOnHover: false,
+        prefetchOnScroll: true,
+        prefetchNextCount: 7,
+      });
+
+      // Round-trips through GET instead of only echoing the request.
+      const read = await (await app.handle(new Request("http://localhost:8765/api/settings"))).json();
+      expect(read.settings.prefetchMaxConcurrent).toBe(4);
+      expect(read.settings.prefetchNextCount).toBe(7);
+
+      const invalid = await app.handle(
+        new Request("http://localhost:8765/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prefetchMaxConcurrent: 50 }),
+        }),
+      );
+      expect(invalid.status).toBe(422);
+    } finally {
+      await app.handle(
+        new Request("http://localhost:8765/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prefetchAggressiveLocal: true,
+            prefetchMaxConcurrent: 3,
+            prefetchMaxCacheMb: 50,
+            prefetchOnHover: true,
+            prefetchOnScroll: true,
+            prefetchNextCount: 5,
+          }),
+        }),
+      );
+    }
   });
 
   test("GET /api/unknown-route returns 404", async () => {

@@ -15,24 +15,70 @@ import { catalogRoutes } from "./routes-catalog";
 import { matchingRoutes } from "./routes-matching";
 import { mediaRoutes } from "./routes-media";
 import { logsRoutes } from "./routes-logs";
+import { diagnosticsRoutes } from "./routes-diagnostics";
 import { log } from "./logger";
 import { authGuard } from "./auth";
 
-export function buildApp(options: { requireAuth?: boolean } = {}) {
+function configuredCorsOrigins(): Set<string> {
+  return new Set(
+    String(Bun.env.PLEXY_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .flatMap((value) => {
+        try {
+          const url = new URL(value);
+          return url.origin === "null" ? [] : [url.origin];
+        } catch {
+          return [];
+        }
+      }),
+  );
+}
+
+export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: string[] } = {}) {
+  const allowedOrigins = new Set(
+    (options.allowedOrigins ?? [...configuredCorsOrigins()]).flatMap((value) => {
+      try {
+        const url = new URL(value);
+        return url.origin === "null" ? [] : [url.origin];
+      } catch {
+        return [];
+      }
+    }),
+  );
+  const originAllowed = (request: Request): boolean => {
+    const origin = request.headers.get("origin");
+    if (!origin) return false;
+    try {
+      const normalized = new URL(origin).origin;
+      return normalized === new URL(request.url).origin || allowedOrigins.has(normalized);
+    } catch {
+      return false;
+    }
+  };
   const app = new Elysia({ normalize: "typebox" })
     .use(
       cors({
-        origin: true,
+        origin: originAllowed,
         credentials: true,
         // Range/If-Range matter for cross-origin HLS and seeking; the rest are
         // the request headers used by the typed client.
         allowedHeaders: ["Content-Type", "Authorization", "Range", "If-Range"],
-        exposeHeaders: ["Accept-Ranges", "Content-Range", "Content-Length"],
+        exposeHeaders: ["Accept-Ranges", "Content-Range", "Content-Length", "X-Request-Id"],
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
       }),
     )
     // Credential gate runs after CORS so 401 responses still carry the CORS
     // headers a hosted client needs to read them.
+    .onRequest(({ request, set }) => {
+      const requestId = crypto.randomUUID();
+      (request as Request & { __plexyRequestId?: string }).__plexyRequestId = requestId;
+      set.headers["x-request-id"] = requestId;
+      if (request.headers.has("origin") && !originAllowed(request)) {
+        return Response.json({ error: "This browser origin is not allowed." }, { status: 403 });
+      }
+    })
     .onRequest((ctx) => authGuard(ctx, options.requireAuth))
     .use(authRoutes)
     .use(adminRoutes)
@@ -40,6 +86,7 @@ export function buildApp(options: { requireAuth?: boolean } = {}) {
     .use(matchingRoutes)
     .use(mediaRoutes)
     .use(logsRoutes)
+    .use(diagnosticsRoutes)
     .onRequest(({ request }) => {
       // Cheap start marker for the slow-request log below. Kept on the Request
       // object so concurrent requests cannot race on a shared variable.
@@ -55,19 +102,23 @@ export function buildApp(options: { requireAuth?: boolean } = {}) {
       // slow API metadata calls, which is where lag actually shows up.
       if (url.pathname.startsWith("/api/stream/")) return;
       log.warn("http", "slow request", {
+        requestId: (request as Request & { __plexyRequestId?: string }).__plexyRequestId,
         method: request.method,
         path: url.pathname,
         status: set.status ?? 200,
         ms: Math.round(ms),
       });
     })
-    .onError({ as: "global" }, ({ error, code }) => {
+    .onError({ as: "global" }, ({ error, code, request }) => {
       // Validation errors are client bugs; everything else we log loudly.
       if (code === "VALIDATION") {
         log.debug("http", "validation failed", { message: String(error) });
         return Response.json({ error: "Invalid request." }, { status: 422 });
       }
       log.error("http", "request failed", {
+        requestId: (request as Request & { __plexyRequestId?: string }).__plexyRequestId,
+        method: request.method,
+        path: new URL(request.url).pathname,
         message: error instanceof Error ? error.message : String(error),
       });
       return Response.json({ error: "Something went wrong on the server." }, { status: 500 });

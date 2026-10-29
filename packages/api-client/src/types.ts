@@ -222,10 +222,12 @@ export interface BrowserCaps {
 
 export interface ServerStatus {
   version: string;
+  /** Stable opaque identifier for the server installation. */
+  serverId?: string;
   bun?: string;
   startedAt?: string;
-  adminAvailable: boolean;
-  uptimeSeconds: number;
+  adminAvailable?: boolean;
+  uptimeSeconds?: number;
   bind?: string;
   /** Bind address saved in config; differs from `bind` until a restart applies it. */
   savedBind?: string;
@@ -236,7 +238,7 @@ export interface ServerStatus {
   hasTmdbToken?: boolean;
   hasLibraries?: boolean;
   setupComplete?: boolean;
-  scan: {
+  scan?: {
     scanId: number;
     status: string;
     filesSeen: number;
@@ -244,7 +246,7 @@ export interface ServerStatus {
     issues: number;
     currentFile: string | null;
   } | null;
-  recentScans: Array<{
+  recentScans?: Array<{
     id: number;
     status: string;
     files_seen: number | null;
@@ -253,6 +255,14 @@ export interface ServerStatus {
     finished_at: string | null;
   }>;
   optimizer?: OptimizerStatus;
+}
+
+export interface PlaybackDiagnostic {
+  at: string;
+  kind: "startup" | "rebuffer" | "error";
+  path: "direct" | "hls" | "remux" | "transcode" | null;
+  durationMs: number | null;
+  mediaErrorCode: number | null;
 }
 
 export interface OptimizerStatus {
@@ -278,7 +288,7 @@ export interface OptimizerStatus {
 export interface LibraryItem {
   id: number;
   name: string;
-  type: string;
+  type: "movies" | "tv" | "anime" | string;
   language: string;
   paths: string[];
   counts: { items: number; review: number; unmatched: number };
@@ -300,4 +310,12 @@ export interface ServerSettings {
   tokenSource: string;
   note: string;
   version: string;
+
+  // Prefetch settings
+  prefetchAggressiveLocal: boolean;
+  prefetchMaxConcurrent: number;
+  prefetchMaxCacheMb: number;
+  prefetchOnHover: boolean;
+  prefetchOnScroll: boolean;
+  prefetchNextCount: number;
 }

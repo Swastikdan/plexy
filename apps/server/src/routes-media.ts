@@ -39,6 +39,8 @@ import {
 type SegmentWindow = { start: number; end: number } | null;
 type EpisodeSegments = { intro: SegmentWindow; recap: SegmentWindow; outro: SegmentWindow };
 const segmentCache = new Map<string, { expires: number; value: EpisodeSegments }>();
+const MAX_LIVE_CONVERSIONS = 2;
+let activeLiveConversions = 0;
 
 function parseSegment(value: unknown, duration: number | null): SegmentWindow {
   if (!value || typeof value !== "object") return null;
@@ -235,25 +237,34 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
     );
   }
 
+  if (activeLiveConversions >= MAX_LIVE_CONVERSIONS) {
+    return Response.json(
+      { error: "The server is handling its maximum number of live conversions. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "5" } },
+    );
+  }
+
   const args = conversionArgs(path, options);
-  // Keep prepared-file work from starting during a live stream conversion.
-  // Reason-scoped pauses cannot clear a scan or reset pause by accident.
-  pauseOptimizer("live-conversion");
+  // Keep prepared-file work from starting while any live conversion is active.
+  // The shared pause reason is released only when the last conversion exits.
+  if (activeLiveConversions === 0) pauseOptimizer("live-conversion");
+  activeLiveConversions++;
+  let conversionReleased = false;
+  const releaseConversion = () => {
+    if (conversionReleased) return;
+    conversionReleased = true;
+    activeLiveConversions = Math.max(0, activeLiveConversions - 1);
+    if (activeLiveConversions === 0) resumeOptimizer("live-conversion");
+  };
   let child: ReturnType<typeof spawn>;
   try {
     child = spawn(ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
-    resumeOptimizer("live-conversion");
+    releaseConversion();
     throw err;
   }
 
   let closed = false;
-  let optimizerResumed = false;
-  const resumeBackgroundWork = () => {
-    if (optimizerResumed) return;
-    optimizerResumed = true;
-    resumeOptimizer("live-conversion");
-  };
   let received = 0;
   let stderr = "";
   const stop = () => {
@@ -264,6 +275,8 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
       setTimeout(() => {
         if (child.exitCode === null) child.kill("SIGKILL");
       }, 1500).unref?.();
+    } else {
+      releaseConversion();
     }
   };
 
@@ -280,12 +293,12 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
       child.on("error", (err) => {
         if (closed) return;
         closed = true;
-        resumeBackgroundWork();
+        releaseConversion();
         log.error("media", `${options.mode} process failed`, { message: err.message });
         try { controller.error(new Error("conversion failed")); } catch { /* done */ }
       });
       child.on("exit", (code, signal) => {
-        resumeBackgroundWork();
+        releaseConversion();
         if (closed) return;
         closed = true;
         if (code === 0) {
@@ -321,7 +334,7 @@ async function conversionResponse(path: string, options: ConversionOptions): Pro
   });
   if (early === "failed") {
     stop();
-    resumeBackgroundWork();
+    releaseConversion();
     return Response.json(
       { error: `${options.mode === "remux" ? "Remux" : "Conversion"} could not start for this file.` },
       { status: options.mode === "remux" ? 500 : 503 },

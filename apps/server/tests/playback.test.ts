@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyPlayability } from "../src/playback";
+import { classifyPlayability, rangeResponse } from "../src/playback";
 
 describe("Playback Classification (PRD 5.6, 5.8)", () => {
   const browserWithBasicCaps = {
@@ -80,5 +80,35 @@ describe("Playback Classification (PRD 5.6, 5.8)", () => {
 
     expect(verdict.path).toBe("unsupported");
     expect(verdict.reason).toContain("No video track");
+  });
+});
+
+describe("media byte ranges", () => {
+  const media = new Blob(["0123456789"]);
+
+  test("serves requested and suffix ranges with correct headers and bytes", async () => {
+    const partial = await rangeResponse(new Request("http://localhost/media", {
+      headers: { Range: "bytes=3-5" },
+    }), media, media.size);
+    expect(partial.status).toBe(206);
+    expect(partial.headers.get("content-range")).toBe("bytes 3-5/10");
+    expect(await partial.text()).toBe("345");
+
+    const suffix = await rangeResponse(new Request("http://localhost/media", {
+      headers: { Range: "bytes=-3" },
+    }), media, media.size);
+    expect(suffix.status).toBe(206);
+    expect(suffix.headers.get("content-range")).toBe("bytes 7-9/10");
+    expect(await suffix.text()).toBe("789");
+  });
+
+  test("rejects unsatisfiable and multipart ranges", async () => {
+    for (const range of ["bytes=10-", "bytes=1-2,5-6"]) {
+      const response = await rangeResponse(new Request("http://localhost/media", {
+        headers: { Range: range },
+      }), media, media.size);
+      expect(response.status).toBe(416);
+      expect(response.headers.get("content-range")).toBe("bytes */10");
+    }
   });
 });

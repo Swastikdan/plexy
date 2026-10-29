@@ -20,6 +20,13 @@ export const queries = {
       },
     }),
 
+  playbackDiagnostics: () =>
+    queryOptions({
+      queryKey: ["playback-diagnostics"],
+      queryFn: api.playbackDiagnostics,
+      refetchInterval: 15_000,
+    }),
+
   home: () =>
     queryOptions({
       queryKey: ["home"],

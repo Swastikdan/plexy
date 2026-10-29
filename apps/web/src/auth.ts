@@ -13,6 +13,7 @@ export interface AuthDevice {
   name: string;
   createdAt: string;
   lastSeen: string | null;
+  lastIp?: string | null;
   revoked?: boolean;
 }
 
@@ -159,6 +160,15 @@ export async function listDevices(): Promise<AuthDevice[]> {
 /** Owner-only: revoke a device. */
 export async function revokeDevice(id: number): Promise<void> {
   const res = await fetch(apiUrl(`/api/auth/devices/${id}`), {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+}
+
+/** Owner-only: permanently remove a device after it has been revoked. */
+export async function removeRevokedDevice(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`/api/auth/devices/${id}/remove`), {
     method: "DELETE",
     credentials: "include",
   });

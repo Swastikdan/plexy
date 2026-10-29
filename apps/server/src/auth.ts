@@ -7,6 +7,7 @@
 /// requires a valid device token — including on LAN.
 import { q, run, type Row } from "./db";
 import { log } from "./logger";
+import { remoteAddress, type LoopbackContext } from "./essentials";
 
 const TOKEN_BYTES = 32;
 const PAIRING_CODE_TTL_MINUTES = 10;
@@ -19,6 +20,7 @@ export interface AuthDevice {
   name: string;
   createdAt: string;
   lastSeen: string | null;
+  lastIp: string | null;
 }
 
 export interface AuthResult {
@@ -57,33 +59,49 @@ function toDevice(row: Row): AuthDevice {
     name: String(row.name ?? "Device"),
     createdAt: String(row.created_at ?? ""),
     lastSeen: row.last_seen == null ? null : String(row.last_seen),
+    lastIp: row.last_ip == null ? null : String(row.last_ip),
   };
 }
 
 const lastSeenWrites = new Map<number, number>();
 
-function touch(device: AuthDevice): void {
+function touch(device: AuthDevice, remoteIp?: string | null): void {
   const now = Date.now();
   const previous = lastSeenWrites.get(device.id) ?? 0;
-  if (now - previous < LAST_SEEN_THROTTLE_MS) return;
+  if (now - previous < LAST_SEEN_THROTTLE_MS) {
+    if (remoteIp && remoteIp !== device.lastIp) {
+      try {
+        run("UPDATE auth_devices SET last_ip = ? WHERE id = ?", remoteIp, device.id);
+        device.lastIp = remoteIp;
+      } catch {
+        /* last_ip is advisory; never fail a request over it */
+      }
+    }
+    return;
+  }
   lastSeenWrites.set(device.id, now);
   try {
-    run("UPDATE auth_devices SET last_seen = datetime('now') WHERE id = ?", device.id);
+    run(
+      "UPDATE auth_devices SET last_seen = datetime('now'), last_ip = COALESCE(?, last_ip) WHERE id = ?",
+      remoteIp ?? null,
+      device.id,
+    );
+    if (remoteIp) device.lastIp = remoteIp;
   } catch {
     /* last_seen is advisory; never fail a request over it */
   }
 }
 
 /** Resolve a raw bearer token to its device, or null when invalid/revoked. */
-export function verifyToken(token: string): AuthDevice | null {
+export function verifyToken(token: string, remoteIp?: string | null): AuthDevice | null {
   const raw = String(token ?? "").trim();
   if (!raw) return null;
   const row = q<Row, [string]>(
-    "SELECT id, device_id, name, created_at, last_seen FROM auth_devices WHERE token_hash = ? AND revoked = 0",
+    "SELECT id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ? AND revoked = 0",
   ).get(hash(raw));
   if (!row) return null;
   const device = toDevice(row);
-  touch(device);
+  touch(device, remoteIp);
   return device;
 }
 
@@ -92,7 +110,7 @@ export function peekToken(token: string): AuthDevice | null {
   const raw = String(token ?? "").trim();
   if (!raw) return null;
   const row = q<Row, [string]>(
-    "SELECT id, device_id, name, created_at, last_seen FROM auth_devices WHERE token_hash = ? AND revoked = 0",
+    "SELECT id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ? AND revoked = 0",
   ).get(hash(raw));
   return row ? toDevice(row) : null;
 }
@@ -102,7 +120,7 @@ export function peekToken(token: string): AuthDevice | null {
  * replaced in place, so the desktop app can rotate credentials on every launch
  * without leaving stale entries behind.
  */
-export function createDevice(name: string, deviceId?: string | null): AuthResult {
+export function createDevice(name: string, deviceId?: string | null, lastIp?: string | null): AuthResult {
   const token = newToken();
   const label = String(name ?? "").trim().slice(0, 80) || "Device";
   const id = deviceId ? String(deviceId).trim().slice(0, 120) || null : null;
@@ -111,9 +129,10 @@ export function createDevice(name: string, deviceId?: string | null): AuthResult
     const existing = q<Row, [string]>("SELECT id FROM auth_devices WHERE device_id = ?").get(id);
     if (existing) {
       run(
-        "UPDATE auth_devices SET name = ?, token_hash = ?, revoked = 0, last_seen = datetime('now') WHERE id = ?",
+        "UPDATE auth_devices SET name = ?, token_hash = ?, revoked = 0, last_seen = datetime('now'), last_ip = COALESCE(?, last_ip) WHERE id = ?",
         label,
         hash(token),
+        lastIp ?? null,
         Number(existing.id),
       );
       const device = peekToken(token);
@@ -122,12 +141,13 @@ export function createDevice(name: string, deviceId?: string | null): AuthResult
   }
 
   run(
-    "INSERT INTO auth_devices (device_id, name, token_hash) VALUES (?, ?, ?)",
+    "INSERT INTO auth_devices (device_id, name, token_hash, last_ip) VALUES (?, ?, ?, ?)",
     id,
     label,
     hash(token),
+    lastIp ?? null,
   );
-  const row = q<Row, [string]>("SELECT id, device_id, name, created_at, last_seen FROM auth_devices WHERE token_hash = ?")
+  const row = q<Row, [string]>("SELECT id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ?")
     .get(hash(token))!;
   return { token, device: toDevice(row) };
 }
@@ -140,13 +160,23 @@ export function revokeDevice(id: number): boolean {
   return true;
 }
 
+/** Permanently remove a device only after its credential has been revoked. */
+export function removeRevokedDevice(id: number): boolean {
+  const row = q<{ id: number }, [number]>(
+    "DELETE FROM auth_devices WHERE id = ? AND revoked = 1 RETURNING id",
+  ).get(id);
+  if (!row) return false;
+  lastSeenWrites.delete(id);
+  return true;
+}
+
 export function revokeByToken(token: string): boolean {
   const device = peekToken(token);
   return device ? revokeDevice(device.id) : false;
 }
 
 export function listDevices(): Array<AuthDevice & { revoked: boolean }> {
-  return q<Row>("SELECT id, device_id, name, created_at, last_seen, revoked FROM auth_devices ORDER BY created_at DESC")
+  return q<Row>("SELECT id, device_id, name, created_at, last_seen, last_ip, revoked FROM auth_devices ORDER BY created_at DESC")
     .all()
     .map((row) => ({ ...toDevice(row), revoked: Number(row.revoked) === 1 }));
 }
@@ -197,26 +227,34 @@ export function redeemPairingCode(
   code: string,
   name: string,
   deviceId?: string | null,
+  lastIp?: string | null,
 ): AuthResult | null {
   const raw = String(code ?? "").replace(/\D/g, "").slice(0, 6);
   if (raw.length !== 6) return null;
 
-  const row = q<Row, [string]>(`
-    SELECT id FROM auth_pairing
-    WHERE code_hash = ? AND used = 0 AND expires_at > datetime('now')
-    ORDER BY id DESC LIMIT 1
+  // Claim the code in one statement so simultaneous requests cannot both
+  // observe it as unused and mint two device tokens.
+  const row = q<{ id: number }, [string]>(`
+    UPDATE auth_pairing
+    SET used = 1
+    WHERE id = (
+      SELECT id FROM auth_pairing
+      WHERE code_hash = ? AND used = 0 AND expires_at > datetime('now')
+      ORDER BY id DESC LIMIT 1
+    )
+    AND used = 0 AND expires_at > datetime('now')
+    RETURNING id
   `).get(hash(raw));
   if (!row) return null;
 
-  run("UPDATE auth_pairing SET used = 1 WHERE id = ?", Number(row.id));
-  const result = createDevice(name || "Device", deviceId);
+  const result = createDevice(name || "Device", deviceId, lastIp);
   log.info("auth", "device paired", { id: result.device.id, name: result.device.name });
   return result;
 }
 
 // --- request helpers ---------------------------------------------------------
 
-/** Bearer header first, then the HttpOnly session cookie, then `?token=` for media. */
+/** Bearer header for API clients, then the HttpOnly session cookie for browser media. */
 export function tokenFromRequest(request: Request): string | null {
   const header = request.headers.get("authorization");
   if (header) {
@@ -230,18 +268,17 @@ export function tokenFromRequest(request: Request): string | null {
       const [key, ...rest] = part.trim().split("=");
       if (key === "plexy_session") {
         const value = rest.join("=").trim();
-        if (value) return decodeURIComponent(value);
+        if (value) {
+          try {
+            return decodeURIComponent(value);
+          } catch {
+            return null;
+          }
+        }
       }
     }
   }
 
-  try {
-    const url = new URL(request.url);
-    const token = url.searchParams.get("token");
-    if (token) return token;
-  } catch {
-    /* malformed URL: no token */
-  }
   return null;
 }
 
@@ -313,7 +350,8 @@ const PUBLIC_API_PATHS = new Set(["/api/server/status", "/api/server/status/"]);
  * The test suite drives `app.handle()` directly through `buildApp()`, where
  * there is no socket to pair from, so authentication is opt-out there.
  */
-export function authGuard({ request }: { request: Request }, force = false): Response | undefined {
+export function authGuard(ctx: LoopbackContext, force = false): Response | undefined {
+  const { request } = ctx;
   if (Bun.env.PLEXY_AUTH_DISABLED === "1") return undefined;
   if (Bun.env.NODE_ENV === "test" && !force) return undefined;
 
@@ -332,7 +370,7 @@ export function authGuard({ request }: { request: Request }, force = false): Res
   if (url.pathname.startsWith("/api/auth/")) return undefined;
 
   const token = tokenFromRequest(request);
-  if (token && verifyToken(token)) return undefined;
+  if (token && verifyToken(token, remoteAddress(ctx))) return undefined;
 
   return Response.json(
     {

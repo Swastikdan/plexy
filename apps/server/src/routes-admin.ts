@@ -13,10 +13,12 @@ import { getConfig, save, redactedView } from "./config";
 import { setLogLevel, getLogLevel, log } from "./logger";
 import { APP_VERSION, crashDir } from "./crash";
 import { clearTmdbCache, testToken } from "./tmdb";
-import { denyIfNotLocal, isLoopbackContext } from "./essentials";
+import { denyIfNotLocal, isDirectLoopbackContext } from "./essentials";
+import { tokenFromRequest, verifyToken } from "./auth";
 import { startScan, currentScan, onScanProgress } from "./scan";
 import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { VIDEO_EXTENSIONS } from "./parse";
+import { getServerId } from "./server-identity";
 import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
 import { getLiveBinding } from "./runtime";
 import {
@@ -95,18 +97,29 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Read-only status for both admin and viewer shells. */
   .get("/server/status", async (ctx) => {
     const cfg = await getConfig();
+    const credential = tokenFromRequest(ctx.request);
+    const authenticated = Boolean(credential && verifyToken(credential));
+    const hasLibraries = Boolean(q<Row>("SELECT id FROM libraries LIMIT 1").get());
+    // Server onboarding configures the metadata source. Libraries are managed
+    // independently, so users can finish setup before adding media folders.
+    const setupComplete = Boolean(cfg.tmdbToken);
+    // This public probe exists only to identify the server and decide whether
+    // pairing is needed. Operational details are for authenticated clients.
+    const serverId = getServerId();
+    if (!authenticated) return { version: APP_VERSION, serverId, setupComplete };
+
     const live = getLiveBinding();
     const recentScans = q<Row>(
       "SELECT id, status, files_seen, issues, started_at, finished_at FROM scans ORDER BY id DESC LIMIT 5",
     ).all();
-    const hasLibraries = Boolean(q<Row>("SELECT id FROM libraries LIMIT 1").get());
     const hasTmdbToken = Boolean(cfg.tmdbToken);
     return {
       version: APP_VERSION,
+      serverId,
       bun: Bun.version,
       startedAt: new Date(startedAt).toISOString(),
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
-      adminAvailable: isLoopbackContext(ctx),
+      adminAvailable: isDirectLoopbackContext(ctx),
       // Report the address the listener actually bound to, not just what is
       // saved: the owner can change the setting while the server is running.
       bind: live.bind || cfg.bindAddress,
@@ -116,7 +129,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       lanUrls: live.lanUrls,
       hasTmdbToken,
       hasLibraries,
-      setupComplete: hasTmdbToken && hasLibraries,
+      setupComplete,
       scan: currentScan,
       recentScans,
       optimizer: await optimizerStatus({ includeFiles: false }),
@@ -144,6 +157,14 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.probeConcurrency !== undefined) patch.probeConcurrency = body.probeConcurrency;
     if (body.bindAddress) patch.bindAddress = body.bindAddress;
     if (body.note !== undefined) patch.note = body.note;
+    // Local prefetch preferences stay server-owned in config.json. The client
+    // still gates the actual work on being Electron or a loopback page.
+    if (body.prefetchAggressiveLocal !== undefined) patch.prefetchAggressiveLocal = body.prefetchAggressiveLocal;
+    if (body.prefetchMaxConcurrent !== undefined) patch.prefetchMaxConcurrent = body.prefetchMaxConcurrent;
+    if (body.prefetchMaxCacheMb !== undefined) patch.prefetchMaxCacheMb = body.prefetchMaxCacheMb;
+    if (body.prefetchOnHover !== undefined) patch.prefetchOnHover = body.prefetchOnHover;
+    if (body.prefetchOnScroll !== undefined) patch.prefetchOnScroll = body.prefetchOnScroll;
+    if (body.prefetchNextCount !== undefined) patch.prefetchNextCount = body.prefetchNextCount;
     // Tokens only round-trip when genuinely provided; the UI never echoes the
     // stored value, so "{redacted}" sentinels are ignored.
     if (body.tmdbToken !== undefined && body.tmdbToken.trim() !== ""
@@ -176,6 +197,12 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       tmdbToken: t.Optional(t.String()),
       bindAddress: t.Optional(t.Union([t.Literal("127.0.0.1"), t.Literal("0.0.0.0")])),
       note: t.Optional(t.String()),
+      prefetchAggressiveLocal: t.Optional(t.Boolean()),
+      prefetchMaxConcurrent: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
+      prefetchMaxCacheMb: t.Optional(t.Integer({ minimum: 10, maximum: 500 })),
+      prefetchOnHover: t.Optional(t.Boolean()),
+      prefetchOnScroll: t.Optional(t.Boolean()),
+      prefetchNextCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
     }),
   })
 
@@ -404,9 +431,64 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   }, {
     body: t.Object({
       name: t.String({ minLength: 1 }),
-      type: t.Union([t.Literal("movies"), t.Literal("tv")]),
+      type: t.Union([t.Literal("movies"), t.Literal("tv"), t.Literal("anime")]),
       language: t.Optional(t.String()),
       paths: t.Array(t.String({ minLength: 1 }), { minLength: 1 }),
+    }),
+  })
+
+  .patch("/libraries/:id", async ({ params, body, server, request }) => {
+    const denied = denyIfNotLocal({ server, request }, "PATCH /api/libraries/:id");
+    if (denied) return denied;
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: "Invalid library id." }, { status: 400 });
+    }
+    const library = q<Row>("SELECT id FROM libraries WHERE id = ?").get(id);
+    if (!library) return Response.json({ error: "Library not found." }, { status: 404 });
+    const name = body.name.trim();
+    if (!name) return Response.json({ error: "Enter a library name." }, { status: 400 });
+
+    const otherPaths = q<Row>("SELECT path FROM library_paths WHERE library_id != ?").all(id)
+      .map((row) => String(row.path));
+    const paths = [...new Set(body.paths.map(expandPath))];
+    const resolvedPaths: string[] = [];
+    for (const current of paths) {
+      let exists = false;
+      try {
+        exists = (await stat(current)).isDirectory();
+      } catch {
+        try {
+          await readdir(current);
+          exists = true;
+        } catch {}
+      }
+      if (!exists) {
+        return Response.json({ error: `Path does not exist or is not a directory: ${current}` }, { status: 400 });
+      }
+      const overlap = otherPaths.find((existing) =>
+        existing === current || current.startsWith(existing + sep) || existing.startsWith(current + sep));
+      if (overlap) {
+        return Response.json({ error: `This path overlaps another library root (${overlap})` }, { status: 400 });
+      }
+      otherPaths.push(current);
+      resolvedPaths.push(current);
+    }
+
+    run("UPDATE libraries SET name = ?, type = ? WHERE id = ?", name, body.type, id);
+    run("DELETE FROM library_paths WHERE library_id = ?", id);
+    for (const path of resolvedPaths) {
+      q("INSERT INTO library_paths (library_id, path) VALUES (?, ?)").run(id, path);
+    }
+    log.info("scanner", "library updated", { id, name, type: body.type, paths: resolvedPaths });
+    startScan([id]);
+    return { ok: true as const };
+  }, {
+    params: t.Object({ id: t.Numeric() }),
+    body: t.Object({
+      name: t.String({ minLength: 1 }),
+      type: t.Union([t.Literal("movies"), t.Literal("tv"), t.Literal("anime")]),
+      paths: t.Array(t.String({ minLength: 1 }), { minItems: 1 }),
     }),
   })
 

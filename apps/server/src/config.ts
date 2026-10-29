@@ -33,6 +33,20 @@ const ConfigSchema = z.object({
   tmdbToken: z.string().default(""),
   /** Free-form admin notes to self. */
   note: z.string().default(""),
+
+  // --- Prefetch settings (aggressive local asset downloading) ---
+  /** Enable aggressive prefetching of assets (trickplay, thumbnails, posters, backdrops) when running locally. */
+  prefetchAggressiveLocal: z.boolean().default(true),
+  /** Maximum concurrent asset downloads. */
+  prefetchMaxConcurrent: z.number().int().min(1).max(10).default(3),
+  /** Maximum cache size in MB for prefetched assets. */
+  prefetchMaxCacheMb: z.number().int().min(10).max(500).default(50),
+  /** Prefetch assets on poster hover. */
+  prefetchOnHover: z.boolean().default(true),
+  /** Prefetch assets for items scrolled into view. */
+  prefetchOnScroll: z.boolean().default(true),
+  /** Number of next items to prefetch when scrolling. */
+  prefetchNextCount: z.number().int().min(1).max(20).default(5),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -100,6 +114,14 @@ export function redactedView(cfg: Config) {
         ? "env"
         : "settings",
     note: cfg.note,
+
+    // Prefetch settings
+    prefetchAggressiveLocal: cfg.prefetchAggressiveLocal,
+    prefetchMaxConcurrent: cfg.prefetchMaxConcurrent,
+    prefetchMaxCacheMb: cfg.prefetchMaxCacheMb,
+    prefetchOnHover: cfg.prefetchOnHover,
+    prefetchOnScroll: cfg.prefetchOnScroll,
+    prefetchNextCount: cfg.prefetchNextCount,
   };
 }
 

@@ -6,10 +6,13 @@
 /// the Electron window loads a static copy of the UI and this gate offers the
 /// same connection form.
 import { useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { ConnectScreen } from "./connect-screen";
 import { PairScreen } from "./pair-screen";
 import { getApiBase, isElectron, probeServer } from "../server-config";
 import { getAuthDevice } from "../auth";
+import { reportConnectionHealth, subscribeConnectionHealth, type ConnectionHealth } from "../lib/connection-health";
 
 type GateState =
   | { phase: "checking" }
@@ -18,7 +21,10 @@ type GateState =
   | { phase: "down"; error?: string; originUrl?: string };
 
 export function ServerGate({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [state, setState] = useState<GateState>({ phase: "checking" });
+  const [health, setHealth] = useState<ConnectionHealth>("online");
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +76,58 @@ export function ServerGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => subscribeConnectionHealth(setHealth), []);
+
+  const retryConnection = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    const result = await probeServer(getApiBase());
+    if (!result.ok) {
+      setHealth(result.error.includes("HTTP 5") ? "unavailable" : "offline");
+      setRetrying(false);
+      return;
+    }
+    const device = await getAuthDevice();
+    if (!device) {
+      setState({ phase: "auth", serverUrl: result.url });
+      setRetrying(false);
+      return;
+    }
+    reportConnectionHealth("online");
+    setRetrying(false);
+    await queryClient.invalidateQueries();
+  };
+
+  useEffect(() => {
+    if (state.phase !== "ready" || health === "online") return;
+    let cancelled = false;
+    let delay = 5_000;
+    let timer: ReturnType<typeof setTimeout>;
+    const probe = async () => {
+      if (cancelled) return;
+      const result = await probeServer(getApiBase());
+      if (cancelled) return;
+      if (result.ok) {
+        const device = await getAuthDevice();
+        if (cancelled) return;
+        if (!device) {
+          setState({ phase: "auth", serverUrl: result.url });
+          return;
+        }
+        reportConnectionHealth("online");
+        await queryClient.invalidateQueries();
+        return;
+      }
+      delay = Math.min(delay * 2, 60_000);
+      timer = setTimeout(probe, delay);
+    };
+    timer = setTimeout(probe, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [health, queryClient, state.phase]);
+
   // A revoked token during a session: drop back to the pairing screen instead
   // of leaving every page showing request errors.
   useEffect(() => {
@@ -104,7 +162,29 @@ export function ServerGate({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {state.phase === "ready" && health !== "online" && (
+        <div className="sticky top-0 z-[100] flex items-center justify-center gap-3 border-b border-amber-500/30 bg-surface px-4 py-2 text-xs text-ink shadow-lg">
+          {retrying ? <Loader2 size={15} className="animate-spin" /> : <WifiOff size={15} />}
+          <span>
+            {health === "offline"
+              ? `Cannot reach ${getApiBase()}. Your screen will reconnect automatically.`
+              : "The server is reachable, but an API request failed. Retrying automatically."}
+          </span>
+          <button
+            type="button"
+            onClick={() => void retryConnection()}
+            disabled={retrying}
+            className="inline-flex shrink-0 items-center gap-1 font-semibold text-ink hover:text-brand-text disabled:opacity-50"
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        </div>
+      )}
+      {children}
+    </>
+  );
 }
 
 function ConnectionSplash() {

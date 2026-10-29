@@ -1,13 +1,12 @@
-/* Plexy theme (PRD 10).
+/* Plexy theme — T3 Code-inspired.
  *
- * - Deep dark canvas by default, with a real light theme both share one token set
- * - shadcn base-nova preset: flat surfaces, single blue primary, soft corners
- * - Single brand accent (blue) for actions, progress and focus; amber reserved for ratings/warnings
- * - Sora Variable for display type, Geist Variable for UI text
- * - Fluid, responsive micro-interactions (press scale, smooth transitions)
+ * - Matte true-black canvas; flat, zero-radius surfaces
+ * - White is the single action color; no colored brand accent in chrome
+ * - Geist Variable for all text — one family, two weights
+ * - Hairline white/8% borders; no drop-shadows, no glow blobs
+ * - Amber reserved for ratings only
  */
 @import "tailwindcss";
-@import "@fontsource-variable/sora/index.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
@@ -65,17 +64,17 @@
 
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-sans);
-  --font-display: "Sora Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sans);
   --font-body: var(--font-sans);
 
-  /* Corner system: every radius derives from --radius (0.625rem = smooth modern corners) */
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.25);
-  --radius-2xl: calc(var(--radius) * 1.5);
-  --radius-hero: calc(var(--radius) * 1.4);
-  --radius-poster: var(--radius);
+  /* Corner system: every radius derives from --radius (0 = sharp, T3-style geometry) */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.5);
+  --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 3);
+  --radius-hero: calc(var(--radius) * 2);
+  --radius-poster: calc(var(--radius) * 1.5);
 
   /* Emil Kowalski custom motion curves */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -240,57 +239,69 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Route change: a short, quiet fade-up so pages never snap in.
+ * No fill mode: the transform is gone once the animation ends, so fixed
+ * descendants are not trapped in a containing block. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-enter 180ms var(--ease-out);
+}
+
 /* Dark is the default theme; the Settings toggle flips data-theme on <html>. */
 :root {
   color-scheme: dark;
-  --radius: 0.625rem;
+  --radius: 0rem;
 
-  /* Plexy tokens */
-  --canvas: #0d0d0f;
-  --surface: #161618;
-  --surface-2: #1f1f23;
-  --surface-hover: #27272b;
-  --ink: #f5f6f7;
-  --ink-muted: #9ba0aa;
-  --line: rgba(255, 255, 255, 0.12);
-  --line-strong: rgba(255, 255, 255, 0.26);
-  --brand: #3b7df9;
-  --brand-hover: #5591fa;
-  --brand-active: #2f68e4;
-  --brand-text: #8db3ff;
+  /* Plexy tokens — T3 Code palette */
+  --canvas: #080808;
+  --surface: #111111;
+  --surface-2: #1a1a1a;
+  --surface-hover: #222222;
+  --ink: #f0f0f0;
+  --ink-muted: #777777;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  /* White is the single action color — no colored accent in chrome */
+  --brand: #f0f0f0;
+  --brand-hover: #ffffff;
+  --brand-active: #d4d4d4;
+  --brand-text: #a0a0a0;
 
   /* shadcn dark palette (base-nova) */
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.424 0.199 265.638);
-  --primary-foreground: oklch(0.97 0.014 254.604);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(0.95 0 0);
+  --card: oklch(0.12 0 0);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.14 0 0);
+  --popover-foreground: oklch(0.95 0 0);
+  --primary: oklch(0.95 0 0);
+  --primary-foreground: oklch(0.08 0 0);
+  --secondary: oklch(0.18 0 0);
+  --secondary-foreground: oklch(0.85 0 0);
+  --muted: oklch(0.18 0 0);
+  --muted-foreground: oklch(0.48 0 0);
+  --accent: oklch(0.18 0 0);
+  --accent-foreground: oklch(0.95 0 0);
+  --destructive: oklch(0.63 0.2 25);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.95 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.623 0.214 259.815);
-  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.10 0 0);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.95 0 0);
+  --sidebar-primary-foreground: oklch(0.08 0 0);
+  --sidebar-accent: oklch(0.18 0 0);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.95 0 0);
 }
 
 /* One orchestrated entrance: hero and rows rise on first paint */

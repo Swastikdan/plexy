@@ -4,10 +4,12 @@
 import { useEffect, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Search, Settings, Film, Tv, Home, Server } from "lucide-react";
+import { Search, Settings, Film, Tv, Home, Server } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "./poster";
 import { useIsFullscreen } from "../lib/use-fullscreen";
+import { isElectronMac } from "../lib/platform";
+import { BackButton } from "./back-button";
 
 export function TopNav() {
   const [scrolled, setScrolled] = useState(false);
@@ -37,10 +39,7 @@ export function TopNav() {
       : []),
   ];
 
-  const isElectronMac =
-    typeof window !== "undefined" &&
-    (Boolean(window.electronAPI?.isElectron) || /Electron/i.test(navigator.userAgent)) &&
-    (window.electronAPI?.platform === "darwin" || /Mac/i.test(navigator.userAgent));
+  const electronMac = isElectronMac();
 
   useEffect(() => {
     if (window.electronAPI?.onNavigate) {
@@ -63,47 +62,40 @@ export function TopNav() {
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       className={cx(
         "sticky top-0 z-40 select-none px-3 sm:px-6 md:px-8",
-        "transition-[background-color,border-color,backdrop-filter] duration-200 ease-out",
+        "transition-[background-color,border-color] duration-200 ease-out",
         scrolled
-          ? "border-b border-line/80 bg-canvas/90 backdrop-blur-md shadow-xs shadow-black/20"
-          : "border-b border-transparent bg-gradient-to-b from-canvas/90 via-canvas/60 to-transparent backdrop-blur-xs",
+          ? "border-b border-line bg-canvas/95 backdrop-blur-md"
+          : "border-b border-transparent bg-canvas/80 backdrop-blur-sm",
       )}
     >
       <div className="mx-auto max-w-[1500px]">
-        {/* Main top header row */}
-        <div className="flex h-14 sm:h-16 items-center justify-between gap-2 sm:gap-6">
+        {/* Main top header row — three equal tracks keep the nav centered
+            whether the left slot holds the logo or the back button. */}
+        <div className="grid h-12 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:h-14 sm:gap-6">
           {/* Left section: back button OR Plexy logo — never both at once */}
           <div
             style={{
               WebkitAppRegion: "no-drag",
-              paddingLeft: isElectronMac && !isFullscreen ? "88px" : undefined,
+              paddingLeft: electronMac && !isFullscreen ? "88px" : undefined,
             } as React.CSSProperties}
-            className="flex items-center gap-2 sm:gap-3 shrink-0 transition-[padding] duration-200 ease-out"
+            className="flex min-w-0 items-center gap-2 justify-self-start sm:gap-3"
           >
             {canGoBack ? (
               /* On sub-pages: just the back button, no Plexy branding */
-              <button
-                type="button"
-                onClick={() => router.history.back()}
-                aria-label="Go back"
-                title="Back"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-all hover:bg-surface hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
-              >
-                <ArrowLeft size={18} />
-              </button>
+              <BackButton onClick={() => router.history.back()} />
             ) : (
               /* On home: Plexy logo link */
               <Link
                 to="/"
-                className="group flex items-center gap-2 rounded-lg p-1 transition-transform active:scale-97"
+                className="group flex items-center gap-2 p-1 transition-transform active:scale-97"
               >
                 <img
                   src="/icon.svg"
                   alt="Plexy"
-                  className="h-7 w-7 transition-transform duration-200 group-hover:scale-105"
+                  className="h-6 w-6"
                 />
-                <span className="font-display text-lg sm:text-xl font-black tracking-wider text-brand-text transition-[filter] group-hover:brightness-110">
-                  PLEXY
+                <span className="font-sans text-base font-bold tracking-tight text-ink transition-colors group-hover:text-ink/80">
+                  Plexy
                 </span>
               </Link>
             )}
@@ -112,7 +104,7 @@ export function TopNav() {
           {/* Desktop Navigation Links */}
           <nav
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-            className="hidden sm:flex items-center gap-1.5"
+            className="hidden items-center gap-0.5 justify-self-center sm:flex"
             aria-label="Main Navigation"
           >
             {navLinks.map((l) => (
@@ -120,7 +112,7 @@ export function TopNav() {
                 key={l.label}
                 to={l.to}
                 params={"params" in l ? l.params : undefined}
-                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs md:text-sm font-medium text-ink-muted transition-all hover:text-ink hover:bg-surface/60 active:scale-95 [&.active]:text-ink [&.active]:bg-surface [&.active]:border [&.active]:border-line/60 [&.active]:shadow-xs"
+                className="whitespace-nowrap px-3 py-1.5 text-xs md:text-sm font-medium text-ink-muted transition-colors hover:text-ink active:scale-95 [&.active]:text-ink"
                 activeOptions={{ exact: l.label === "Home" }}
               >
                 {l.label}
@@ -131,24 +123,24 @@ export function TopNav() {
           {/* Right section: Search + Settings */}
           <div
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-            className="flex items-center gap-1.5 sm:gap-2"
+            className="flex items-center gap-1 justify-self-end"
           >
             <Link
               to="/connect"
               aria-label="Server connection"
               title="Server connection"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-all hover:bg-surface hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2 [&.active]:bg-surface [&.active]:text-ink"
+              className="inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2 [&.active]:text-ink"
             >
-              <Server size={18} />
+              <Server size={17} />
             </Link>
 
             <Link
               to="/search"
               aria-label="Search"
               title="Search"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-all hover:bg-surface hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2 [&.active]:bg-surface [&.active]:text-ink"
+              className="inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2 [&.active]:text-ink"
             >
-              <Search size={18} />
+              <Search size={17} />
             </Link>
 
             {/* Settings button - desktop only (mobile accesses via bottom bar) */}
@@ -156,9 +148,9 @@ export function TopNav() {
               to="/admin"
               aria-label="Settings"
               title="Settings"
-              className="hidden sm:inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-all hover:bg-surface hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
+              className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2"
             >
-              <Settings size={18} />
+              <Settings size={17} />
             </Link>
           </div>
         </div>

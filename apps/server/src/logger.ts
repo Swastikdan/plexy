@@ -33,6 +33,9 @@ function isDevRuntime(): boolean {
 /** Patterns that must never reach the log file or a crash report. */
 const REDACT: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  /plexy_session=[^;\s"]+/gi,
+  /([?&]token=)[^&\s"]+/gi,
+  /(?:\/Users\/|\/home\/|\/Volumes\/|\/mnt\/|[A-Z]:\\\\)[^\s"']+/g,
   /eyJhbGciOi[A-Za-z0-9._~+/=-]{20,}/g, // TMDB v4 read-access tokens are JWTs
   /("(?:api[_.-]?key|token|authorization)"\s*:\s*)"[^"]*"/gi,
 ];

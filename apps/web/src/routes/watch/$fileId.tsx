@@ -10,12 +10,18 @@ import { selectControls } from "@videojs/core/dom";
 import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
 import { VideoSkin } from "@/components/videojs/video/skin";
 import { api, type Playability, type SubtitleTrack } from "../../client";
-import { probeBrowserCaps } from "@plexy/api-client";
+import { probeBrowserCaps, type PlayPath } from "@plexy/api-client";
 import { queries } from "../../queries";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
+import { getPlaybackPreferences } from "../../lib/playback-preferences";
+import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
 
 const NEXT_SKIP_KEY = "plexy:next-episode-skips:v1";
 const SEGMENT_SKIP_KEY = "plexy:segment-skips:v1";
+
+function diagnosticPlaybackPath(path: PlayPath | null): Exclude<PlayPath, "unsupported"> | undefined {
+  return path && path !== "unsupported" ? path : undefined;
+}
 
 function readNextSkips(): Record<string, number> {
   try {
@@ -86,6 +92,7 @@ function WatchRoute() {
   // Synchronously probe browser capabilities so query is enabled immediately on mount (prevents deadlock)
   const [caps] = useState<string>(() => JSON.stringify(probeBrowserCaps()));
   const [knownDuration, setKnownDuration] = useState<number | null>(null);
+  const [playbackPreferences] = useState(getPlaybackPreferences);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
   const [mediaRetryKey, setMediaRetryKey] = useState(0);
   const seekDragRef = useRef(false);
@@ -96,6 +103,10 @@ function WatchRoute() {
   const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queuedButtonSeekRef = useRef<number | null>(null);
   const buttonSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playbackStartedAtRef = useRef(performance.now());
+  const playbackStartedRef = useRef(false);
+  const playbackPathRef = useRef<PlayPath | null>(null);
+  const waitingSinceRef = useRef<number | null>(null);
   const autoAdvanceRef = useRef(false);
   const autoAdvanceTriggeredRef = useRef(false);
 
@@ -110,6 +121,7 @@ function WatchRoute() {
   const nextPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showBufferingAfterDelay = useCallback(() => {
+    if (waitingSinceRef.current == null) waitingSinceRef.current = performance.now();
     if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
     bufferingTimerRef.current = setTimeout(() => setIsBuffering(true), 180);
     if (stallRecoveryTimerRef.current) clearTimeout(stallRecoveryTimerRef.current);
@@ -127,11 +139,27 @@ function WatchRoute() {
     bufferingTimerRef.current = null;
     stallRecoveryTimerRef.current = null;
     setIsBuffering(false);
+    const waitingSince = waitingSinceRef.current;
+    waitingSinceRef.current = null;
+    if (waitingSince != null && playbackStartedRef.current) {
+      const durationMs = Math.round(performance.now() - waitingSince);
+      if (durationMs >= 180) {
+        void api.reportPlaybackDiagnostic({
+          kind: "rebuffer",
+          path: diagnosticPlaybackPath(playbackPathRef.current),
+          durationMs,
+        }).catch(() => {});
+      }
+    }
   }, []);
 
   // Fetch complete player manifest
   const hasInitializedAudioRef = useRef(false);
   useEffect(() => {
+    playbackStartedAtRef.current = performance.now();
+    playbackStartedRef.current = false;
+    playbackPathRef.current = null;
+    waitingSinceRef.current = null;
     hasInitializedAudioRef.current = false;
     seekDragRef.current = false;
     deferredSeekRef.current = null;
@@ -166,6 +194,10 @@ function WatchRoute() {
     enabled: !!caps,
   });
 
+  useEffect(() => {
+    playbackPathRef.current = play.data?.path ?? null;
+  }, [play.data?.path]);
+
   // Set default audio track from manifest once on initial load
   useEffect(() => {
     if (!hasInitializedAudioRef.current && play.data?.audioTracks && play.data.audioTracks.length > 0) {
@@ -181,6 +213,7 @@ function WatchRoute() {
   // Subtitle tracks
   const tracksQuery = useQuery({ ...queries.subtitles(Number(fileId)), enabled: !!caps });
   const tracks = (tracksQuery.data?.tracks ?? []) as (SubtitleTrack & { isDefault?: boolean })[];
+
   const skipSegmentsQuery = useQuery({
     queryKey: ["skip-segments", fileId],
     queryFn: () => api.skipSegments(Number(fileId)),
@@ -216,6 +249,40 @@ function WatchRoute() {
     return api.streamUrl(Number(fileId), effectivePath, streamStart || undefined, selectedAudioIndex);
   }, [fileId, effectivePath, streamStart, selectedAudioIndex]);
 
+  useEffect(() => {
+    if (!playbackPreferences.autoSubtitles || !streamUrl) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const applyPreferredSubtitle = () => {
+      const textTracks = video.textTracks;
+      if (!textTracks?.length) return;
+      const preferred = playbackPreferences.subtitleLanguage.toLowerCase().split(/[-_]/, 1)[0];
+      let selected = -1;
+      for (let i = 0; i < textTracks.length; i++) {
+        const language = textTracks[i]?.language.toLowerCase().split(/[-_]/, 1)[0];
+        if (selected < 0 && language === preferred) selected = i;
+      }
+      if (selected < 0) {
+        const defaultElement = [...video.querySelectorAll<HTMLTrackElement>("track[kind='subtitles'], track[kind='captions']")]
+          .find((element) => tracks.some((track) => track.isDefault && (track.title === element.label || track.language === element.srclang)));
+        if (defaultElement) selected = Array.from(textTracks).indexOf(defaultElement.track);
+      }
+      if (selected < 0) return;
+      for (let i = 0; i < textTracks.length; i++) {
+        if (textTracks[i]?.kind === "subtitles" || textTracks[i]?.kind === "captions") {
+          textTracks[i]!.mode = i === selected ? "showing" : "disabled";
+        }
+      }
+    };
+    video.addEventListener("loadedmetadata", applyPreferredSubtitle);
+    video.addEventListener("loadeddata", applyPreferredSubtitle);
+    applyPreferredSubtitle();
+    return () => {
+      video.removeEventListener("loadedmetadata", applyPreferredSubtitle);
+      video.removeEventListener("loadeddata", applyPreferredSubtitle);
+    };
+  }, [playbackPreferences, streamUrl, tracks]);
+
   const handleSeekDragStart = useCallback(() => {
     seekDragRef.current = true;
     deferredSeekRef.current = null;
@@ -230,15 +297,6 @@ function WatchRoute() {
       videoRef.current.currentTime = target;
       commitSeekNowRef.current = false;
     }
-  }, []);
-
-  const handleSeekCommitStart = useCallback(() => {
-    // The slider calls its media seek synchronously after pointerup capture.
-    // Force that final value to commit now, then allow other inputs to debounce.
-    seekDragRef.current = false;
-    deferredSeekRef.current = null;
-    commitSeekNowRef.current = true;
-    queueMicrotask(() => { commitSeekNowRef.current = false; });
   }, []);
 
   const handleSeekBy = useCallback((delta: number) => {
@@ -270,16 +328,30 @@ function WatchRoute() {
     return api.trickplayTrackUrl(Number(fileId));
   }, [fileId, play.data]);
 
-  // Preload all trickplay sprite sheets into browser cache immediately on player load
+  // Warm this file's trickplay sheets. When managed prefetch is active the
+  // service worker serves the scrubber from that cache, so the sheets are not
+  // loaded twice; otherwise the browser's own image cache does the same job.
   useEffect(() => {
-    const sprites = play.data?.trickplay?.sprites;
+    const trickplay = play.data?.trickplay;
+    const sprites = trickplay?.sprites;
     if (sprites && sprites.length > 0) {
-      for (const url of sprites) {
+      if (isPrefetchActive()) {
+        prefetchAssets(sprites);
+        return;
+      }
+      const images = sprites.map((url) => {
         const img = new Image();
         img.src = url;
-      }
+        return img;
+      });
+      return () => {
+        for (const img of images) img.src = "";
+      };
     }
-  }, [play.data?.trickplay?.sprites]);
+    // Only sprite URLs already enumerated in play data are known; otherwise a
+    // ready track may still expose sheet URLs in its cues.
+    if (trickplay?.ready && trickplay.trackUrl) prefetchTrickplayTrack(trickplay.trackUrl);
+  }, [play.data?.trickplay?.sprites, play.data?.trickplay?.ready, play.data?.trickplay?.trackUrl]);
 
   // Immediate loading state feedback on stream changes
   useEffect(() => {
@@ -502,6 +574,14 @@ function WatchRoute() {
 
   const handleLoadedData = useCallback(() => {
     recoveryAttemptsRef.current = 0;
+    if (!playbackStartedRef.current) {
+      playbackStartedRef.current = true;
+      void api.reportPlaybackDiagnostic({
+        kind: "startup",
+        path: diagnosticPlaybackPath(playbackPathRef.current),
+        durationMs: Math.round(performance.now() - playbackStartedAtRef.current),
+      }).catch(() => {});
+    }
     hideBuffering();
   }, [hideBuffering]);
 
@@ -557,6 +637,13 @@ function WatchRoute() {
   }, [recoverPlayback]);
 
   const handleMediaError = useCallback(() => {
+    if (recoveryAttemptsRef.current > 0) {
+      void api.reportPlaybackDiagnostic({
+        kind: "error",
+        path: diagnosticPlaybackPath(playbackPathRef.current),
+        mediaErrorCode: videoRef.current?.error?.code ?? undefined,
+      }).catch(() => {});
+    }
     recoverPlayback();
   }, [recoverPlayback]);
 
@@ -671,6 +758,9 @@ function WatchRoute() {
       const total = knownDuration ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null);
       const target = video.currentTime + delta;
       video.currentTime = total == null ? Math.max(0, target) : Math.min(total, Math.max(0, target));
+      // Deferred keyboard seeks still need to update the slider and time display
+      // while the user is composing a short run of key presses.
+      video.dispatchEvent(new Event("timeupdate"));
     };
 
     const applyStep = (initial: boolean) => {
@@ -680,8 +770,12 @@ function WatchRoute() {
         return;
       }
       const heldFor = performance.now() - startedAt;
-      const maxStep = effectivePath === "direct" || effectivePath === "hls" ? 6 : 2;
-      const step = Math.min(maxStep, 1 + Math.floor(heldFor / 900));
+      const maxStep = effectivePath === "direct" || effectivePath === "hls" ? 30 : 10;
+      const step = heldFor < 350 ? 1
+        : heldFor < 800 ? 2
+          : heldFor < 1_400 ? 4
+            : heldFor < 2_200 ? 8
+              : maxStep;
       seekBy(direction * step);
     };
 
@@ -733,7 +827,7 @@ function WatchRoute() {
         commitTimer = null;
         transactionOpen = false;
         handleSeekDragEnd();
-      }, 160);
+      }, 320);
     };
 
     window.addEventListener("keydown", onKeyDown, true);
@@ -778,7 +872,6 @@ function WatchRoute() {
                 onSelectAudioTrack={handleSelectAudioTrack}
                 onSeekDragStart={handleSeekDragStart}
                 onSeekDragEnd={handleSeekDragEnd}
-                onSeekCommitStart={handleSeekCommitStart}
                 onSeekBy={handleSeekBy}
                 subtitleOffset={subtitleOffset}
                 onAdjustSubtitleOffset={handleAdjustSubtitleOffset}
@@ -833,7 +926,7 @@ function WatchRoute() {
                   <div className="pointer-events-none absolute bottom-24 right-6 z-40 flex flex-col items-end gap-2 sm:bottom-20 sm:right-8">
                     {nextEpisode && (
                       <div className="flex max-w-64 items-center gap-2 rounded-lg border border-white/15 bg-black/75 p-2 text-white shadow-xl backdrop-blur-md">
-                        {nextEpisode.poster && <img src={nextEpisode.poster} alt="" className="h-10 w-16 rounded object-cover" />}
+                        {nextEpisode.poster && <img src={nextEpisode.poster} alt="" className="h-10 w-16 rounded-sm object-cover" />}
                         <span className="min-w-0">
                           <span className="block text-[10px] uppercase tracking-wider text-white/55">Up next</span>
                           <span className="block truncate text-xs font-semibold">{nextEpisode.subtitle}</span>
@@ -900,7 +993,7 @@ function WatchRoute() {
                           kind="subtitles"
                           src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
                           srcLang={t.language ?? undefined}
-                          default={t.isDefault}
+                          default={playbackPreferences.autoSubtitles && t.isDefault}
                         />
                       ))}
                     </HlsJsVideo>
@@ -941,7 +1034,7 @@ function WatchRoute() {
                           kind="subtitles"
                           src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
                           srcLang={t.language ?? undefined}
-                          default={t.isDefault}
+                          default={playbackPreferences.autoSubtitles && t.isDefault}
                         />
                       ))}
                     </Video>

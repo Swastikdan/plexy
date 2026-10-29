@@ -33,8 +33,8 @@ function LibraryRoute() {
   return (
     <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 sm:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4 pt-6 pb-8">
-        <h1 className="font-display text-2xl font-bold tracking-tight">{label}</h1>
-        <div className="flex items-center gap-3">
+        <h1 className="font-sans text-2xl font-bold tracking-tight">{label}</h1>
+        <div className="flex flex-wrap items-center gap-2.5">
           {status.data?.adminAvailable && (
             <Button
               variant="ghost"
@@ -42,12 +42,12 @@ function LibraryRoute() {
               className="h-8 px-3 text-[13px]"
               title="Search all titles and remap wrong matches"
             >
-              <Wrench size={14} />
+              <Wrench size={13} />
               Fix matches
             </Button>
           )}
           <Button
-            variant={unwatched ? "primary" : "ghost"}
+            variant={unwatched ? "surface" : "ghost"}
             onClick={() => setUnwatched((v) => !v)}
             aria-pressed={unwatched}
             className="h-8 px-3 text-[13px]"
@@ -59,7 +59,7 @@ function LibraryRoute() {
             onValueChange={(v) => setSort(String(v))}
             items={SORTS as unknown as readonly { value: string; label: string }[]}
           >
-            <Select.Trigger aria-label="Sort order" className="min-w-36">
+            <Select.Trigger aria-label="Sort order" className="h-8 min-w-36 whitespace-nowrap">
               <Select.Value />
               <Select.Icon />
             </Select.Trigger>
@@ -82,7 +82,7 @@ function LibraryRoute() {
       {data && data.items.length > 0 && (
         <div
           className={cx(
-            "grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-4 sm:gap-y-6 transition-opacity duration-150",
+            "grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-2.5 gap-y-4 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-x-3.5 sm:gap-y-5 transition-opacity duration-150",
             isFetching && "opacity-75",
           )}
         >

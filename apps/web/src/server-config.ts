@@ -227,7 +227,7 @@ export async function probeServer(raw: string): Promise<ProbeResult> {
     return {
       ok: false,
       error:
-        "This page is served over HTTPS, so the browser blocks a plain HTTP server. Use an HTTPS address (for example a Cloudflare Tunnel or Tailscale HTTPS URL) or open Plexy over HTTP on your local network.",
+        "This page is served over HTTPS, so the browser blocks a plain HTTP server. Use a private-network HTTPS address, or open Plexy directly over HTTP on the local network.",
     };
   }
 

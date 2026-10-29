@@ -148,15 +148,26 @@ requests, so enter a pairing code from **Settings → Security** on the server.
 The cookie is HttpOnly, so images, streams, and HLS segments keep working
 without tokens in URLs.
 
-- If the hosted page is HTTPS, the server address must also be HTTPS. Browsers
-  block an `https://…` page from calling a plain `http://192.168.x.x` server.
-  The connection screen offers a one-click **Open http://…** button that loads
-  the server's own copy of the app over HTTP instead, which is the simplest fix
-  on a home network. For a public HTTPS address, use a Cloudflare Tunnel (or
-  Tailscale HTTPS) in front of the server.
+- On the same Wi-Fi, enable LAN access and open the server's printed
+  `http://<lan-ip>:<port>` address directly on the phone. That loads the app and
+  streams from the laptop over the local network; the hosted HTTPS page cannot
+  call that plain-HTTP address because browsers block mixed content. The phone
+  must also be paired once.
+- For a hosted HTTPS page to call a different HTTPS server, set
+  `PLEXY_ALLOWED_ORIGINS` on the server to the exact frontend origin, such as
+  `https://plexy.example.com` (comma-separated for multiple origins). Other
+  cross-origin browser clients are denied by default. Browser third-party
+  cookie restrictions may still affect hosted-to-server sign-in. Opening the
+  server's own HTTPS URL or using a native client avoids that dependency.
+- Use a private network such as Tailscale for remote personal streaming. A
+  public Cloudflare Tunnel hostname proxies media through Cloudflare; Cloudflare
+  currently restricts video and large-file delivery over public hostnames on
+  Free, Pro, and Business plans. Private-network routes are not subject to that
+  restriction.
 - `VITE_API_URL` can seed a default address at build time. Viewers can still
   change it from the Server icon in the top bar.
-- The backend already enables CORS for hosted clients.
+- The backend supports credentialed CORS for exact origins listed in
+  `PLEXY_ALLOWED_ORIGINS`.
 
 #### Deploy the web client from your machine
 
@@ -210,6 +221,10 @@ tells the GitHub release notes which URL to link to.
 | `bun run test` | Run backend test suite (`apps/server/tests`) |
 | `bun run typecheck` | Typecheck all packages with strict TypeScript |
 
+## Planned client and distribution targets
+
+The planned product split is documented in [MOBILE_AND_DISTRIBUTION_PLAN.md](MOBILE_AND_DISTRIBUTION_PLAN.md), with implementation detail in [docs/MOBILE_AND_DISTRIBUTION_DETAILED_PLAN.md](docs/MOBILE_AND_DISTRIBUTION_DETAILED_PLAN.md). It covers a mobile client UI that connects to a separate server, a desktop UI-only client, the standalone backend binary, and the existing combined Electron app.
+
 ---
 
 ## Configuration & Environment
@@ -221,6 +236,7 @@ tells the GitHub release notes which URL to link to.
   - `PORT`: Server listen port (default `8765`).
   - `PLEXY_DATA_DIR`: Data and database directory (default: macOS `~/Library/Application Support/Plexy`, dev `/tmp/plexy-dev`).
   - `PLEXY_LOG_LEVEL`: Log level (`debug`, `info`, `warn`, `error`).
+  - `PLEXY_ALLOWED_ORIGINS`: Comma-separated exact HTTPS frontend origins allowed to make credentialed cross-origin requests. Same-origin requests do not need this setting.
 - The desktop app prefers port `8765` so LAN bookmarks stay valid; it falls back to a random free port only when `8765` is already taken.
 - LAN access is off by default (`bindAddress: "127.0.0.1"`). Enable it in **Server → Settings → Network & Access**, then restart Plexy. That page lists the exact `http://<lan-ip>:<port>` addresses to open on phones and TVs.
 

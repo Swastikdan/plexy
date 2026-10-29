@@ -190,7 +190,7 @@ export function FixMatchModal({
                       key={c.tmdbId}
                       className="flex items-center gap-4 rounded-xl border border-line/60 bg-surface p-3 transition-colors hover:border-line"
                     >
-                      <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-surface-2">
+                      <div className="h-16 w-11 shrink-0 overflow-hidden rounded-sm bg-surface-2">
                         {c.poster ? (
                           <img src={c.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
                         ) : (

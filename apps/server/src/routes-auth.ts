@@ -11,28 +11,19 @@ import {
   redeemPairingCode,
   revokeByToken,
   revokeDevice,
+  removeRevokedDevice,
   sessionCookie,
   tokenFromRequest,
 } from "./auth";
-import { isLoopbackContext, remoteAddress, type LoopbackContext } from "./essentials";
+import { isDirectLoopbackContext, remoteAddress, type LoopbackContext } from "./essentials";
 import { log } from "./logger";
+import { getServerId } from "./server-identity";
 
 const LOCAL_ONLY_ERROR = "This action is only available on the computer running Plexy.";
 
 function loopbackDenied(ctx: LoopbackContext): Response | null {
-  if (isLoopbackContext(ctx)) return null;
+  if (isDirectLoopbackContext(ctx)) return null;
   return Response.json({ error: LOCAL_ONLY_ERROR }, { status: 403 });
-}
-
-/**
- * Loopback that did not arrive through a reverse proxy. A Cloudflare Tunnel or
- * similar proxy running on the same machine connects from 127.0.0.1, so the
- * socket address alone would let remote visitors mint a token without a code.
- */
-function isDirectLoopback(ctx: LoopbackContext): boolean {
-  if (!isLoopbackContext(ctx)) return false;
-  return !["x-forwarded-for", "forwarded", "cf-connecting-ip", "x-real-ip", "x-forwarded-host"]
-    .some((header) => Boolean(ctx.request.headers.get(header)));
 }
 
 function deviceName(value: string | undefined, fallback: string): string {
@@ -59,20 +50,20 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
   .post(
     "/local",
     (ctx) => {
-      if (!isDirectLoopback(ctx)) {
+      if (!isDirectLoopbackContext(ctx)) {
         return Response.json({ error: LOCAL_ONLY_ERROR }, { status: 403 });
       }
 
       const body = (ctx.body ?? {}) as { deviceId?: string; name?: string };
       const deviceId = body.deviceId ? String(body.deviceId) : undefined;
-      const result = createDevice(deviceName(body.name, "This Mac"), deviceId);
+      const result = createDevice(deviceName(body.name, "This Mac"), deviceId, remoteAddress(ctx));
       log.info("auth", "local device authenticated", {
         id: result.device.id,
         name: result.device.name,
       });
 
       return Response.json(
-        { token: result.token, device: result.device },
+        { token: result.token, device: result.device, serverId: getServerId() },
         { headers: { "Set-Cookie": sessionCookie(ctx.request, result.token) } },
       );
     },
@@ -101,6 +92,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         String(body.code ?? ""),
         deviceName(body.name, "Paired device"),
         body.deviceId ? String(body.deviceId) : undefined,
+        remote,
       );
       if (!result) {
         return Response.json(
@@ -110,7 +102,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       }
 
       return Response.json(
-        { token: result.token, device: result.device },
+        { token: result.token, device: result.device, serverId: getServerId() },
         { headers: { "Set-Cookie": sessionCookie(ctx.request, result.token) } },
       );
     },
@@ -168,6 +160,24 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       }
       const ok = revokeDevice(id);
       if (!ok) return Response.json({ error: "Device not found." }, { status: 404 });
+      return { ok: true as const };
+    },
+    { params: t.Object({ id: t.Numeric() }) },
+  )
+
+  /** Permanently remove a revoked device from the paired-device list. */
+  .delete(
+    "/devices/:id/remove",
+    (ctx) => {
+      const denied = loopbackDenied(ctx);
+      if (denied) return denied;
+
+      const id = Number(ctx.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return Response.json({ error: "Invalid device id." }, { status: 400 });
+      }
+      const ok = removeRevokedDevice(id);
+      if (!ok) return Response.json({ error: "Revoked device not found." }, { status: 404 });
       return { ok: true as const };
     },
     { params: t.Object({ id: t.Numeric() }) },

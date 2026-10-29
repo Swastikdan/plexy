@@ -13,13 +13,25 @@ describe("device authentication", () => {
   beforeAll(async () => {
     await runMigrations();
     await initConfig();
-    app = buildApp({ requireAuth: true });
+    app = buildApp({ requireAuth: true, allowedOrigins: ["https://app.example.com"] });
   });
 
   test("unauthenticated API calls are rejected except the public status probe", async () => {
     const blocked = await app.handle(new Request("http://localhost:8765/api/home"));
     expect(blocked.status).toBe(401);
     expect((await blocked.json()).code).toBe("UNAUTHORIZED");
+    expect(blocked.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/i);
+
+    const stream = await app.handle(new Request("http://localhost:8765/api/stream/123"));
+    expect(stream.status).toBe(401);
+
+    const diagnostics = await app.handle(new Request("http://localhost:8765/api/diagnostics/playback"));
+    expect(diagnostics.status).toBe(401);
+
+    const queryToken = await app.handle(
+      new Request("http://localhost:8765/api/home?token=not-a-credential"),
+    );
+    expect(queryToken.status).toBe(401);
 
     const status = await app.handle(
       new Request("http://localhost:8765/api/server/status"),
@@ -69,6 +81,11 @@ describe("device authentication", () => {
     );
     expect(me.status).toBe(200);
     expect((await me.json()).device.name).toBe("Test Desktop");
+
+    const queryCredential = await app.handle(
+      new Request(`http://localhost:8765/api/home?token=${encodeURIComponent(body.token)}`),
+    );
+    expect(queryCredential.status).toBe(401);
   });
 
   test("a pairing code registers a device exactly once", async () => {
@@ -93,6 +110,7 @@ describe("device authentication", () => {
     expect(paired.status).toBe(200);
     const body = await paired.json();
     expect(body.device.name).toBe("Living room TV");
+    expect(typeof body.serverId).toBe("string");
 
     const replay = await app.handle(
       new Request("http://localhost:8765/api/auth/pair", {
@@ -158,5 +176,36 @@ describe("device authentication", () => {
       }),
     );
     expect(res.status).toBe(403);
+  });
+
+  test("owner-only pairing management is refused through a local reverse proxy", async () => {
+    const res = await app.handle(
+      new Request("http://localhost:8765/api/auth/pairing-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "CF-Connecting-IP": "203.0.113.9",
+        },
+        body: JSON.stringify({ label: "Remote visitor" }),
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test("credentialed CORS is limited to configured origins", async () => {
+    const allowed = await app.handle(
+      new Request("http://localhost:8765/api/home", {
+        headers: { Origin: "https://app.example.com" },
+      }),
+    );
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("https://app.example.com");
+
+    const denied = await app.handle(
+      new Request("http://localhost:8765/api/home", {
+        headers: { Origin: "https://attacker.example" },
+      }),
+    );
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get("access-control-allow-origin")).toBeNull();
   });
 });

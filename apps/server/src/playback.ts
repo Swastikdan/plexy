@@ -122,28 +122,45 @@ export function preferredAudioBitrate(channels: number | null): number {
 export function rangeResponse(request: Request, file: Blob, size: number, mime = "video/mp4"): Promise<Response> {
   const range = request.headers.get("range");
   if (!range) {
-    return Promise.resolve(new Response(file, {
+    return Promise.resolve(new Response(request.method === "HEAD" ? null : file, {
       headers: { "Content-Length": String(size), "Accept-Ranges": "bytes", "Content-Type": mime },
     }));
   }
-  const m = range.match(/bytes=(\d*)-(\d*)/);
-  if (!m) return Promise.resolve(new Response("Invalid range", { status: 416 }));
-  const start = m[1] ? Number(m[1]) : null;
-  const end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
-  if (start === null || start > end || start >= size) {
+  const m = range.match(/^bytes=(\d*)-(\d*)$/);
+  if (!m || (!m[1] && !m[2])) {
     return Promise.resolve(new Response(null, {
       status: 416,
       headers: { "Content-Range": `bytes */${size}` },
     }));
   }
-  return Promise.resolve(new Response(file.slice(start, end + 1), {
+  let start: number;
+  let end: number;
+  if (!m[1]) {
+    const suffixLength = Number(m[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0 || size <= 0) {
+      return Promise.resolve(new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } }));
+    }
+    start = Math.max(0, size - suffixLength);
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) {
+    return Promise.resolve(new Response(null, {
+      status: 416,
+      headers: { "Content-Range": `bytes */${size}` },
+    }));
+  }
+  const headers = {
+    "Content-Type": mime,
+    "Content-Length": String(end - start + 1),
+    "Content-Range": `bytes ${start}-${end}/${size}`,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "no-store",
+  };
+  return Promise.resolve(new Response(request.method === "HEAD" ? null : file.slice(start, end + 1), {
     status: 206,
-    headers: {
-      "Content-Type": mime,
-      "Content-Length": String(end - start + 1),
-      "Content-Range": `bytes ${start}-${end}/${size}`,
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "no-store",
-    },
+    headers,
   }));
 }

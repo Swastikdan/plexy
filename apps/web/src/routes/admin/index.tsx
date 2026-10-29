@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trash2,
   ScanLine,
+  Pencil,
   CheckCircle2,
   RotateCw,
   Search,
@@ -27,15 +28,24 @@ import {
   KeyRound,
   ShieldCheck,
 } from "lucide-react";
-import { api, type ReviewEntry } from "../../client";
+import { api, type LibraryItem, type ReviewEntry } from "../../client";
 import { getApiBase, hasServerOverride } from "../../server-config";
-import { createPairingCode, listDevices, revokeDevice } from "../../auth";
+import { createPairingCode, listDevices, removeRevokedDevice, revokeDevice } from "../../auth";
 import { queries } from "../../queries";
 import { Button, cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { Dialog } from "../../components/ui/dialog";
 import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
 import { PageLoader } from "../../components/page-loader";
+import { LibraryFolderForm } from "../../components/library-folder-form";
+import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "../../lib/playback-diagnostics-consent";
+import { getPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "../../lib/playback-preferences";
+import {
+  clearPrefetchCache,
+  getPrefetchStats,
+  localPrefetchContext,
+  type PrefetchStats,
+} from "../../lib/asset-prefetch";
 
 const ERROR_TEXT = "text-red-500";
 
@@ -106,7 +116,7 @@ function AdminRoute() {
   };
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1120px] px-4 pb-24 pt-8 sm:px-8">
+    <main className="mx-auto min-h-dvh max-w-[1440px] px-4 pb-24 pt-8 sm:px-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight">Server</h1>
@@ -130,10 +140,10 @@ function AdminRoute() {
 
       <nav
         ref={navRef}
-        className="sticky top-14 sm:top-16 z-30 -mx-4 mt-6 overflow-x-auto px-4 pb-3 pt-1 sm:-mx-8 sm:px-8 "
+        className="sticky top-12 sm:top-14 z-30 -mx-4 mt-6 overflow-x-auto px-4 pb-3 pt-1 sm:-mx-8 sm:px-8"
         aria-label="Admin sections"
       >
-        <div className="inline-flex min-w-max items-center gap-1.5 p-1 rounded-xl bg-surface border border-line/60" role="tablist">
+        <div className="inline-flex min-w-max items-center gap-1.5 rounded-xl border border-line/60 bg-surface p-1" role="tablist">
           {tabs.map(([key, label]) => (
             <button
               key={key}
@@ -143,10 +153,10 @@ function AdminRoute() {
               aria-selected={tab === key}
               onClick={() => switchTab(key)}
               className={cx(
-                "rounded-lg px-3.5 py-1.5 text-xs sm:text-sm font-semibold transition-all duration-150 active:scale-95",
+                "rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95 sm:text-sm",
                 tab === key
-                  ? "bg-brand text-white shadow-xs"
-                  : "text-ink-muted hover:text-ink hover:bg-surface-hover/60",
+                  ? "bg-ink text-canvas"
+                  : "text-ink-muted hover:bg-surface-hover/60 hover:text-ink",
               )}
             >
               {label}
@@ -231,9 +241,14 @@ function Libraries() {
   const status = useQuery(queries.serverStatus());
   const queryClient = useQueryClient();
   const [scanning, setScanning] = useState<number | null>(null);
+  const [editing, setEditing] = useState<LibraryItem | null>(null);
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteLibrary(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["libraries"] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["libraries"] });
+      await queryClient.invalidateQueries({ queryKey: ["server-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["home"] });
+    },
   });
 
   const rescan = async (id: number) => {
@@ -255,11 +270,11 @@ function Libraries() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-muted">Active Libraries</h2>
-        <a href="/setup">
+        <Link to="/add-library">
           <Button variant="surface" className="h-8 text-xs font-medium">
             + Add Library
           </Button>
-        </a>
+        </Link>
       </div>
       {isLoading && !data && <PageLoader />}
       {data?.map((lib) => (
@@ -278,6 +293,9 @@ function Libraries() {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <IconButton label={`Edit ${lib.name}`} onClick={() => setEditing(lib)}>
+              <Pencil size={15} />
+            </IconButton>
             <IconButton label={`Rescan ${lib.name}`} onClick={() => void rescan(lib.id)} disabled={scanning != null}>
               <ScanLine size={15} className={scanning === lib.id ? "animate-pulse" : ""} />
             </IconButton>
@@ -288,8 +306,20 @@ function Libraries() {
         </div>
       ))}
       {data?.length === 0 && (
-        <p className="text-sm text-ink-muted">No libraries yet. Head to the homepage to add one.</p>
+        <p className="text-sm text-ink-muted">No libraries yet. Use “Add Library” to choose a media type and folders.</p>
       )}
+      <Dialog.Root open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
+        <Dialog.Portal>
+          <Dialog.Backdrop />
+          <Dialog.Popup className="max-h-[90vh] w-[min(760px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line bg-canvas p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div><Dialog.Title className="font-sans text-xl font-bold text-ink">Configure library</Dialog.Title><p className="mt-1 text-xs text-ink-muted">Change its name, media type, or scanned folders.</p></div>
+              <Dialog.Close render={<button type="button" aria-label="Close" className="text-ink-muted hover:text-ink"><X size={18} /></button>} />
+            </div>
+            {editing && <LibraryFolderForm key={editing.id} initialLibrary={editing} onComplete={() => setEditing(null)} completeLabel="Save library" />}
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
@@ -342,7 +372,7 @@ function Review() {
               className={cx(
                 "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
                 filter === f.key
-                  ? "bg-brand text-white shadow-xs"
+                  ? "bg-ink text-canvas"
                   : "text-ink-muted hover:text-ink hover:bg-surface-hover/50",
               )}
             >
@@ -350,7 +380,7 @@ function Review() {
               {counts && (
                 <span className={cx(
                   "rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
-                  filter === f.key ? "bg-white/20 text-white" : "bg-surface-2 text-ink-muted",
+                  filter === f.key ? "bg-black/10 text-canvas" : "bg-surface-2 text-ink-muted",
                 )}>
                   {f.key === "attention" ? counts.attention : f.key === "matched" ? counts.matched : counts.all}
                 </span>
@@ -402,7 +432,7 @@ function Review() {
       <div className={cx("space-y-3 transition-opacity duration-150", isFetching && "opacity-70")}>
         {items.map((entry) => (
           <div key={entry.id} className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3">
-            <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-surface-2">
+            <div className="h-16 w-11 shrink-0 overflow-hidden rounded-sm bg-surface-2">
               {entry.poster ? (
                 <img src={entry.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
               ) : (
@@ -569,7 +599,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
               disabled={apply.isPending}
               className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-hover disabled:opacity-50"
             >
-              {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded object-cover" loading="lazy" />}
+              {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded-sm object-cover" loading="lazy" />}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{r.title}</span>
                 <span className="block text-[13px] text-ink-muted">{r.year} · {r.overview?.slice(0, 90) ?? ""}</span>
@@ -615,6 +645,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 function Settings() {
   const { data, isError, isLoading } = useQuery(queries.settings());
   const status = useQuery(queries.serverStatus());
+  const playbackDiagnostics = useQuery(queries.playbackDiagnostics());
   const { data: streamTitles } = useQuery({
     queryKey: ["stream-preparation-titles"],
     queryFn: () => api.items({ limit: 5000 }),
@@ -622,7 +653,9 @@ function Settings() {
   const { data: streamStatus } = useQuery({
     queryKey: ["stream-preparation"],
     queryFn: api.streamPreparationStatus,
-    refetchInterval: 2000,
+    // Preparation progress only changes while work is queued or running.
+    // Stop polling the server once the queue is idle.
+    refetchInterval: (query) => query.state.data?.running || query.state.data?.queued ? 2000 : false,
   });
   const queryClient = useQueryClient();
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
@@ -635,6 +668,13 @@ function Settings() {
   const [streamTitleSearch, setStreamTitleSearch] = useState("");
   const [selectedStreamTitleIds, setSelectedStreamTitleIds] = useState<number[]>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(isPlaybackDiagnosticsEnabled);
+  const [openMetadataSelect, setOpenMetadataSelect] = useState<string | null>(null);
+  const [playbackPrefs, setPlaybackPrefs] = useState<PlaybackPreferences>(getPlaybackPreferences);
+
+  const updatePlaybackPrefs = (patch: Partial<PlaybackPreferences>) => {
+    setPlaybackPrefs(savePlaybackPreferences(patch));
+  };
 
   const copyLanUrl = (url: string) => {
     void navigator.clipboard
@@ -704,8 +744,16 @@ function Settings() {
   );
 
   return (
-    <div className="space-y-6">
-
+    <div className="space-y-3">
+      <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+          <span>
+            <span className="block text-sm font-semibold text-ink">Metadata & episode markers</span>
+            <span className="mt-1 block text-xs text-ink-muted">TMDB matching, artwork, language, and skip markers</span>
+          </span>
+          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-line p-4 sm:p-5">
       {/* TMDB Metadata Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -777,14 +825,19 @@ function Settings() {
               ? setting.options
               : [{ value: setting.value, label: setting.value }, ...setting.options];
             return (
-              <label key={setting.label} className="min-w-0 space-y-1.5">
+              <div key={setting.label} className="min-w-0 space-y-1.5">
                 <span className="block text-xs font-semibold text-ink-muted">{setting.label}</span>
                 <Select.Root
                   value={setting.value}
-                  onValueChange={(value) => setting.update(String(value))}
+                  open={openMetadataSelect === setting.label}
+                  onOpenChange={(open) => setOpenMetadataSelect(open ? setting.label : null)}
+                  onValueChange={(value) => {
+                    setOpenMetadataSelect(null);
+                    setting.update(String(value));
+                  }}
                   items={options}
                 >
-                  <Select.Trigger className="w-full min-w-0">
+                  <Select.Trigger aria-label={setting.label} className="w-full min-w-0">
                     <Select.Value />
                     <Select.Icon />
                   </Select.Trigger>
@@ -796,7 +849,7 @@ function Settings() {
                     ))}
                   </Select.Positioner>
                 </Select.Root>
-              </label>
+              </div>
             );
           })}
         </div>
@@ -884,7 +937,7 @@ function Settings() {
             type="checkbox"
             checked={s.skipSegmentsEnabled}
             onChange={(e) => save.mutate({ skipSegmentsEnabled: e.target.checked })}
-            className="mt-0.5 h-4 w-4 rounded accent-[var(--color-brand)]"
+            className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
           />
           <span>Enable community skip markers (IntroDB)</span>
         </label>
@@ -893,6 +946,18 @@ function Settings() {
         </p>
       </div>
 
+        </div>
+      </details>
+
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+          <span>
+            <span className="block text-sm font-semibold text-ink">Network & security</span>
+            <span className="mt-1 block text-xs text-ink-muted">Local network access, paired devices, and server connection</span>
+          </span>
+          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-line p-4 sm:p-5">
       {/* Network & Access Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div>
@@ -976,7 +1041,7 @@ function Settings() {
           status.data.lanUrls?.length ? (
             <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-2">
               <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
-                Open on your Wi-Fi devices
+                Remote server address for this network
               </span>
               <ul className="space-y-1.5">
                 {status.data.lanUrls.map((url) => (
@@ -1002,7 +1067,7 @@ function Settings() {
                 ))}
               </ul>
               <p className="text-xs text-ink-muted">
-                Browsing and playback work on these addresses. Admin actions stay limited to this Mac.
+                Enter one of these URLs as the server address on another device connected to the same network. Admin actions stay limited to this Mac.
               </p>
             </div>
           ) : (
@@ -1016,6 +1081,48 @@ function Settings() {
             Plexy to let phones and TVs connect.
           </p>
         )}
+
+        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-2">
+          <div>
+            <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              Playback diagnostics
+            </span>
+            <p className="mt-1 text-xs text-ink-muted">
+              Server v{status.data?.version ?? "—"} · client {window.location.origin} · API {getApiBase()}
+            </p>
+            <label className="mt-2 flex items-start gap-2 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                checked={diagnosticsEnabled}
+                onChange={(event) => {
+                  const enabled = event.target.checked;
+                  setDiagnosticsEnabled(enabled);
+                  setPlaybackDiagnosticsEnabled(enabled);
+                }}
+                className="mt-0.5 accent-brand-text"
+              />
+              <span>Share startup, rebuffer, and error details from this device with this server. The server keeps the latest 100 events in memory.</span>
+            </label>
+          </div>
+          {playbackDiagnostics.data?.events.filter((event) => event.kind !== "startup").length ? (
+            <ul className="space-y-1.5">
+              {playbackDiagnostics.data.events
+                .filter((event) => event.kind !== "startup")
+                .slice(0, 5)
+                .map((event, index) => (
+                  <li key={`${event.at}-${index}`} className="flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
+                    <span className={event.kind === "error" ? "text-red-400" : "text-amber-400"}>
+                      {event.kind === "error" ? `Playback error ${event.mediaErrorCode ?? ""}` : `Rebuffer ${event.durationMs ?? 0} ms`}
+                    </span>
+                    <span>{event.path ?? "unknown path"}</span>
+                    <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
+                  </li>
+                ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-ink-muted">No recent playback errors or rebuffer events recorded.</p>
+          )}
+        </div>
       </div>
 
       {/* Security Card */}
@@ -1051,12 +1158,61 @@ function Settings() {
         </p>
       </div>
 
-      {/* Playback Preparation Card */}
+        </div>
+      </details>
+
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+          <span>
+            <span className="block text-sm font-semibold text-ink">Playback</span>
+            <span className="mt-1 block text-xs text-ink-muted">Audio preferences, quality streams, and preparation cache</span>
+          </span>
+          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-line p-4 sm:p-5">
+      {/* Playback Preferences Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm">
         <h2 className="font-display text-base font-bold text-ink flex items-center gap-2 mb-4">
           <HardDrive size={17} className="text-brand-text" />
           Playback Preferences
         </h2>
+        <div className="mb-5 grid gap-4 md:grid-cols-2">
+          <label className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
+            <span className="block text-xs font-semibold text-ink-muted">Automatically turn on subtitles</span>
+            <p className="text-xs text-ink-muted">When playback starts, select a subtitle track in your preferred language when one is available.</p>
+            <span className="flex items-center gap-2 pt-1 text-sm text-ink">
+              <input type="checkbox" checked={playbackPrefs.autoSubtitles} onChange={(e) => updatePlaybackPrefs({ autoSubtitles: e.target.checked })} className="h-4 w-4 rounded-sm accent-[var(--color-brand)]" />
+              Turn on subtitles automatically
+            </span>
+          </label>
+          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
+            <span className="block text-xs font-semibold text-ink-muted">Preferred subtitle language</span>
+            <p className="text-xs text-ink-muted">Saved on this device and used when automatic subtitles are enabled.</p>
+            <Select.Root
+              value={playbackPrefs.subtitleLanguage}
+              onValueChange={(value) => updatePlaybackPrefs({ subtitleLanguage: String(value) })}
+              items={[
+                { value: "en", label: "English" }, { value: "hi", label: "Hindi" },
+                { value: "es", label: "Spanish" }, { value: "fr", label: "French" },
+                { value: "de", label: "German" }, { value: "ja", label: "Japanese" },
+                { value: "ko", label: "Korean" }, { value: "zh", label: "Chinese" },
+                { value: "pt", label: "Portuguese" }, { value: "it", label: "Italian" },
+              ]}
+            >
+              <Select.Trigger className="w-full"><Select.Value /><Select.Icon /></Select.Trigger>
+              <Select.Positioner>
+                {[
+                  { value: "en", label: "English" }, { value: "hi", label: "Hindi" },
+                  { value: "es", label: "Spanish" }, { value: "fr", label: "French" },
+                  { value: "de", label: "German" }, { value: "ja", label: "Japanese" },
+                  { value: "ko", label: "Korean" }, { value: "zh", label: "Chinese" },
+                  { value: "pt", label: "Portuguese" }, { value: "it", label: "Italian" },
+                ].map((option) => <Select.Item key={option.value} value={option.value}><Select.ItemText>{option.label}</Select.ItemText></Select.Item>)}
+              </Select.Positioner>
+            </Select.Root>
+          </div>
+        </div>
+        {/* Playback Preparation Card */}
         <div className="mb-5 grid gap-4 md:grid-cols-1">
           <label className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
             <span className="block text-xs font-semibold text-ink-muted">Preferred audio language</span>
@@ -1185,6 +1341,31 @@ function Settings() {
         <OptimizerSettings />
       </div>
 
+        </div>
+      </details>
+
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+          <span>
+            <span className="block text-sm font-semibold text-ink">Local prefetch</span>
+            <span className="mt-1 block text-xs text-ink-muted">Warm artwork and scrub previews on this device</span>
+          </span>
+          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-line p-4 sm:p-5">
+          <PrefetchSettings />
+        </div>
+      </details>
+
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-red-500/25 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-red-400 focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+          <span>
+            <span className="block text-sm font-semibold text-ink">Maintenance & diagnostics</span>
+            <span className="mt-1 block text-xs text-ink-muted">Reset local data and review server crashes</span>
+          </span>
+          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-line p-4 sm:p-5">
       <section className="rounded-2xl border border-red-500/25 bg-surface p-5 sm:p-6 shadow-sm">
         <h2 className="font-display text-base font-bold text-ink">Reset local Plexy data</h2>
         <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-muted">
@@ -1231,6 +1412,247 @@ function Settings() {
       </section>
 
       <Crashes />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+// --- local prefetch settings -------------------------------------------------
+
+function formatMegabytes(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+/**
+ * Bounded integer field that clamps on commit, mirroring the server schema, so
+ * typing "500" into a 1–10 field can never send an invalid preferred value.
+ */
+function NumberSetting({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  suffix,
+  onCommit,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  suffix?: string;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => setDraft(String(value)), [value]);
+
+  const commit = () => {
+    const numeric = Number(draft);
+    if (!Number.isFinite(numeric)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, Math.round(numeric)));
+    setDraft(String(clamped));
+    if (clamped !== value) onCommit(clamped);
+  };
+
+  return (
+    <label className="block rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
+      <span className="block text-xs font-semibold text-ink-muted">{label}</span>
+      <span className="block text-xs leading-relaxed text-ink-muted">{hint}</span>
+      <span className="flex items-center gap-2 pt-1">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={1}
+          inputMode="numeric"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          className="h-9 w-24 rounded-lg border border-line bg-surface px-2 text-sm text-ink outline-none focus:border-brand/70"
+        />
+        {suffix && <span className="text-xs text-ink-muted">{suffix}</span>}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * Server-owned prefetch preferences plus this viewer's own cache estimate.
+ * The cache lives in this browser/app profile, so the numbers and the clear
+ * action here never describe another device's storage.
+ */
+function PrefetchSettings() {
+  const queryClient = useQueryClient();
+  const { data } = useQuery(queries.settings());
+  const local = localPrefetchContext();
+  const stats = useQuery({
+    queryKey: ["prefetch-stats"],
+    queryFn: getPrefetchStats,
+    enabled: local,
+    refetchInterval: 15_000,
+  });
+  const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: api.updateSettings,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+
+  const clear = useMutation({
+    mutationFn: clearPrefetchCache,
+    onSuccess: ({ removed, bytes }) => {
+      setCacheMessage(
+        removed
+          ? `Cleared ${removed} prefetched item${removed === 1 ? "" : "s"} (~${formatMegabytes(bytes)} MB).`
+          : "The prefetch cache is already empty.",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["prefetch-stats"] });
+    },
+  });
+
+  if (!data) return null;
+  const s = data.settings;
+  const measured: PrefetchStats | undefined = stats.data;
+  const budgetMb = measured ? Math.round(measured.budgetBytes / (1024 * 1024)) : s.prefetchMaxCacheMb;
+
+  return (
+    <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+      <div>
+        <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
+          <Download size={17} className="text-brand-text" />
+          Local prefetch
+        </h2>
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-ink-muted">
+          Downloads artwork and existing scrub-preview frames ahead of time into this browser or app’s own
+          cache. Plexy only fetches images the server already has: prefetch never prepares a stream,
+          extracts trickplay, or creates thumbnails. Work runs only in the desktop app or a browser opened
+          on the server machine, and only while this preference is on.
+        </p>
+      </div>
+
+      <label className="flex items-start gap-2.5 text-sm text-ink cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={s.prefetchAggressiveLocal}
+          onChange={(event) => save.mutate({ prefetchAggressiveLocal: event.target.checked })}
+          className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
+        />
+        <span>
+          Prefetch assets on this local viewer
+          <span className="mt-0.5 block text-xs text-ink-muted">
+            Remotely hosted viewers and other devices on the network ignore this setting.
+          </span>
+        </span>
+      </label>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex items-start gap-2.5 rounded-xl border border-line/60 bg-surface-2/60 p-3.5 text-sm text-ink cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={s.prefetchOnHover}
+            onChange={(event) => save.mutate({ prefetchOnHover: event.target.checked })}
+            className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
+          />
+          <span>
+            On poster hover
+            <span className="mt-0.5 block text-xs text-ink-muted">
+              Warm a card’s poster and backdrop after a short hover or keyboard focus.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2.5 rounded-xl border border-line/60 bg-surface-2/60 p-3.5 text-sm text-ink cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={s.prefetchOnScroll}
+            onChange={(event) => save.mutate({ prefetchOnScroll: event.target.checked })}
+            className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
+          />
+          <span>
+            Near the visible rows and episodes
+            <span className="mt-0.5 block text-xs text-ink-muted">
+              Warm a small window of upcoming cards and episode thumbnails.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <NumberSetting
+          label="Concurrent downloads"
+          hint="Maximum speculative requests in flight (1–10)."
+          value={s.prefetchMaxConcurrent}
+          min={1}
+          max={10}
+          onCommit={(value) => save.mutate({ prefetchMaxConcurrent: value })}
+        />
+        <NumberSetting
+          label="Cache budget"
+          hint="Estimated ceiling for this viewer’s prefetch cache (10–500 MB)."
+          value={s.prefetchMaxCacheMb}
+          min={10}
+          max={500}
+          suffix="MB"
+          onCommit={(value) => save.mutate({ prefetchMaxCacheMb: value })}
+        />
+        <NumberSetting
+          label="Upcoming items"
+          hint="How many cards a row may warm beyond what is visible (1–20)."
+          value={s.prefetchNextCount}
+          min={1}
+          max={20}
+          onCommit={(value) => save.mutate({ prefetchNextCount: value })}
+        />
+      </div>
+
+      {save.isError && <p role="alert" className="text-xs text-red-400">{save.error.message}</p>}
+
+      <div className="border-t border-line/60 pt-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-ink">This viewer’s cache</h3>
+            <p className="text-xs text-ink-muted">
+              {!local
+                ? "Cache details are available only on the viewer’s own machine."
+                : measured && !measured.supported
+                  ? "This browser cannot use a managed asset cache, so prefetch stays inactive."
+                  : measured
+                    ? `${measured.count} item${measured.count === 1 ? "" : "s"} · ~${formatMegabytes(measured.bytes)} MB of ${budgetMb} MB estimate${
+                        measured.lastReconciledAt ? ` · reconciled ${new Date(measured.lastReconciledAt).toLocaleString()}` : ""
+                      }`
+                    : "Reading cache usage…"}
+            </p>
+            <p className="text-[11px] leading-relaxed text-ink-muted">
+              Browser storage can evict entries at any time, so this is an estimate, not disk usage. Clearing
+              removes only Plexy’s prefetched copies; server artwork, prepared streams, and library files stay.
+            </p>
+          </div>
+          <Button
+            variant="surface"
+            onClick={() => {
+              setCacheMessage(null);
+              clear.mutate();
+            }}
+            disabled={!local || clear.isPending}
+            className="h-9 shrink-0 px-3 text-xs font-semibold"
+          >
+            {clear.isPending && <RotateCw size={13} className="animate-spin" />}
+            {clear.isPending ? "Clearing…" : "Clear prefetch cache"}
+          </Button>
+        </div>
+        {cacheMessage && <p className="mt-2 text-xs font-medium text-brand-text">{cacheMessage}</p>}
+        {clear.isError && <p role="alert" className="mt-2 text-xs text-red-400">{clear.error.message}</p>}
+      </div>
     </div>
   );
 }
@@ -1258,6 +1680,11 @@ function SecuritySettings() {
 
   const revoke = useMutation({
     mutationFn: (id: number) => revokeDevice(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["auth-devices"] }),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: number) => removeRevokedDevice(id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["auth-devices"] }),
   });
 
@@ -1348,8 +1775,22 @@ function SecuritySettings() {
                           ? `Last seen ${formatPairingExpiry(device.lastSeen)}`
                           : "Not used yet"}
                     </span>
+                    {!device.revoked && (
+                      <span className="block text-[11px] text-ink-muted">
+                        {device.lastIp ? `Last connected from ${device.lastIp}` : "IP address appears after its next connection"}
+                      </span>
+                    )}
                   </div>
-                  {!device.revoked && (
+                  {device.revoked ? (
+                    <button
+                      type="button"
+                      onClick={() => remove.mutate(device.id)}
+                      disabled={remove.isPending}
+                      className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  ) : (
                     <button
                       type="button"
                       onClick={() => revoke.mutate(device.id)}
@@ -1370,6 +1811,9 @@ function SecuritySettings() {
           )}
           {revoke.isError && (
             <p role="alert" className="text-xs text-red-400">{revoke.error.message}</p>
+          )}
+          {remove.isError && (
+            <p role="alert" className="text-xs text-red-400">{remove.error.message}</p>
           )}
         </div>
       </div>
@@ -1550,7 +1994,7 @@ function OptimizerSettings() {
           type="checkbox"
           checked={data.enabled}
           onChange={(e) => save.mutate({ autoOptimize: e.target.checked })}
-          className="h-4 w-4 rounded accent-[var(--color-brand)]"
+          className="h-4 w-4 rounded-sm accent-[var(--color-brand)]"
         />
         <span>Automatically prepare files in the background</span>
       </label>
@@ -1807,14 +2251,14 @@ function Logs() {
                 className={cx(
                   "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-all active:scale-95",
                   level === l
-                    ? "bg-brand text-white shadow-xs"
+                    ? "bg-ink text-canvas"
                     : "bg-surface-2 text-ink-muted hover:text-ink hover:bg-surface-hover",
                 )}
               >
                 <span>{l}</span>
                 <span className={cx(
-                  "tabular-nums text-[10px] px-1 py-0.2 rounded font-bold",
-                  level === l ? "bg-white/20 text-white" : "text-ink-muted/70",
+                  "tabular-nums text-[10px] px-1 py-0.2 rounded-sm font-bold",
+                  level === l ? "bg-black/10 text-canvas" : "text-ink-muted/70",
                 )}>
                   {l === "all" ? allEntries.length : levelCounts[l] ?? 0}
                 </span>
@@ -1831,7 +2275,7 @@ function Logs() {
               type="checkbox"
               checked={follow}
               onChange={(e) => setFollow(e.target.checked)}
-              className="h-3.5 w-3.5 rounded accent-[var(--color-brand)]"
+              className="h-3.5 w-3.5 rounded-sm accent-[var(--color-brand)]"
             />
             <span>Follow newest</span>
           </label>
@@ -1890,7 +2334,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
           {logTime(entry.ts)}
         </span>
         <span className={cx(
-          "rounded px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
+          "rounded-sm px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
           LEVEL_STYLE[entry.level] ?? "bg-surface-2 text-ink-muted",
         )}>
           {entry.level}
@@ -1917,7 +2361,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <span className={cx(
-              "rounded px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
+              "rounded-sm px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
               LEVEL_STYLE[entry.level] ?? "bg-surface-2 text-ink-muted",
             )}>
               {entry.level}

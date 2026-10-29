@@ -1,5 +1,5 @@
 /// Title Detail (PRD 10.3): movie & series detail, seasons, episodes, trailer, playability specs, cast & fix match.
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createFileRoute, useParams, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +23,8 @@ import { FixMatchModal } from "../../components/fix-match-modal";
 import { Dialog } from "../../components/ui/dialog";
 import { cx } from "../../components/ui/button";
 import { PageLoader } from "../../components/page-loader";
+import { prefetchAssets } from "../../lib/asset-prefetch";
+import { prefetchTriggerEnabled } from "../../lib/prefetch-config";
 
 // Capabilities do not change during a session; probing once keeps hover
 // prefetches free of layout work.
@@ -102,6 +104,7 @@ function DetailView({
     seasonList[0].number,
   );
   const [castExpanded, setCastExpanded] = useState(false);
+  const episodesRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (seasonList.length > 0 && !seasonList.some((s) => s.number === selectedSeason)) {
@@ -166,6 +169,30 @@ function DetailView({
       })
     : [];
 
+  // Warm episode artwork as cards approach the viewport. The observer is torn
+  // down when the season or title changes, and only artwork present on the
+  // card is fetched — the detail payload carries no trickplay data to warm.
+  useEffect(() => {
+    const root = episodesRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const cards = Array.from(root.querySelectorAll<HTMLElement>("[data-episode-art]"));
+    if (cards.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          if (!prefetchTriggerEnabled("scroll")) continue;
+          const card = entry.target as HTMLElement;
+          prefetchAssets([card.dataset.poster, card.dataset.backdrop]);
+        }
+      },
+      { rootMargin: "300px 0px" },
+    );
+    for (const card of cards) observer.observe(card);
+    return () => observer.disconnect();
+  }, [episodes, selectedSeason]);
+
   const primaryFileId = (() => {
     if (item.kind === "series" && episodes && episodes.length > 0) {
       const targetEp = filteredEpisodes.find((e) => !e.watch?.played)
@@ -185,7 +212,7 @@ function DetailView({
   return (
     <div className="space-y-10">
       {/* Detail hero banner */}
-      <section className="relative isolate min-h-[500px] sm:min-h-[480px] lg:h-[540px] overflow-hidden rounded-2xl sm:rounded-3xl border border-line/60 bg-surface shadow-2xl shadow-black/30 flex flex-col justify-end">
+      <section className="relative isolate min-h-[500px] sm:min-h-[480px] lg:h-[540px] overflow-hidden rounded-sm sm:rounded-sm border border-line/40 bg-surface flex flex-col justify-end">
         {/* Backdrop image */}
         <img
           src={item.backdrop ?? item.poster ?? ""}
@@ -215,7 +242,7 @@ function DetailView({
             <Link
               to="/title/$itemId"
               params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
-              className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
+              className="mb-3 inline-flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
             >
               <ArrowLeft size={13} />
               Back to {item.parentTitle || "Series"}
@@ -229,41 +256,41 @@ function DetailView({
               className="mb-3 max-h-16 sm:max-h-20 max-w-[280px] sm:max-w-[340px] object-contain drop-shadow-md"
             />
           ) : (
-            <h1 className="font-display text-3xl min-[480px]:text-4xl sm:text-5xl lg:text-6xl font-black leading-[1.05] tracking-tight text-white drop-shadow-md">
+            <h1 className="font-sans text-3xl min-[480px]:text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.05] tracking-tight text-white drop-shadow-md">
               {item.name}
             </h1>
           )}
 
           {metadata?.tagline && (
-            <p className="mt-2 max-w-[60ch] text-sm sm:text-base italic text-white/75">{metadata.tagline}</p>
+            <p className="mt-2 max-w-[60ch] text-sm sm:text-base italic text-white/65">{metadata.tagline}</p>
           )}
 
           <div className="mt-2.5 sm:mt-3 flex flex-wrap items-center gap-2 sm:gap-2.5 text-xs text-ink-muted">
             {item.year && (
-              <span className="font-semibold text-white/90 bg-white/10 px-2 py-0.5 rounded-md">
+              <span className="font-semibold text-white/80">
                 {item.year}
               </span>
             )}
             {item.kind === "episode" && item.seasonNumber != null && item.episodeNumber != null && (
-              <span className="rounded-md bg-brand/20 border border-brand/30 px-2 py-0.5 text-xs font-bold text-brand-text">
+              <span className="border border-white/20 bg-white/8 px-2 py-0.5 text-xs font-bold text-white/90">
                 S{item.seasonNumber} E{item.episodeNumber}
               </span>
             )}
-            {metadata?.runtime && <span className="text-white/80 font-medium">{metadata.runtime} min</span>}
+            {metadata?.runtime && <span className="text-white/70 font-medium">{metadata.runtime} min</span>}
             {metadata?.certification && (
-              <span className="rounded-md border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] font-bold text-white/90">
+              <span className="border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] font-bold text-white/80">
                 {metadata.certification}
               </span>
             )}
             {item.rating && (
-              <span className="flex items-center gap-1 font-semibold text-amber bg-amber/10 border border-amber/20 px-2 py-0.5 rounded-md">
+              <span className="flex items-center gap-1 font-semibold text-amber">
                 ★ {item.rating.toFixed(1)}
               </span>
             )}
             {metadata?.genres.slice(0, 3).map((g) => (
               <span
                 key={g}
-                className="rounded-md bg-white/10 backdrop-blur-md border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/90"
+                className="bg-white/8 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/80"
               >
                 {g}
               </span>
@@ -272,13 +299,13 @@ function DetailView({
 
           {/* Unmatched / review notice */}
           {unmatched && item.kind !== "episode" && (
-            <div className="mt-4 flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
-              <Sparkles size={18} className="shrink-0" />
+            <div className="mt-4 flex items-center gap-3 border border-amber-500/25 bg-amber-500/8 px-4 py-2.5 text-sm text-amber-300">
+              <Sparkles size={16} className="shrink-0" />
               <span className="text-xs sm:text-sm">
                 Not identified yet{matchReason ? `: ${matchReason}` : ""}.
               </span>
               <Button
-                variant="brand"
+                variant="surface"
                 onClick={() => setFixMatchOpen(true)}
                 className="ml-auto h-8 px-3 text-xs font-semibold"
               >
@@ -292,11 +319,11 @@ function DetailView({
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-2.5">
             {(file || (item.kind === "series" && episodes && episodes.length > 0)) && (
               <Button
-                variant="brand"
+                variant="primary"
                 onClick={handlePrimaryPlay}
                 onPointerEnter={() => prefetchPlay(primaryFileId)}
                 onFocus={() => prefetchPlay(primaryFileId)}
-                className="h-10 sm:h-11 px-5 sm:px-6 text-sm font-bold shadow-lg shadow-brand/20 active:scale-95 transition-all"
+                className="h-10 sm:h-11 px-5 sm:px-6 text-sm font-bold active:scale-95 transition-all"
               >
                 {hasResume ? (
                   <PlayCircle size={18} />
@@ -450,7 +477,7 @@ function DetailView({
               </div>
 
               {filteredEpisodes.length > 0 ? (
-                <div className="space-y-2.5">
+                <div ref={episodesRef} className="space-y-2.5">
                   {filteredEpisodes.map((ep, idx) => {
                     const epNum = ep.episodeNumber ?? idx + 1;
                     const displayTitle = episodeDisplayTitle(ep.name, epNum);
@@ -463,6 +490,9 @@ function DetailView({
                     return (
                       <div
                         key={ep.id}
+                        data-episode-art
+                        data-poster={ep.poster ?? undefined}
+                        data-backdrop={ep.backdrop ?? undefined}
                         className={cx(
                           "group relative flex w-full items-center justify-between gap-2.5 rounded-xl border bg-surface p-2 sm:p-2.5 sm:gap-3.5",
                           "transition-all duration-150 ease-out hover:border-line hover:bg-surface-hover/80 active:scale-[0.99]",
@@ -511,7 +541,7 @@ function DetailView({
 
                             {/* Duration tag */}
                             {ep.runtime && (
-                              <div className="absolute bottom-1 right-1 rounded bg-black/80 px-1 py-0.2 text-[9px] font-semibold text-white/90">
+                              <div className="absolute bottom-1 right-1 rounded-sm bg-black/80 px-1 py-0.2 text-[9px] font-semibold text-white/90">
                                 {ep.runtime}m
                               </div>
                             )}
@@ -530,7 +560,7 @@ function DetailView({
                           {/* Episode info */}
                           <div className="min-w-0 flex-1 py-0.5">
                             <div className="flex items-center gap-2">
-                              <span className="rounded bg-brand/10 text-brand-text px-1.5 py-0.2 text-[10px] font-bold tabular-nums shrink-0">
+                              <span className="rounded-sm bg-brand/10 text-brand-text px-1.5 py-0.2 text-[10px] font-bold tabular-nums shrink-0">
                                 {badge}
                               </span>
                               <h3 className="truncate text-xs sm:text-sm font-semibold text-ink transition-colors group-hover:text-white">

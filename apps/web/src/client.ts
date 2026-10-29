@@ -6,6 +6,8 @@
 import { treaty } from "@elysiajs/eden";
 import type { App } from "../../server/src/app";
 import { getApiBase } from "./server-config";
+import { reportConnectionHealth } from "./lib/connection-health";
+import { isPlaybackDiagnosticsEnabled } from "./lib/playback-diagnostics-consent";
 import {
   type BrowserCaps,
   type FileFacts,
@@ -15,6 +17,7 @@ import {
   type OptimizerStatus,
   type Playability,
   type PlayPath,
+  type PlaybackDiagnostic,
   type ReviewEntry,
   type ReviewPayload,
   type ServerSettings,
@@ -30,6 +33,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -46,69 +50,118 @@ function notifyUnauthorized(): void {
 // The base URL is resolved per call: a hosted web build lets the viewer pick
 // their server at runtime, and the desktop app can fall back to a remote one.
 const createTreaty = (base: string) =>
-  treaty<App>(base, { fetch: { credentials: "include" } });
-
-let treatyClient: ReturnType<typeof createTreaty> | null = null;
-let treatyBase = "";
+  treaty<App>(base, {
+    fetch: {
+      credentials: "include",
+      signal: AbortSignal.timeout(12_000),
+    },
+  });
 
 function rpc() {
-  const base = getApiBase();
-  if (!treatyClient || treatyBase !== base) {
-    treatyClient = createTreaty(base);
-    treatyBase = base;
-  }
-  return treatyClient;
+  // Create a fresh request deadline per RPC operation. Caching a Treaty with a
+  // single AbortSignal would make every call fail once that signal expires.
+  return createTreaty(getApiBase());
 }
 
-// Unwrap Eden responses into data or throw ApiError
-async function unwrap<T>(promise: Promise<{ data: unknown; error: unknown; status: number }>): Promise<T> {
-  try {
-    const res = await promise;
-    if (res.status === 401) notifyUnauthorized();
-    if (res.error || res.data === null || res.data === undefined) {
-      let msg = `Request failed (${res.status || 500})`;
-      if (res.error) {
-        const anyErr = res.error as any;
-        if (anyErr?.value?.error) {
-          msg = anyErr.value.error;
-        } else if (anyErr?.message && typeof anyErr.message === "string") {
-          msg = anyErr.message;
-        } else if (typeof anyErr?.value === "string") {
-          msg = anyErr.value;
-        }
+const READ_RETRY_DELAYS = [250, 650] as const;
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorMessage(error: unknown, status: number): string {
+  if (!error) return `Request failed (${status || 500})`;
+  const value = error as { value?: { error?: unknown } | string; message?: unknown };
+  if (typeof value.value === "object" && typeof value.value?.error === "string") return value.value.error;
+  if (typeof value.message === "string") return value.message;
+  if (typeof value.value === "string") return value.value;
+  return `Request failed (${status || 500})`;
+}
+
+// Read-only RPC calls are safe to retry after a timeout or transient gateway
+// error. Callers pass a factory so every attempt creates a fresh request.
+async function unwrap<T>(
+  request: () => Promise<{ data: unknown; error: unknown; status: number }>,
+  retryRead = true,
+): Promise<T> {
+  let lastError: unknown;
+  const retries = retryRead ? READ_RETRY_DELAYS.length : 0;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await request();
+      if (res.status === 401) notifyUnauthorized();
+      if (RETRYABLE_STATUSES.has(res.status) && attempt < retries) {
+        await pause(READ_RETRY_DELAYS[attempt]!);
+        continue;
       }
-      throw new ApiError(res.status || 500, msg);
+      reportConnectionHealth(res.status >= 500 ? "unavailable" : "online");
+      if (res.error || res.data === null || res.data === undefined) {
+        throw new ApiError(res.status || 500, errorMessage(res.error, res.status));
+      }
+      return res.data as T;
+    } catch (error) {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) throw error;
+      lastError = error;
+      if (attempt < retries) {
+        await pause(READ_RETRY_DELAYS[attempt]!);
+        continue;
+      }
     }
-    return res.data as T;
-  } catch (err) {
-    if (err instanceof ApiError) throw err;
-    throw new ApiError(503, `Cannot reach the Plexy server at ${getApiBase()}.`);
   }
+  reportConnectionHealth(lastError instanceof ApiError ? "unavailable" : "offline");
+  if (lastError instanceof ApiError) throw lastError;
+  throw new ApiError(503, `Cannot reach the Plexy server at ${getApiBase()}.`);
 }
 
 // Direct fetch for plain REST endpoints with safe JSON parsing
 async function restFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const base = getApiBase();
   const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-  try {
-    const res = await fetch(url, { credentials: "include", ...init });
-    const text = await res.text();
-    if (res.status === 401) notifyUnauthorized();
-    let body: unknown = null;
+  const method = (init?.method ?? "GET").toUpperCase();
+  const canRetry = method === "GET" || method === "HEAD";
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= (canRetry ? READ_RETRY_DELAYS.length : 0); attempt++) {
     try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      body = text;
+      const res = await fetch(url, {
+        credentials: "include",
+        ...init,
+        signal: init?.signal
+          ? AbortSignal.any([init.signal, AbortSignal.timeout(12_000)])
+          : AbortSignal.timeout(12_000),
+      });
+      if (canRetry && RETRYABLE_STATUSES.has(res.status) && attempt < READ_RETRY_DELAYS.length) {
+        await res.body?.cancel();
+        await pause(READ_RETRY_DELAYS[attempt]!);
+        continue;
+      }
+      const text = await res.text();
+      if (res.status === 401) notifyUnauthorized();
+      reportConnectionHealth(res.status >= 500 ? "unavailable" : "online");
+      let body: unknown = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = text;
+      }
+      if (!res.ok) {
+        const msg = (body as { error?: string } | null)?.error ?? `Request failed (${res.status})`;
+        throw new ApiError(res.status, msg, res.headers.get("x-request-id") ?? undefined);
+      }
+      return body as T;
+    } catch (error) {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) throw error;
+      lastError = error;
+      if (canRetry && attempt < READ_RETRY_DELAYS.length) {
+        await pause(READ_RETRY_DELAYS[attempt]!);
+        continue;
+      }
+      if (error instanceof ApiError) throw error;
     }
-    if (!res.ok) {
-      const msg = (body as { error?: string } | null)?.error ?? `Request failed (${res.status})`;
-      throw new ApiError(res.status, msg);
-    }
-    return body as T;
-  } catch (err) {
-    if (err instanceof ApiError) throw err;
-    throw new ApiError(503, `Cannot reach the Plexy server at ${base}.`);
   }
+  reportConnectionHealth(lastError instanceof ApiError ? "unavailable" : "offline");
+  if (lastError instanceof ApiError) throw lastError;
+  throw new ApiError(503, `Cannot reach the Plexy server at ${base}.`);
 }
 
 export const api = {
@@ -118,8 +171,26 @@ export const api = {
     return restFetch<ServerStatus>("/api/server/status");
   },
 
+  playbackDiagnostics: async (): Promise<{ events: PlaybackDiagnostic[] }> => {
+    return restFetch<{ events: PlaybackDiagnostic[] }>("/api/diagnostics/playback");
+  },
+
+  reportPlaybackDiagnostic: async (event: {
+    kind: PlaybackDiagnostic["kind"];
+    path?: Exclude<PlaybackDiagnostic["path"], null>;
+    durationMs?: number;
+    mediaErrorCode?: number;
+  }): Promise<void> => {
+    if (!isPlaybackDiagnosticsEnabled()) return;
+    await restFetch<{ ok: true }>("/api/diagnostics/playback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+    });
+  },
+
   home: async (): Promise<HomePayload> => {
-    return unwrap<HomePayload>(rpc().api.home.get());
+    return unwrap<HomePayload>(() => rpc().api.home.get());
   },
 
   items: async (query: {
@@ -131,7 +202,7 @@ export const api = {
     limit?: number;
     offset?: number;
   }): Promise<{ items: ItemCard[] }> => {
-    return unwrap<{ items: ItemCard[] }>(
+    return unwrap<{ items: ItemCard[] }>(() =>
       rpc().api.items.get({
         query: {
           kind: query.kind,
@@ -147,11 +218,24 @@ export const api = {
   },
 
   title: async (id: number | string): Promise<TitleDetail> => {
-    return unwrap<TitleDetail>(rpc().api.items({ id: String(id) }).get());
+    return unwrap<TitleDetail>(() => rpc().api.items({ id: String(id) }).get());
   },
 
-  search: async (q: string): Promise<{ items: ItemCard[] }> => {
-    return unwrap<{ items: ItemCard[] }>(rpc().api.search.get({ query: { q } }));
+  search: async (q: string): Promise<{ titles: ItemCard[]; episodes: ItemCard[] }> => {
+    const result = await unwrap<{
+      titles?: ItemCard[];
+      episodes?: ItemCard[];
+      items?: ItemCard[];
+    }>(() => rpc().api.search.get({ query: { q } }));
+    if (result.titles || result.episodes) {
+      return { titles: result.titles ?? [], episodes: result.episodes ?? [] };
+    }
+    // Support servers that still return the legacy flat search response.
+    const items = result.items ?? [];
+    return {
+      titles: items.filter((item) => item.kind !== "episode"),
+      episodes: items.filter((item) => item.kind === "episode"),
+    };
   },
 
   /**
@@ -172,7 +256,7 @@ export const api = {
   },
 
   subtitles: async (fileId: number): Promise<{ tracks: SubtitleTrack[] }> => {
-    return unwrap<{ tracks: SubtitleTrack[] }>(rpc().api.subtitles({ fileId: String(fileId) }).get());
+    return unwrap<{ tracks: SubtitleTrack[] }>(() => rpc().api.subtitles({ fileId: String(fileId) }).get());
   },
 
   progress: async (
@@ -182,12 +266,13 @@ export const api = {
     played: boolean,
   ): Promise<{ ok: boolean }> => {
     return unwrap<{ ok: boolean }>(
-      rpc().api.progress.post({
+      () => rpc().api.progress.post({
         itemId,
         position,
         duration: duration ?? undefined,
         played,
       }),
+      false,
     );
   },
 
@@ -222,11 +307,22 @@ export const api = {
     return restFetch<{ libraries: LibraryItem[] }>("/api/libraries");
   },
 
-  createLibrary: async (name: string, type: "movies" | "tv", paths: string[]): Promise<{ id: number }> => {
+  createLibrary: async (name: string, type: "movies" | "tv" | "anime", paths: string[]): Promise<{ id: number }> => {
     return restFetch<{ id: number }>("/api/libraries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, type, paths }),
+    });
+  },
+
+  updateLibrary: async (
+    id: number,
+    patch: { name: string; type: "movies" | "tv" | "anime"; paths: string[] },
+  ): Promise<{ ok: true }> => {
+    return restFetch<{ ok: true }>(`/api/libraries/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
     });
   },
 

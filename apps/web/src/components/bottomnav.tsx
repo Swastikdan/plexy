@@ -31,7 +31,7 @@ export function BottomNav() {
     <nav
       className={cx(
         "fixed bottom-0 inset-x-0 z-40 sm:hidden",
-        "border-t border-line/70 bg-canvas/95 backdrop-blur-md shadow-lg shadow-black/40",
+        "border-t border-line bg-canvas/98 backdrop-blur-md",
         "pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-1.5 px-2",
       )}
       aria-label="Mobile Navigation Bar"
@@ -46,10 +46,10 @@ export function BottomNav() {
             className={cx(
               "group flex flex-1 flex-col items-center justify-center gap-1 py-1 text-center select-none",
               "text-ink-muted transition-all duration-150 active:scale-95",
-              "[&.active]:text-brand-text",
+              "[&.active]:text-ink",
             )}
           >
-            <div className="relative flex h-7 w-7 items-center justify-center rounded-full transition-colors group-hover:bg-white/5 group-[.active]:bg-brand/15">
+            <div className="relative flex h-7 w-7 items-center justify-center transition-colors">
               <item.icon size={19} className="transition-transform group-[.active]:scale-110" />
             </div>
             <span className="text-[10px] font-medium tracking-tight transition-colors">

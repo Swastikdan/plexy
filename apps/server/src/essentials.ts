@@ -31,6 +31,22 @@ export function isLoopbackContext(ctx: LoopbackContext): boolean {
 }
 
 /**
+ * Owner-only operations must not treat a reverse proxy's local connection as
+ * the owner. Proxies add at least one forwarding header; clients cannot use
+ * those headers to gain access because their presence makes this check fail.
+ */
+export function isDirectLoopbackContext(ctx: LoopbackContext): boolean {
+  if (!isLoopbackContext(ctx)) return false;
+  return ![
+    "forwarded",
+    "x-forwarded-for",
+    "cf-connecting-ip",
+    "x-real-ip",
+    "x-forwarded-host",
+  ].some((header) => Boolean(ctx.request.headers.get(header)));
+}
+
+/**
  * Return a 403 Response when the caller is not on the host, else null.
  * Handlers: `const denied = denyIfNotLocal(ctx); if (denied) return denied;`
  */
@@ -38,7 +54,7 @@ export function denyIfNotLocal(
   ctx: LoopbackContext,
   what: string,
 ): Response | null {
-  if (isLoopbackContext(ctx)) return null;
+  if (isDirectLoopbackContext(ctx)) return null;
   return Response.json(
     { error: "This area is only available on the computer running Plexy." },
     { status: 403 },

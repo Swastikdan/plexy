@@ -487,16 +487,61 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     return { ok: true };
   })
 
-  /** Search titles (PRD 5.9). */
+  /**
+   * Search titles and episodes (PRD 5.9).
+   *
+   * Results are split so the viewer can tell films/shows apart from individual
+   * episodes at a glance. Episode matching also considers the parent series
+   * name, so searching "The Bear" surfaces its episodes even when the episode
+   * title itself does not contain the query.
+   */
   .get("/search", async ({ query }) => {
     const text = query.q.trim();
-    if (!text) return { items: [] as ItemCard[] };
-    const rows = q<Row>(
+    if (!text) return { titles: [] as ItemCard[], episodes: [] as ItemCard[], items: [] as ItemCard[] };
+    const like = `%${text}%`;
+
+    const titleRows = q<Row>(
       `SELECT * FROM items
-       WHERE name LIKE ? AND match_status = 'matched'
+       WHERE kind IN ('movie', 'series') AND match_status = 'matched' AND name LIKE ?
        ORDER BY score DESC, sort_title LIMIT 24`,
-    ).all(`%${text}%`);
-    return { items: await attachArt(rows) };
+    ).all(like);
+
+    const episodeRows = q<Row>(
+      `SELECT e.* FROM items e
+       LEFT JOIN items s ON s.id = e.parent_id
+       WHERE e.kind = 'episode' AND e.match_status = 'matched'
+         AND (e.name LIKE ? OR s.name LIKE ?)
+       ORDER BY s.sort_title, e.season_number, e.episode_number
+       LIMIT 40`,
+    ).all(like, like);
+
+    const [titles, episodes] = await Promise.all([
+      attachArt(titleRows),
+      attachArt(episodeRows),
+    ]);
+
+    // Episodes carry their series name and public id so the card can show
+    // "The Bear · S02E03" and link the episode rather than the show.
+    const parentIds = [...new Set(episodes.map((e) => e.parentId).filter((id): id is number => id != null))];
+    if (parentIds.length) {
+      const ph = parentIds.map(() => "?").join(",");
+      const parents = new Map(
+        q<Row>(`SELECT id, name, public_id FROM items WHERE id IN (${ph})`)
+          .all(...parentIds)
+          .map((p) => [Number(p.id), p]),
+      );
+      for (const episode of episodes) {
+        const parent = episode.parentId != null ? parents.get(episode.parentId) : undefined;
+        if (parent) {
+          episode.parentTitle = String(parent.name);
+          episode.parentPublicId = String(parent.public_id);
+        }
+      }
+    }
+
+    // Keep the flat alias while older desktop bundles may still request
+    // `items`; current clients render the two typed sections above.
+    return { titles, episodes, items: [...titles, ...episodes] };
   }, { query: t.Object({ q: t.String() }) })
 
   /**
