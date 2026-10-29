@@ -1,12 +1,12 @@
-/// Library grid (PRD 5.9, 10.2): everything in one library with sort/filter.
+/// Library grid (PRD 5.9, 10.2): everything in one library with sort.
 import { useState } from "react";
-import { createFileRoute, useParams, Link } from "@tanstack/react-router";
+import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Wrench } from "lucide-react";
 import { queries } from "../../queries";
 import { Poster } from "../../components/poster";
-import { Button, cx } from "../../components/ui/button";
+import { cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
+import { PageHeader } from "../../components/page-header";
 import { State } from "../index";
 import { PageLoader } from "../../components/page-loader";
 
@@ -20,40 +20,19 @@ const SORTS = [
 function LibraryRoute() {
   const { kind } = useParams({ from: Route.id });
   const [sort, setSort] = useState<string>("added");
-  const [unwatched, setUnwatched] = useState(false);
-  const status = useQuery(queries.serverStatus());
 
   const apiKind: "movie" | "series" = kind === "tv" ? "series" : "movie";
   const { data, isLoading, isFetching, isError } = useQuery(
-    queries.items({ kind: apiKind, sort, unwatched }),
+    queries.items({ kind: apiKind, sort }),
   );
 
   const label = kind === "tv" ? "TV Shows" : "Movies";
 
   return (
     <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 sm:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-4 pt-6 pb-8">
-        <h1 className="font-sans text-2xl font-bold tracking-tight">{label}</h1>
-        <div className="flex flex-wrap items-center gap-2.5">
-          {status.data?.adminAvailable && (
-            <Button
-              variant="ghost"
-              render={<Link to="/admin" search={{ tab: "review" }} />}
-              className="h-8 px-3 text-[13px]"
-              title="Search all titles and remap wrong matches"
-            >
-              <Wrench size={13} />
-              Fix matches
-            </Button>
-          )}
-          <Button
-            variant={unwatched ? "surface" : "ghost"}
-            onClick={() => setUnwatched((v) => !v)}
-            aria-pressed={unwatched}
-            className="h-8 px-3 text-[13px]"
-          >
-            Unwatched only
-          </Button>
+      <PageHeader
+        title={label}
+        action={
           <Select.Root
             value={sort}
             onValueChange={(v) => setSort(String(v))}
@@ -71,8 +50,8 @@ function LibraryRoute() {
               ))}
             </Select.Positioner>
           </Select.Root>
-        </div>
-      </div>
+        }
+      />
 
       {isLoading && !data && <PageLoader className="min-h-[55vh]" />}
       {isError && <State title="Couldn't load the library" body="Is Plexy running on this machine?" />}

@@ -72,33 +72,31 @@ export function TopNav() {
         {/* Main top header row — three equal tracks keep the nav centered
             whether the left slot holds the logo or the back button. */}
         <div className="grid h-12 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:h-14 sm:gap-6">
-          {/* Left section: back button OR Plexy logo — never both at once */}
+          {/* Left section: a persistent brand home, preceded by Back on
+              sub-pages so the app still reads as Plexy while navigating. */}
           <div
             style={{
               WebkitAppRegion: "no-drag",
               paddingLeft: electronMac && !isFullscreen ? "88px" : undefined,
             } as React.CSSProperties}
-            className="flex min-w-0 items-center gap-2 justify-self-start sm:gap-3"
+            className="flex min-w-0 items-center gap-1 justify-self-start sm:gap-2"
           >
-            {canGoBack ? (
-              /* On sub-pages: just the back button, no Plexy branding */
-              <BackButton onClick={() => router.history.back()} />
-            ) : (
-              /* On home: Plexy logo link */
-              <Link
-                to="/"
-                className="group flex items-center gap-2 p-1 transition-transform active:scale-97"
+            {canGoBack && <BackButton onClick={() => router.history.back()} />}
+            <Link
+              to="/"
+              aria-label="Plexy home"
+              className="group flex min-w-0 items-center gap-2 p-1 transition-transform active:scale-97"
+            >
+              <img src="/icon.svg" alt="" className="h-6 w-6 shrink-0" />
+              <span
+                className={cx(
+                  "font-sans text-base font-bold tracking-tight text-ink transition-colors group-hover:text-ink/80",
+                  canGoBack && "hidden min-[400px]:inline",
+                )}
               >
-                <img
-                  src="/icon.svg"
-                  alt="Plexy"
-                  className="h-6 w-6"
-                />
-                <span className="font-sans text-base font-bold tracking-tight text-ink transition-colors group-hover:text-ink/80">
-                  Plexy
-                </span>
-              </Link>
-            )}
+                Plexy
+              </span>
+            </Link>
           </div>
 
           {/* Desktop Navigation Links */}

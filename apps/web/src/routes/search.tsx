@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import { queries } from "../queries";
 import { SearchResultCard } from "../components/search-result-card";
+import { PageHeader } from "../components/page-header";
 import { PageLoader } from "../components/page-loader";
 import { State } from "./index";
 
@@ -54,17 +55,11 @@ function SearchRoute() {
   return (
     <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 sm:px-8">
       {/* Page context: the search page should read as a place, not a bare input. */}
-      <header className="pt-8 pb-5 sm:pt-10">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-ink-muted">
-          Library
-        </p>
-        <h1 className="mt-1 font-sans text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-          Search
-        </h1>
-        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink-muted">
-          Find films, shows, and episodes across your server.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="Library"
+        title="Search"
+        description="Find films, shows, and episodes across your server."
+      />
 
       {/* Sticky under the app header so the search field keeps its nav context
           while results scroll. */}
