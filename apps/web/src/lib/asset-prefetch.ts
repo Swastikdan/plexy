@@ -23,7 +23,7 @@ const META_VERSION = 1;
 const RECONCILED_KEY = "plexy.prefetch.reconciled-at";
 
 /** Managed path prefixes. Playback streams, subtitles and pages are excluded. */
-const ASSET_PATH_PREFIXES = ["/api/images/", "/api/trickplay/"];
+const ASSET_PATH_PREFIXES = ["/api/images/", "/api/trickplay/", "/api/people/"];
 
 export interface PrefetchRuntime {
   enabled: boolean;

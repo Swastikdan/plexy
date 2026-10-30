@@ -17,7 +17,37 @@ import { networkInterfaces } from "node:os";
 import { migrateLegacyPackagedData } from "./paths";
 import { setLiveBinding } from "./runtime";
 
+/// Name the backend explicitly in CLI output: this artifact is Plexy Server,
+/// not the combined Plexy app, and a headless binary has no GUI icon to explain
+/// that. `--version` also checks a built artifact without booting the database,
+/// migrations or the media worker.
+function printServerCli(argv: string[]): boolean {
+  const wantsVersion = argv.includes("--version") || argv.includes("-v");
+  const wantsHelp = argv.includes("--help") || argv.includes("-h");
+  if (!wantsVersion && !wantsHelp) return false;
+
+  console.log(`Plexy Server ${APP_VERSION}`);
+  if (wantsVersion) return true;
+
+  console.log("");
+  console.log("Usage: plexy-server [options]");
+  console.log("");
+  console.log("Options:");
+  console.log("  -v, --version   Print the Plexy Server version and exit");
+  console.log("  -h, --help      Print this help and exit");
+  console.log("");
+  console.log("Environment:");
+  console.log("  PORT                    Listen port (default 8765)");
+  console.log("  PLEXY_DATA_DIR          Data and database directory");
+  console.log("  PLEXY_LOG_LEVEL         debug | info | warn | error");
+  console.log("  PLEXY_ALLOWED_ORIGINS   Exact HTTPS client origins allowed to call the API");
+  return true;
+}
+
 async function bootstrap(): Promise<void> {
+  if (printServerCli(process.argv.slice(2))) {
+    process.exit(0);
+  }
   const isMediaWorker = process.argv.includes("--worker=media") || process.argv.some(a => a.endsWith("media-worker.ts") || a.endsWith("media-worker"));
   const isOptimizeWorker = process.argv.includes("--worker=optimize") || process.argv.some(a => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"));
 
@@ -68,6 +98,23 @@ async function main(): Promise<void> {
   const hostname = cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   app.listen({ port, hostname });
+
+  // Offline resilience: ensure any previously uncached artwork is downloaded and derived locally
+  setTimeout(() => {
+    void import("./artwork").then(({ cacheMissingArtwork }) => cacheMissingArtwork()).catch(() => {});
+  }, 3_000);
+
+  // Backfill community skip markers for libraries indexed before the cache
+  // existed. Scans and playbacks refresh stale rows from here on.
+  if (cfg.skipSegmentsEnabled) {
+    setTimeout(() => {
+      void import("./skip-segments")
+        .then(({ refreshMissingSkipSegments }) => refreshMissingSkipSegments())
+        .catch((err) => log.warn("player", "could not refresh skip markers at startup", {
+          message: err instanceof Error ? err.message : String(err),
+        }));
+    }, 8_000);
+  }
 
   // Print the addresses a phone/tablet on the same Wi-Fi can actually open.
   // The server is plain HTTP; `https://` fails before a request reaches it.

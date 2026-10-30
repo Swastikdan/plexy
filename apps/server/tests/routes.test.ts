@@ -257,6 +257,33 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(data).toHaveProperty("totalBytes");
   });
 
+  test("POST /api/admin/artwork/cache-all triggers background caching", async () => {
+    const res = await app.handle(new Request("http://localhost:8765/api/admin/artwork/cache-all", { method: "POST" }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.status).toBe("started");
+  });
+
+  test("GET /api/people/:id/photo serves avatar fallback when offline/uncached", async () => {
+    run("INSERT OR IGNORE INTO people (id, tmdb_id, name, profile_path) VALUES (99, 1234, 'Actor Name', '/sample_photo.jpg')");
+    const res = await app.handle(new Request("http://localhost:8765/api/people/99/photo"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/svg+xml");
+    const text = await res.text();
+    expect(text).toContain("<svg");
+    expect(text).toContain(">A<");
+  });
+
+  test("GET /api/images/:id serves placeholder SVG fallback instead of 302 redirect when offline", async () => {
+    run("INSERT OR IGNORE INTO artwork (id, item_id, kind, source, url) VALUES (999, 1, 'poster', 'tmdb', 'https://image.tmdb.org/t/p/w780/nonexistent.jpg')");
+    const res = await app.handle(new Request("http://localhost:8765/api/images/999"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/svg+xml");
+    const text = await res.text();
+    expect(text).toContain("<svg");
+  });
+
   test("PUT /api/settings persists local prefetch preferences and rejects out-of-range values", async () => {
     try {
       const res = await app.handle(

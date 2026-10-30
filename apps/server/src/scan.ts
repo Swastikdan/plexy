@@ -20,6 +20,7 @@ import { cacheEmbeddedSubtitles } from "./subtitles";
 import { resolveOptimizedDir, resolveTrickplayDir } from "./paths";
 import { enqueueConfiguredStreamPreparations } from "./hls-preparation";
 import { hydrateItemMetadata, hydrateEpisodeItem, hydrateMissingEpisodes } from "./hydrate";
+import { refreshMissingSkipSegments } from "./skip-segments";
 
 export interface ScanProgress {
   scanId: number;
@@ -282,6 +283,17 @@ async function runScan(libraryIds: number[]): Promise<void> {
       }));
     void enqueueConfiguredStreamPreparations().catch((err) =>
       log.warn("media", "could not queue configured quality streams after scan", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+    void import("./artwork").then(({ cacheMissingArtwork }) => cacheMissingArtwork()).catch((err) =>
+      log.warn("artwork", "could not run background artwork pre-cache after scan", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+    // Backfill skip markers for titles that were already hydrated before this
+    // feature existed (the scan fast path skips unchanged files). Newly matched
+    // series are handled during hydration; this sweep catches the rest.
+    void refreshMissingSkipSegments().catch((err) =>
+      log.warn("player", "could not refresh skip markers after scan", {
         message: err instanceof Error ? err.message : String(err),
       }));
     // Libraries created (or manual scans requested) while this run was

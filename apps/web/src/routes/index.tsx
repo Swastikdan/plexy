@@ -8,7 +8,7 @@ import { Row } from "../components/row";
 import { Button } from "../components/ui/button";
 import { PageLoader } from "../components/page-loader";
 
-export default function HomeRoute() {
+function HomeRoute() {
   const navigate = useNavigate();
   const status = useQuery(queries.serverStatus());
   const { data, isLoading, isError } = useQuery(queries.home());
@@ -87,21 +87,3 @@ export default function HomeRoute() {
 }
 
 export const Route = createFileRoute("/")({ component: HomeRoute });
-
-export function State({
-  title,
-  body,
-  action,
-}: {
-  title: string;
-  body: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-      <h2 className="font-sans text-xl font-bold text-ink">{title}</h2>
-      <p className="text-sm text-ink-muted leading-relaxed">{body}</p>
-      {action}
-    </div>
-  );
-}

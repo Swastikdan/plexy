@@ -1,9 +1,10 @@
 import { mkdir, copyFile, chmod, readdir, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import { generateIcons } from "./generate-icon";
+import { generateDmgBackground } from "./generate-dmg-background";
 
 /**
  * Resolve the FFmpeg binary regardless of whether dependencies were installed
@@ -37,6 +38,35 @@ async function findFfmpeg(rootDir: string): Promise<string | null> {
   }
 
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+/**
+ * dmg-builder mounts the image to author its `.DS_Store`. If a volume with the
+ * same name is already mounted, macOS names the new one "Plexy 0.1.0 2" and
+ * that suffixed name gets baked into the background alias — the installer then
+ * loses (or shows a stale) background on a clean machine. Detach leftovers
+ * before packaging so the alias always references the real volume name.
+ */
+function detachStaleInstallerVolumes(productName: string) {
+  const escaped = productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matcher = new RegExp(`^${escaped} \\d+\\.\\d+\\.\\d+( \\d+)?$`);
+
+  try {
+    for (const name of readdirSync("/Volumes")) {
+      if (!matcher.test(name)) continue;
+      try {
+        execSync(`hdiutil detach "/Volumes/${name}" -force`, {
+          stdio: "ignore",
+          timeout: 15_000,
+        });
+        console.log(`✓ Detached stale installer volume: ${name}`);
+      } catch {
+        /* volume may already be gone */
+      }
+    }
+  } catch {
+    /* /Volumes unavailable */
+  }
 }
 
 async function buildDesktop() {
@@ -95,6 +125,10 @@ async function buildDesktop() {
   console.log("\n3. Generating High-Resolution Apple Application Icon...");
   await generateIcons();
 
+  // 3b. Render the DMG installer window artwork (1x + retina)
+  console.log("\n3b. Generating DMG installer window background...");
+  await generateDmgBackground();
+
   // 4. Compile Standalone Server Binary
   console.log("\n4. Compiling Standalone Backend Server (Bun native compilation)...");
   const serverOut = join(distBin, "plexy-server");
@@ -111,6 +145,7 @@ async function buildDesktop() {
   // publish to GitHub and fails without GH_TOKEN. The release workflow uploads
   // the artifacts itself.
   console.log("\n6. Packaging macOS Electron Application with electron-builder...");
+  detachStaleInstallerVolumes("Plexy");
   execSync(
     "./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never",
     {

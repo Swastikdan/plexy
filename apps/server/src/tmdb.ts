@@ -219,6 +219,16 @@ async function cacheGet(key: string): Promise<string | null> {
   return row.body;
 }
 
+async function cacheGetStale(key: string): Promise<string | null> {
+  try {
+    const row = q<{ body: string }, [string]>(
+      "SELECT body FROM tmdb_cache WHERE key = ?").get(key);
+    return row?.body ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function cachePut(key: string, endpoint: string, body: string, ttlMs: number): Promise<void> {
   run(
     `INSERT INTO tmdb_cache (key, endpoint, body, expires_at)
@@ -228,9 +238,9 @@ async function cachePut(key: string, endpoint: string, body: string, ttlMs: numb
   );
 }
 
-/** Drop expired rows occasionally; called after successful scans. */
+/** Retain metadata indefinitely for offline support; prune ancient search queries after 30 days. */
 export function pruneCache(): void {
-  run("DELETE FROM tmdb_cache WHERE expires_at < ?", Date.now());
+  run("DELETE FROM tmdb_cache WHERE endpoint LIKE 'search/%' AND expires_at < ?", Date.now() - 30 * 24 * 3600_000);
 }
 
 // --- throttle + fetch --------------------------------------------------------
@@ -263,7 +273,18 @@ async function requestJson(pathAndQuery: string, endpoint: string, ttlMs: number
     return JSON.parse(hit);
   }
 
-  const run = chain.then(() => doRequest(url, key, endpoint, ttlMs, token));
+  const run = chain.then(async () => {
+    try {
+      return await doRequest(url, key, endpoint, ttlMs, token);
+    } catch (err) {
+      const stale = await cacheGetStale(key);
+      if (stale) {
+        log.info("tmdb", `serving offline cached response for ${endpoint}`);
+        return JSON.parse(stale);
+      }
+      throw err;
+    }
+  });
   void run.catch(() => {}); // the client of `run` handles its own errors
   chain = run;
   return run;

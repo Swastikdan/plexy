@@ -2,22 +2,30 @@
 ///
 /// The bundled server is only reachable on loopback, so it can mint a device
 /// token for this installation without a pairing code. The token is persisted
-/// with Electron `safeStorage` (macOS Keychain-backed) and also installed as an
+/// as a `0600` file in the userData directory and also installed as an
 /// HttpOnly cookie on the server origin, which means `<img>`, `<video>`, HLS
 /// segment requests and EventSource all authenticate without client changes.
 ///
+/// The token is deliberately *not* stored with Electron `safeStorage`. macOS
+/// grants keychain access to an app by its code signature, and this build is
+/// ad-hoc signed (`identity: "-"`), so the grant never matches after a rebuild
+/// and macOS asks for the login password on every launch. The token is worth
+/// exactly as much as the database and device id sitting next to it in
+/// userData, so a `0600` file gives the same protection without the prompt.
+///
 /// The device id lives in the userData directory next to the database, so
-/// replacing the unsigned .app keeps the same identity; if the keychain entry
-/// becomes unreadable the loopback call simply issues a new token.
-import { app, safeStorage, session } from "electron";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+/// replacing the .app keeps the same identity; if the token file is missing the
+/// loopback call simply issues a new token.
+import { app, session } from "electron";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import path from "node:path";
 
 export const SESSION_COOKIE = "plexy_session";
 
-const TOKEN_FILE = "auth-token.bin";
+const TOKEN_FILE = "auth-token";
+const LEGACY_TOKEN_FILE = "auth-token.bin";
 const DEVICE_FILE = "device-id";
 
 function dataFile(name: string): string {
@@ -43,23 +51,24 @@ function readDeviceId(): string {
   return id;
 }
 
+/** Drop the safeStorage-era token; reading it would trigger a Keychain prompt. */
+function removeLegacyToken(): void {
+  const legacy = dataFile(LEGACY_TOKEN_FILE);
+  if (!existsSync(legacy)) return;
+  try {
+    rmSync(legacy, { force: true });
+    console.log("[Plexy Desktop] Removed the old Keychain-encrypted auth token.");
+  } catch (error) {
+    console.warn("[Plexy Desktop] Could not remove the old auth token:", error);
+  }
+}
+
 function readToken(): string | null {
+  removeLegacyToken();
   const file = dataFile(TOKEN_FILE);
   if (!existsSync(file)) return null;
   try {
-    const raw = readFileSync(file);
-    if (!raw.length) return null;
-    if (safeStorage.isEncryptionAvailable()) {
-      try {
-        return safeStorage.decryptString(raw).trim() || null;
-      } catch (error) {
-        // A replaced, unsigned .app can invalidate the keychain entry. Treat it
-        // as "no token" and mint a fresh one instead of locking the user out.
-        console.warn("[Plexy Desktop] Stored auth token could not be decrypted:", error);
-        return null;
-      }
-    }
-    return raw.toString("utf8").trim() || null;
+    return readFileSync(file, "utf8").trim() || null;
   } catch {
     return null;
   }
@@ -69,11 +78,7 @@ function writeToken(token: string): void {
   const file = dataFile(TOKEN_FILE);
   try {
     mkdirSync(path.dirname(file), { recursive: true });
-    if (safeStorage.isEncryptionAvailable()) {
-      writeFileSync(file, safeStorage.encryptString(token));
-    } else {
-      writeFileSync(file, token, { mode: 0o600 });
-    }
+    writeFileSync(file, token, { mode: 0o600 });
     try {
       chmodSync(file, 0o600);
     } catch {

@@ -671,6 +671,7 @@ function Settings() {
   const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(isPlaybackDiagnosticsEnabled);
   const [openMetadataSelect, setOpenMetadataSelect] = useState<string | null>(null);
   const [playbackPrefs, setPlaybackPrefs] = useState<PlaybackPreferences>(getPlaybackPreferences);
+  const [skipMessage, setSkipMessage] = useState<string | null>(null);
 
   const updatePlaybackPrefs = (patch: Partial<PlaybackPreferences>) => {
     setPlaybackPrefs(savePlaybackPreferences(patch));
@@ -700,6 +701,19 @@ function Settings() {
   const clearCache = useMutation({
     mutationFn: api.clearTmdbCache,
     onSuccess: ({ removed }) => setCacheMessage(`Cleared ${removed} cached TMDB response${removed === 1 ? "" : "s"}.`),
+  });
+
+  const refreshSkipMarkers = useMutation({
+    mutationFn: api.refreshSkipSegments,
+    onSuccess: ({ checked, found }) => {
+      setSkipMessage(
+        checked === 0
+          ? "Skip markers are already up to date."
+          : `Checked ${checked} title${checked === 1 ? "" : "s"}; found markers for ${found}.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["skip-segments"] });
+    },
+    onError: () => setSkipMessage("Could not refresh skip markers. Check the server log."),
   });
 
   const generateStreamVariants = useMutation({
@@ -941,8 +955,21 @@ function Settings() {
           />
           <span>Enable community skip markers (IntroDB)</span>
         </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="surface"
+            disabled={!s.skipSegmentsEnabled || refreshSkipMarkers.isPending}
+            onClick={() => refreshSkipMarkers.mutate()}
+          >
+            {refreshSkipMarkers.isPending && <RotateCw size={13} className="animate-spin" />}
+            {refreshSkipMarkers.isPending ? "Refreshing…" : "Refresh markers now"}
+          </Button>
+          {skipMessage && <p className="text-xs font-medium text-brand-text">{skipMessage}</p>}
+        </div>
         <p className="text-[11px] text-ink-muted">
-          Playback continues normally if the title has no marker, TMDB cannot resolve its IMDb ID, or the service is unavailable.
+          Markers are cached in the library database during scans and refreshed when you play an
+          episode whose data is missing or stale. Playback continues normally if the title has no
+          marker, TMDB cannot resolve its IMDb ID, or the service is unavailable.
         </p>
       </div>
 
@@ -2064,6 +2091,7 @@ const MAX_LOGS = 500;
 type LogEntry = {
   raw: string;
   ts: string | null;
+  datetime: string | null;
   level: string;
   component: string;
   message: string;
@@ -2076,13 +2104,14 @@ function parseLogLine(raw: string): LogEntry {
     return {
       raw,
       ts: typeof value.ts === "string" ? value.ts : null,
+      datetime: typeof value.datetime === "string" ? value.datetime : null,
       level: typeof value.level === "string" ? value.level : "info",
       component: typeof value.component === "string" ? value.component : "server",
       message: typeof value.message === "string" ? value.message : raw,
       context: value.context,
     };
   } catch {
-    return { raw, ts: null, level: "info", component: "raw", message: raw, context: undefined };
+    return { raw, ts: null, datetime: null, level: "info", component: "raw", message: raw, context: undefined };
   }
 }
 
@@ -2096,11 +2125,19 @@ const LEVEL_STYLE: Record<string, string> = {
   error: "bg-red-500/15 text-red-400 border border-red-500/25",
 };
 
-function logTime(ts: string | null): string {
+function logTime(entry: LogEntry): string {
+  // New log lines include a pre-formatted local `datetime`; legacy/raw lines
+  // only carry the ISO `ts`, which we parse into a readable string.
+  if (entry.datetime) return entry.datetime;
+  const ts = entry.ts;
   if (!ts) return "";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return (
+    d.toLocaleDateString([], { year: "numeric", month: "2-digit", day: "2-digit" }) +
+    " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+  );
 }
 
 function Logs() {
@@ -2331,7 +2368,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
       {/* Desktop view: 4 clean aligned columns */}
       <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] items-baseline gap-3 px-3 py-1.5 font-mono">
         <span className="text-[11px] tabular-nums text-white/45 shrink-0">
-          {logTime(entry.ts)}
+          {logTime(entry)}
         </span>
         <span className={cx(
           "rounded-sm px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
@@ -2371,7 +2408,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
             </span>
           </div>
           <span className="text-[10px] tabular-nums text-white/40">
-            {logTime(entry.ts)}
+            {logTime(entry)}
           </span>
         </div>
         <p className="text-xs text-white/90 break-words leading-relaxed">

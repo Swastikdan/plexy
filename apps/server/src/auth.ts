@@ -1,8 +1,8 @@
 /// Device authentication (tokens, pairing codes, session cookies).
 ///
 /// The server stores only token hashes; the raw token exists in the client's
-/// secure storage (macOS Keychain via Electron `safeStorage`) or in an
-/// HttpOnly cookie. Loopback remains the trust boundary for owner-only admin
+/// storage (an owner-only file for the desktop app) or in an HttpOnly cookie.
+/// Loopback remains the trust boundary for owner-only admin
 /// routes (`essentials.denyIfNotLocal`), while every `/api/*` endpoint now
 /// requires a valid device token — including on LAN.
 import { q, run, type Row } from "./db";

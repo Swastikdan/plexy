@@ -65,16 +65,18 @@
     "format": "ULFO",
     "title": "${productName} ${version}",
     "icon": null,
-    "backgroundColor": "#ffffff",
+    "background": "build/background.png",
+    "iconSize": 96,
+    "iconTextSize": 13,
     "contents": [
       {
-        "x": 140,
-        "y": 180,
+        "x": 162,
+        "y": 188,
         "type": "file"
       },
       {
-        "x": 400,
-        "y": 180,
+        "x": 470,
+        "y": 188,
         "type": "link",
         "path": "/Applications"
       }

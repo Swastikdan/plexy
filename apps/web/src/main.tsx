@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { hydrateServerUrl } from "./server-config";
+import { registerAppShellServiceWorker } from "./lib/app-shell-sw";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -42,6 +43,10 @@ declare module "@tanstack/react-router" {
 }
 
 async function bootstrap() {
+  // Installable client shell: one shared worker serves the app shell for every
+  // viewer and the artwork cache for local ones (see lib/app-shell-sw.ts).
+  registerAppShellServiceWorker();
+
   // Electron stores the chosen server outside the page origin so it survives
   // the dynamic local port changing between launches.
   await hydrateServerUrl();

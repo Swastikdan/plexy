@@ -5,9 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Home, Film, Tv, Settings } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "./poster";
+import { getClientRuntime } from "../runtime-config";
 
 export function BottomNav() {
   const { data: libraries } = useQuery(queries.libraries());
+  // Administration is loopback-only on the server, so a phone or another
+  // computer gets the viewer navigation only.
+  const runtime = getClientRuntime();
 
   const movieCount = libraries
     ? libraries.filter((l) => l.type === "movies").reduce((sum, l) => sum + (l.counts?.items ?? 0), 0)
@@ -24,7 +28,9 @@ export function BottomNav() {
     ...(tvCount === null || tvCount > 0
       ? [{ to: "/library/$kind" as const, label: "TV Shows", icon: Tv, params: { kind: "tv" as const } }]
       : []),
-    { to: "/admin" as const, label: "Settings", icon: Settings, params: undefined },
+    ...(runtime.canManageServer
+      ? [{ to: "/admin" as const, label: "Settings", icon: Settings, params: undefined }]
+      : []),
   ];
 
   return (

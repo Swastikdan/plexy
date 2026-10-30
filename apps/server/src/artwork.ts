@@ -35,21 +35,6 @@ async function ensureDirs(): Promise<void> {
   if (dirsReady) return;
   await mkdir(resolveOriginalsDir(), { recursive: true });
   await mkdir(resolveDerivedDir(), { recursive: true });
-  dirsReady = true;
-}
-
-/**
- * Fetch and retain the largest original artwork in Plexy's app data directory.
- * Deduplicates by SHA-256 hash, validates pixel bounds, and decodes with Bun.Image.
- */
-export async function cacheArtworkOriginal(tmdbOrRemoteUrl: string): Promise<ArtworkMeta | null> {
-  await ensureDirs();
-
-  const url = tmdbOrRemoteUrl.startsWith("http")
-    ? tmdbOrRemoteUrl
-    : `https://image.tmdb.org/t/p/original${tmdbOrRemoteUrl.startsWith("/") ? "" : "/"}${tmdbOrRemoteUrl}`;
-
-  // Check if already cached in DB and file exists on disk (enables 100% offline access)
   try {
     run(`CREATE TABLE IF NOT EXISTS local_artwork (
       url TEXT PRIMARY KEY,
@@ -60,7 +45,41 @@ export async function cacheArtworkOriginal(tmdbOrRemoteUrl: string): Promise<Art
       format TEXT NOT NULL,
       size_bytes INTEGER NOT NULL
     )`);
-    const cached = q<Row>("SELECT * FROM local_artwork WHERE url = ?").get(url);
+    run(`CREATE INDEX IF NOT EXISTS local_artwork_hash ON local_artwork(hash)`);
+  } catch {}
+  dirsReady = true;
+}
+
+/** Normalize any TMDB image path/URL to its highest-resolution canonical origin. */
+export function normalizeArtworkUrl(tmdbOrRemoteUrl: string): { canonicalUrl: string; originalUrl: string } {
+  let url = tmdbOrRemoteUrl.trim();
+  if (!url.startsWith("http")) {
+    const cleanPath = url.startsWith("/") ? url : `/${url}`;
+    url = `https://image.tmdb.org/t/p/original${cleanPath}`;
+  }
+  let canonicalUrl = url;
+  if (url.includes("image.tmdb.org/t/p/")) {
+    canonicalUrl = url.replace(/\/t\/p\/(w\d+|h\d+|original)\//, "/t/p/original/");
+  }
+  return { canonicalUrl, originalUrl: url };
+}
+
+const inFlightOriginals = new Map<string, Promise<ArtworkMeta | null>>();
+const inFlightDerivatives = new Map<string, Promise<string>>();
+
+/**
+ * Fetch and retain the largest original artwork in Plexy's app data directory.
+ * Deduplicates by SHA-256 hash, validates pixel bounds, and decodes with Bun.Image.
+ * Returns metadata or null if offline / fetch failed.
+ */
+export async function cacheArtworkOriginal(tmdbOrRemoteUrl: string): Promise<ArtworkMeta | null> {
+  await ensureDirs();
+
+  const { canonicalUrl, originalUrl } = normalizeArtworkUrl(tmdbOrRemoteUrl);
+
+  // Check if already cached in DB and file exists on disk (enables 100% offline access)
+  try {
+    const cached = q<Row>("SELECT * FROM local_artwork WHERE url = ? OR url = ? LIMIT 1").get(canonicalUrl, originalUrl);
     if (cached) {
       const exists = await Bun.file(String(cached.original_path)).exists();
       if (exists) {
@@ -76,70 +95,89 @@ export async function cacheArtworkOriginal(tmdbOrRemoteUrl: string): Promise<Art
     }
   } catch {}
 
-  try {
-    const res = await fetch(url, { headers: { "User-Agent": "Plexy/1.0" } });
-    if (!res.ok) {
-      log.debug("artwork", "artwork fetch returned status", { status: res.status, url });
-      return null;
-    }
+  // Deduplicate concurrent in-flight requests for the same image
+  const existingFlight = inFlightOriginals.get(canonicalUrl);
+  if (existingFlight) return existingFlight;
 
-    const contentType = res.headers.get("content-type") ?? "";
-    if (contentType && !contentType.startsWith("image/")) {
-      log.warn("artwork", "rejected non-image content type", { contentType, url });
-      return null;
-    }
-
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength === 0 || buf.byteLength > MAX_FILE_SIZE_BYTES) {
-      log.warn("artwork", "rejected invalid file size", { size: buf.byteLength, url });
-      return null;
-    }
-
-    // Validate with Bun.Image
-    const img = new Bun.Image(buf);
-    const meta = await img.metadata().catch(() => null);
-    if (!meta || !meta.width || !meta.height) {
-      log.warn("artwork", "Bun.Image could not decode image", { url });
-      return null;
-    }
-
-    if (meta.width * meta.height > MAX_PIXEL_COUNT) {
-      log.warn("artwork", "rejected image exceeding pixel cap", { width: meta.width, height: meta.height });
-      return null;
-    }
-
-    // Deduplicate by content hash
-    const hash = createHash("sha256").update(buf).digest("hex").slice(0, 32);
-    const ext = meta.format === "png" ? "png" : meta.format === "webp" ? "webp" : "jpg";
-    const originalPath = join(resolveOriginalsDir(), `${hash}.${ext}`);
-
-    // Atomically write original if not already cached
-    const exists = await Bun.file(originalPath).exists();
-    if (!exists) {
-      await Bun.write(originalPath, buf);
-      log.debug("artwork", "cached original artwork", { hash, format: meta.format, width: meta.width, height: meta.height });
-    }
-
+  const flight = (async (): Promise<ArtworkMeta | null> => {
     try {
-      run(
-        `INSERT OR REPLACE INTO local_artwork (url, hash, original_path, width, height, format, size_bytes)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        url, hash, originalPath, meta.width, meta.height, meta.format, buf.byteLength,
-      );
-    } catch {}
+      const res = await fetch(canonicalUrl, { headers: { "User-Agent": "Plexy/1.0" } })
+        .catch(() => null);
+      if (!res || !res.ok) {
+        if (res) log.debug("artwork", "artwork fetch returned status", { status: res.status, url: canonicalUrl });
+        return null;
+      }
 
-    return {
-      hash,
-      originalPath,
-      width: meta.width,
-      height: meta.height,
-      format: meta.format,
-      sizeBytes: buf.byteLength,
-    };
-  } catch (err) {
-    log.debug("artwork", "failed caching artwork original", { message: err instanceof Error ? err.message : String(err) });
-    return null;
-  }
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType && !contentType.startsWith("image/")) {
+        log.warn("artwork", "rejected non-image content type", { contentType, url: canonicalUrl });
+        return null;
+      }
+
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength === 0 || buf.byteLength > MAX_FILE_SIZE_BYTES) {
+        log.warn("artwork", "rejected invalid file size", { size: buf.byteLength, url: canonicalUrl });
+        return null;
+      }
+
+      // Validate with Bun.Image
+      const img = new Bun.Image(buf);
+      const meta = await img.metadata().catch(() => null);
+      if (!meta || !meta.width || !meta.height) {
+        log.warn("artwork", "Bun.Image could not decode image", { url: canonicalUrl });
+        return null;
+      }
+
+      if (meta.width * meta.height > MAX_PIXEL_COUNT) {
+        log.warn("artwork", "rejected image exceeding pixel cap", { width: meta.width, height: meta.height });
+        return null;
+      }
+
+      // Deduplicate by content hash
+      const hash = createHash("sha256").update(buf).digest("hex").slice(0, 32);
+      const ext = meta.format === "png" ? "png" : meta.format === "webp" ? "webp" : "jpg";
+      const originalPath = join(resolveOriginalsDir(), `${hash}.${ext}`);
+
+      // Atomically write original if not already cached
+      const exists = await Bun.file(originalPath).exists();
+      if (!exists) {
+        await Bun.write(originalPath, buf);
+        log.debug("artwork", "cached original artwork", { hash, format: meta.format, width: meta.width, height: meta.height });
+      }
+
+      try {
+        run(
+          `INSERT OR REPLACE INTO local_artwork (url, hash, original_path, width, height, format, size_bytes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          canonicalUrl, hash, originalPath, meta.width, meta.height, meta.format, buf.byteLength,
+        );
+        if (originalUrl !== canonicalUrl) {
+          run(
+            `INSERT OR REPLACE INTO local_artwork (url, hash, original_path, width, height, format, size_bytes)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            originalUrl, hash, originalPath, meta.width, meta.height, meta.format, buf.byteLength,
+          );
+        }
+      } catch {}
+
+      return {
+        hash,
+        originalPath,
+        width: meta.width,
+        height: meta.height,
+        format: meta.format,
+        sizeBytes: buf.byteLength,
+      };
+    } catch (err) {
+      log.debug("artwork", "failed caching artwork original", { message: err instanceof Error ? err.message : String(err) });
+      return null;
+    } finally {
+      inFlightOriginals.delete(canonicalUrl);
+    }
+  })();
+
+  inFlightOriginals.set(canonicalUrl, flight);
+  return flight;
 }
 
 /**
@@ -156,17 +194,131 @@ export async function getOrCreateDerivative(originalPath: string, targetWidth: n
     return derivedPath;
   }
 
+  const flightKey = `${baseHash}_${targetWidth}`;
+  const existingFlight = inFlightDerivatives.get(flightKey);
+  if (existingFlight) return existingFlight;
+
+  const flight = (async (): Promise<string> => {
+    try {
+      const raw = await Bun.file(originalPath).arrayBuffer();
+      const img = new Bun.Image(raw);
+      img.resize(targetWidth);
+      img.webp();
+      const derivedBytes = await img.bytes();
+      await Bun.write(derivedPath, derivedBytes);
+      return derivedPath;
+    } catch (err) {
+      log.warn("artwork", "failed generating derivative, falling back to original", { message: err instanceof Error ? err.message : String(err) });
+      return originalPath;
+    } finally {
+      inFlightDerivatives.delete(flightKey);
+    }
+  })();
+
+  inFlightDerivatives.set(flightKey, flight);
+  return flight;
+}
+
+/** Pre-cache all posters, backdrops, episode stills, and cast photos for an item and its children. */
+export async function prefetchItemArtwork(itemId: number): Promise<void> {
   try {
-    const raw = await Bun.file(originalPath).arrayBuffer();
-    const img = new Bun.Image(raw);
-    img.resize(targetWidth);
-    img.webp();
-    const derivedBytes = await img.bytes();
-    await Bun.write(derivedPath, derivedBytes);
-    return derivedPath;
+    const rows = q<Row>(
+      `SELECT id, kind, url FROM artwork
+       WHERE (item_id = ? OR item_id IN (SELECT id FROM items WHERE parent_id = ?))
+         AND source = 'tmdb'`,
+    ).all(itemId, itemId);
+
+    for (const r of rows) {
+      const targetWidth = r.kind === "backdrop" ? 1600 : r.kind === "thumb" ? 300 : 500;
+      const meta = await cacheArtworkOriginal(String(r.url));
+      if (meta) {
+        await getOrCreateDerivative(meta.originalPath, targetWidth);
+      }
+    }
+
+    // Also prefetch cast profile photos for this item
+    const cast = q<Row>(
+      `SELECT p.profile_path
+       FROM item_people ip JOIN people p ON p.id = ip.person_id
+       WHERE ip.item_id = ? AND p.profile_path IS NOT NULL LIMIT 12`,
+    ).all(itemId);
+
+    for (const c of cast) {
+      if (c.profile_path) {
+        const meta = await cacheArtworkOriginal(String(c.profile_path));
+        if (meta) {
+          await getOrCreateDerivative(meta.originalPath, 300);
+        }
+      }
+    }
   } catch (err) {
-    log.warn("artwork", "failed generating derivative, falling back to original", { message: err instanceof Error ? err.message : String(err) });
-    return originalPath;
+    log.debug("artwork", "prefetchItemArtwork failed for item", { itemId, error: String(err) });
+  }
+}
+
+let cachingAllInProgress = false;
+
+/**
+ * Scan all library items and people in the database and ensure original artwork
+ * and display derivatives are saved to disk. Bounded concurrency, safe to run in background.
+ */
+export async function cacheMissingArtwork(): Promise<{ cached: number; failed: number }> {
+  if (cachingAllInProgress) return { cached: 0, failed: 0 };
+  cachingAllInProgress = true;
+
+  try {
+    await ensureDirs();
+
+    // 1. Gather all TMDB artwork from artwork table
+    const artRows = q<Row>("SELECT id, kind, url FROM artwork WHERE source = 'tmdb'").all();
+
+    // 2. Gather all people profile photos
+    const personRows = q<Row>("SELECT id, profile_path FROM people WHERE profile_path IS NOT NULL").all();
+
+    const tasks: Array<{ url: string; targetWidth: number }> = [];
+
+    for (const a of artRows) {
+      const url = String(a.url);
+      const targetWidth = a.kind === "backdrop" ? 1600 : a.kind === "thumb" ? 300 : 500;
+      tasks.push({ url, targetWidth });
+    }
+
+    for (const p of personRows) {
+      if (p.profile_path) {
+        tasks.push({ url: String(p.profile_path), targetWidth: 300 });
+      }
+    }
+
+    let cached = 0;
+    let failed = 0;
+    const CONCURRENCY = 4;
+
+    for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+      const chunk = tasks.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        chunk.map(async ({ url, targetWidth }) => {
+          try {
+            const meta = await cacheArtworkOriginal(url);
+            if (meta) {
+              await getOrCreateDerivative(meta.originalPath, targetWidth);
+              cached++;
+            } else {
+              failed++;
+            }
+          } catch {
+            failed++;
+          }
+        }),
+      );
+    }
+
+    log.info("artwork", "completed background artwork pre-caching", { cached, failed, total: tasks.length });
+    return { cached, failed };
+  } catch (err) {
+    log.warn("artwork", "background artwork caching failed", { error: String(err) });
+    return { cached: 0, failed: 0 };
+  } finally {
+    cachingAllInProgress = false;
   }
 }
 

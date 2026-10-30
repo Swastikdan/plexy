@@ -98,7 +98,7 @@ it, so replacing the app keeps your library, watch state, and paired devices:
 | --- | --- |
 | `~/Library/Application Support/Plexy/library.sqlite` | Catalog, watch state, settings, auth tokens (hashed) |
 | `~/Library/Application Support/Plexy/backups/` | Automatic snapshot taken before any schema migration |
-| `~/Library/Application Support/Plexy/auth-token.bin` | Desktop token, encrypted with the macOS Keychain |
+| `~/Library/Application Support/@plexy/desktop/auth-token` | Desktop device token (owner-only `0600` file) |
 | `~/Library/Logs/Plexy/` | Logs |
 
 Because the build is not signed, macOS may block the replacement app again;
@@ -114,9 +114,11 @@ Every `/api/*` route now requires a paired device. The only public endpoint is
 `/api/server/status`, which the connection screen uses to probe an address.
 
 - **Desktop app** — signs in automatically. On launch it asks its bundled server
-  for a token over loopback, stores it with Electron `safeStorage` (macOS
-  Keychain), and installs it as an HttpOnly cookie so images, video, HLS
-  segments, and event streams authenticate without any URL changes.
+  for a token over loopback, stores it as an owner-only file in its userData
+  directory, and installs it as an HttpOnly cookie so images, video, HLS
+  segments, and event streams authenticate without any URL changes. It does not
+  use the macOS Keychain: the build is ad-hoc signed, so macOS would ask for your
+  login password on every launch instead of remembering the grant.
 - **This machine in a browser** — the pairing screen offers **This is the server
   machine**, which signs in with one click (loopback is the owner boundary here).
 - **Phones, TVs, other computers** — open **Settings → Security** on the server,
@@ -169,6 +171,26 @@ without tokens in URLs.
 - The backend supports credentialed CORS for exact origins listed in
   `PLEXY_ALLOWED_ORIGINS`.
 
+#### Installing Plexy Client on a phone (PWA)
+
+`dist/web` is an installable **Plexy Client**. The manifest in
+`apps/web/public/manifest.webmanifest` names it Plexy Client, launches it
+standalone in portrait or landscape, and ships 192/512 plus maskable icons.
+`apps/web/public/sw.js` caches only the app shell and hashed static assets;
+libraries, authentication, artwork and video always come from the server, and
+every other `/api/*` request is left untouched so media byte ranges keep
+working.
+
+- **iPhone / iPad:** open the client in Safari, then Share → **Add to Home
+  Screen**. iOS only installs PWAs from Safari.
+- **Android:** open it in Chrome, then menu → **Install app**.
+- Installation needs a secure context: serve the client over HTTPS, or open the
+  server's own `http://localhost` address. A phone view of
+  `http://192.168.x.x:8765` cannot register a service worker — the app still
+  works in a browser tab there.
+- Regenerate the icons with `bun run icons:pwa` after editing
+  `apps/web/public/client-icon.svg` or `client-icon-maskable.svg`.
+
 #### Deploy the web client from your machine
 
 The GitHub Actions workflow deploys automatically on `build`, but you can also
@@ -203,6 +225,10 @@ tells the GitHub release notes which URL to link to.
 
 ---
 
+## Planned Client and Server targets
+
+The product split is described in [the detailed distribution plan](docs/MOBILE_AND_DISTRIBUTION_DETAILED_PLAN.md): **Plexy Client** is the desktop UI-only app, **Plexy Server** is the standalone backend, and **Plexy** remains the combined Electron app. The separate [mobile app build plan](docs/MOBILE_APP_BUILD_PLAN.md) specifies an Expo React Native movie client that connects to Plexy Server. Client and Server use distinct icon variants.
+
 ## Scripts
 
 | Command | Action |
@@ -212,8 +238,12 @@ tells the GitHub release notes which URL to link to.
 | `bun run dev:web` | Run Vite web dev server alone (`apps/web`) |
 | `bun run dev:desktop` | Run native Electron desktop application in development |
 | `bun run build` | Build web UI and package full macOS Electron app |
-| `bun run build:web` | Build web client to `dist/web` |
+| `bun run build:web` | Build the web bundle to `dist/web` |
+| `bun run build:client` | Build **Plexy Client** (UI-only) and verify no server-owned files are included |
+| `bun run build:server` | Build **Plexy Server**: standalone backend binary, migrations and FFmpeg |
+| `bun run build:executable` | Build the single-file server plus a macOS app bundle installed to `/Applications` |
 | `bun run build:desktop` | Build standalone backend server and package macOS `.app` + `.dmg` |
+| `bun run icons:pwa` | Regenerate the PWA and apple-touch icons from the source SVGs |
 | `bun run package:mac` | Package macOS Electron app, `.dmg`, and `.zip` distribution |
 | `bun run deploy:web` | Build `dist/web` and deploy it to Cloudflare Workers |
 | `bun run deploy:web:dry` | Build and validate the Worker bundle without uploading |
@@ -221,9 +251,36 @@ tells the GitHub release notes which URL to link to.
 | `bun run test` | Run backend test suite (`apps/server/tests`) |
 | `bun run typecheck` | Typecheck all packages with strict TypeScript |
 
-## Planned client and distribution targets
+## Client and distribution targets
 
-The planned product split is documented in [MOBILE_AND_DISTRIBUTION_PLAN.md](MOBILE_AND_DISTRIBUTION_PLAN.md), with implementation detail in [docs/MOBILE_AND_DISTRIBUTION_DETAILED_PLAN.md](docs/MOBILE_AND_DISTRIBUTION_DETAILED_PLAN.md). It covers a mobile client UI that connects to a separate server, a desktop UI-only client, the standalone backend binary, and the existing combined Electron app.
+| Target | Command | Artifact | Needs a Plexy Server |
+| --- | --- | --- | --- |
+| **Plexy** (combined Electron app) | `bun run build` / `build:desktop` | `dist/mac/Plexy-<version>-arm64.dmg` | Bundled — starts its own |
+| **Plexy Client** (desktop UI-only) | `bun run build:client` | `dist/web` static client | Yes — enter its address |
+| **Plexy Client** (mobile PWA) | `bun run build:client` | the same `dist/web` artifact, installable | Yes — enter its address |
+| **Plexy Server** (backend only) | `bun run build:server` | `dist/server/plexy-server` + `migrations/` + `ffmpeg` | — |
+
+Mobile and desktop UI-only are one responsive artifact, so there is one client
+build; only the shell around it differs. `bun run build:client` fails if the
+output contains a server binary, migrations or FFmpeg, which is what keeps the
+split honest instead of by convention.
+
+Client runtime mode is explicit in `apps/web/src/runtime-config.ts`: `bundled`
+when Electron started the server, `server-hosted` when the page is served by the
+server it talks to, and `remote` for a separately hosted UI. Administration
+stays loopback-only, and the mobile navigation hides those screens for remote
+viewers because the server rejects them anyway.
+
+`bun run build:server` is now the backend-only target. `bun run build:executable`
+keeps the older behaviour of also assembling and installing a macOS app bundle;
+`bun run build:desktop` remains the full combined app. `plexy-server --version`
+and `--help` identify the build without starting the database.
+
+The plans in [docs/](docs/) also list work that is deliberately not built yet:
+native app-store wrappers, a thin desktop shell, notarization, and applying the
+separate Client/Server icon artwork to installers. `apps/web/public/client-icon.svg`
+and `server-icon.svg` are the source marks for that; only the client icons are
+generated and shipped so far.
 
 ---
 

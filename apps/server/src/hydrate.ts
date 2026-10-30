@@ -9,6 +9,7 @@ import { log } from "./logger";
 import { normalizeTitle } from "./parse";
 import * as tmdb from "./tmdb";
 import type { TmdbDetail } from "./tmdb";
+import { refreshSkipSegmentsForItem, refreshSkipSegmentsForSeries } from "./skip-segments";
 
 /** Fetch + persist one item's TMDB essentials. */
 export async function hydrateItemMetadata(
@@ -65,8 +66,18 @@ export async function hydrateItemMetadata(
 
   // Series: episode names + stills from the season endpoint (PRD 5.5 M list).
   if (tmdbType === "tv") await hydrateEpisodes(itemId, tmdbId, full.title ?? full.name ?? "", full);
+  else {
+    // Movies use the same community database for end-credits markers.
+    void refreshSkipSegmentsForItem(itemId).catch((error) =>
+      log.debug("player", "skip marker hydration skipped", {
+        itemId, message: String(error),
+      }));
+  }
 
   log.debug("tmdb", "metadata hydrated", { itemId, tmdbId, type: tmdbType });
+
+  // Pre-cache artwork and cast photos in the background so item is immediately offline-ready
+  void import("./artwork").then(({ prefetchItemArtwork }) => prefetchItemArtwork(itemId)).catch(() => {});
 }
 
 /**
@@ -177,6 +188,13 @@ export async function hydrateEpisodes(
      WHERE parent_id = ? AND kind = 'episode' AND match_status != 'matched'`,
     seriesItemId,
   );
+
+  // Cache intro/recap/credits markers while the series identity is fresh, so
+  // playback reads them from SQLite instead of waiting on a live lookup.
+  void refreshSkipSegmentsForSeries(seriesItemId).catch((error) =>
+    log.debug("player", "skip marker hydration skipped", {
+      seriesItemId, message: String(error),
+    }));
 }
 
 /** Write thumb, poster, and backdrop artwork rows for an episode still. */

@@ -392,6 +392,10 @@ export const api = {
     return restFetch<{ removed: number }>("/api/tmdb/cache/clear", { method: "POST" });
   },
 
+  refreshSkipSegments: async (): Promise<{ checked: number; found: number }> => {
+    return restFetch<{ checked: number; found: number }>("/api/skip-segments/refresh", { method: "POST" });
+  },
+
   resetLocalData: async (): Promise<{ ok: true; libraries: number; files: number; titles: number }> => {
     return restFetch<{ ok: true; libraries: number; files: number; titles: number }>("/api/database/reset", { method: "POST" });
   },

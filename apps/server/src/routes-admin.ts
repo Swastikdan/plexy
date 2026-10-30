@@ -27,6 +27,7 @@ import {
   cancelStreamPreparation,
   streamPreparationStatus,
 } from "./hls-preparation";
+import { refreshMissingSkipSegments } from "./skip-segments";
 
 const startedAt = Date.now();
 
@@ -175,6 +176,10 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.autoOptimize) {
       void enqueueMissingOptimizations().catch(() => {});
     }
+    if (body.skipSegmentsEnabled) {
+      // Turning markers on should fill the cache without waiting for a rescan.
+      void refreshMissingSkipSegments().catch(() => {});
+    }
     if (body.preferredAudioLanguage) {
       void enqueueConfiguredStreamPreparations().catch((err) =>
         log.warn("media", "could not re-prepare titles for the new audio preference", {
@@ -212,6 +217,15 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const removed = clearTmdbCache();
     log.info("tmdb", "response cache cleared", { removed });
     return { removed };
+  })
+
+  /** Backfill intro/recap/credits markers for titles that lack a fresh lookup. */
+  .post("/skip-segments/refresh", async (ctx) => {
+    const denied = denyIfNotLocal(ctx, "POST /api/skip-segments/refresh");
+    if (denied) return denied;
+    const result = await refreshMissingSkipSegments();
+    log.info("player", "manual skip marker refresh", result);
+    return result;
   })
 
   /** Reset the catalog and generated caches while preserving media originals and config.json. */

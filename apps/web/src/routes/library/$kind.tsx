@@ -7,7 +7,7 @@ import { Poster } from "../../components/poster";
 import { cx } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { PageHeader } from "../../components/page-header";
-import { State } from "../index";
+import { State } from "@/components/state";
 import { PageLoader } from "../../components/page-loader";
 
 const SORTS = [

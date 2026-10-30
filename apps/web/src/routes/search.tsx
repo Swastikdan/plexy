@@ -7,7 +7,7 @@ import { queries } from "../queries";
 import { SearchResultCard } from "../components/search-result-card";
 import { PageHeader } from "../components/page-header";
 import { PageLoader } from "../components/page-loader";
-import { State } from "./index";
+import { State } from "@/components/state";
 
 function ResultSection({
   title,

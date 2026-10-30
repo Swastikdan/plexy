@@ -1,5 +1,5 @@
 /// Fullscreen Cinema Player using Video.js 10 and Plexy playback engine.
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
 import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +7,7 @@ import { ArrowLeft, SkipForward } from "lucide-react";
 
 import { VideoPlayer, Video, usePlayer } from "@videojs/react/video";
 import { selectControls } from "@videojs/core/dom";
-import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
+
 import { VideoSkin } from "@/components/videojs/video/skin";
 import { api, type Playability, type SubtitleTrack } from "../../client";
 import { probeBrowserCaps, type PlayPath } from "@plexy/api-client";
@@ -15,6 +15,13 @@ import { queries } from "../../queries";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
+
+/// hls.js is only needed when the server hands back a converted (`.m3u8`)
+/// stream. Importing it statically put the whole library into the watch route
+/// chunk, so direct-play viewers downloaded a parser they never used.
+const HlsJsVideo = lazy(() =>
+  import("@videojs/react/media/hlsjs-video").then((module) => ({ default: module.HlsJsVideo })),
+);
 
 const NEXT_SKIP_KEY = "plexy:next-episode-skips:v1";
 const SEGMENT_SKIP_KEY = "plexy:segment-skips:v1";
@@ -56,12 +63,30 @@ function segmentSkipCount(series: string, kind: "intro" | "recap"): number {
   return readSegmentSkips()[`${series}:${kind}`] ?? 0;
 }
 
-function rememberSegmentSkip(series: string, kind: "intro" | "recap"): void {
+function rememberSegmentSkip(series: string, kind: "intro" | "recap" | "outro"): void {
   if (typeof localStorage === "undefined") return;
   const skips = readSegmentSkips();
   const key = `${series}:${kind}`;
   skips[key] = (skips[key] ?? 0) + 1;
   localStorage.setItem(SEGMENT_SKIP_KEY, JSON.stringify(skips));
+}
+
+type SkipSegmentKind = "intro" | "recap" | "outro";
+
+function segmentAt(
+  markers: { intro?: { start: number; end: number } | null; recap?: { start: number; end: number } | null; outro?: { start: number; end: number } | null } | undefined,
+  time: number,
+): SkipSegmentKind | null {
+  if (!markers) return null;
+  for (const kind of ["intro", "recap", "outro"] as const) {
+    const marker = markers[kind];
+    if (marker && time >= marker.start && time < marker.end) return kind;
+  }
+  return null;
+}
+
+function skipLabel(kind: SkipSegmentKind): string {
+  return kind === "outro" ? "Skip ending" : `Skip ${kind}`;
 }
 
 /** Mirrors the skin's own controls visibility so the custom chrome fades in sync. */
@@ -117,7 +142,7 @@ function WatchRoute() {
   // Vertical placement of the caption track, in pixels (positive lifts it up).
   const [subtitlePosition, setSubtitlePosition] = useState<number>(0);
   const [showNextPrompt, setShowNextPrompt] = useState(false);
-  const [activeSkipSegment, setActiveSkipSegment] = useState<"intro" | "recap" | null>(null);
+  const [activeSkipSegment, setActiveSkipSegment] = useState<SkipSegmentKind | null>(null);
   const nextPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showBufferingAfterDelay = useCallback(() => {
@@ -218,7 +243,9 @@ function WatchRoute() {
     queryKey: ["skip-segments", fileId],
     queryFn: () => api.skipSegments(Number(fileId)),
     enabled: !!fileId,
-    staleTime: 24 * 60 * 60_000,
+    // The server keeps markers in SQLite, so re-reading is cheap. Keep this
+    // short enough that enabling the feature is reflected without a reload.
+    staleTime: 5 * 60_000,
   });
 
   const resumeAt =
@@ -668,28 +695,31 @@ function WatchRoute() {
   const handleTimeUpdate = useCallback(() => {
     hideBuffering();
     const video = videoRef.current;
-    const total = duration ?? (video && Number.isFinite(video.duration) ? video.duration : null);
-    if (!video || !total || !play.data?.nextFileId) return;
+    if (!video) return;
+    const total = duration ?? (Number.isFinite(video.duration) ? video.duration : null);
     const markers = skipSegmentsQuery.data;
     const series = play.data?.next?.title ?? play.data?.title ?? "";
-    const skipKind: "intro" | "recap" | null =
-      markers?.intro && video.currentTime >= markers.intro.start && video.currentTime < markers.intro.end ? "intro"
-        : markers?.recap && video.currentTime >= markers.recap.start && video.currentTime < markers.recap.end ? "recap"
-          : null;
+    const skipKind = segmentAt(markers, video.currentTime);
     setActiveSkipSegment(skipKind);
-    if (skipKind && series && segmentSkipCount(series, skipKind) >= 3) {
+    // Auto-skip only intros/recaps. Credits are left to the ending button so
+    // the viewer can still see the last scene before the next episode starts.
+    if (skipKind && skipKind !== "outro" && series && segmentSkipCount(series, skipKind) >= 3) {
       const marker = markers?.[skipKind];
       if (marker) {
         video.currentTime = marker.end;
         setActiveSkipSegment(null);
       }
     }
+    if (!total || !play.data?.nextFileId) {
+      setShowNextPrompt(false);
+      return;
+    }
     const shouldShow = markers?.outro
       ? video.currentTime >= markers.outro.start
       : video.currentTime >= total - 90;
     if (
       markers?.outro && video.currentTime >= markers.outro.start
-      && play.data?.nextFileId && series
+      && series
       && getNextSkipCount(series) >= 3
       && !autoAdvanceTriggeredRef.current
     ) {
@@ -718,9 +748,24 @@ function WatchRoute() {
     if (!marker || !videoRef.current) return;
     const series = play.data?.next?.title ?? play.data?.title ?? "";
     if (series) rememberSegmentSkip(series, activeSkipSegment);
-    videoRef.current.currentTime = marker.end;
     setActiveSkipSegment(null);
-  }, [activeSkipSegment, play.data?.next?.title, play.data?.title, skipSegmentsQuery.data]);
+    // "Skip ending" is also the natural next-episode action when one exists.
+    if (activeSkipSegment === "outro" && play.data?.nextFileId) {
+      if (series) rememberNextSkip(series);
+      autoAdvanceRef.current = true;
+      void navigate({ to: "/watch/$fileId", params: { fileId: String(play.data.nextFileId) } });
+      return;
+    }
+    videoRef.current.currentTime = marker.end;
+  }, [activeSkipSegment, navigate, play.data?.nextFileId, play.data?.next?.title, play.data?.title, skipSegmentsQuery.data]);
+
+  // Markers arrive asynchronously; evaluate them immediately instead of waiting
+  // for the next timeupdate (which may not come while paused or buffering).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setActiveSkipSegment(segmentAt(skipSegmentsQuery.data, video.currentTime));
+  }, [skipSegmentsQuery.data]);
 
   // Focusing the player on open makes Space/K/M/F work immediately. The skin
   // only exists once the manifest resolves, so retry briefly and never steal
@@ -922,7 +967,7 @@ function WatchRoute() {
                   </div>
                 )}
 
-                {play.data?.nextFileId && showNextPrompt && (
+                {play.data?.nextFileId && showNextPrompt && !activeSkipSegment && (
                   <div className="pointer-events-none absolute bottom-24 right-6 z-40 flex flex-col items-end gap-2 sm:bottom-20 sm:right-8">
                     {nextEpisode && (
                       <div className="flex max-w-64 items-center gap-2 rounded-lg border border-white/15 bg-black/75 p-2 text-white shadow-xl backdrop-blur-md">
@@ -949,14 +994,15 @@ function WatchRoute() {
                     type="button"
                     onClick={(event) => { event.stopPropagation(); skipCurrentSegment(); }}
                     className="pointer-events-auto absolute bottom-24 right-6 z-40 inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black shadow-xl transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:bottom-20 sm:right-8"
-                    aria-label={`Skip ${activeSkipSegment}`}
+                    aria-label={skipLabel(activeSkipSegment)}
                   >
-                    <SkipForward size={17} /> Skip {activeSkipSegment}
+                    <SkipForward size={17} /> {skipLabel(activeSkipSegment)}
                   </button>
                 )}
 
                 {streamUrl && (
                   isHls ? (
+                    <Suspense fallback={null}>
                     <HlsJsVideo
                       key={`${streamUrl}:${mediaRetryKey}`}
                       ref={(el: HTMLVideoElement | null) => {
@@ -997,6 +1043,7 @@ function WatchRoute() {
                         />
                       ))}
                     </HlsJsVideo>
+                    </Suspense>
                   ) : (
                     <Video
                       key={`${streamUrl}:${mediaRetryKey}`}

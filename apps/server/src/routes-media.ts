@@ -30,77 +30,14 @@ import {
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { resolveFfmpeg } from "./ffmpeg";
 import { getConfig } from "./config";
-import { externalImdbId } from "./tmdb";
+import { getSkipSegments } from "./skip-segments";
 import { isPreparedHlsAsset, preparedStreamAvailable, readPreparedPlaylist } from "./hls-preparation";
 import {
   enqueueTrickplay, trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
 
-type SegmentWindow = { start: number; end: number } | null;
-type EpisodeSegments = { intro: SegmentWindow; recap: SegmentWindow; outro: SegmentWindow };
-const segmentCache = new Map<string, { expires: number; value: EpisodeSegments }>();
 const MAX_LIVE_CONVERSIONS = 2;
 let activeLiveConversions = 0;
-
-function parseSegment(value: unknown, duration: number | null): SegmentWindow {
-  if (!value || typeof value !== "object") return null;
-  const segment = value as Record<string, unknown>;
-  const start = typeof segment.start_sec === "number" ? segment.start_sec
-    : typeof segment.start_ms === "number" ? segment.start_ms / 1000
-      : 0;
-  const end = typeof segment.end_sec === "number" ? segment.end_sec
-    : typeof segment.end_ms === "number" ? segment.end_ms / 1000
-      : null;
-  if (end == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < 0) return null;
-  if (duration && (start > duration || end > duration + 15)) return null;
-  return { start, end: duration ? Math.min(end, duration) : end };
-}
-
-async function episodeSegments(fileId: number): Promise<EpisodeSegments> {
-  const empty: EpisodeSegments = { intro: null, recap: null, outro: null };
-  const cached = segmentCache.get(String(fileId));
-  if (cached && cached.expires > Date.now()) return cached.value;
-  const file = getFile(fileId);
-  if (!file?.item_id) return empty;
-  const episode = q<Row, [number]>("SELECT kind, parent_id, season_number, episode_number FROM items WHERE id = ?")
-    .get(Number(file.item_id));
-  if (!episode || episode.kind !== "episode" || episode.parent_id == null
-    || episode.season_number == null || episode.episode_number == null) return empty;
-  const series = q<{ tmdb_id: number | null }, [number]>("SELECT tmdb_id FROM items WHERE id = ?")
-    .get(Number(episode.parent_id));
-  if (!series?.tmdb_id) return empty;
-  const key = `${series.tmdb_id}/${episode.season_number}/${episode.episode_number}`;
-  const seriesCache = segmentCache.get(key);
-  if (seriesCache && seriesCache.expires > Date.now()) return seriesCache.value;
-
-  try {
-    const imdbId = await externalImdbId("tv", Number(series.tmdb_id));
-    if (!imdbId) return empty;
-    const params = new URLSearchParams({
-      imdb_id: imdbId,
-      season: String(episode.season_number),
-      episode: String(episode.episode_number),
-    });
-    const response = await fetch(`https://api.introdb.app/segments?${params}`, {
-      signal: AbortSignal.timeout(1800),
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) return empty;
-    const data = await response.json() as Record<string, unknown>;
-    const value: EpisodeSegments = {
-      intro: parseSegment(data.intro, file.duration == null ? null : Number(file.duration)),
-      recap: parseSegment(data.recap, file.duration == null ? null : Number(file.duration)),
-      outro: parseSegment(data.outro, file.duration == null ? null : Number(file.duration)),
-    };
-    const cacheKey = `${series.tmdb_id}/${episode.season_number}/${episode.episode_number}`;
-    segmentCache.set(cacheKey, { value, expires: Date.now() + (value.intro || value.recap || value.outro ? 24 : 4) * 3600_000 });
-    segmentCache.set(String(fileId), { value, expires: Date.now() + 24 * 3600_000 });
-    return value;
-  } catch (error) {
-    log.debug("player", "skip segment lookup unavailable", { fileId, message: String(error) });
-    return empty;
-  }
-}
 
 // --- helpers -----------------------------------------------------------------
 
@@ -638,7 +575,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (!config.skipSegmentsEnabled) {
       return { enabled: false, intro: null, recap: null, outro: null };
     }
-    return { enabled: true, ...await episodeSegments(Number(params.fileId)) };
+    const file = getFile(Number(params.fileId));
+    if (!file?.item_id) return { enabled: true, intro: null, recap: null, outro: null };
+    const segments = await getSkipSegments(
+      Number(file.item_id),
+      file.duration == null ? null : Number(file.duration),
+    );
+    return { enabled: true, ...segments };
   }, { params: t.Object({ fileId: t.Numeric() }) })
 
   /** Playpath judgment for the current browser (kept for older clients). */
@@ -835,10 +778,62 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       });
     }
 
-    // Fallback if offline and not yet cached
-    return Response.redirect(String(row.url), 302);
+    // Offline / unavailable fallback placeholder
+    const isBackdrop = row.kind === "backdrop";
+    const h = isBackdrop ? Math.round(targetWidth * 0.5625) : Math.round(targetWidth * 1.5);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${h}" viewBox="0 0 ${targetWidth} ${h}">
+      <rect width="100%" height="100%" fill="#16181d"/>
+    </svg>`;
+    return new Response(svg, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=60",
+      },
+    });
   }, {
     params: t.Object({ artworkId: t.Numeric() }),
+    query: t.Object({ w: t.Optional(t.Numeric()) }),
+  })
+
+  /** Cast & crew profile photos served locally from originals/derived cache. */
+  .get("/people/:personId/photo", async (ctx) => {
+    const person = q<Row, [number]>("SELECT id, name, profile_path FROM people WHERE id = ?")
+      .get(Number(ctx.params.personId));
+    if (!person || !person.profile_path) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const widthParam = ctx.query.w ? Number(ctx.query.w) : null;
+    const targetWidth = widthParam && widthParam > 50 && widthParam <= 1000 ? widthParam : 300;
+
+    const { cacheArtworkOriginal, getOrCreateDerivative } = await import("./artwork");
+    const meta = await cacheArtworkOriginal(String(person.profile_path));
+    if (meta) {
+      const derivedFile = await getOrCreateDerivative(meta.originalPath, targetWidth);
+      return new Response(Bun.file(derivedFile), {
+        headers: {
+          "Content-Type": derivedFile.endsWith(".webp") ? "image/webp" : "image/jpeg",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        },
+      });
+    }
+
+    // Offline fallback avatar with the person's initial
+    const initial = (String(person.name ?? "?")[0] ?? "?").toUpperCase();
+    const h = Math.round(targetWidth * 1.5);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${h}" viewBox="0 0 ${targetWidth} ${h}">
+      <rect width="100%" height="100%" fill="#1a1c22"/>
+      <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#505462" font-family="system-ui, -apple-system, sans-serif" font-size="${Math.round(targetWidth * 0.35)}" font-weight="600">${initial}</text>
+    </svg>`;
+    return new Response(svg, {
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=300",
+      },
+    });
+  }, {
+    params: t.Object({ personId: t.Numeric() }),
     query: t.Object({ w: t.Optional(t.Numeric()) }),
   })
 
@@ -846,6 +841,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/admin/artwork/storage", async () => {
     const { getArtworkStorageStats } = await import("./artwork");
     return await getArtworkStorageStats();
+  })
+
+  /** Trigger background pre-caching for all uncached library artwork. */
+  .post("/admin/artwork/cache-all", async () => {
+    const { cacheMissingArtwork } = await import("./artwork");
+    void cacheMissingArtwork();
+    return { ok: true, status: "started" };
   })
 
   /**

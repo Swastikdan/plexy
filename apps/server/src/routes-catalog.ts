@@ -339,15 +339,15 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const [card] = await attachArt([row]);
     const meta = q<Row>("SELECT * FROM item_metadata WHERE item_id = ?").get(id);
     const castRows = q<Row>(
-      `SELECT p.name, p.profile_path, ip.character_name
+      `SELECT p.id, p.name, p.profile_path, ip.character_name
        FROM item_people ip JOIN people p ON p.id = ip.person_id
        WHERE ip.item_id = ? AND ip.department = 'cast' ORDER BY ip.ord LIMIT 12`,
     ).all(id);
-    const cast = await Promise.all(castRows.map(async (p) => ({
+    const cast = castRows.map((p) => ({
       name: String(p.name),
       character: p.character_name ? String(p.character_name) : null,
-      photo: await imageUrl(p.profile_path as string | null, "poster"),
-    })));
+      photo: p.profile_path ? `/api/people/${Number(p.id)}/photo?w=300` : null,
+    }));
     const video = q<Row>(
       "SELECT * FROM videos WHERE item_id = ? ORDER BY official DESC, published_at DESC LIMIT 1",
     ).get(id);
@@ -411,9 +411,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const logoRow = q<Row>(
       "SELECT id, source, url FROM artwork WHERE item_id = ? AND kind = 'logo' LIMIT 1",
     ).get(id);
-    const logo = logoRow
-      ? logoRow.source === "local" ? `/api/images/${Number(logoRow.id)}` : String(logoRow.url)
-      : null;
+    const logo = logoRow ? `/api/images/${Number(logoRow.id)}` : null;
 
     return Response.json({
       item: card,

@@ -99,11 +99,28 @@ function openCurrentFile(): number {
   return fileHandle;
 }
 
+/** Local date/time in a readable, string-sortable format: "2026-10-30 12:34:56.789". */
+function formatDateTime(date: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return (
+    date.getFullYear() +
+    "-" + pad(date.getMonth() + 1) +
+    "-" + pad(date.getDate()) +
+    " " + pad(date.getHours()) +
+    ":" + pad(date.getMinutes()) +
+    ":" + pad(date.getSeconds()) +
+    "." + pad(date.getMilliseconds())
+  );
+}
+
+/** Emit one structured log line. */
+
 function writeLine(level: Level, component: Component, message: string, context?: unknown): void {
   if (LEVELS[level] < LEVELS[minLevel]) return;
 
   const line = redact(JSON.stringify({
     ts: new Date().toISOString(),
+    datetime: formatDateTime(new Date()),
     level,
     component,
     message,
@@ -118,7 +135,7 @@ function writeLine(level: Level, component: Component, message: string, context?
   }
 
   if (isDevRuntime()) {
-    const pretty = `[${component}] ${message}`;
+    const pretty = `[${formatDateTime(new Date())} ${component}] ${message}`;
     (level === "error" ? console.error : level === "warn" ? console.warn : console.log)(
       pretty,
       context === undefined ? "" : context,

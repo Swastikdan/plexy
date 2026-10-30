@@ -1,14 +1,16 @@
-# Detailed Implementation Plan: Mobile UI and Three App Targets
+# Detailed Implementation Plan: Plexy Client, Plexy Server, and Combined App
 
 ## 1. Objective and scope
 
-Add a mobile client UI that talks to a Plexy server and formalize three separately buildable products:
+Formalize three separately buildable targets and build a mobile client UI that connects to a separately running Plexy Server:
 
 | Target | Includes | Does not include |
 | --- | --- | --- |
-| Desktop UI client | Desktop-oriented UI, API client, connection and pairing UX | Local server process, server database, media scanner/transcoder |
-| Backend binary | Compiled server/API and server-owned runtime assets/configuration | Electron, desktop UI shell |
-| Combined desktop app | Current Electron UI shell, frontend assets, bundled backend executable | A second implementation of server features in the UI |
+| **Plexy Client** (desktop UI-only) | Desktop-oriented UI, API client, connection and pairing UX | Local server process, server database, media scanner/transcoder |
+| **Plexy Server** (backend-only) | Compiled server/API and server-owned runtime assets/configuration | Electron, desktop UI shell |
+| **Plexy** (combined desktop app) | Current Electron UI shell, frontend assets, bundled backend executable | A second implementation of server features in the UI |
+
+Use these names consistently in package metadata, installers, documentation, and release assets. Keep **Plexy** for the combined app to preserve its current identity.
 
 Mobile is a client-only UI. The server remains authoritative for media files, libraries, scans, metadata, playback routing/transcoding, persistence, and authorization. The mobile UI should use existing API and authentication mechanisms. If an API change is necessary, record the specific blocker and keep that change narrowly scoped to server compatibility.
 
@@ -36,7 +38,7 @@ Avoid scattered environment checks. Put mode selection and server URL resolution
 
 ### Mobile UI
 
-Start with responsive web/PWA delivery rather than adding a native framework. Build touch-first layouts from the shared client: compact navigation, legible library cards, touch targets, safe-area handling, portrait and landscape playback, and usable connection/pairing forms. Mobile screens include:
+Build the mobile app as a dedicated Expo React Native client in `apps/mobile`, separate from the shared browser app. Reuse API contracts where React Native compatible, but use native navigation, secure credential storage, touch-first screens, and native video playback. See [the detailed Expo mobile plan](MOBILE_APP_BUILD_PLAN.md). Mobile screens include:
 
 1. Server address entry, validation/status probe, saved server selection, and reconnect/error states.
 2. Pairing using the existing one-time code flow and secure persistence supported by the browser platform.
@@ -47,7 +49,18 @@ Do not expose admin operations to remote clients unless existing server authoriz
 
 ### Desktop UI-only target
 
-Provide a desktop-format client build that connects to a server and has no dependency on `apps/server` at runtime. Choose the delivery container after confirming product expectations: hosted/static web app or a thin desktop shell without the backend. In either case, the target must not bundle/start the server binary. Reuse the same remote-client mode and connection/pairing flow as mobile.
+Provide a desktop-format **Plexy Client** build that connects to a server and has no dependency on `apps/server` at runtime. Choose the delivery container after confirming product expectations: hosted/static web app or a thin desktop shell without the backend. In either case, the target must not bundle/start the server binary. Reuse the same remote-client mode and connection/pairing flow as mobile.
+
+### Names and visual identity
+
+1. Retain **Plexy** for the current combined desktop app.
+2. Name the client-only desktop product **Plexy Client**.
+3. Name the standalone backend product **Plexy Server**.
+4. Create distinct Client and Server icon variants based on the existing Plexy visual identity, with simple cues that distinguish a client/device from a server. Keep them recognizable as one product family.
+5. Generate platform assets from approved source artwork (`.icns`, `.ico`, Linux PNG sizes, and web/PWA icons as applicable); keep source and generated assets organized and document regeneration.
+6. Apply the appropriate variant to the app launcher, installer, window/dock icon, and package metadata. For a headless binary, use Plexy Server in command help/version output rather than implying it has a GUI icon.
+
+**Exit condition:** names are consistent and Client/Server icons are distinguishable at normal launcher sizes.
 
 ### Backend-only target
 
@@ -64,7 +77,7 @@ Preserve the current Electron workflow and artifact naming unless a build-system
 1. Trace the current server URL, status probe, pairing, credential persistence, API base URL, playback URLs, and Electron server lifecycle.
 2. List user-facing routes/screens and mark each viewer/client or server administration.
 3. Confirm which APIs required by the mobile viewer already exist. Record any gaps separately before changing server code.
-4. Write down target names, supported operating systems, minimum server version, and expected outputs.
+4. Write down target names, icon source/ownership, supported operating systems, minimum server version, and expected outputs.
 
 **Exit condition:** a short mode matrix and API checklist exist; no client assumes a local server unless running in bundled mode.
 
@@ -78,14 +91,13 @@ Preserve the current Electron workflow and artifact naming unless a build-system
 
 **Exit condition:** a remote-client build works against a server on another host and does not invoke Electron/server process APIs.
 
-### C. Responsive mobile experience
+### C. Expo React Native mobile client
 
-1. Audit current web components at narrow widths and identify layout reuse versus mobile-specific navigation.
-2. Add small-screen navigation and responsive layouts while retaining desktop-format layouts.
-3. Implement connection and pairing screens as mobile-first, including keyboard/input modes, safe-area insets, validation, loading, and recovery states.
-4. Adapt library browsing, details, and search for touch interaction and small screens.
-5. Validate player controls, orientation changes, browser playback support, and progress persistence on target mobile browsers.
-6. Add installability metadata/service worker only if it improves the chosen PWA delivery; keep media streaming and server data online-first.
+1. Add a dedicated Expo app at `apps/mobile`; do not wrap the browser UI in a WebView.
+2. Reuse the API contract where compatible and implement native connection, pairing, browsing, details, search, and settings screens.
+3. Store device credentials securely and isolate cache by connected server.
+4. Prove authenticated media requests, `expo-video` playback, orientation handling, and progress persistence on physical iOS/Android devices.
+5. Use Plexy Client app identity and icon variants; create repeatable development, preview, and production build profiles.
 
 **Exit condition:** a phone can connect and complete the primary browse-to-play flow without server-side work occurring on the phone.
 
@@ -123,23 +135,23 @@ Preserve the current Electron workflow and artifact naming unless a build-system
 Use descriptive commands (final names may follow repository conventions), for example:
 
 ```sh
-bun run build:client:desktop  # UI-only desktop client
-bun run build:client:mobile   # mobile web/PWA client
-bun run build:server          # backend binary only
-bun run build:desktop         # combined Electron app (existing)
+bun run build:client:desktop  # Plexy Client, UI-only desktop client
+bun run build:mobile          # Expo React Native app (see separate mobile plan)
+bun run build:server          # Plexy Server, backend binary only
+bun run build:desktop         # Plexy combined Electron app (existing)
 ```
 
-If mobile and desktop UI-only are the same responsive static artifact, one `build:client` command with named profiles may be clearer than duplicate builds. Update the root README build matrix with target, command, output, required server, and runtime responsibilities. Avoid changing `bun run build` semantics without a clear migration note.
+Keep the native mobile app build separate from the desktop UI-only web artifact. Update the root README build matrix with target, command, output, required server, and runtime responsibilities. Avoid changing `bun run build` semantics without a clear migration note.
 
 ## 5. Recommended sequence and dependencies
 
 1. Complete workstream A (inventory and API contracts).
 2. Implement B (runtime mode separation); this unlocks both UI-only distributions and isolates risk to the combined app.
-3. Implement C against the remote-client mode; desktop responsive regression work can proceed alongside mobile layouts.
+3. Implement C as a separate Expo client against the remote-client API contract; desktop UI-only work remains in the browser client.
 4. Implement D and clarify E artifact contracts.
 5. Run F continuity checks and update G documentation/build matrix.
 
-Mobile layout work can begin after the screen audit, but pairing and playback validation depend on stable remote-client configuration. Desktop UI-only and mobile builds depend on remote mode; backend-only packaging is largely independent after artifact/runtime inventory.
+Expo scaffolding can begin after the API audit, but native playback validation depends on proving the authentication and streaming contract. Desktop UI-only and mobile both use remote-client semantics, while the mobile app has its own native UI and build pipeline. Backend-only packaging is largely independent after artifact/runtime inventory.
 
 ## 6. Validation plan
 
@@ -169,10 +181,11 @@ Also verify mismatched server versions and unauthenticated requests fail with un
 ## 8. Decisions to record before implementation
 
 - Desktop UI-only delivery format: static installable web client or thin desktop shell.
-- Mobile target: responsive PWA baseline; whether app stores/native wrapper are required.
+- Mobile target: dedicated Expo React Native app; confirm app-store release timing and supported OS versions.
 - Whether the mobile/desktop clients use a separately hosted UI origin or are served by Plexy server.
 - Minimum supported Plexy API/server version and compatibility response behavior.
-- Whether separate branded/package names are needed for UI-only and combined desktop targets.
+- Confirm names: Plexy Client (desktop client-only), Plexy Server (backend-only), and Plexy (combined app).
+- Approve differentiated Client and Server icon variants derived from the Plexy visual identity.
 - Supported platform/architecture matrix for standalone server binary.
 
-The defaults recommended here are responsive web/PWA for mobile, shared responsive client for desktop UI-only, explicit server URL and pairing for remote clients, and preservation of the existing combined Electron app as the default bundled distribution.
+The defaults recommended here are a dedicated Expo React Native app for mobile, shared browser client for desktop UI-only, explicit server URL and pairing for remote clients, differentiated Plexy Client/Plexy Server icon variants, and preservation of the existing combined Plexy Electron app as the default bundled distribution. See [the separate mobile app build plan](MOBILE_APP_BUILD_PLAN.md) for mobile-specific scope and sequencing.

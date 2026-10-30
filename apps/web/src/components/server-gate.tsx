@@ -10,7 +10,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { ConnectScreen } from "./connect-screen";
 import { PairScreen } from "./pair-screen";
-import { getApiBase, isElectron, probeServer } from "../server-config";
+import { getApiBase, probeServer } from "../server-config";
+import { getClientRuntime } from "../runtime-config";
 import { getAuthDevice } from "../auth";
 import { reportConnectionHealth, subscribeConnectionHealth, type ConnectionHealth } from "../lib/connection-health";
 
@@ -61,7 +62,7 @@ export function ServerGate({ children }: { children: ReactNode }) {
       // itself, so its "not a Plexy server" error would be noise before the
       // viewer has typed anything. Keep it for the desktop fallback, where the
       // message explains that the bundled backend did not start.
-      const firstHostedVisit = base === origin && !isElectron();
+      const firstHostedVisit = base === origin && !getClientRuntime().bundled;
 
       setState({
         phase: "down",
