@@ -10,6 +10,11 @@ const api: ElectronAPI = {
   getVersion: () => ipcRenderer.invoke("app:get-version"),
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("app:install-update"),
+  onUpdateProgress: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof callback>[0]) => callback(progress);
+    ipcRenderer.on("app:update-progress", handler);
+    return () => ipcRenderer.removeListener("app:update-progress", handler);
+  },
   getSystemUsage: () => ipcRenderer.invoke("app:get-system-usage"),
   getServerUrl: () => ipcRenderer.invoke("app:get-server-url"),
   setServerUrl: (url: string) => ipcRenderer.invoke("app:set-server-url", url),

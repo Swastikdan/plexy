@@ -7,6 +7,7 @@ export interface ElectronAPI {
   getVersion: () => Promise<string>;
   checkForUpdates: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;
+  onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
   getSystemUsage: () => Promise<DesktopSystemUsage>;
   getServerUrl: () => Promise<string>;
   setServerUrl: (url: string) => Promise<void>;
@@ -32,5 +33,12 @@ export interface UpdateStatus {
   updateAvailable: boolean;
   currentIsNewer: boolean;
   canInstall: boolean;
+  requiresAdministrator: boolean;
   error?: string;
+}
+
+export interface UpdateProgress {
+  phase: "downloading" | "verifying" | "waiting-for-approval" | "installing";
+  downloadedBytes: number;
+  totalBytes: number | null;
 }
