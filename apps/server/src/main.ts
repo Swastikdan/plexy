@@ -16,6 +16,7 @@ import type { Level } from "./logger";
 import { networkInterfaces } from "node:os";
 import { migrateLegacyPackagedData } from "./paths";
 import { setLiveBinding } from "./runtime";
+import { startPeriodicLibraryScan } from "./scan";
 
 /// Name the backend explicitly in CLI output: this artifact is Plexy Server,
 /// not the combined Plexy app, and a headless binary has no GUI icon to explain
@@ -98,6 +99,7 @@ async function main(): Promise<void> {
   const hostname = cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   app.listen({ port, hostname });
+  const stopPeriodicLibraryScan = startPeriodicLibraryScan();
 
   // Offline resilience: ensure any previously uncached artwork is downloaded and derived locally
   setTimeout(() => {
@@ -156,6 +158,7 @@ async function main(): Promise<void> {
   // Soft shutdown: finish writes, close the workers, close logs (PRD 5.1).
   const shutdown = (signal: string) => {
     log.info("server", `received ${signal}, shutting down`);
+    stopPeriodicLibraryScan();
     app.stop(true);
     void stopOptimizer()
       .then(() => shutdownTrickplay())

@@ -161,6 +161,9 @@ jobs:
           name: plexy-macos
           path: release
 
+      - name: Create update checksums
+        run: cd release && shasum -a 256 Plexy-*-arm64.zip > SHA256SUMS
+
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -176,18 +179,17 @@ jobs:
 
           **Web app:** ${SITE_URL}
 
-          **macOS (Apple Silicon):** download the DMG below, or the ZIP for a portable copy.
+          **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**.
 
-          The Mac app is ad-hoc signed, not notarized, so macOS shows "Apple could not verify Plexy" on first launch. This is expected for an unsigned build.
+          This release is ad-hoc signed, but it is not Developer ID signed or notarized. On first launch, macOS may say it cannot verify Plexy and block it. After trying to open Plexy from Applications:
 
-          To open it:
-          1. Drag **Plexy** into **Applications**.
-          2. Open **System Settings → Privacy & Security** and scroll to the Security section.
-          3. Click **Open Anyway** next to the blocked Plexy message, then confirm with your password or Touch ID.
+          1. Open **System Settings → Privacy & Security**.
+          2. Scroll to **Security** and click **Open Anyway** next to the Plexy message.
+          3. Confirm with your password or Touch ID, then open Plexy again from **Applications** and choose **Open**.
 
-          On macOS 14 or earlier you can instead right-click **Plexy.app** and choose **Open**.
+          On some macOS versions, Control-click **Plexy.app** in Applications, choose **Open**, and confirm **Open**. If macOS still blocks it, use the Privacy & Security steps above. Only do this for a copy downloaded from this repository's GitHub Releases page.
 
-          Terminal alternative:
+          Advanced Terminal alternative:
 
               xattr -dr com.apple.quarantine /Applications/Plexy.app
 

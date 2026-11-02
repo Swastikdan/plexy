@@ -21,7 +21,6 @@ export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof C
   renderThumbnail?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['renderThumbnail'];
   onSeekDragStart?: () => void;
   onSeekDragEnd?: () => void;
-  onSeekBy?: (seconds: number) => void;
   serverAudioTracks?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['serverAudioTracks'];
   selectedAudioIndex?: number;
   onSelectAudioTrack?: (index: number) => void;
@@ -40,7 +39,6 @@ export function VideoSkin({
   renderThumbnail,
   onSeekDragStart,
   onSeekDragEnd,
-  onSeekBy,
   serverAudioTracks,
   selectedAudioIndex,
   onSelectAudioTrack,
@@ -69,7 +67,6 @@ export function VideoSkin({
         renderThumbnail={renderThumbnail}
         onSeekDragStart={onSeekDragStart}
         onSeekDragEnd={onSeekDragEnd}
-        onSeekBy={onSeekBy}
         serverAudioTracks={serverAudioTracks}
         selectedAudioIndex={selectedAudioIndex}
         onSelectAudioTrack={onSelectAudioTrack}

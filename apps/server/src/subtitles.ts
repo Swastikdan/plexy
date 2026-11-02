@@ -8,9 +8,8 @@
 /// the subtitle menu never re-reads the video container.
 import { mkdir, readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import {
-  ALL_FORMATS, BlobSource, EncodedPacketSink, Input,
-} from "mediabunny";
+import { spawn } from "node:child_process";
+import { resolveFfmpeg } from "./ffmpeg";
 import { q, run, type Row } from "./db";
 import { log } from "./logger";
 import { resolveSubtitleCacheDir } from "./paths";
@@ -220,7 +219,6 @@ function matroskaVtt(
 /**
  * Extract every subtitle track in one pass. Returns `null` for image-based or
  * empty tracks, aligned with the track order stored in `subtitles_json`.
- * Matroska is read directly because mediabunny cannot demux subtitle tracks.
  */
 export async function extractAllEmbeddedVtt(path: string): Promise<Array<string | null> | null> {
   const matroska = await readMatroskaSubtitles(path).catch((err) => {
@@ -239,31 +237,36 @@ export async function extractEmbeddedVtt(path: string, trackIndex: number): Prom
   const all = await extractAllEmbeddedVtt(path);
   if (all) return all[trackIndex] ?? null;
 
-  // Fallback for containers mediabunny can demux subtitles from (none in the
-  // current version, but harmless if support is added).
-  const input = new Input({ source: new BlobSource(Bun.file(path)), formats: ALL_FORMATS });
-  try {
-    const tracks = await input.getTracks();
-    const subs = tracks.filter((track) => track.type === "subtitle");
-    const track = subs[trackIndex];
-    if (!track) return null;
+  // Extract directly using ffmpeg
+  const ffmpeg = resolveFfmpeg();
+  if (!ffmpeg) return null;
 
-    const codec = await track.getCodec();
-    if (codec && !TEXT_SUBTITLE_CODECS.has(codec)) {
-      log.debug("player", "skipping image-based subtitle track", { path, trackIndex, codec });
-      return null;
-    }
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpeg, [
+      "-v", "quiet",
+      "-i", path,
+      "-map", `0:s:${trackIndex}`,
+      "-c:s", "webvtt",
+      "-f", "webvtt",
+      "-",
+    ], { stdio: ["ignore", "pipe", "ignore"] });
 
-    const sink = new EncodedPacketSink(track);
-    const cues: Array<{ start: number; end: number; text: string }> = [];
-    for await (const packet of sink.packets()) {
-      cues.push(...packetToCues(packet.data, codec, packet.timestamp, packet.duration));
-    }
-    if (!cues.length) return null;
-    return cuesToVtt(cues);
-  } finally {
-    input.dispose();
-  }
+    let out = "";
+    proc.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString();
+    });
+    proc.on("close", (code: number | null) => {
+      if (code === 0 && out.trim().startsWith("WEBVTT")) {
+        resolve(out);
+      } else {
+        resolve(null);
+      }
+    });
+    proc.on("error", (err: unknown) => {
+      log.warn("player", "ffmpeg subtitle extraction failed", { path, trackIndex, error: String(err) });
+      resolve(null);
+    });
+  });
 }
 
 function parseEmbedded(row: Row): EmbeddedSubtitle[] {

@@ -26,6 +26,11 @@ function LibraryRoute() {
     queries.items({ kind: apiKind, sort }),
   );
 
+  // Server-driven scan indicator: shows for every scan whatever triggered it
+  // (auto-scan or a manual rescan), sharing the status cache the app polls.
+  const status = useQuery(queries.serverStatus());
+  const scan = status.data?.scan?.status === "running" ? status.data.scan : null;
+
   const label = kind === "tv" ? "TV Shows" : "Movies";
 
   return (
@@ -33,7 +38,21 @@ function LibraryRoute() {
       <PageHeader
         title={label}
         action={
-          <Select.Root
+          <>
+            {scan && (
+              <div
+                data-testid="scan-indicator"
+                role="status"
+                className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full border border-line bg-surface px-3 text-xs text-ink-muted"
+              >
+                <span
+                  aria-hidden
+                  className="h-3 w-3 animate-spin rounded-full border-2 border-line border-t-ink-muted"
+                />
+                Scanning {scan.libraryName ?? "libraries"}
+              </div>
+            )}
+            <Select.Root
             value={sort}
             onValueChange={(v) => setSort(String(v))}
             items={SORTS as unknown as readonly { value: string; label: string }[]}
@@ -50,6 +69,7 @@ function LibraryRoute() {
               ))}
             </Select.Positioner>
           </Select.Root>
+          </>
         }
       />
 

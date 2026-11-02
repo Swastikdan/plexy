@@ -1,15 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { setupApplicationMenu } from "./menu";
 import { startServer, stopServer } from "./server";
 import { startStaticUi } from "./static";
 import { ensureDesktopAuth } from "./auth";
+import { checkForUpdates, getUpdateStatus } from "./updater";
 
-// Deliberately no auto-updater. Releases are manual downloads (the build uses
-// `electron-builder --publish never`) and this app is not signed, so an in-app
-// update would be both unreliable and a security downgrade. Replacing the .app
-// leaves userData (database + keychain token) untouched.
+// The updater downloads only the published Apple Silicon ZIP, verifies the
+// release checksum, then replaces the app bundle while preserving userData.
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let stopStaticUi: (() => Promise<void>) | null = null;
@@ -244,6 +244,21 @@ function setupIpcHandlers() {
   ipcMain.handle("app:get-version", () => {
     return app.getVersion();
   });
+
+  ipcMain.handle("app:get-system-usage", () => {
+    const processes = app.getAppMetrics();
+    const workingSet = (metric: (typeof processes)[number]) => (metric.memory.workingSetSize ?? 0) * 1024;
+    return {
+      cpuPercent: processes.reduce((total, metric) => total + (metric.cpu.percentCPUUsage ?? 0), 0),
+      appMemoryBytes: processes.reduce((total, metric) => total + workingSet(metric), 0),
+      appGpuMemoryBytes: processes.filter((metric) => metric.type.toLowerCase().includes("gpu")).reduce((total, metric) => total + workingSet(metric), 0),
+      systemMemoryTotalBytes: os.totalmem(),
+      systemMemoryFreeBytes: os.freemem(),
+    };
+  });
+
+  ipcMain.handle("app:check-for-updates", () => getUpdateStatus());
+  ipcMain.handle("app:install-update", () => checkForUpdates());
 
   ipcMain.handle("app:get-server-url", () => {
     return readServerPreference();

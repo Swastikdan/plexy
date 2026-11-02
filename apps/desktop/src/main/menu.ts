@@ -1,5 +1,6 @@
 import { Menu, shell, type BrowserWindow, type MenuItemConstructorOptions, app } from "electron";
 import path from "node:path";
+import { checkForUpdates } from "./updater";
 
 export function setupApplicationMenu(getMainWindow: () => BrowserWindow | null): void {
   const isMac = process.platform === "darwin";
@@ -40,7 +41,7 @@ export function setupApplicationMenu(getMainWindow: () => BrowserWindow | null):
           accelerator: "CmdOrCtrl+O",
           click: () => {
             const win = getMainWindow();
-            if (win) win.webContents.send("navigate", "/setup");
+            if (win) win.webContents.send("navigate", "/add-library");
           },
         },
         {
@@ -115,9 +116,14 @@ export function setupApplicationMenu(getMainWindow: () => BrowserWindow | null):
         },
         { type: "separator" as const },
         {
+          label: "Check for Updates…",
+          click: () => { void checkForUpdates(); },
+        },
+        { type: "separator" as const },
+        {
           label: "Plexy on GitHub",
           click: () => {
-            shell.openExternal("https://github.com");
+            shell.openExternal("https://github.com/Swastikdan/plexy/releases");
           },
         },
       ],

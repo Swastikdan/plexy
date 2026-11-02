@@ -12,11 +12,13 @@ export const queries = {
       queryKey: ["server-status"],
       queryFn: api.serverStatus,
       refetchInterval: (q) => {
-        // Poll faster while a scan or preparation job is running; lazy when idle.
+        // Poll faster while a scan or preparation job is running. A light idle
+        // cadence keeps background scans from leaving stale screens behind;
+        // the status call is one cheap local read.
         const data = q.state.data;
         if (data?.scan?.status === "running") return 1500;
         if (data?.optimizer?.running || (data?.optimizer?.queued ?? 0) > 0) return 2500;
-        return 30_000;
+        return 5_000;
       },
     }),
 

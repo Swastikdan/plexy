@@ -1,6 +1,6 @@
 {
   "name": "@plexy/desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Plexy desktop app for macOS",
   "author": "Plexy",
   "private": true,

@@ -1,10 +1,8 @@
 /// Matroska (MKV) subtitle reading.
 ///
-/// Mediabunny 1.62 can *write* subtitle tracks but cannot read them: its input
-/// API only exposes video and audio tracks. That made every embedded-subtitle
-/// feature silently report "no tracks". Matroska's subtitle layout is simple
-/// enough to read directly, and MKV is the format that carries embedded subs in
-/// this library.
+/// Fast in-memory Matroska EBML subtitle reading for Plexy.
+/// Matroska's subtitle layout is simple enough to read directly, and MKV is
+/// the format that carries embedded subs in this library.
 ///
 /// This module only understands EBML structure: it returns track metadata and
 /// the raw subtitle packets (timestamp + bytes). Text normalisation and WebVTT

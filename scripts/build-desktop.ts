@@ -1,4 +1,4 @@
-import { mkdir, copyFile, chmod, readdir, rm } from "node:fs/promises";
+import { mkdir, copyFile, chmod, readdir, readFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -79,6 +79,7 @@ async function buildDesktop() {
   console.log("\n========================================================");
   console.log("  Plexy Electron Desktop Build for macOS");
   console.log("========================================================\n");
+  const desktopPackage = JSON.parse(await readFile(join(rootDir, "apps/desktop/package.json"), "utf8")) as { version: string };
 
   await mkdir(distBin, { recursive: true });
   await mkdir(distMigrations, { recursive: true });
@@ -165,9 +166,9 @@ async function buildDesktop() {
 
   console.log("\n========================================================");
   console.log("  Plexy macOS Electron Build Complete!");
-  console.log(`  • macOS DMG Disk    : dist/mac/Plexy-0.1.0-arm64.dmg`);
+  console.log(`  • macOS DMG Disk    : dist/mac/Plexy-${desktopPackage.version}-arm64.dmg`);
   console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy.app`);
-  console.log(`  • macOS ZIP Archive : dist/mac/Plexy-0.1.0-arm64.zip`);
+  console.log(`  • macOS ZIP Archive : dist/mac/Plexy-${desktopPackage.version}-arm64.zip`);
   console.log("========================================================\n");
 }
 

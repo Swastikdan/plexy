@@ -127,6 +127,39 @@ function seriesDirFor(path: string): string {
 let scanning = false;
 /** Library ids whose scan waits for the current run to finish (PRD 5.2). */
 const queuedLibraries = new Set<number>();
+const AUTO_SCAN_INITIAL_DELAY_MS = 2 * 60 * 1000;
+const AUTO_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+
+/**
+ * Periodically discover files added to existing library roots. A scan only
+ * stats and walks unchanged files; probing, matching, and writes happen for
+ * new or changed files. The delayed first pass lets startup settle, and a
+ * scheduled pass is skipped while a manual/startup scan is already running.
+ */
+export function startPeriodicLibraryScan(): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const schedule = (delay: number) => {
+    timer = setTimeout(() => {
+      if (stopped) return;
+      const hasLibraries = q<{ count: number }>("SELECT COUNT(*) AS count FROM libraries").get()?.count ?? 0;
+      if (hasLibraries > 0 && !scanning) {
+        log.info("scanner", "starting scheduled library scan");
+        startScan();
+      }
+      schedule(AUTO_SCAN_INTERVAL_MS);
+    }, delay);
+    timer.unref?.();
+  };
+
+  schedule(AUTO_SCAN_INITIAL_DELAY_MS);
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+}
 
 /** Start scanning the given libraries (or all). Idempotent while running. */
 export function startScan(libraryIds: number[] = allLibraryIds()): number | null {

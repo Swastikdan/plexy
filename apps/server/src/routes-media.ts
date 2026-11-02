@@ -365,6 +365,9 @@ interface ItemContext {
   duration: number | null;
   nextFileId: number | null;
   next: NextEpisode | null;
+  /** Item the player's back control should open: the series for episodes, self otherwise. */
+  parentItemId: number | null;
+  parentPublicId: string | null;
 }
 
 function episodeSubtitle(name: string, season: number, episode: number): string {
@@ -390,19 +393,28 @@ function itemContext(row: Row): ItemContext {
   const empty = {
     title: "", subtitle: null, seasonNumber: null, episodeNumber: null,
     duration, nextFileId: null, next: null,
+    parentItemId: null as number | null,
+    parentPublicId: null as string | null,
   };
   if (!itemId) return empty;
 
   const item = q<Row, [number]>(
-    "SELECT id, name, kind, parent_id, season_number, episode_number FROM items WHERE id = ?",
+    "SELECT id, name, kind, parent_id, public_id, season_number, episode_number FROM items WHERE id = ?",
   ).get(itemId);
   if (!item) return empty;
 
   if (String(item.kind) !== "episode" || item.parent_id == null) {
-    return { ...empty, title: String(item.name) };
+    // Movies and unparented files point back at themselves, so the player can
+    // route to the title detail page without a second lookup.
+    return {
+      ...empty,
+      title: String(item.name),
+      parentItemId: itemId,
+      parentPublicId: item.public_id ? String(item.public_id) : null,
+    };
   }
 
-  const parent = q<{ name: string }, [number]>("SELECT name FROM items WHERE id = ?")
+  const parent = q<{ name: string; public_id: string | null }, [number]>("SELECT name, public_id FROM items WHERE id = ?")
     .get(Number(item.parent_id));
   const season = item.season_number == null ? 0 : Number(item.season_number);
   const episode = item.episode_number == null ? 0 : Number(item.episode_number);
@@ -446,6 +458,8 @@ function itemContext(row: Row): ItemContext {
     duration,
     nextFileId: next?.fileId ?? null,
     next,
+    parentItemId: Number(item.parent_id),
+    parentPublicId: parent?.public_id ? String(parent.public_id) : null,
   };
 }
 
@@ -555,6 +569,8 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       duration: context.duration,
       nextFileId: context.nextFileId,
       next: context.next,
+      parentItemId: context.parentItemId,
+      parentPublicId: context.parentPublicId,
       watch: watch ? {
         position: Number(watch.position_seconds),
         duration: watch.duration_seconds != null ? Number(watch.duration_seconds) : null,

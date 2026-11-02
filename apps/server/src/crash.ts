@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { resolveDataDir, resolveLogDir } from "./paths";
 import { log, recentLogLines, flushLogs, closeLog } from "./logger";
 
-export const APP_VERSION = "0.1.0" as const;
+export const APP_VERSION = "1.0.0" as const;
 
 export interface CrashReport {
   ts: string;

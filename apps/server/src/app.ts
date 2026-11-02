@@ -6,6 +6,7 @@
 /// enforce loopback-only access with `essentials.denyIfNotLocal`.
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
@@ -36,6 +37,24 @@ function configuredCorsOrigins(): Set<string> {
   );
 }
 
+/// `bun dev` serves the UI from Vite on a different origin than the API, so the
+/// allow-list above would reject the developer's own browser. Trust browser
+/// origins on this machine's own addresses while the server runs from source;
+/// packaged builds and binaries keep the strict allow-list.
+function devOriginTrusted(): boolean {
+  const entry = (Bun.main ?? import.meta.path).replaceAll("\\", "/");
+  return entry.includes("/apps/server/src/");
+}
+
+function localHostnames(): Set<string> {
+  const hosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  for (const entry of Object.values(networkInterfaces()).flat()) {
+    if (!entry || entry.internal) continue;
+    hosts.add(entry.address.toLowerCase());
+  }
+  return hosts;
+}
+
 export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: string[] } = {}) {
   const allowedOrigins = new Set(
     (options.allowedOrigins ?? [...configuredCorsOrigins()]).flatMap((value) => {
@@ -47,12 +66,19 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
       }
     }),
   );
+  const trustDevOrigins = devOriginTrusted();
+  const localHosts = trustDevOrigins ? localHostnames() : new Set<string>();
   const originAllowed = (request: Request): boolean => {
     const origin = request.headers.get("origin");
     if (!origin) return false;
     try {
-      const normalized = new URL(origin).origin;
-      return normalized === new URL(request.url).origin || allowedOrigins.has(normalized);
+      const parsed = new URL(origin);
+      const normalized = parsed.origin;
+      if (normalized === new URL(request.url).origin) return true;
+      if (allowedOrigins.has(normalized)) return true;
+      if (!trustDevOrigins || parsed.protocol !== "http:") return false;
+      const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+      return localHosts.has(hostname);
     } catch {
       return false;
     }

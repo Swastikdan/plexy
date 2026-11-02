@@ -16,6 +16,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 let cached: string | null | undefined;
+let cachedFfprobe: string | null | undefined;
 
 function isExecutable(path: string): boolean {
   try {
@@ -123,4 +124,66 @@ export function resolveFfmpeg(): string | null {
 /** Reset the cache (tests and admin diagnostics). */
 export function resetFfmpegCache(): void {
   cached = undefined;
+}
+
+export function resolveFfprobe(): string | null {
+  if (cachedFfprobe !== undefined) return cachedFfprobe;
+
+  const explicit = Bun.env.PLEXY_FFPROBE;
+  if (explicit && isExecutable(explicit)) {
+    cachedFfprobe = explicit;
+    return cachedFfprobe;
+  }
+
+  // Check sibling next to resolved ffmpeg
+  const ffmpeg = resolveFfmpeg();
+  if (ffmpeg) {
+    const sibling = join(dirname(ffmpeg), "ffprobe" + (process.platform === "win32" ? ".exe" : ""));
+    if (isExecutable(sibling)) {
+      cachedFfprobe = sibling;
+      return cachedFfprobe;
+    }
+  }
+
+  const resourcesDir = Bun.env.PLEXY_RESOURCES_DIR;
+  if (resourcesDir) {
+    const candidate = join(resourcesDir, "bin", "ffprobe");
+    if (isExecutable(candidate)) {
+      cachedFfprobe = candidate;
+      return cachedFfprobe;
+    }
+  }
+
+  for (const dir of new Set([
+    dirname(process.execPath),
+    process.argv[1] ? dirname(process.argv[1]) : "",
+    join(import.meta.dir, "..", "..", "..", "dist"),
+  ])) {
+    if (!dir) continue;
+    const candidate = join(dir, "ffprobe");
+    if (isExecutable(candidate)) {
+      cachedFfprobe = candidate;
+      return cachedFfprobe;
+    }
+  }
+
+  const onPath = Bun.which("ffprobe");
+  if (onPath && isExecutable(onPath)) {
+    cachedFfprobe = onPath;
+    return cachedFfprobe;
+  }
+
+  for (const candidate of ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"]) {
+    if (existsSync(candidate) && isExecutable(candidate)) {
+      cachedFfprobe = candidate;
+      return cachedFfprobe;
+    }
+  }
+
+  cachedFfprobe = null;
+  return null;
+}
+
+export function resetFfprobeCache(): void {
+  cachedFfprobe = undefined;
 }

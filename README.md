@@ -4,7 +4,7 @@ A personal, local-first home media server: point it at folders of movies and TV 
 
 The repository is structured as a clean **monorepo**:
 - **`apps/desktop`**: Full native Electron desktop application for macOS, featuring integrated lifecycle management for the backend server, macOS `hiddenInset` traffic lights, native Finder directory selection, and menu bar shortcuts.
-- **`apps/server`**: Elysia backend API server with Mediabunny probe/transcode, SQLite storage, TMDB matcher, and embedded SPA static serving.
+- **`apps/server`**: Elysia backend API server with FFmpeg/ffprobe probe & transcode, SQLite storage, TMDB matcher, and embedded SPA static serving.
 - **`apps/web`**: Netflix-style web app built with React 19, TanStack Router & Query, Tailwind CSS 4, and Lucide icons.
 - **`packages/api-client`**: Typed RPC client powered by `@elysiajs/eden` Treaty, shared types, and browser capability probes.
 - **`dist/mac/mac-arm64/Plexy.app`**: Complete macOS Electron application bundle packaging both the compiled native backend binary and the optimized React UI.
@@ -48,7 +48,7 @@ This compiles:
 
 ### 3. Launching Plexy
 
-- **From DMG**: Open `dist/mac/Plexy-0.1.0-arm64.dmg` and drag `Plexy` to `Applications`.
+- **From DMG**: Open `dist/mac/Plexy-1.0.0-arm64.dmg` and drag `Plexy` to `Applications`.
 - **Desktop Development Mode**:
   ```sh
   bun run dev:desktop
@@ -62,20 +62,27 @@ This compiles:
 
 ### First launch on macOS (Gatekeeper)
 
-Release builds are ad-hoc signed but **not notarized** — notarization requires an
-Apple Developer Program membership — so macOS shows:
+Download the latest **Apple Silicon DMG** from the project's GitHub Releases
+page. Open the DMG, drag **Plexy** to **Applications**, wait for it to finish
+copying, then eject the DMG. Do not run Plexy from inside the DMG.
+
+Release builds are ad-hoc signed but are **not Developer ID signed or
+notarized** — notarization requires an Apple Developer Program membership — so
+macOS may block the first launch and show:
 
 > Apple could not verify "Plexy" is free of malware that may harm your Mac or compromise your privacy.
 
-This is expected. To open the app:
+After trying to open Plexy from **Applications**, allow it once:
 
-1. Drag **Plexy** into **Applications**.
-2. Open **System Settings → Privacy & Security** and scroll to the Security section.
-3. Click **Open Anyway** next to the blocked Plexy message, then confirm with
-   your password or Touch ID.
+1. Open **System Settings → Privacy & Security**.
+2. Scroll to **Security** and click **Open Anyway** next to the Plexy message.
+3. Confirm with your password or Touch ID, then open Plexy again from
+   **Applications** and choose **Open** in the confirmation dialog.
 
-On macOS 14 and earlier, right-clicking **Plexy.app** and choosing **Open** also
-works. From Terminal:
+On some macOS versions, you can instead Control-click **Plexy.app** in
+Applications, choose **Open**, then confirm **Open**. If macOS still blocks it,
+use the Privacy & Security steps above. Only do this for a copy downloaded
+from the official Plexy GitHub Releases page. Advanced Terminal alternative:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Plexy.app
@@ -84,12 +91,25 @@ xattr -dr com.apple.quarantine /Applications/Plexy.app
 Only bypass Gatekeeper for builds you produced yourself or downloaded from this
 repository's releases.
 
-### Updating Plexy (manual, no in-app updater)
+### Updating Plexy
 
-Plexy has **no auto-updater**. The app never downloads or installs a new
-version, and release builds are produced with `--publish never`. To update,
-download the new DMG and replace `Plexy.app` in **Applications** — the same
-drag-and-drop as a first install.
+On the Apple Silicon desktop build, choose **Help → Check for Updates…** from
+the macOS menu, or open **Plexy → Preferences… → Settings** and click
+**Check for updates** in the Plexy app updates section. Settings shows the
+installed and latest app version, then offers **Install update** when a
+download is available. Plexy checks the latest GitHub release, downloads the
+app ZIP, verifies its SHA-256 digest (from the release checksum file or GitHub
+asset metadata), then asks before quitting and replacing the app.
+macOS may request administrator approval when Plexy is installed in
+`/Applications`. Your library and settings remain in Application Support.
+
+The updater works with the current ad-hoc signed, non-notarized build. macOS
+may still block the first launch of a downloaded release or show a security
+prompt after updating. This updater does not make the app notarized or provide
+the same seamless trust experience as a Developer ID signed and notarized app.
+If an update cannot be installed, download the DMG and replace the app manually.
+Release builds use numbered tags in the form `v<version>-build.<run>`; the
+current app version is `1.0.0`.
 
 Your data is not part of the `.app` bundle. Everything writable lives outside
 it, so replacing the app keeps your library, watch state, and paired devices:
@@ -132,6 +152,15 @@ Every `/api/*` route now requires a paired device. The only public endpoint is
 
 Admin screens (settings, libraries, scans, matching, logs) remain restricted to
 the computer running Plexy, independent of the device token.
+
+### Automatic library discovery
+
+While the server is running, Plexy starts an incremental scan two minutes after
+launch and repeats every 15 minutes. It walks library folders and checks file
+size and modification time; unchanged files are skipped without probing or
+matching again. Newly added or changed titles are processed in the background,
+and open catalog views refresh when the scan finishes. Scheduled scans defer
+when another scan is already in progress.
 
 ### 4. Hosted Web Build (Cloudflare Workers)
 
@@ -293,7 +322,7 @@ generated and shipped so far.
   - `PORT`: Server listen port (default `8765`).
   - `PLEXY_DATA_DIR`: Data and database directory (default: macOS `~/Library/Application Support/Plexy`, dev `/tmp/plexy-dev`).
   - `PLEXY_LOG_LEVEL`: Log level (`debug`, `info`, `warn`, `error`).
-  - `PLEXY_ALLOWED_ORIGINS`: Comma-separated exact HTTPS frontend origins allowed to make credentialed cross-origin requests. Same-origin requests do not need this setting.
+  - `PLEXY_ALLOWED_ORIGINS`: Comma-separated exact HTTPS frontend origins allowed to make credentialed cross-origin requests. Same-origin requests do not need this setting. Running from source (`bun dev`) already trusts browser origins on this machine's own addresses (the Vite page and the LAN URL it prints), so local development needs no entry here.
 - The desktop app prefers port `8765` so LAN bookmarks stay valid; it falls back to a random free port only when `8765` is already taken.
 - LAN access is off by default (`bindAddress: "127.0.0.1"`). Enable it in **Server → Settings → Network & Access**, then restart Plexy. That page lists the exact `http://<lan-ip>:<port>` addresses to open on phones and TVs.
 

@@ -2,7 +2,7 @@
 /// with an intelligent responsive layout for desktop & mobile,
 /// zero-title library filtering, and interactive feedback.
 import { useEffect, useState } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Settings, Film, Tv, Home, Server } from "lucide-react";
 import { queries } from "../queries";
@@ -11,14 +11,60 @@ import { useIsFullscreen } from "../lib/use-fullscreen";
 import { isElectronMac } from "../lib/platform";
 import { BackButton } from "./back-button";
 
+function resolvePageTitle(
+  pathname: string,
+  titleDataName?: string | null,
+  libraries?: { id: number; name: string; type: string }[] | null,
+): string {
+  if (pathname.startsWith("/title/")) {
+    return titleDataName || "";
+  }
+  if (pathname === "/library/movies") return "Movies";
+  if (pathname === "/library/tv" || pathname === "/library/series") return "TV Shows";
+  if (pathname.startsWith("/library/")) {
+    const rawKind = pathname.replace("/library/", "");
+    const matchingLib = libraries?.find(
+      (l) => String(l.id) === rawKind || l.type === rawKind || l.name.toLowerCase() === rawKind.toLowerCase(),
+    );
+    if (matchingLib) return matchingLib.name;
+    return rawKind.charAt(0).toUpperCase() + rawKind.slice(1);
+  }
+  if (pathname.startsWith("/search")) return "Search";
+  if (pathname.startsWith("/admin")) return "Settings";
+  if (pathname.startsWith("/add-library")) return "Add Library";
+  if (pathname.startsWith("/setup")) return "Setup";
+  if (pathname.startsWith("/connect")) return "Server";
+  if (pathname.startsWith("/watch")) return titleDataName || "Now Playing";
+  return "";
+}
+
 export function TopNav() {
   const [scrolled, setScrolled] = useState(false);
   const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isFullscreen = useIsFullscreen();
-  const canGoBack = router.state.location.pathname !== "/";
+  const isHome = pathname === "/";
 
   // Check libraries to see whether movies or TV shows have titles
   const { data: libraries } = useQuery(queries.libraries());
+
+  // If on /title/:itemId, extract the id and query the title to get its display name
+  const titleMatch = pathname.match(/^\/title\/([^/?#]+)/);
+  const titleId = titleMatch ? titleMatch[1] : null;
+  const { data: titleData } = useQuery({
+    ...queries.title(titleId ?? ""),
+    enabled: !!titleId,
+  });
+
+  const pageTitle = resolvePageTitle(pathname, titleData?.item?.name, libraries);
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.history.back();
+    } else {
+      void router.navigate({ to: "/" });
+    }
+  };
 
   const movieCount = libraries
     ? libraries.filter((l) => l.type === "movies").reduce((sum, l) => sum + (l.counts?.items ?? 0), 0)
@@ -72,31 +118,40 @@ export function TopNav() {
         {/* Main top header row — three equal tracks keep the nav centered
             whether the left slot holds the logo or the back button. */}
         <div className="grid h-12 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:h-14 sm:gap-6">
-          {/* Left section: a persistent brand home, preceded by Back on
-              sub-pages so the app still reads as Plexy while navigating. */}
+          {/* Left section:
+              - On Home ("/"): brand logo icon + "Plexy" link
+              - On sub-pages: Back button + current page / title name (e.g. "Mindhunter") */}
           <div
             style={{
               WebkitAppRegion: "no-drag",
               paddingLeft: electronMac && !isFullscreen ? "88px" : undefined,
             } as React.CSSProperties}
-            className="flex min-w-0 items-center gap-1 justify-self-start sm:gap-2"
+            className="flex min-w-0 items-center gap-2 justify-self-start"
           >
-            {canGoBack && <BackButton onClick={() => router.history.back()} />}
-            <Link
-              to="/"
-              aria-label="Plexy home"
-              className="group flex min-w-0 items-center gap-2 p-1 transition-transform active:scale-97"
-            >
-              <img src="/icon.svg" alt="" className="h-6 w-6 shrink-0" />
-              <span
-                className={cx(
-                  "font-sans text-base font-bold tracking-tight text-ink transition-colors group-hover:text-ink/80",
-                  canGoBack && "hidden min-[400px]:inline",
-                )}
+            {isHome ? (
+              <Link
+                to="/"
+                aria-label="Plexy home"
+                className="group flex min-w-0 items-center gap-2 p-1 transition-transform active:scale-97"
               >
-                Plexy
-              </span>
-            </Link>
+                <img src="/icon.svg" alt="" className="h-6 w-6 shrink-0" />
+                <span className="font-sans text-base font-bold tracking-tight text-ink transition-colors group-hover:text-ink/80">
+                  Plexy
+                </span>
+              </Link>
+            ) : (
+              <div className="flex min-w-0 items-center gap-2">
+                <BackButton onClick={handleBack} label={`Back to previous page`} />
+                {pageTitle && (
+                  <span
+                    title={pageTitle}
+                    className="truncate font-sans text-base font-bold tracking-tight text-ink"
+                  >
+                    {pageTitle}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Desktop Navigation Links */}
@@ -144,6 +199,7 @@ export function TopNav() {
             {/* Settings button - desktop only (mobile accesses via bottom bar) */}
             <Link
               to="/admin"
+              search={{ tab: "settings" }}
               aria-label="Settings"
               title="Settings"
               className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2"

@@ -1,9 +1,9 @@
 /// Fullscreen Cinema Player using Video.js 10 and Plexy playback engine.
-import { lazy, Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
 import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, SkipForward } from "lucide-react";
+import { Activity, ArrowLeft, SkipForward } from "lucide-react";
 
 import { VideoPlayer, Video, usePlayer } from "@videojs/react/video";
 import { selectControls } from "@videojs/core/dom";
@@ -107,6 +107,9 @@ function WatchRoute() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [showPlaybackStats, setShowPlaybackStats] = useState(false);
+  const [playerMenu, setPlayerMenu] = useState<{ x: number; y: number } | null>(null);
+  const [playbackStatsTick, setPlaybackStatsTick] = useState(0);
   const [isBuffering, setIsBuffering] = useState(true);
   const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,16 +121,19 @@ function WatchRoute() {
   const [caps] = useState<string>(() => JSON.stringify(probeBrowserCaps()));
   const [knownDuration, setKnownDuration] = useState<number | null>(null);
   const [playbackPreferences] = useState(getPlaybackPreferences);
+  useEffect(() => {
+    if (!showPlaybackStats) return;
+    const timer = window.setInterval(() => setPlaybackStatsTick((tick) => tick + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [showPlaybackStats]);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
   const [mediaRetryKey, setMediaRetryKey] = useState(0);
-  const seekDragRef = useRef(false);
-  const deferredSeekRef = useRef<number | null>(null);
   const restartPlaybackRef = useRef(true);
-  const commitSeekNowRef = useRef(false);
   const pendingRestartRef = useRef<{ fileId: number; seconds: number } | null>(null);
   const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queuedButtonSeekRef = useRef<number | null>(null);
-  const buttonSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Only live conversions need the seek transaction below; direct and HLS
+  // playback use Video.js' own scrubbing untouched.
+  const scrubbingConversionRef = useRef(false);
   const playbackStartedAtRef = useRef(performance.now());
   const playbackStartedRef = useRef(false);
   const playbackPathRef = useRef<PlayPath | null>(null);
@@ -186,13 +192,13 @@ function WatchRoute() {
     playbackPathRef.current = null;
     waitingSinceRef.current = null;
     hasInitializedAudioRef.current = false;
-    seekDragRef.current = false;
-    deferredSeekRef.current = null;
+    scrubbingConversionRef.current = false;
     restartPlaybackRef.current = true;
     pendingRestartRef.current = null;
-    if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
-    queuedButtonSeekRef.current = null;
-    if (buttonSeekTimerRef.current) clearTimeout(buttonSeekTimerRef.current);
+    if (restartDebounceRef.current) {
+      clearTimeout(restartDebounceRef.current);
+      restartDebounceRef.current = null;
+    }
     setSelectedAudioIndex(0);
     setSubtitleOffset(0);
     appliedSubtitleOffsetRef.current = 0;
@@ -205,6 +211,12 @@ function WatchRoute() {
     setActiveSkipSegment(null);
     autoAdvanceTriggeredRef.current = false;
     if (nextPromptTimerRef.current) clearTimeout(nextPromptTimerRef.current);
+    return () => {
+      if (restartDebounceRef.current) {
+        clearTimeout(restartDebounceRef.current);
+        restartDebounceRef.current = null;
+      }
+    };
   }, [fileId]);
 
   const play = useQuery({
@@ -310,44 +322,39 @@ function WatchRoute() {
     };
   }, [playbackPreferences, streamUrl, tracks]);
 
+  // Live conversions (remux/transcode) stream from a server-side FFmpeg
+  // process that the browser cannot seek. While the viewer drags the slider we
+  // only remember the target and restart the conversion once, on release.
+  // The restart reloads the media element in place (`src` update); the element
+  // is only remounted for file switches and retry recovery, which keeps
+  // Video.js' stock scrubbing (and the presentation layer) stable mid-seek.
+  // Direct and HLS playback are natively seekable, so this is a no-op there
+  // and the slider keeps Video.js' stock scrubbing behaviour.
   const handleSeekDragStart = useCallback(() => {
-    seekDragRef.current = true;
-    deferredSeekRef.current = null;
-  }, []);
+    if (effectivePath !== "remux" && effectivePath !== "transcode") return;
+    scrubbingConversionRef.current = true;
+    // pauseOnDrag is off, so `paused` here reflects how the viewer reached the
+    // slider. The reload after release must not end up playing when they were
+    // paused (or staying paused when they were playing).
+    if (videoRef.current) restartPlaybackRef.current = !videoRef.current.paused;
+    // A click may already have queued a restart; hold it until release.
+    if (restartDebounceRef.current) {
+      clearTimeout(restartDebounceRef.current);
+      restartDebounceRef.current = null;
+    }
+  }, [effectivePath]);
 
   const handleSeekDragEnd = useCallback(() => {
-    seekDragRef.current = false;
-    const target = deferredSeekRef.current;
-    deferredSeekRef.current = null;
-    if (target != null && videoRef.current) {
-      commitSeekNowRef.current = true;
-      videoRef.current.currentTime = target;
-      commitSeekNowRef.current = false;
+    if (!scrubbingConversionRef.current) return;
+    scrubbingConversionRef.current = false;
+    const next = pendingRestartRef.current;
+    if (!next || next.fileId !== Number(fileId)) return;
+    if (restartDebounceRef.current) {
+      clearTimeout(restartDebounceRef.current);
+      restartDebounceRef.current = null;
     }
-  }, []);
-
-  const handleSeekBy = useCallback((delta: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const total = knownDuration ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null);
-    const current = queuedButtonSeekRef.current ?? video.currentTime;
-    const target = total == null
-      ? Math.max(0, current + delta)
-      : Math.min(total, Math.max(0, current + delta));
-    if (queuedButtonSeekRef.current == null) restartPlaybackRef.current = !video.paused;
-    queuedButtonSeekRef.current = target;
-    video.dispatchEvent(new Event("timeupdate"));
-    if (buttonSeekTimerRef.current) clearTimeout(buttonSeekTimerRef.current);
-    buttonSeekTimerRef.current = setTimeout(() => {
-      const latestTarget = queuedButtonSeekRef.current;
-      queuedButtonSeekRef.current = null;
-      buttonSeekTimerRef.current = null;
-      if (latestTarget == null || !videoRef.current) return;
-      commitSeekNowRef.current = true;
-      videoRef.current.currentTime = latestTarget;
-      queueMicrotask(() => { commitSeekNowRef.current = false; });
-    }, 220);
-  }, [knownDuration]);
+    setRestartAt(next);
+  }, [fileId]);
 
   // Fast trickplay track URL for scrub previews
   const trickplayTrackUrl = useMemo(() => {
@@ -400,16 +407,38 @@ function WatchRoute() {
     (window.electronAPI?.platform === "darwin" || /Mac/i.test(navigator.userAgent));
   const needsMacOffset = isElectronMac && !isFullscreen;
 
-  // Converted fragmented MP4 streams report duration as data arrives.
-  // Define source-timeline properties so seeking and duration stay in sync.
-  useEffect(() => {
+  // A live remux/transcode is a one-shot FFmpeg stream: the browser has no
+  // seekable range and only knows the source-relative clock. Map that clock
+  // onto the media timeline, and restart the conversion for long jumps. The
+  // fake clock keeps reporting the scrubbed target from the moment the seek
+  // is issued until the reloaded stream reports its first frame, so the
+  // playhead never dips toward 0 or overshoots past the end mid-restart.
+  // Direct and HLS playback are natively seekable and are deliberately left
+  // untouched so Video.js drives scrubbing itself.
+  const usesLiveConversion = effectivePath === "remux" || effectivePath === "transcode";
+
+  useLayoutEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !usesLiveConversion) return;
 
     const durationDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "duration");
     const currentTimeDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
     const seekableDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "seekable");
     if (!durationDescriptor?.get || !currentTimeDescriptor?.get || !currentTimeDescriptor.set || !seekableDescriptor?.get) return;
+
+    const pendingTarget = () =>
+      pendingRestartRef.current?.fileId === Number(fileId) ? pendingRestartRef.current.seconds : null;
+
+    const restart = (target: number, delay: number) => {
+      restartPlaybackRef.current = !video.paused;
+      const next = { fileId: Number(fileId), seconds: target };
+      pendingRestartRef.current = next;
+      if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
+      restartDebounceRef.current = setTimeout(() => {
+        restartDebounceRef.current = null;
+        if (pendingRestartRef.current === next) setRestartAt(next);
+      }, delay);
+    };
 
     Object.defineProperties(video, {
       duration: {
@@ -418,44 +447,26 @@ function WatchRoute() {
       },
       currentTime: {
         configurable: true,
-        get: () => queuedButtonSeekRef.current != null
-          ? queuedButtonSeekRef.current
-          : seekDragRef.current && deferredSeekRef.current != null
-            ? deferredSeekRef.current
-          : pendingRestartRef.current?.fileId === Number(fileId)
-            ? pendingRestartRef.current.seconds
-            : streamStart + currentTimeDescriptor.get!.call(video),
+        get: () => pendingTarget() ?? streamStart + currentTimeDescriptor.get!.call(video),
         set: (sourceTime: number) => {
-          if (seekDragRef.current) {
-            deferredSeekRef.current = sourceTime;
+          const target = Math.max(0, sourceTime);
+          // While dragging, only the released position matters. Restarting
+          // FFmpeg for every pointer move would stutter, so just remember it.
+          if (scrubbingConversionRef.current) {
+            pendingRestartRef.current = { fileId: Number(fileId), seconds: target };
             return;
           }
-          // Direct and prepared HLS sources are seekable in the browser. Only
-          // live conversions need a new source at distant times.
-          if (effectivePath === "direct" || effectivePath === "hls") {
-            currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart));
+          // Rapid clicks: keep the newest target and coalesce the restarts.
+          if (pendingTarget() != null) {
+            restart(target, 140);
             return;
           }
-          const currentSourceTime = pendingRestartRef.current?.fileId === Number(fileId)
-            ? pendingRestartRef.current.seconds
-            : streamStart + currentTimeDescriptor.get!.call(video);
-          if (Math.abs(sourceTime - currentSourceTime) > 2) {
-            restartPlaybackRef.current = !video.paused;
-            const next = { fileId: Number(fileId), seconds: sourceTime };
-            pendingRestartRef.current = next;
-            if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
-            if (commitSeekNowRef.current) {
-              setRestartAt(next);
-              restartDebounceRef.current = null;
-            } else {
-              restartDebounceRef.current = setTimeout(() => {
-                if (pendingRestartRef.current === next) setRestartAt(next);
-                restartDebounceRef.current = null;
-              }, 140);
-            }
-          } else {
-            currentTimeDescriptor.set!.call(video, Math.max(0, sourceTime - streamStart));
+          const sourceNow = streamStart + currentTimeDescriptor.get!.call(video);
+          if (Math.abs(target - sourceNow) <= 2) {
+            currentTimeDescriptor.set!.call(video, Math.max(0, target - streamStart));
+            return;
           }
+          restart(target, 140);
         },
       },
       seekable: {
@@ -486,12 +497,18 @@ function WatchRoute() {
       Reflect.deleteProperty(video, "currentTime");
       Reflect.deleteProperty(video, "seekable");
     };
-  }, [streamUrl, streamStart, duration, effectivePath, fileId]);
+  }, [streamUrl, streamStart, duration, usesLiveConversion, fileId]);
 
+  // The pending seek target pins the fake source clock until the reloaded
+  // stream reports its first frame (handleLoadedData). This timer only covers
+  // streams that never get there (fatal encode failures), so the playhead
+  // cannot stay frozen forever.
   useEffect(() => {
-    if (pendingRestartRef.current?.fileId === Number(fileId) && restartAt === pendingRestartRef.current) {
-      pendingRestartRef.current = null;
-    }
+    if (pendingRestartRef.current?.fileId !== Number(fileId)) return;
+    const timer = setTimeout(() => {
+      if (pendingRestartRef.current?.fileId === Number(fileId)) pendingRestartRef.current = null;
+    }, 20_000);
+    return () => clearTimeout(timer);
   }, [restartAt, fileId]);
 
   // Subtitle Synchronization Adjustment Engine
@@ -577,10 +594,28 @@ function WatchRoute() {
     setRestartAt({ fileId: Number(fileId), seconds: currentPos });
   }, [fileId, selectedAudioIndex, streamStart]);
 
+  const settlePendingRestart = useCallback(() => {
+    const pending = pendingRestartRef.current;
+    const video = videoRef.current;
+    if (!pending || !video || pending.fileId !== Number(fileId) || pending !== restartAt) return;
+    // The reloaded stream's own clock starts at the scrubbed position, so the
+    // fake clock can hand over without a jump. `seeked` releases Video.js'
+    // scrub hold and resolves the player's pending seek.
+    pendingRestartRef.current = null;
+    video.dispatchEvent(new Event("timeupdate"));
+    video.dispatchEvent(new Event("seeked"));
+  }, [fileId, restartAt]);
+
   // Resume position callback
   const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLMediaElement>) => {
     const v = e.currentTarget;
     if ((restartAt?.fileId === Number(fileId) || mediaRetryKey > 0) && !restartPlaybackRef.current) v.pause();
+    // Seek restarts reload the stream in place, which pauses the element.
+    // Resuming here plays only what was playing when the seek was issued.
+    if (restartPlaybackRef.current) {
+      restartPlaybackRef.current = false;
+      void v.play().catch(() => {});
+    }
     if (recoveryTargetRef.current != null) {
       const target = recoveryTargetRef.current;
       recoveryTargetRef.current = null;
@@ -591,16 +626,18 @@ function WatchRoute() {
         autoAdvanceRef.current = false;
       }).catch(() => {});
     }
+    settlePendingRestart();
     const resumePos = play.data?.watch?.position ?? 0;
     if (mediaRetryKey === 0 && restartAt?.fileId !== Number(fileId) && resumePos > 15 && !play.data?.watch?.played) {
       if ((effectivePath === "direct" || effectivePath === "hls") && Math.abs(v.currentTime - resumePos) > 3) {
         v.currentTime = resumePos;
       }
     }
-  }, [effectivePath, fileId, mediaRetryKey, play.data?.watch, restartAt]);
+  }, [effectivePath, fileId, mediaRetryKey, play.data?.watch, restartAt, settlePendingRestart]);
 
   const handleLoadedData = useCallback(() => {
     recoveryAttemptsRef.current = 0;
+    settlePendingRestart();
     if (!playbackStartedRef.current) {
       playbackStartedRef.current = true;
       void api.reportPlaybackDiagnostic({
@@ -610,7 +647,7 @@ function WatchRoute() {
       }).catch(() => {});
     }
     hideBuffering();
-  }, [hideBuffering]);
+  }, [hideBuffering, settlePendingRestart]);
 
   const recoverPlayback = useCallback(() => {
     const video = videoRef.current;
@@ -787,15 +824,14 @@ function WatchRoute() {
     };
   }, [fileId, streamUrl]);
 
-  // Keep keyboard seeks in the same local transaction as a scrub. Capture
-  // before the slider's own key handler so focus on the seek thumb behaves the
-  // same as focus on the player, and only the key that started a seek can end it.
+  // Arrow/J/L seek handling. The slider's own key handler is captured here so
+  // a focused thumb behaves like the player, with holds accelerating the step.
+  // Seeking itself goes straight to the media element (or the live-conversion
+  // restart above), exactly like the slider's pointer seeks.
   useEffect(() => {
     let activeKey: string | null = null;
     let direction: 1 | -1 | null = null;
     let startedAt = 0;
-    let transactionOpen = false;
-    let commitTimer: ReturnType<typeof setTimeout> | null = null;
 
     const seekBy = (delta: number) => {
       const video = videoRef.current;
@@ -803,9 +839,6 @@ function WatchRoute() {
       const total = knownDuration ?? (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null);
       const target = video.currentTime + delta;
       video.currentTime = total == null ? Math.max(0, target) : Math.min(total, Math.max(0, target));
-      // Deferred keyboard seeks still need to update the slider and time display
-      // while the user is composing a short run of key presses.
-      video.dispatchEvent(new Event("timeupdate"));
     };
 
     const applyStep = (initial: boolean) => {
@@ -825,13 +858,8 @@ function WatchRoute() {
     };
 
     const stop = () => {
-      const wasSeeking = transactionOpen;
-      if (commitTimer) clearTimeout(commitTimer);
-      commitTimer = null;
-      transactionOpen = false;
       activeKey = null;
       direction = null;
-      if (wasSeeking) handleSeekDragEnd();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -850,12 +878,6 @@ function WatchRoute() {
         applyStep(false);
         return;
       }
-      if (commitTimer) clearTimeout(commitTimer);
-      commitTimer = null;
-      if (!transactionOpen) {
-        handleSeekDragStart();
-        transactionOpen = true;
-      }
       activeKey = key;
       direction = nextDirection;
       startedAt = performance.now();
@@ -863,16 +885,8 @@ function WatchRoute() {
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      if (key !== activeKey) return;
-      activeKey = null;
-      direction = null;
-      if (commitTimer) clearTimeout(commitTimer);
-      commitTimer = setTimeout(() => {
-        commitTimer = null;
-        transactionOpen = false;
-        handleSeekDragEnd();
-      }, 320);
+      if (event.key.toLowerCase() !== activeKey) return;
+      stop();
     };
 
     window.addEventListener("keydown", onKeyDown, true);
@@ -884,16 +898,39 @@ function WatchRoute() {
       window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", stop);
     };
-  }, [knownDuration, effectivePath, handleSeekDragEnd, handleSeekDragStart]);
+  }, [knownDuration, effectivePath]);
 
   const nextEpisode = play.data?.next ?? null;
+  // The back control opens the title this file belongs to, not the app shell.
+  // Episodes list the series they belong to; the manifest supplies that.
+  const detailItemId = play.data?.parentItemId ?? play.data?.itemId ?? null;
+  const leavePlayer = useCallback(() => {
+    if (detailItemId != null) {
+      void navigate({ to: "/title/$itemId", params: { itemId: String(detailItemId) } });
+    } else {
+      void navigate({ to: "/" });
+    }
+  }, [detailItemId, navigate]);
 
   return (
     <div
       ref={containerRef}
+      onClick={() => setPlayerMenu(null)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setPlayerMenu({ x: event.clientX, y: event.clientY });
+      }}
       style={{ "--plexy-caption-offset": `${subtitlePosition}px` } as CSSProperties}
       className="fixed inset-0 z-50 flex flex-col bg-black select-none overflow-hidden"
     >
+      {showPlaybackStats && (
+        <PlaybackStatsOverlay video={videoRef.current} path={play.data?.path} tick={playbackStatsTick} onClose={() => setShowPlaybackStats(false)} />
+      )}
+      {playerMenu && (
+        <div className="fixed z-[80] min-w-44 rounded-lg border border-white/15 bg-[#171719] p-1 text-sm text-white shadow-2xl" style={{ left: Math.min(playerMenu.x, window.innerWidth - 190), top: Math.min(playerMenu.y, window.innerHeight - 54) }} onContextMenu={(event) => event.preventDefault()}>
+          <button type="button" className="w-full rounded-md px-3 py-2 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white" onClick={() => { setPlayerMenu(null); setShowPlaybackStats(true); }}>Stats for nerds</button>
+        </div>
+      )}
       {/* Main Video View / Video.js 10 */}
       <div className="relative flex-1 flex items-center justify-center w-full h-full p-0">
         {play.data?.path === "unsupported" ? (
@@ -901,7 +938,7 @@ function WatchRoute() {
             <p className="font-display text-lg font-bold">Unsupported Format</p>
             <p className="mt-2 text-sm text-ink-muted">{play.data.reason}</p>
             <button
-              onClick={() => void navigate({ to: "/" })}
+              onClick={leavePlayer}
               className="mt-6 rounded-lg bg-[#E50914] px-5 py-2 text-sm font-semibold hover:bg-[#b80710] transition-colors"
             >
               Return Home
@@ -917,7 +954,6 @@ function WatchRoute() {
                 onSelectAudioTrack={handleSelectAudioTrack}
                 onSeekDragStart={handleSeekDragStart}
                 onSeekDragEnd={handleSeekDragEnd}
-                onSeekBy={handleSeekBy}
                 subtitleOffset={subtitleOffset}
                 onAdjustSubtitleOffset={handleAdjustSubtitleOffset}
                 onResetSubtitleOffset={handleResetSubtitleOffset}
@@ -936,13 +972,23 @@ function WatchRoute() {
                   }`}
                 >
                   <button
-                    onClick={() => void navigate({ to: "/" })}
+                    onClick={leavePlayer}
                     aria-label="Back"
                     className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
                       controlsVisible ? "pointer-events-auto" : "pointer-events-none"
                     }`}
                   >
                     <ArrowLeft size={20} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPlaybackStats(true)}
+                    aria-label="Show playback stats"
+                    title="Stats for nerds"
+                    className={`pointer-events-auto ml-auto inline-flex h-10 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "pointer-events-none"}`}
+                  >
+                    <Activity size={16} />
+                    <span>Stats</span>
                   </button>
 
                 </div>
@@ -1004,7 +1050,7 @@ function WatchRoute() {
                   isHls ? (
                     <Suspense fallback={null}>
                     <HlsJsVideo
-                      key={`${streamUrl}:${mediaRetryKey}`}
+                      key={`${fileId}:${mediaRetryKey}`}
                       ref={(el: HTMLVideoElement | null) => {
                         videoRef.current = el;
                       }}
@@ -1046,7 +1092,7 @@ function WatchRoute() {
                     </Suspense>
                   ) : (
                     <Video
-                      key={`${streamUrl}:${mediaRetryKey}`}
+                      key={`${fileId}:${mediaRetryKey}`}
                       ref={(el: HTMLVideoElement | null) => {
                         videoRef.current = el;
                       }}
@@ -1108,7 +1154,6 @@ function WatchRoute() {
           play: play.data,
           fileId: Number(fileId),
           queryClient,
-          streamStart,
           duration,
           videoRef,
         }}
@@ -1119,8 +1164,42 @@ function WatchRoute() {
 
 export const Route = createFileRoute("/watch/$fileId")({ component: WatchRoute });
 
+function PlaybackStatsOverlay({ video, path, tick, onClose }: { video: HTMLVideoElement | null; path?: string; tick: number; onClose: () => void }) {
+  const quality = video && "getVideoPlaybackQuality" in video ? video.getVideoPlaybackQuality() : null;
+  const buffered = video?.buffered;
+  const ahead = video && buffered ? Array.from({ length: buffered.length }, (_, index) => ({ start: buffered.start(index), end: buffered.end(index) })).find((range) => video.currentTime >= range.start && video.currentTime <= range.end)?.end : undefined;
+  const bufferSeconds = ahead != null && video ? Math.max(0, ahead - video.currentTime).toFixed(1) : "—";
+  const resolution = video?.videoWidth && video.videoHeight ? `${video.videoWidth} × ${video.videoHeight}` : "Waiting for video";
+  return (
+    <section key={tick} aria-label="Stats for nerds" className="absolute right-5 top-5 z-[80] w-72 rounded-xl border border-white/15 bg-black/85 p-4 font-mono text-xs text-white shadow-2xl backdrop-blur-md" onContextMenu={(event) => event.stopPropagation()}>
+      <div className="mb-3 flex items-center justify-between font-sans text-sm font-semibold"><span>Stats for nerds</span><button type="button" onClick={onClose} className="rounded px-2 py-1 text-white/65 hover:bg-white/10 hover:text-white" aria-label="Close stats">×</button></div>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-white/70">
+        <dt>Playback</dt><dd className="text-right text-white">{path ?? "—"}</dd>
+        <dt>Video resolution</dt><dd className="text-right text-white">{resolution}</dd>
+        <dt>Current position</dt><dd className="text-right text-white">{video ? `${Math.floor(video.currentTime)}s` : "—"}</dd>
+        <dt>Buffer ahead</dt><dd className="text-right text-white">{bufferSeconds}s</dd>
+        <dt>Decoded frames</dt><dd className="text-right text-white">{quality?.totalVideoFrames ?? "—"}</dd>
+        <dt>Dropped frames</dt><dd className="text-right text-white">{quality?.droppedVideoFrames ?? "—"}</dd>
+      </dl>
+      <p className="mt-3 border-t border-white/10 pt-2 font-sans text-[10px] text-white/45">Session stats update once per second while open.</p>
+    </section>
+  );
+}
+
 /**
  * Periodically reports watch position to server every 10s and on pause/close (PRD 5.8).
+ *
+ * The media element is resolved at report time, never captured: live remux and
+ * transcode streams restart as an FFmpeg conversion and the recovery path can
+ * remount the media element. A snapshot ref then would keep reporting the
+ * frozen position of a detached element while the new one plays on, so watch
+ * progress (and the Continue Watching bar) would only advance on a hard reload.
+ *
+ * Reports on leave play it safe the other way round: they never sample the
+ * element again, because navigation out of the player tears the element down
+ * while sibling mounts briefly connect elements that report their initial
+ * resume position — sampling then could roll the watched position backward.
+ * Only the last validated live read is replayed instead.
  */
 function ProgressReporter({
   bridge,
@@ -1129,58 +1208,103 @@ function ProgressReporter({
     play: Playability | undefined;
     fileId: number;
     queryClient: ReturnType<typeof useQueryClient>;
-    streamStart: number;
     duration: number | null | undefined;
     videoRef: React.RefObject<HTMLVideoElement | null>;
   };
 }) {
   const itemId = bridge.play?.itemId ?? null;
+  const parentItemId = bridge.play?.parentItemId ?? null;
+  // The observer below must not rebuild when streamStart or knownDuration
+  // change (every seek restart does), so it re-reads the latest inputs through
+  // this ref instead of their values from an old render.
+  const bridgeRef = useRef(bridge);
+  bridgeRef.current = bridge;
 
   useEffect(() => {
     if (!itemId) return;
-    const mediaEl = bridge.videoRef.current ?? (document.querySelector("video") as HTMLMediaElement | null);
-    if (!mediaEl) return;
+
+    const mediaEl = (): HTMLMediaElement | null =>
+      bridgeRef.current.videoRef.current ?? (document.querySelector("video") as HTMLMediaElement | null);
+
+    // The freshest position seen from an element that was genuinely connected
+    // and playing (or just paused by the viewer). Navigation out of the player
+    // unmounts the media element while sibling mounts churn: a freshly mounted
+    // element reports its initial resume position (e.g. the stream's start
+    // offset) and must never overwrite what live playback already reached. So
+    // fresh element reads only update this during real playback; the leave
+    // report never samples the element at cleanup time.
+    let lastLivePos: number | null = null;
+
+    const post = (position: number, played: boolean) => {
+      const duration = bridgeRef.current.duration ?? (mediaEl()?.duration || null);
+      void api
+        .progress(itemId, position, duration, played)
+        .then(() => {
+          bridge.queryClient.invalidateQueries({ queryKey: ["home"] });
+          bridge.queryClient.invalidateQueries({ queryKey: ["items"] });
+          bridge.queryClient.invalidateQueries({ queryKey: ["title"] });
+        })
+        .catch(() => {});
+    };
+
+    // Resolves the live element and remembers its position. Returns null when
+    // a trustworthy read is not possible right now.
+    const liveRead = (): number | null => {
+      const el = mediaEl();
+      if (!el || !el.isConnected) return null;
+      const position = el.currentTime;
+      if (!(position > 0)) return null;
+      lastLivePos = position;
+      return position;
+    };
 
     const report = (played: boolean) => {
-      void api
-        .progress(
-          itemId,
-          mediaEl.currentTime,
-          bridge.duration ?? (mediaEl.duration || null),
-          played,
-        )
-        .then(() => bridge.queryClient.invalidateQueries({ queryKey: ["home"] }));
+      // Prefer the element when it is resolvable; fall back to the last live
+      // read during element churn so a remount's artefact cannot regress it.
+      const position = liveRead() ?? lastLivePos;
+      if (position == null || !(position > 5)) return;
+      post(position, played);
     };
 
     const interval = setInterval(() => {
-      if (!mediaEl.paused && mediaEl.currentTime > 5) report(false);
+      const el = mediaEl();
+      if (!el || !el.isConnected || el.paused) return;
+      report(false);
     }, 10_000);
 
+    // Pause events do not bubble, but capture-phase listeners on the document
+    // still see them for every media element, including remounted ones.
     const onPause = () => {
-      if (bridge.duration || mediaEl.duration) {
-        const duration = bridge.duration ?? mediaEl.duration;
-        report(mediaEl.currentTime > duration * 0.9);
-      }
+      const el = mediaEl();
+      if (!el) return;
+      const dur = bridgeRef.current.duration ?? (el.duration || null);
+      report(Boolean(dur) && el.currentTime > dur! * 0.9);
     };
 
-    const onLeave = () => {
-      if ((bridge.duration || mediaEl.duration) && mediaEl.currentTime > 5) {
-        const duration = bridge.duration ?? mediaEl.duration;
-        const played = mediaEl.currentTime > duration * 0.9;
-        report(played);
+    const leave = () => {
+      const reached = lastLivePos;
+      if (reached != null && reached > 5) {
+        const dur = bridgeRef.current.duration ?? (mediaEl()?.duration || null);
+        post(reached, Boolean(dur) && reached > dur! * 0.9);
       }
+      // The screens the viewer can return to must show the fresh position:
+      // only active observers are refetched by invalidation, and home / the
+      // library / the title page may all be inactive at this moment.
+      bridge.queryClient.invalidateQueries({ queryKey: ["home"] });
+      bridge.queryClient.invalidateQueries({ queryKey: ["items"] });
+      bridge.queryClient.invalidateQueries({ queryKey: ["title"] });
     };
 
-    mediaEl.addEventListener("pause", onPause);
-    window.addEventListener("pagehide", onLeave);
+    document.addEventListener("pause", onPause, true);
+    window.addEventListener("pagehide", leave);
 
     return () => {
       clearInterval(interval);
-      mediaEl.removeEventListener("pause", onPause);
-      window.removeEventListener("pagehide", onLeave);
-      onLeave();
+      document.removeEventListener("pause", onPause, true);
+      window.removeEventListener("pagehide", leave);
+      leave();
     };
-  }, [itemId, bridge.streamStart, bridge.duration]);
+  }, [itemId, parentItemId, bridge.queryClient, bridge.videoRef]);
 
   return null;
 }

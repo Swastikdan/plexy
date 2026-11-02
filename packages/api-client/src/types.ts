@@ -132,6 +132,9 @@ export interface Playability {
   reason: string;
   fileId: number;
   itemId: number | null;
+  /** Item to open back from the player: the series for episodes, self for movies. */
+  parentItemId?: number | null;
+  parentPublicId?: string | null;
   audioTracks?: PlayerAudioTrack[];
   selectedAudioIndex?: number;
   versions?: Array<{
@@ -241,6 +244,9 @@ export interface ServerStatus {
   scan?: {
     scanId: number;
     status: string;
+    /** Null during the discovery phase, before the scanner walks a library. */
+    libraryId: number | null;
+    libraryName: string | null;
     filesSeen: number;
     filesUpdated: number;
     issues: number;

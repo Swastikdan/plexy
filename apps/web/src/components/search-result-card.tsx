@@ -74,7 +74,7 @@ export function SearchResultCard({ item }: { item: ItemCard }) {
         {item.watch && item.watch.percent > 0 && (
           <div className="absolute inset-x-0 bottom-0 h-0.5 bg-black/60" aria-hidden>
             <div
-              className="h-full bg-brand"
+              className="h-full bg-[#3b7df9]"
               style={{ width: `${Math.min(100, Math.max(2, item.watch.percent))}%` }}
             />
           </div>

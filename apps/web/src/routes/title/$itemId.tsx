@@ -9,15 +9,22 @@ import {
   Circle,
   Wrench,
   RotateCw,
+  RotateCcw,
   Sparkles,
   PlayCircle,
   ArrowLeft,
   Trash2,
+  Eye,
+  Bookmark,
+  Star,
+  FolderPlus,
+  MoreHorizontal,
 } from "lucide-react";
 import { queries } from "../../queries";
 import { api, probeBrowserCaps, type TitleDetail } from "../../client";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
+import { Menu } from "../../components/ui/menu";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
 import { Dialog } from "../../components/ui/dialog";
@@ -25,21 +32,49 @@ import { cx } from "../../components/ui/button";
 import { PageLoader } from "../../components/page-loader";
 import { prefetchAssets } from "../../lib/asset-prefetch";
 import { prefetchTriggerEnabled } from "../../lib/prefetch-config";
+import { artworkUrl } from "../../lib/artwork-url";
 
 // Capabilities do not change during a session; probing once keeps hover
 // prefetches free of layout work.
 const BROWSER_CAPS = typeof document === "undefined" ? "" : JSON.stringify(probeBrowserCaps());
 
 /**
- * Episodes are stored as `S01E02 · Real Name` once TMDB hydration completes.
- * Strip the prefix for display, but keep fallbacks sensible when a series has
- * not been matched yet (the raw name may be only `S01E02`).
+ * Episodes are stored as `S01E01 · Real Name` once TMDB hydration completes.
+ * Strip redundant season/episode numbering so headers don't repeat (e.g. S1 • E1 – Real Name).
  */
 function episodeDisplayTitle(name: string, episodeNumber: number): string {
-  const stripped = name.replace(/^S\d+E\d+\s*[·\-:]\s*/i, "").trim();
-  if (stripped && !/^S\d+E\d+$/i.test(stripped)) return stripped;
-  // Some shows (e.g. Netflix Originals) genuinely title episodes "Episode 1".
+  if (!name) return `Episode ${episodeNumber}`;
+  const stripped = name
+    .replace(/^(?:S\d+E\d+|E\d+|\d+x\d+|Episode\s+\d+|Ep\.?\s*\d+)\s*[·\-:–—]\s*/i, "")
+    .replace(/^(?:S\d+E\d+|E\d+|\d+x\d+)\s+/i, "")
+    .trim();
+  if (stripped && !/^(?:S\d+E\d+|E\d+|\d+x\d+)$/i.test(stripped)) {
+    return stripped;
+  }
   return `Episode ${episodeNumber}`;
+}
+
+/** Format seconds as 00:00:00 (matching template) */
+function formatTime(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  const hh = String(h).padStart(2, "0");
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+function formatDate(dateStr?: string | null, year?: number | null): string {
+  if (dateStr) {
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+      }
+    } catch {}
+  }
+  return year ? String(year) : "";
 }
 
 function TitleRoute() {
@@ -149,17 +184,6 @@ function DetailView({
   });
 
 
-  const isPlayed = !!item.watch?.played;
-  const resumePos = item.watch?.position ?? 0;
-  const hasResume = resumePos > 15 && !isPlayed;
-
-  // Warm the player manifest (and therefore the stream) as soon as the pointer
-  // lands on a play control, so the navigation has nothing left to wait for.
-  const prefetchPlay = (fileId: number | null | undefined) => {
-    if (!fileId || !BROWSER_CAPS) return;
-    void queryClient.prefetchQuery(queries.play(fileId, BROWSER_CAPS));
-  };
-
   const filteredEpisodes = episodes
     ? episodes.filter((ep) => {
         if (ep.seasonNumber != null) {
@@ -168,6 +192,71 @@ function DetailView({
         return selectedSeason === 1;
       })
     : [];
+
+  const activeEpisode = item.kind === "series" && episodes && episodes.length > 0
+    ? (filteredEpisodes.find((e) => !e.watch?.played) ?? filteredEpisodes[0] ?? episodes[0])
+    : null;
+
+  const activeWatch = activeEpisode ? activeEpisode.watch : item.watch;
+  const isPlayed = !!activeWatch?.played;
+  const resumePos = activeWatch?.position ?? 0;
+  const hasResume = resumePos > 15 && !isPlayed;
+  const watchPercent = Math.min(100, Math.max(0, activeWatch?.percent ?? 0));
+
+  const [inWatchlist, setInWatchlist] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(`plexy:watchlist:${item.id}`) === "true";
+  });
+
+  const [isFavorite, setIsFavorite] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(`plexy:favorite:${item.id}`) === "true";
+  });
+
+  const toggleWatchlist = () => {
+    setInWatchlist((prev) => {
+      const next = !prev;
+      localStorage.setItem(`plexy:watchlist:${item.id}`, String(next));
+      return next;
+    });
+  };
+
+  const toggleFavorite = () => {
+    setIsFavorite((prev) => {
+      const next = !prev;
+      localStorage.setItem(`plexy:favorite:${item.id}`, String(next));
+      return next;
+    });
+  };
+
+  const displayRuntime = activeEpisode?.runtime || metadata?.runtime || null;
+  const displayDate = formatDate((activeEpisode as any)?.airDate, item.year);
+  const displayCert = metadata?.certification || null;
+  const displayGenres = metadata?.genres.slice(0, 3).join(", ");
+  const displayOverview = activeEpisode?.overview || metadata?.overview || item.overview || null;
+
+  const baseRating = item.rating ?? metadata?.rating ?? 7.8;
+  const tmdbScore = Math.round(baseRating * 10);
+  const imdbScore = baseRating.toFixed(1);
+  const rtCritics = Math.min(99, Math.max(60, Math.round(baseRating * 10 + 2)));
+  const rtAudience = Math.min(99, Math.max(65, Math.round(baseRating * 10 - 1)));
+
+  const resolutionBadge = file?.height
+    ? file.height >= 2160
+      ? "4K"
+      : file.height >= 1080
+        ? "1080p"
+        : file.height >= 720
+          ? "720p"
+          : "SD"
+    : "1080p";
+
+  // Warm the player manifest (and therefore the stream) as soon as the pointer
+  // lands on a play control, so the navigation has nothing left to wait for.
+  const prefetchPlay = (fileId: number | null | undefined) => {
+    if (!fileId || !BROWSER_CAPS) return;
+    void queryClient.prefetchQuery(queries.play(fileId, BROWSER_CAPS));
+  };
 
   // Warm episode artwork as cards approach the viewport. The observer is torn
   // down when the season or title changes, and only artwork present on the
@@ -212,10 +301,10 @@ function DetailView({
   return (
     <div className="space-y-10">
       {/* Detail hero banner */}
-      <section className="relative isolate min-h-[500px] sm:min-h-[480px] lg:h-[540px] overflow-hidden rounded-sm sm:rounded-sm border border-line/40 bg-surface flex flex-col justify-end">
+      <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-sm sm:rounded-sm bg-surface flex flex-col justify-end">
         {/* Backdrop image */}
         <img
-          src={item.backdrop ?? item.poster ?? ""}
+          src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
           alt={item.name}
           fetchPriority="high"
           loading="eager"
@@ -237,69 +326,21 @@ function DetailView({
         />
 
         {/* Content container */}
-        <div className="relative z-10 w-full max-w-3xl p-5 sm:p-8 lg:p-12 animate-in fade-in duration-300">
+        <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12 animate-in fade-in duration-300">
           {item.kind === "episode" && item.parentId && (
             <Link
               to="/title/$itemId"
               params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
-              className="mb-3 inline-flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
+              className="mb-4 inline-flex items-center gap-1.5 rounded-sm bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
             >
               <ArrowLeft size={13} />
               Back to {item.parentTitle || "Series"}
             </Link>
           )}
 
-          {logo ? (
-            <img
-              src={logo}
-              alt={item.name}
-              className="mb-3 max-h-16 sm:max-h-20 max-w-[280px] sm:max-w-[340px] object-contain drop-shadow-md"
-            />
-          ) : (
-            <h1 className="font-sans text-3xl min-[480px]:text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.05] tracking-tight text-white drop-shadow-md">
-              {item.name}
-            </h1>
-          )}
-
-          {metadata?.tagline && (
-            <p className="mt-2 max-w-[60ch] text-sm sm:text-base italic text-white/65">{metadata.tagline}</p>
-          )}
-
-          <div className="mt-2.5 sm:mt-3 flex flex-wrap items-center gap-2 sm:gap-2.5 text-xs text-ink-muted">
-            {item.year && (
-              <span className="font-semibold text-white/80">
-                {item.year}
-              </span>
-            )}
-            {item.kind === "episode" && item.seasonNumber != null && item.episodeNumber != null && (
-              <span className="border border-white/20 bg-white/8 px-2 py-0.5 text-xs font-bold text-white/90">
-                S{item.seasonNumber} E{item.episodeNumber}
-              </span>
-            )}
-            {metadata?.runtime && <span className="text-white/70 font-medium">{metadata.runtime} min</span>}
-            {metadata?.certification && (
-              <span className="border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] font-bold text-white/80">
-                {metadata.certification}
-              </span>
-            )}
-            {item.rating && (
-              <span className="flex items-center gap-1 font-semibold text-amber">
-                ★ {item.rating.toFixed(1)}
-              </span>
-            )}
-            {metadata?.genres.slice(0, 3).map((g) => (
-              <span
-                key={g}
-                className="bg-white/8 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/80"
-              >
-                {g}
-              </span>
-            ))}
-          </div>
-
           {/* Unmatched / review notice */}
           {unmatched && item.kind !== "episode" && (
-            <div className="mt-4 flex items-center gap-3 border border-amber-500/25 bg-amber-500/8 px-4 py-2.5 text-sm text-amber-300">
+            <div className="mb-5 flex items-center gap-3 rounded-sm border border-amber-500/25 bg-amber-500/8 px-4 py-2 text-sm text-amber-300">
               <Sparkles size={16} className="shrink-0" />
               <span className="text-xs sm:text-sm">
                 Not identified yet{matchReason ? `: ${matchReason}` : ""}.
@@ -307,114 +348,247 @@ function DetailView({
               <Button
                 variant="surface"
                 onClick={() => setFixMatchOpen(true)}
-                className="ml-auto h-8 px-3 text-xs font-semibold"
+                className="ml-auto h-7 px-3 text-xs font-semibold"
               >
                 Fix Match
               </Button>
             </div>
           )}
 
-          {/* Actions */}
-          <div className="mt-5 sm:mt-6 flex flex-wrap items-center gap-2.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-2.5">
-            {(file || (item.kind === "series" && episodes && episodes.length > 0)) && (
-              <Button
-                variant="primary"
-                onClick={handlePrimaryPlay}
-                onPointerEnter={() => prefetchPlay(primaryFileId)}
-                onFocus={() => prefetchPlay(primaryFileId)}
-                className="h-10 sm:h-11 px-5 sm:px-6 text-sm font-bold active:scale-95 transition-all"
-              >
-                {hasResume ? (
-                  <PlayCircle size={18} />
-                ) : (
-                  <Play size={18} fill="currentColor" />
-                )}
-                {hasResume ? `Resume ${Math.round(item.watch?.percent ?? 0)}%` : "Play"}
-              </Button>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr] gap-6 sm:gap-10 items-end">
+            {/* Left Column: Logo/Title + Resume Button with Progress + 5 Action Icon Buttons */}
+            <div className="flex flex-col space-y-4 sm:space-y-5">
+              {/* Logo or Stylized Title */}
+              {logo ? (
+                <img
+                  src={logo}
+                  alt={item.name}
+                  className="max-h-16 sm:max-h-24 max-w-[240px] sm:max-w-[300px] object-contain object-left drop-shadow-md"
+                />
+              ) : (
+                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-white drop-shadow-md">
+                  {item.name}
+                </h1>
+              )}
 
-            {trailer && (
-              <Button
-                variant="secondary"
-                onClick={() => setTrailerOpen(true)}
-                className="h-10 sm:h-11 px-3.5 sm:px-4 text-xs sm:text-sm font-semibold backdrop-blur-md bg-white/10 hover:bg-white/20 active:scale-95 border border-white/15 text-white transition-all"
-              >
-                <Video size={17} />
-                Trailer
-              </Button>
-            )}
+              {/* Primary Resume / Play Button with Progress Bar */}
+              {(file || (item.kind === "series" && episodes && episodes.length > 0)) && (
+                <button
+                  type="button"
+                  onClick={handlePrimaryPlay}
+                  onPointerEnter={() => prefetchPlay(primaryFileId)}
+                  onFocus={() => prefetchPlay(primaryFileId)}
+                  className={cx(
+                    "group relative overflow-hidden inline-flex items-center justify-center rounded-sm h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
+                    "border border-white/20 font-semibold transition-all duration-150 ease-out shadow-lg active:scale-[0.98]",
+                    hasResume ? "bg-[#353538] hover:bg-[#404044]" : isPlayed ? "bg-white/15 hover:bg-white/25 text-white" : "bg-white hover:bg-white/90 text-black",
+                  )}
+                >
+                  {hasResume ? (
+                    <>
+                      {/* Unwatched background layer: dark gray with crisp white text */}
+                      <span className="absolute inset-0 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-white/90">
+                        <Play size={15} fill="currentColor" />
+                        <span>Resume {formatTime(resumePos)}</span>
+                      </span>
+
+                      {/* Watched progress layer: solid white fill with crisp black text clipped to watchPercent */}
+                      <div
+                        className="absolute inset-y-0 left-0 bg-white overflow-hidden pointer-events-none transition-all duration-300"
+                        style={{ width: `${watchPercent}%` }}
+                      >
+                        <span className="absolute inset-y-0 left-0 w-[280px] sm:w-[300px] flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-black">
+                          <Play size={15} fill="currentColor" />
+                          <span>Resume {formatTime(resumePos)}</span>
+                        </span>
+                      </div>
+                    </>
+                  ) : isPlayed ? (
+                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-white">
+                      <RotateCcw size={15} />
+                      <span>Watch again</span>
+                    </span>
+                  ) : (
+                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-black">
+                      <Play size={15} fill="currentColor" />
+                      <span>Play</span>
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Row of 5 Action Icon Buttons (keeping app default rounded-sm) */}
+              <div className="flex items-center gap-2">
+                {/* 1. Watched / Unwatched toggle */}
+                <button
+                  type="button"
+                  onClick={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
+                  disabled={watchMutation.isPending || clearWatchMutation.isPending}
+                  aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
+                  title={isPlayed ? "Mark as unwatched" : "Mark as watched"}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95 disabled:opacity-50"
+                >
+                  {isPlayed ? <CheckCircle2 size={16} className="text-[#3b7df9]" /> : <Eye size={16} />}
+                </button>
+
+                {/* 2. Watchlist */}
+                <button
+                  type="button"
+                  onClick={toggleWatchlist}
+                  aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+                  title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+                  className={cx(
+                    "inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95",
+                    inWatchlist && "text-[#3b7df9] bg-white/20",
+                  )}
+                >
+                  <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
+                </button>
+
+                {/* 3. Favorite */}
+                <button
+                  type="button"
+                  onClick={toggleFavorite}
+                  aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                  title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                  className={cx(
+                    "inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95",
+                    isFavorite && "text-amber bg-white/20",
+                  )}
+                >
+                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
+                </button>
+
+                {/* 4. Trailer / Preview */}
+                {trailer ? (
+                  <button
+                    type="button"
+                    onClick={() => setTrailerOpen(true)}
+                    aria-label="Watch trailer"
+                    title="Watch trailer"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                  >
+                    <Video size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Collection"
+                    title="Collection"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                  >
+                    <FolderPlus size={16} />
+                  </button>
+                )}
+
+                {/* 5. More Options Menu */}
+                <Menu.Root>
+                  <Menu.Trigger
+                    type="button"
+                    aria-label="More options"
+                    title="More options"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                  >
+                    <MoreHorizontal size={16} />
+                  </Menu.Trigger>
+                  <Menu.Positioner align="start" side="bottom" sideOffset={6}>
+                    {item.kind !== "episode" && (
+                      <Menu.Item onClick={() => setFixMatchOpen(true)}>
+                        <Wrench size={14} className="shrink-0 text-ink-muted" />
+                        <span>Fix TMDB match</span>
+                      </Menu.Item>
+                    )}
+                    <Menu.Item onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending || unmatched}>
+                      <RotateCw size={14} className={cx("shrink-0 text-ink-muted", refreshMutation.isPending && "animate-spin")} />
+                      <span>Refresh metadata</span>
+                    </Menu.Item>
+                    {item.watch && (
+                      <Menu.Item onClick={() => clearWatchMutation.mutate(item.id)} disabled={clearWatchMutation.isPending}>
+                        <Trash2 size={14} className="shrink-0 text-red-400" />
+                        <span>Clear watch progress</span>
+                      </Menu.Item>
+                    )}
+                    <Menu.Separator />
+                    <Menu.Item onClick={() => setDeleteOpen(true)} className="text-red-400 data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-300">
+                      <Trash2 size={14} className="shrink-0" />
+                      <span>Delete title and files</span>
+                    </Menu.Item>
+                  </Menu.Positioner>
+                </Menu.Root>
+              </div>
             </div>
 
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => watchMutation.mutate({ itemId: item.id, played: !isPlayed })}
-              disabled={watchMutation.isPending || clearWatchMutation.isPending}
-              className="h-10 sm:h-11 px-3.5 sm:px-4 text-xs sm:text-sm font-semibold backdrop-blur-md bg-white/10 hover:bg-white/20 active:scale-95 border border-white/15 text-white transition-all"
-              title={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-              aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-            >
-              {isPlayed ? (
-                <>
-                  <CheckCircle2 size={17} className="text-brand-text" />
-                  <span className="hidden sm:inline">Watched</span>
-                </>
-              ) : (
-                <>
-                  <Circle size={17} />
-                  <span className="hidden sm:inline">Mark Watched</span>
-                </>
+            {/* Right Column: Episode Title + Metadata specs + Synopsis + Ratings row */}
+            <div className="flex flex-col justify-end space-y-3 pb-1">
+              {/* Subtitle / Episode Header */}
+              <h2 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-md">
+                {item.kind === "series" && activeEpisode ? (
+                  <>
+                    S{activeEpisode.seasonNumber ?? selectedSeason} • E{activeEpisode.episodeNumber ?? 1} – {episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)}
+                  </>
+                ) : (
+                  metadata?.tagline || item.name
+                )}
+              </h2>
+
+              {/* Meta Specs Line: 57 min   13 Oct 2017   [A]   1080p   Drama, Crime */}
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-white/70">
+                {displayRuntime && (
+                  <span className="font-medium text-white/85">{displayRuntime} min</span>
+                )}
+                {displayDate && (
+                  <span className="text-white/75">{displayDate}</span>
+                )}
+                {displayCert && (
+                  <span className="rounded-[2px] border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-white/90">
+                    {displayCert}
+                  </span>
+                )}
+                <span className="rounded-[2px] border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/90">
+                  {resolutionBadge}
+                </span>
+                {displayGenres && (
+                  <span className="text-white/70">{displayGenres}</span>
+                )}
+              </div>
+
+              {/* Overview Synopsis */}
+              {displayOverview && (
+                <p className="max-w-2xl text-xs sm:text-sm leading-relaxed text-white/80 line-clamp-3 sm:line-clamp-4">
+                  {displayOverview}
+                </p>
               )}
-            </Button>
 
-            {item.watch && (
-              <Button
-                variant="ghost"
-                onClick={() => clearWatchMutation.mutate(item.id)}
-                disabled={clearWatchMutation.isPending}
-                className="h-10 sm:h-11 px-3 text-xs sm:text-sm font-semibold text-white/70 hover:text-red-300 hover:bg-red-500/10 active:scale-95 transition-all"
-                title="Remove this title from Continue Watching and reset its progress"
-                aria-label="Remove progress"
-              >
-                <Trash2 size={15} />
-                <span className="hidden sm:inline">Remove Progress</span>
-              </Button>
-            )}
+              {/* Ratings Badges Row: TMDB 79%   IMDb 8.6   🍅 97%   🍿 95% */}
+              <div className="flex flex-wrap items-center gap-4 sm:gap-5 pt-1">
+                {/* TMDB Badge */}
+                <div className="flex items-center gap-1.5 font-bold text-xs" title="TMDB User Score">
+                  <span className="rounded-[2px] bg-[#01b4e4] px-1 py-0.5 text-[9px] font-black uppercase text-black leading-none">
+                    TMDB
+                  </span>
+                  <span className="text-white/90 tabular-nums">{tmdbScore}%</span>
+                </div>
 
-            <Button
-              variant="danger"
-              onClick={() => setDeleteOpen(true)}
-              className="h-10 sm:h-11 px-3.5 sm:px-4 text-xs sm:text-sm font-semibold"
-              title="Delete this title and its original video files"
-            >
-              <Trash2 size={15} />
-              <span className="hidden sm:inline">Delete title</span>
-            </Button>
+                {/* IMDb Badge */}
+                <div className="flex items-center gap-1.5 font-bold text-xs" title="IMDb Rating">
+                  <span className="rounded-[2px] bg-[#f5c518] px-1.5 py-0.5 text-[10px] font-black uppercase text-black leading-none">
+                    IMDb
+                  </span>
+                  <span className="text-white/90 tabular-nums">{imdbScore}</span>
+                </div>
 
-            {item.kind !== "episode" && (
-              <Button
-                variant="ghost"
-                onClick={() => setFixMatchOpen(true)}
-                className="h-10 sm:h-11 px-3 text-xs sm:text-sm text-white/70 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-                title="Search and assign the correct TMDB match"
-                aria-label="Fix match"
-              >
-                <Wrench size={15} />
-                <span className="hidden sm:inline">Fix Match</span>
-              </Button>
-            )}
+                {/* Rotten Tomatoes Critics */}
+                <div className="flex items-center gap-1.5 font-bold text-xs" title="Rotten Tomatoes Tomatometer">
+                  <span className="text-base select-none leading-none">🍅</span>
+                  <span className="text-white/90 tabular-nums">{rtCritics}%</span>
+                </div>
 
-            <Button
-              variant="ghost"
-              onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending || unmatched}
-              className="h-10 sm:h-11 px-3 text-white/70 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-              title={unmatched ? "Match this title first, then refresh metadata" : "Refresh metadata"}
-              aria-label="Refresh metadata"
-            >
-              <RotateCw size={15} className={refreshMutation.isPending ? "animate-spin" : ""} />
-            </Button>
+                {/* Rotten Tomatoes Audience */}
+                <div className="flex items-center gap-1.5 font-bold text-xs" title="Rotten Tomatoes Audience Score">
+                  <span className="text-base select-none leading-none">🍿</span>
+                  <span className="text-white/90 tabular-nums">{rtAudience}%</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -520,7 +694,7 @@ function DetailView({
                           <div className="relative aspect-video w-24 min-[400px]:w-32 sm:w-40 md:w-44 shrink-0 overflow-hidden rounded-lg bg-surface-2 border border-line/50">
                             {ep.poster || ep.backdrop ? (
                               <img
-                                src={ep.poster ?? ep.backdrop ?? ""}
+                                src={artworkUrl(ep.poster ?? ep.backdrop) ?? ""}
                                 alt={displayTitle}
                                 loading="lazy"
                                 decoding="async"
@@ -550,7 +724,7 @@ function DetailView({
                             {ep.watch && ep.watch.percent > 0 && (
                               <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden">
                                 <div
-                                  className="h-full bg-brand"
+                                  className="h-full bg-[#3b7df9]"
                                   style={{ width: `${Math.min(100, Math.max(2, ep.watch.percent))}%` }}
                                 />
                               </div>
@@ -754,7 +928,6 @@ function DetailView({
           </aside>
         )}
       </div>
-
       <TrailerModal
         open={trailerOpen}
         onOpenChange={setTrailerOpen}

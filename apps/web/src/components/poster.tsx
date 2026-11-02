@@ -13,6 +13,7 @@ import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
 import { prefetchAssets } from "../lib/asset-prefetch";
 import { prefetchTriggerEnabled } from "../lib/prefetch-config";
+import { artworkUrl } from "../lib/artwork-url";
 import { Menu } from "./ui/menu";
 
 export function cx(...parts: ClassValue[]) {
@@ -71,7 +72,7 @@ export function Poster({
   showKind?: boolean;
   directPlay?: boolean;
 }) {
-  const imgSrc = wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop;
+  const imgSrc = artworkUrl(wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop);
   const showTitleBelow = !wide || item.kind === "series";
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -202,7 +203,7 @@ export function Poster({
           aria-hidden
         >
           <div
-            className="h-full bg-brand transition-all"
+            className="h-full bg-[#3b7df9] transition-all"
             style={{ width: `${Math.min(100, Math.max(2, item.watch.percent))}%` }}
           />
         </div>

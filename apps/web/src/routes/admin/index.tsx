@@ -3,7 +3,7 @@
 /// toggle) and the live log tail. Everything here is reachable only when the
 /// browser is the host machine; the server enforces this and reports
 /// `adminAvailable: false` otherwise.
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,6 +39,7 @@ import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal"
 import { PageLoader } from "../../components/page-loader";
 import { LibraryFolderForm } from "../../components/library-folder-form";
 import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "../../lib/playback-diagnostics-consent";
+import type { DesktopSystemUsage, DesktopUpdateStatus } from "../../electron";
 import { getPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "../../lib/playback-preferences";
 import {
   clearPrefetchCache,
@@ -99,7 +100,7 @@ function AdminRoute() {
     });
   };
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await Promise.all([
@@ -113,10 +114,10 @@ function AdminRoute() {
     } finally {
       window.setTimeout(() => setRefreshing(false), 500);
     }
-  };
+  }, []);
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1440px] px-4 pb-24 pt-8 sm:px-8">
+    <main className="mx-auto min-h-dvh max-w-5xl px-4 pb-24 pt-8 sm:px-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight">Server</h1>
@@ -759,6 +760,8 @@ function Settings() {
 
   return (
     <div className="space-y-3">
+      <DesktopUpdateSettings />
+      <SystemUsage />
       <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
         <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
@@ -1442,6 +1445,73 @@ function Settings() {
         </div>
       </details>
     </div>
+  );
+}
+
+function DesktopUpdateSettings() {
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!window.electronAPI?.isElectron) return;
+    void window.electronAPI.getVersion().then(setInstalledVersion).catch(() => setInstalledVersion(null));
+  }, []);
+  if (!window.electronAPI?.isElectron) return null;
+
+  const check = async () => {
+    setChecking(true);
+    setMessage(null);
+    try {
+      const result = await window.electronAPI!.checkForUpdates();
+      setUpdateStatus(result);
+      if (result.error) setMessage(`Could not check for updates: ${result.error}`);
+      else if (!result.supported) setMessage("Updates are available for the packaged Apple Silicon macOS app.");
+      else if (result.updateAvailable && !result.canInstall) setMessage(`Version ${result.latestVersion} is available, but its download or checksum is missing from the release.`);
+      else if (result.updateAvailable) setMessage(`Version ${result.latestVersion} is available.`);
+      else if (result.currentIsNewer) setMessage("This installed version is newer than the latest published release.");
+      else setMessage("You’re up to date.");
+    } catch (error) {
+      setMessage(`Could not check for updates: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setChecking(false);
+    }
+  };
+  const install = async () => {
+    setInstalling(true);
+    setMessage("Preparing the update…");
+    try { await window.electronAPI!.installUpdate(); }
+    catch (error) {
+      setMessage(`Could not start the update: ${error instanceof Error ? error.message : String(error)}`);
+      setInstalling(false);
+    }
+  };
+  const currentBuild = updateStatus?.currentTag.match(/-build\.(\d+)$/)?.[1];
+  const latestBuild = updateStatus?.latestTag?.match(/-build\.(\d+)$/)?.[1];
+  return (
+    <section className="rounded-2xl border border-line/70 bg-surface p-5 shadow-sm sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="font-display text-base font-bold text-ink">Plexy app updates</h2>
+          <p className="mt-1 text-xs text-ink-muted">Installed version: {installedVersion ?? "…"}{currentBuild ? ` · build ${currentBuild}` : ""}</p>
+          {updateStatus?.latestVersion && <p className="mt-1 text-xs text-ink-muted">Latest release: {updateStatus.latestVersion}{latestBuild ? ` · build ${latestBuild}` : ""}</p>}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="surface" disabled={checking || installing} onClick={() => void check()}>
+            {checking ? <RotateCw size={14} className="animate-spin" /> : <RotateCw size={14} />}
+            {checking ? "Checking…" : "Check for updates"}
+          </Button>
+          {updateStatus?.updateAvailable && updateStatus.canInstall && (
+            <Button disabled={installing || checking} onClick={() => void install()}>
+              {installing ? <RotateCw size={14} className="animate-spin" /> : <Download size={14} />}
+              {installing ? "Preparing…" : "Install update"}
+            </Button>
+          )}
+        </div>
+      </div>
+      {message && <p role="status" className={`mt-3 text-xs ${message.startsWith("Could not") || message.includes("missing") ? "text-amber-400" : "text-ink-muted"}`}>{message}</p>}
+    </section>
   );
 }
 
@@ -2466,4 +2536,82 @@ function Crashes() {
       </ul>
     </Section>
   );
+}
+
+function SystemUsage() {
+  const [live, setLive] = useState(false);
+  const [desktopUsage, setDesktopUsage] = useState<DesktopSystemUsage | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const refreshingRef = useRef(false);
+  const nav = navigator as Navigator & { deviceMemory?: number; connection?: { downlink?: number; effectiveType?: string; rtt?: number } };
+  const perf = performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } };
+  const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+  const transferred = resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
+  const refresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      if (window.electronAPI?.isElectron) {
+        try { setDesktopUsage(await window.electronAPI.getSystemUsage()); }
+        catch { setDesktopUsage(null); }
+      }
+      setNow(Date.now());
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+    if (!live) return;
+    let timer: number | undefined;
+    const schedule = () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      timer = document.hidden ? undefined : window.setInterval(() => void refresh(), 5000);
+    };
+    const onVisibilityChange = () => {
+      schedule();
+      if (!document.hidden) void refresh();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [live, refresh]);
+  const memory = perf.memory;
+  let gpu = "Unavailable";
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    const info = gl?.getExtension("WEBGL_debug_renderer_info");
+    if (info && gl) gpu = String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)).replace(/^ANGLE \((.*)\)$/, "$1");
+  } catch { /* Graphics details are optional and may be blocked by the browser. */ }
+  const fmtBytes = (bytes: number) => bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return (
+    <Section title="System usage">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-ink-muted">{desktopUsage ? "Plexy desktop process metrics" : "Browser-visible estimates"} · {refreshing ? "refreshing…" : `refreshed ${new Date(now).toLocaleTimeString()}`}</p>
+        <div className="flex gap-2">
+          <Button variant="surface" className="h-8 px-3 text-xs" onClick={() => void refresh()} disabled={refreshing}>Refresh</Button>
+          <Button variant={live ? "primary" : "surface"} className="h-8 px-3 text-xs" onClick={() => setLive((value) => !value)}>{live ? "Live · 5s" : "Live updates off"}</Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <UsageMetric title="Plexy CPU" value={desktopUsage ? `${desktopUsage.cpuPercent.toFixed(1)}%` : `${navigator.hardwareConcurrency || "—"} logical cores`} detail={desktopUsage ? "Combined Plexy desktop processes" : "Live CPU load is unavailable in browser mode"} />
+        <UsageMetric title="Memory" value={desktopUsage ? `${fmtBytes(desktopUsage.appMemoryBytes)} Plexy` : memory ? `${fmtBytes(memory.usedJSHeapSize)} page heap` : "Unavailable"} detail={desktopUsage ? `${fmtBytes(desktopUsage.systemMemoryFreeBytes)} free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} system memory` : nav.deviceMemory ? `Device memory: ~${nav.deviceMemory} GB` : "Device memory estimate unavailable"} />
+        <UsageMetric title="GPU" value={desktopUsage && desktopUsage.appGpuMemoryBytes > 0 ? `${fmtBytes(desktopUsage.appGpuMemoryBytes)} Plexy GPU process` : gpu} detail={desktopUsage ? "GPU memory is estimated from the Plexy GPU process; utilization is not exposed" : "Renderer reported by this browser"} />
+        <UsageMetric title="Network" value={nav.connection?.effectiveType ?? "Connection estimate unavailable"} detail={nav.connection?.downlink ? `Estimated ${nav.connection.downlink} Mbps · ${nav.connection.rtt ?? "—"} ms RTT` : "Live throughput is not exposed by this browser"} />
+        <UsageMetric title="Page data" value={fmtBytes(transferred)} detail="Transfer size across resources loaded in this tab" />
+      </div>
+      <p className="mt-4 text-[11px] text-ink-muted">CPU and memory describe Plexy’s desktop processes plus system memory availability. Page data is a cumulative browser transfer estimate; network throughput and GPU utilization are not exposed.</p>
+    </Section>
+  );
+}
+
+function UsageMetric({ title, value, detail }: { title: string; value: string; detail: string }) {
+  return <div className="rounded-xl border border-line/70 bg-surface px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{title}</p><p className="mt-1 truncate text-sm font-semibold" title={value}>{value}</p><p className="mt-1 text-xs text-ink-muted">{detail}</p></div>;
 }
