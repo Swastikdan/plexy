@@ -1,7 +1,7 @@
 name: Build & Release
 
-# Runs on every push to `main`: builds the web client, deploys it to
-# Cloudflare Workers, packages the macOS app, and publishes a GitHub release.
+# Runs on every push to `main`: builds the web client and macOS app, then
+# publishes a GitHub release. Cloudflare deployments are intentionally manual.
 # Manual runs must target `main`.
 on:
   push:
@@ -22,14 +22,16 @@ env:
 
 jobs:
   web:
-    name: Web → Cloudflare Workers
-    runs-on: ubuntu-latest
+    name: Web app build
+    runs-on: ubuntu-24.04
     # Only the owner (or logins listed in the RELEASE_ACTORS repository
     # variable) can publish. Branch protection should also restrict `main`.
     if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    outputs:
+      site_url: ${{ vars.PLEXY_SITE_URL }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -37,9 +39,10 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -51,61 +54,13 @@ jobs:
           # Viewers can still change it from the connection screen.
           VITE_API_URL: ${{ vars.PLEXY_DEFAULT_SERVER_URL }}
 
-      - name: Deploy Worker
-        id: deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PLEXY_SITE_URL: ${{ vars.PLEXY_SITE_URL }}
-          NO_COLOR: "1"
-          FORCE_COLOR: "0"
-        run: |
-          set -euo pipefail
-
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            echo "::error::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets."
-            exit 1
-          fi
-
-          npx --yes wrangler@4 deploy 2>&1 | tee /tmp/wrangler-deploy.log
-
-          if [ -n "${PLEXY_SITE_URL:-}" ]; then
-            echo "url=${PLEXY_SITE_URL}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Wrangler prints the deployment URL. Fall back to the account's
-          # workers.dev subdomain if the output format changes.
-          url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/wrangler-deploy.log | tail -n 1 || true)"
-
-          if [ -z "$url" ]; then
-            subdomain="$(curl -fsS \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain" \
-              | jq -r '.result.subdomain // empty' || true)"
-            worker_name="$(node -p "require('./wrangler.json').name")"
-            if [ -n "$subdomain" ]; then
-              url="https://${worker_name}.${subdomain}.workers.dev"
-            fi
-          fi
-
-          if [ -z "$url" ]; then
-            echo "::error::Could not determine the site URL. Set the PLEXY_SITE_URL repository variable to your Worker or custom domain URL."
-            exit 1
-          fi
-
-          echo "url=${url}" >> "$GITHUB_OUTPUT"
-
-    outputs:
-      site_url: ${{ steps.deploy.outputs.url }}
-
   mac:
     name: macOS app (Apple Silicon)
     runs-on: macos-15
     if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -113,12 +68,23 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Ensure FFmpeg runtime is installed
+        run: |
+          if [ ! -x node_modules/node-av/binary/ffmpeg ]; then
+            env -u SKIP_FFMPEG node node_modules/node-av/dist/ffmpeg/install.js
+          fi
+          if [ ! -x node_modules/node-av/binary/ffmpeg ]; then
+            echo "::error::node-av did not install its macOS FFmpeg binary. Check the package install log and network access to its GitHub release assets."
+            exit 1
+          fi
 
       - name: Verify Apple Silicon runner
         run: test "$(uname -m)" = "arm64"
@@ -132,10 +98,10 @@ jobs:
         run: ls -lh dist/mac
 
       - name: Verify app signature
-        run: codesign --verify --deep --strict --verbose=2 dist/mac/mac-arm64/Plexy.app
+        run: codesign --verify --deep --strict --verbose=2 "dist/mac/mac-arm64/Plexy Beta.app"
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plexy-macos
           path: |
@@ -146,17 +112,17 @@ jobs:
 
   release:
     name: Publish GitHub release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - web
       - mac
     if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: plexy-macos
           path: release
