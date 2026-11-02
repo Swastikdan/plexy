@@ -7,6 +7,9 @@ import { spawn } from "node:child_process";
 
 const RELEASE_API = "https://api.github.com/repos/Swastikdan/plexy/releases?per_page=100";
 const PRODUCT_NAME = "Plexy Beta";
+// GitHub normalizes spaces to dots in uploaded release asset names, while
+// SHA256SUMS retains the original local filename.
+const RELEASE_ASSET_PRODUCT_NAME = PRODUCT_NAME.replace(/\s+/g, ".");
 const APP_BUNDLE_NAME = `${PRODUCT_NAME}.app`;
 const MAX_DOWNLOAD_BYTES = 2_000_000_000;
 
@@ -61,6 +64,10 @@ async function latestRelease(): Promise<Release> {
 }
 
 function updateAssetName(version: string): string {
+  return `${RELEASE_ASSET_PRODUCT_NAME}-${version}-arm64.zip`;
+}
+
+function checksumAssetName(version: string): string {
   return `${PRODUCT_NAME}-${version}-arm64.zip`;
 }
 
@@ -172,7 +179,7 @@ export async function checkForUpdates(): Promise<void> {
       const archive = await fetchBytes(zip.browser_download_url, MAX_DOWNLOAD_BYTES);
       const checksumFile = sums?.browser_download_url ? await fetchBytes(sums.browser_download_url, 100_000) : null;
       const expected = checksumFile
-        ? checksumFile.toString("utf8").split(/\r?\n/).find((line) => line.trim().endsWith(`  ${zip.name}`))?.split(/\s+/)[0]
+        ? checksumFile.toString("utf8").split(/\r?\n/).find((line) => line.trim().endsWith(`  ${checksumAssetName(version)}`))?.split(/\s+/)[0]
         : zip.digest?.replace(/^sha256:/i, "");
       const actual = createHash("sha256").update(archive).digest("hex");
       if (!expected || !/^[a-f0-9]{64}$/i.test(expected) || actual !== expected.toLowerCase()) throw new Error("The downloaded update failed its SHA-256 check.");
