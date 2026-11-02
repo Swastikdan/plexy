@@ -77,7 +77,7 @@ async function buildDesktop() {
   const distMac = join(distDir, "mac");
 
   console.log("\n========================================================");
-  console.log("  Plexy Electron Desktop Build for macOS");
+  console.log("  Plexy Beta Electron Desktop Build for macOS");
   console.log("========================================================\n");
   const desktopPackage = JSON.parse(await readFile(join(rootDir, "apps/desktop/package.json"), "utf8")) as { version: string };
 
@@ -146,7 +146,7 @@ async function buildDesktop() {
   // publish to GitHub and fails without GH_TOKEN. The release workflow uploads
   // the artifacts itself.
   console.log("\n6. Packaging macOS Electron Application with electron-builder...");
-  detachStaleInstallerVolumes("Plexy");
+  detachStaleInstallerVolumes("Plexy Beta");
   execSync(
     "./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never",
     {
@@ -156,7 +156,7 @@ async function buildDesktop() {
   );
 
   // 7. Verify and refresh app bundle resources
-  const appBundle = join(distMac, "mac-arm64", "Plexy.app");
+  const appBundle = join(distMac, "mac-arm64", "Plexy Beta.app");
   const appResources = join(appBundle, "Contents", "Resources");
   try {
     await copyFile(join(rootDir, "build/icon.icns"), join(appResources, "icon.icns"));
@@ -165,10 +165,10 @@ async function buildDesktop() {
   } catch {}
 
   console.log("\n========================================================");
-  console.log("  Plexy macOS Electron Build Complete!");
-  console.log(`  • macOS DMG Disk    : dist/mac/Plexy-${desktopPackage.version}-arm64.dmg`);
-  console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy.app`);
-  console.log(`  • macOS ZIP Archive : dist/mac/Plexy-${desktopPackage.version}-arm64.zip`);
+  console.log("  Plexy Beta macOS Electron Build Complete!");
+  console.log(`  • macOS DMG Disk    : dist/mac/Plexy Beta-${desktopPackage.version}-arm64.dmg`);
+  console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy Beta.app`);
+  console.log(`  • macOS ZIP Archive : dist/mac/Plexy Beta-${desktopPackage.version}-arm64.zip`);
   console.log("========================================================\n");
 }
 

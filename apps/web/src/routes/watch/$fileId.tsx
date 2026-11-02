@@ -144,7 +144,11 @@ function WatchRoute() {
   // Audio track and subtitle sync state
   const [selectedAudioIndex, setSelectedAudioIndex] = useState<number>(0);
   const [subtitleOffset, setSubtitleOffset] = useState<number>(0);
-  const appliedSubtitleOffsetRef = useRef<number>(0);
+  // Total shift currently applied to loaded cue times relative to their
+  // source-absolute values: the user's Sync Offset plus the live-conversion
+  // rebase (see the subtitle cue engine below). Kept so re-applications are
+  // incremental diffs over whatever is already loaded.
+  const appliedCueOffsetRef = useRef<number>(0);
   // Vertical placement of the caption track, in pixels (positive lifts it up).
   const [subtitlePosition, setSubtitlePosition] = useState<number>(0);
   const [showNextPrompt, setShowNextPrompt] = useState(false);
@@ -201,7 +205,9 @@ function WatchRoute() {
     }
     setSelectedAudioIndex(0);
     setSubtitleOffset(0);
-    appliedSubtitleOffsetRef.current = 0;
+    // The cue engine below re-derives the offset from the new file's stream
+    // geometry; fresh media elements carry fresh, source-absolute cues.
+    appliedCueOffsetRef.current = 0;
     setRestartAt(null);
     recoveryAttemptsRef.current = 0;
     recoveryTargetRef.current = null;
@@ -511,7 +517,50 @@ function WatchRoute() {
     return () => clearTimeout(timer);
   }, [restartAt, fileId]);
 
-  // Subtitle Synchronization Adjustment Engine
+  // Subtitle cue timing. Extracted cues are timed against the source media's
+  // own timeline. Direct play and prepared-HLS playback drive the video
+  // element on that same timeline (resume is a plain element seek), but a
+  // live remux/transcode restarts FFmpeg at the seek point: the element clock
+  // resets to 0 there while cues stay source-absolute, so native cue matching
+  // fires every cue `streamStart` seconds late — with subtitles off for the
+  // first stretch of a resume, turning them on later visibly shows cues
+  // "from the beginning". Shift cues into the element's timeline exactly like
+  // the fake clock above does: element time + streamStart = source time. The
+  // user's Sync Offset nudges cues on top of that.
+  const desiredCueOffset = subtitleOffset - (usesLiveConversion ? streamStart : 0);
+
+  // Reconcile every loaded cue list with `desiredCueOffset`. Tracks flagged
+  // `__plexy_offset_applied` already sit at `appliedCueOffsetRef` and only
+  // need the incremental diff; unflagged tracks carry untouched
+  // source-absolute cues and jump straight to the current value. Every loaded
+  // cue list therefore always sits exactly at the applied value.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video?.textTracks) return;
+
+    const diff = desiredCueOffset - appliedCueOffsetRef.current;
+    appliedCueOffsetRef.current = desiredCueOffset;
+
+    for (let t = 0; t < video.textTracks.length; t++) {
+      const track = video.textTracks[t];
+      // Cue shifting applies to subtitle/captions tracks only (preserve
+      // metadata tracks like trickplay).
+      if ((track.kind !== "subtitles" && track.kind !== "captions") || !track.cues) continue;
+      const tracked = track as TextTrack & { __plexy_offset_applied?: boolean };
+      const fresh = !tracked.__plexy_offset_applied;
+      if (fresh && track.cues.length === 0) continue; // VTT not parsed yet; the load handler below picks it up
+      if (fresh) tracked.__plexy_offset_applied = true;
+      const shift = fresh ? desiredCueOffset : diff;
+      if (Math.abs(shift) < 0.001) continue;
+      for (let c = 0; c < track.cues.length; c++) {
+        const cue = track.cues[c];
+        cue.startTime += shift;
+        cue.endTime += shift;
+      }
+    }
+  }, [desiredCueOffset]);
+
+  // Subtitle Synchronization Adjustment Engine (user-facing controls)
   const handleAdjustSubtitleOffset = useCallback((delta: number) => {
     setSubtitleOffset((prev) => Number((prev + delta).toFixed(2)));
   }, []);
@@ -528,61 +577,41 @@ function WatchRoute() {
     setSubtitlePosition(0);
   }, []);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const diff = subtitleOffset - appliedSubtitleOffsetRef.current;
-    if (Math.abs(diff) < 0.001) return;
-    appliedSubtitleOffsetRef.current = subtitleOffset;
-
-    if (video.textTracks) {
-      for (let t = 0; t < video.textTracks.length; t++) {
-        const track = video.textTracks[t];
-        // Shift cues for subtitle/captions tracks only (preserve metadata tracks like trickplay)
-        if (track.kind === "subtitles" || track.kind === "captions") {
-          if (track.cues) {
-            for (let c = 0; c < track.cues.length; c++) {
-              const cue = track.cues[c];
-              cue.startTime += diff;
-              cue.endTime += diff;
-            }
-          }
-        }
-      }
+  // Catch VTTs that finish parsing after the reconciliation effect above has
+  // run (subtitles enabled long after playback started): a track with no cues
+  // yet was skipped un-flagged, so when its cues first appear they are still
+  // source-absolute and need the full jump to the applied value. The initial
+  // sweep covers tracks whose cues arrived before listeners could attach.
+  const applyFreshTrackCues = useCallback((element: HTMLTrackElement | null) => {
+    const track = element?.track;
+    if (!track || (track.kind !== "subtitles" && track.kind !== "captions")) return;
+    const tracked = track as TextTrack & { __plexy_offset_applied?: boolean };
+    if (tracked.__plexy_offset_applied || !track.cues || track.cues.length === 0) return;
+    tracked.__plexy_offset_applied = true;
+    const shift = appliedCueOffsetRef.current;
+    if (Math.abs(shift) < 0.001) return; // cues already sit at the applied value
+    for (let c = 0; c < track.cues.length; c++) {
+      const cue = track.cues[c];
+      cue.startTime += shift;
+      cue.endTime += shift;
     }
-  }, [subtitleOffset]);
+  }, []);
 
-  // Ensure freshly loaded subtitle tracks receive current offset
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const onTrackLoad = () => {
-      if (appliedSubtitleOffsetRef.current === 0 || !video.textTracks) return;
-      const currentOffset = appliedSubtitleOffsetRef.current;
-      for (let t = 0; t < video.textTracks.length; t++) {
-        const track = video.textTracks[t];
-        if (track.kind === "subtitles" || track.kind === "captions") {
-          const trackExt = track as any;
-          if (track.cues && track.cues.length > 0 && !trackExt.__plexy_offset_applied) {
-            trackExt.__plexy_offset_applied = true;
-            for (let c = 0; c < track.cues.length; c++) {
-              const cue = track.cues[c];
-              cue.startTime += currentOffset;
-              cue.endTime += currentOffset;
-            }
-          }
-        }
-      }
-    };
+    const trackElements = video.querySelectorAll<HTMLTrackElement>("track");
+    for (const element of trackElements) applyFreshTrackCues(element);
 
-    const trackElements = video.querySelectorAll("track");
-    trackElements.forEach((el) => el.addEventListener("load", onTrackLoad));
+    const onTrackLoad = (event: Event) => applyFreshTrackCues(event.currentTarget as HTMLTrackElement);
+    trackElements.forEach((element) => element.addEventListener("load", onTrackLoad));
     return () => {
-      trackElements.forEach((el) => el.removeEventListener("load", onTrackLoad));
+      trackElements.forEach((element) => element.removeEventListener("load", onTrackLoad));
     };
-  }, [tracks, fileId]);
+    // Depend on the media key/remount and the track list so listeners attach
+    // to the current element's <track> nodes after any reload.
+  }, [applyFreshTrackCues, tracks, fileId, streamUrl, mediaRetryKey]);
 
   // Audio track switching handler
   const handleSelectAudioTrack = useCallback((index: number) => {

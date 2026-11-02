@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-const RELEASE_API = "https://api.github.com/repos/Swastikdan/plexy/releases/latest";
+const RELEASE_API = "https://api.github.com/repos/Swastikdan/plexy/releases?per_page=100";
+const PRODUCT_NAME = "Plexy Beta";
+const APP_BUNDLE_NAME = `${PRODUCT_NAME}.app`;
 const MAX_DOWNLOAD_BYTES = 2_000_000_000;
 
 type ReleaseAsset = { name?: string; browser_download_url?: string; size?: number; digest?: string | null };
@@ -24,21 +26,42 @@ export interface UpdateStatus {
 }
 
 function versionFromTag(tag: string): string | null {
-  const match = tag.match(/^v?(\d+\.\d+\.\d+)(?:-build\.\d+)?$/);
+  const match = tag.match(/^v?(\d+\.\d+\.\d+(?:-(?:beta|build)\.\d+)?)$/);
   return match?.[1] ?? null;
 }
 
 function compareReleaseTags(left: string, right: string): number {
-  const leftVersion = versionFromTag(left) ?? left;
-  const rightVersion = versionFromTag(right) ?? right;
-  const leftParts = leftVersion.split(".").map(Number);
-  const rightParts = rightVersion.split(".").map(Number);
+  const parse = (tag: string) => {
+    const version = versionFromTag(tag);
+    const match = version?.match(/^(\d+)\.(\d+)\.(\d+)(?:-(beta|build)\.(\d+))?$/);
+    return match ? { parts: match.slice(1, 4).map(Number), kind: match[4] ?? "stable", sequence: Number(match[5] ?? 0) } : null;
+  };
+  const a = parse(left);
+  const b = parse(right);
+  if (!a || !b) return left.localeCompare(right, undefined, { numeric: true });
   for (let index = 0; index < 3; index++) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    const difference = a.parts[index]! - b.parts[index]!;
     if (difference) return difference;
   }
-  const buildNumber = (tag: string) => Number(tag.match(/-build\.(\d+)$/)?.[1] ?? 0);
-  return buildNumber(left) - buildNumber(right);
+  // Preserve the existing build.N ordering while treating beta.N as a normal prerelease.
+  if (a.kind === "build" || b.kind === "build") return a.sequence - b.sequence;
+  if (a.kind === "stable") return b.kind === "stable" ? 0 : 1;
+  if (b.kind === "stable") return -1;
+  return a.sequence - b.sequence;
+}
+
+async function latestRelease(): Promise<Release> {
+  const response = await fetch(RELEASE_API, { headers: { "User-Agent": "Plexy-Desktop-Updater", Accept: "application/vnd.github+json" } });
+  if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+  const releases = await response.json() as Release[];
+  const eligible = releases.filter((release) => release.tag_name && versionFromTag(release.tag_name));
+  const release = eligible.sort((a, b) => compareReleaseTags(b.tag_name!, a.tag_name!))[0];
+  if (!release) throw new Error("No compatible Plexy release was found.");
+  return release;
+}
+
+function updateAssetName(version: string): string {
+  return `${PRODUCT_NAME}-${version}-arm64.zip`;
 }
 
 async function installedTag(): Promise<string> {
@@ -63,14 +86,12 @@ export async function getUpdateStatus(): Promise<UpdateStatus> {
   };
   if (!supported) return status;
   try {
-    const response = await fetch(RELEASE_API, { headers: { "User-Agent": "Plexy-Desktop-Updater", Accept: "application/vnd.github+json" } });
-    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-    const release = await response.json() as Release;
+    const release = await latestRelease();
     const tag = release.tag_name ?? "";
     const version = versionFromTag(tag);
     if (!version) throw new Error("The latest release has an unsupported version tag.");
     const assets = release.assets ?? [];
-    const zip = assets.find((asset) => asset.name === `Plexy-${version}-arm64.zip`);
+    const zip = assets.find((asset) => asset.name === updateAssetName(version));
     const sums = assets.find((asset) => asset.name === "SHA256SUMS");
     const comparison = compareReleaseTags(tag, currentTag);
     return {
@@ -121,9 +142,7 @@ export async function checkForUpdates(): Promise<void> {
   }
 
   try {
-    const response = await fetch(RELEASE_API, { headers: { "User-Agent": "Plexy-Desktop-Updater", Accept: "application/vnd.github+json" } });
-    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-    const release = await response.json() as Release;
+    const release = await latestRelease();
     const tag = release.tag_name ?? "";
     const version = versionFromTag(release.tag_name ?? "");
     if (!version) throw new Error("The latest release has an unsupported version tag.");
@@ -140,7 +159,7 @@ export async function checkForUpdates(): Promise<void> {
       return;
     }
     const assets = release.assets ?? [];
-    const zip = assets.find((asset) => asset.name === `Plexy-${version}-arm64.zip`);
+    const zip = assets.find((asset) => asset.name === updateAssetName(version));
     const sums = assets.find((asset) => asset.name === "SHA256SUMS");
     if (!zip?.browser_download_url) throw new Error("This release is missing its update ZIP.");
     if (!sums?.browser_download_url && !/^sha256:[a-f0-9]{64}$/i.test(zip.digest ?? "")) {
@@ -165,11 +184,11 @@ export async function checkForUpdates(): Promise<void> {
       // The helper independently extracts into a fresh directory; reject paths that
       // could write outside the single expected app bundle.
       const entries = listing.stdout.split(/\r?\n/).filter(Boolean);
-      if (!entries.length || entries.some((entry) => entry.startsWith("/") || entry.split("/").some((part) => part === "..") || !entry.startsWith("Plexy.app/"))) {
+      if (!entries.length || entries.some((entry) => entry.startsWith("/") || entry.split("/").some((part) => part === "..") || !entry.startsWith(`${APP_BUNDLE_NAME}/`))) {
         throw new Error("The update archive contains unexpected files.");
       }
       const target = app.getPath("exe").replace(/\/Contents\/MacOS\/[^/]+$/, "");
-      if (!target.endsWith("/Plexy.app")) throw new Error("Could not determine the installed Plexy application path.");
+      if (!target.endsWith("/Plexy.app") && !target.endsWith(`/${APP_BUNDLE_NAME}`)) throw new Error("Could not determine the installed Plexy application path.");
       const installScript = path.join(tempDir, "install-update.sh");
       const versionMarker = path.join(app.getPath("userData"), "update-state.json");
       await writeFile(installScript, [
@@ -183,7 +202,7 @@ export async function checkForUpdates(): Promise<void> {
         `PARENT_PID=${shellQuote(String(process.pid))}`,
         "mkdir -p \"$STAGE\"",
         "ditto -x -k \"$ARCHIVE\" \"$STAGE\"",
-        "SOURCE=\"$STAGE/Plexy.app\"",
+        `SOURCE="$STAGE/${APP_BUNDLE_NAME}"`,
         "test -d \"$SOURCE/Contents/MacOS\"",
         "test -f \"$SOURCE/Contents/Info.plist\"",
         "case \"$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \"$SOURCE/Contents/Info.plist\")\" in com.plexy.desktop) ;; *) exit 21 ;; esac",

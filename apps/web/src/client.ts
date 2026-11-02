@@ -496,7 +496,7 @@ export const api = {
 
   // --- Direct Streaming & Media REST URLs ---
 
-  streamUrl: (fileId: number, playPath: string, start?: number, audioIndex = 0): string => {
+  streamUrl: (fileId: number, playPath: string, start?: number, audioIndex = 0, maxHeight?: number): string => {
     const base = (
       playPath === "hls"
         ? `/api/stream/${fileId}/hls/master.m3u8`
@@ -509,12 +509,21 @@ export const api = {
     const params = new URLSearchParams();
     if (playPath !== "hls" && start && start > 0) params.set("start", String(Math.floor(start)));
     if (audioIndex > 0 || (audioIndex === 0 && playPath !== "direct")) params.set("audio", String(audioIndex));
+    if (playPath === "transcode" && maxHeight) params.set("maxHeight", String(maxHeight));
     const query = params.size ? `?${params.toString()}` : "";
     return `${getApiBase()}${base}${query}`;
   },
 
   subtitlesUrl: (fileId: number, track: string): string => {
     return `${getApiBase()}/api/subtitles/${fileId}/${track}`;
+  },
+
+  downloadUrl: (fileId: number, maxHeight?: number, audioIndex = 0): string => {
+    const params = new URLSearchParams();
+    if (maxHeight) params.set("maxHeight", String(maxHeight));
+    if (audioIndex > 0) params.set("audio", String(audioIndex));
+    const query = params.size ? `?${params.toString()}` : "";
+    return `${getApiBase()}/api/download/${fileId}${query}`;
   },
 
   trickplayTrackUrl: (fileId: number): string => {

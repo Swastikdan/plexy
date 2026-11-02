@@ -1493,7 +1493,7 @@ function DesktopUpdateSettings() {
     <section className="rounded-2xl border border-line/70 bg-surface p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="font-display text-base font-bold text-ink">Plexy app updates</h2>
+          <h2 className="font-display text-base font-bold text-ink">Plexy Beta app updates</h2>
           <p className="mt-1 text-xs text-ink-muted">Installed version: {installedVersion ?? "…"}{currentBuild ? ` · build ${currentBuild}` : ""}</p>
           {updateStatus?.latestVersion && <p className="mt-1 text-xs text-ink-muted">Latest release: {updateStatus.latestVersion}{latestBuild ? ` · build ${latestBuild}` : ""}</p>}
         </div>
@@ -2547,8 +2547,6 @@ function SystemUsage() {
   const refreshingRef = useRef(false);
   const nav = navigator as Navigator & { deviceMemory?: number; connection?: { downlink?: number; effectiveType?: string; rtt?: number } };
   const perf = performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } };
-  const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
-  const transferred = resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
   const refresh = useCallback(async () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;

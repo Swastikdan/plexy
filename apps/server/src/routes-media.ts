@@ -112,6 +112,8 @@ interface ConversionOptions {
   channels: number | null;
   /** Remux can copy video but still needs AAC audio for browser compatibility. */
   audioCodec?: string | null;
+  /** Optional client-selected ceiling for live transcodes. */
+  maxHeight?: number;
 }
 
 function conversionArgs(path: string, options: ConversionOptions): string[] {
@@ -132,11 +134,27 @@ function conversionArgs(path: string, options: ConversionOptions): string[] {
       args.push("-c:a", "aac", "-b:a", String(preferredAudioBitrate(options.channels)));
     }
   } else {
-    const videoBitrate = preferredVideoBitrate(options.height, options.sourceBitrate);
+    const outputHeight = options.maxHeight && options.height
+      ? Math.min(options.maxHeight, options.height)
+      : options.height;
+    const selectedBitrate = preferredVideoBitrate(outputHeight, options.sourceBitrate);
+    const maxBitrateByHeight = outputHeight === null ? 60_000_000
+      : outputHeight <= 360 ? 1_500_000
+        : outputHeight <= 480 ? 2_500_000
+          : outputHeight <= 720 ? 5_000_000
+            : outputHeight <= 1080 ? 10_000_000
+              : outputHeight <= 1440 ? 20_000_000
+                : 35_000_000;
+    const videoBitrate = options.maxHeight
+      ? Math.min(selectedBitrate, maxBitrateByHeight)
+      : selectedBitrate;
     args.push(
       "-c:v", "libx264",
       "-preset", "veryfast",
       "-pix_fmt", "yuv420p",
+      ...(options.maxHeight && options.height && options.height > options.maxHeight
+        ? ["-vf", `scale=-2:min(${options.maxHeight}\\,ih)`]
+        : []),
       "-b:v", String(videoBitrate),
       "-maxrate", String(Math.round(videoBitrate * 1.4)),
       "-bufsize", String(Math.round(videoBitrate * 3)),
@@ -660,6 +678,57 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     return response;
   }, { params: t.Object({ fileId: t.Numeric() }) })
 
+  /** Authenticated download response for a selected source or one-shot quality transcode. */
+  .get("/download/:fileId", async (ctx) => {
+    const fileId = Number(ctx.params.fileId);
+    const path = await openablePath(fileId);
+    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
+    let row = getFile(fileId)!;
+    const maxHeight = ctx.query.maxHeight === undefined ? undefined : Number(ctx.query.maxHeight);
+    const audioIndex = Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
+      ? Number(ctx.query.audio)
+      : 0;
+    const supportedMaxHeights = [360, 480, 720, 1080, 1440, 2160];
+    if (maxHeight !== undefined && !supportedMaxHeights.includes(maxHeight)) {
+      return Response.json({ error: "maxHeight must be one of 360, 480, 720, 1080, 1440, or 2160." }, { status: 400 });
+    }
+
+    if (maxHeight !== undefined) {
+      row = await ensureFileProbed(row);
+      if (!row.height) {
+        return Response.json({ error: "Source resolution is unavailable, so a capped download cannot be generated." }, { status: 422 });
+      }
+      try {
+        const response = await conversionResponse(path, {
+          mode: "transcode",
+          height: (row.height as number | null) ?? null,
+          sourceBitrate: (row.bitrate as number | null) ?? null,
+          channels: firstChannelCount(row, audioIndex),
+          audioIndex,
+          maxHeight,
+        });
+        response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}-${maxHeight}p.mp4`);
+        return response;
+      } catch (err) {
+        log.error("media", "download transcode failed to start", {
+          fileId, message: err instanceof Error ? err.message : String(err),
+        });
+        return Response.json({ error: "Server conversion could not start for this download." }, { status: 503 });
+      }
+    }
+
+    const prepared = await usableOptimizedPath(row);
+    const servePath = prepared ?? path;
+    const info = await stat(servePath);
+    const response = await rangeResponse(ctx.request, Bun.file(servePath), info.size, "video/mp4");
+    response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}.mp4`);
+    response.headers.set("X-Plexy-Source", prepared ? "optimized" : "original");
+    return response;
+  }, {
+    params: t.Object({ fileId: t.Numeric() }),
+    query: t.Object({ maxHeight: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
+  })
+
   /** Remux = container-only problem (PRD 5.8). Copy packets, near instant. */
   .get("/stream/:fileId/remux", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
@@ -706,6 +775,11 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
     const row = getFile(fileId)!;
     const start = ctx.query.start ? Number(ctx.query.start) : 0;
+    const maxHeight = ctx.query.maxHeight ? Number(ctx.query.maxHeight) : undefined;
+    const supportedMaxHeights = [360, 480, 720, 1080, 1440, 2160];
+    if (maxHeight !== undefined && !supportedMaxHeights.includes(maxHeight)) {
+      return Response.json({ error: "maxHeight must be one of 360, 480, 720, 1080, 1440, or 2160." }, { status: 400 });
+    }
     try {
       return await conversionResponse(path, {
         mode: "transcode",
@@ -715,6 +789,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
         audioIndex: Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
           ? Number(ctx.query.audio)
           : 0,
+        maxHeight,
         trimStart: Number.isFinite(start) && start > 0 ? start : undefined,
       });
     } catch (err) {
@@ -728,7 +803,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     }
   }, {
     params: t.Object({ fileId: t.Numeric() }),
-    query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
+    query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()), maxHeight: t.Optional(t.Numeric()) }),
   })
 
   /** Cached adaptive HLS stream with several server-generated resolutions. */
