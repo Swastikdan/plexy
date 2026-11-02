@@ -2541,6 +2541,7 @@ function Crashes() {
 function SystemUsage() {
   const [live, setLive] = useState(false);
   const [desktopUsage, setDesktopUsage] = useState<DesktopSystemUsage | null>(null);
+  const [transferred, setTransferred] = useState(() => getTransferredBytes());
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const refreshingRef = useRef(false);
@@ -2557,6 +2558,7 @@ function SystemUsage() {
         try { setDesktopUsage(await window.electronAPI.getSystemUsage()); }
         catch { setDesktopUsage(null); }
       }
+      setTransferred(getTransferredBytes());
       setNow(Date.now());
     } finally {
       refreshingRef.current = false;
@@ -2569,7 +2571,7 @@ function SystemUsage() {
     let timer: number | undefined;
     const schedule = () => {
       if (timer !== undefined) window.clearInterval(timer);
-      timer = document.hidden ? undefined : window.setInterval(() => void refresh(), 5000);
+      timer = document.hidden ? undefined : window.setInterval(() => void refresh(), 15000);
     };
     const onVisibilityChange = () => {
       schedule();
@@ -2583,13 +2585,7 @@ function SystemUsage() {
     };
   }, [live, refresh]);
   const memory = perf.memory;
-  let gpu = "Unavailable";
-  try {
-    const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
-    const info = gl?.getExtension("WEBGL_debug_renderer_info");
-    if (info && gl) gpu = String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)).replace(/^ANGLE \((.*)\)$/, "$1");
-  } catch { /* Graphics details are optional and may be blocked by the browser. */ }
+  const gpu = "Unavailable";
   const fmtBytes = (bytes: number) => bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return (
     <Section title="System usage">
@@ -2597,12 +2593,12 @@ function SystemUsage() {
         <p className="text-xs text-ink-muted">{desktopUsage ? "Plexy desktop process metrics" : "Browser-visible estimates"} · {refreshing ? "refreshing…" : `refreshed ${new Date(now).toLocaleTimeString()}`}</p>
         <div className="flex gap-2">
           <Button variant="surface" className="h-8 px-3 text-xs" onClick={() => void refresh()} disabled={refreshing}>Refresh</Button>
-          <Button variant={live ? "primary" : "surface"} className="h-8 px-3 text-xs" onClick={() => setLive((value) => !value)}>{live ? "Live · 5s" : "Live updates off"}</Button>
+          <Button variant={live ? "primary" : "surface"} className="h-8 px-3 text-xs" onClick={() => setLive((value) => !value)}>{live ? "Live · 15s" : "Live updates off"}</Button>
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <UsageMetric title="Plexy CPU" value={desktopUsage ? `${desktopUsage.cpuPercent.toFixed(1)}%` : `${navigator.hardwareConcurrency || "—"} logical cores`} detail={desktopUsage ? "Combined Plexy desktop processes" : "Live CPU load is unavailable in browser mode"} />
-        <UsageMetric title="Memory" value={desktopUsage ? `${fmtBytes(desktopUsage.appMemoryBytes)} Plexy` : memory ? `${fmtBytes(memory.usedJSHeapSize)} page heap` : "Unavailable"} detail={desktopUsage ? `${fmtBytes(desktopUsage.systemMemoryFreeBytes)} free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} system memory` : nav.deviceMemory ? `Device memory: ~${nav.deviceMemory} GB` : "Device memory estimate unavailable"} />
+        <UsageMetric title="Memory" value={desktopUsage ? `${fmtBytes(desktopUsage.appMemoryBytes)} Plexy` : memory ? `${fmtBytes(memory.usedJSHeapSize)} page heap` : "Unavailable"} detail={desktopUsage ? `${fmtBytes(desktopUsage.systemMemoryFreeBytes)} OS-reported free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} total` : nav.deviceMemory ? `Device memory: ~${nav.deviceMemory} GB` : "Device memory estimate unavailable"} />
         <UsageMetric title="GPU" value={desktopUsage && desktopUsage.appGpuMemoryBytes > 0 ? `${fmtBytes(desktopUsage.appGpuMemoryBytes)} Plexy GPU process` : gpu} detail={desktopUsage ? "GPU memory is estimated from the Plexy GPU process; utilization is not exposed" : "Renderer reported by this browser"} />
         <UsageMetric title="Network" value={nav.connection?.effectiveType ?? "Connection estimate unavailable"} detail={nav.connection?.downlink ? `Estimated ${nav.connection.downlink} Mbps · ${nav.connection.rtt ?? "—"} ms RTT` : "Live throughput is not exposed by this browser"} />
         <UsageMetric title="Page data" value={fmtBytes(transferred)} detail="Transfer size across resources loaded in this tab" />
@@ -2610,6 +2606,11 @@ function SystemUsage() {
       <p className="mt-4 text-[11px] text-ink-muted">CPU and memory describe Plexy’s desktop processes plus system memory availability. Page data is a cumulative browser transfer estimate; network throughput and GPU utilization are not exposed.</p>
     </Section>
   );
+}
+
+function getTransferredBytes() {
+  return (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+    .reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
 }
 
 function UsageMetric({ title, value, detail }: { title: string; value: string; detail: string }) {

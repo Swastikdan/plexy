@@ -3,11 +3,11 @@
 /// Optional `showKind` pins a small type chip (movie / series / episode) at the
 /// top of the artwork, and hovering any poster quietly prefetches its detail
 /// page so opening a title is instant.
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import clsx, { type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle, Star } from "lucide-react";
 import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
@@ -78,24 +78,19 @@ export function Poster({
   const navigate = useNavigate();
   const canPlayDirect = directPlay && item.fileId != null;
 
-  const clearWatchMutation = useMutation({
-    mutationFn: (targetId: number) => api.clearWatch(targetId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["home"] });
-      void queryClient.invalidateQueries({ queryKey: ["items"] });
-      void queryClient.invalidateQueries({ queryKey: ["title", item.id] });
-    },
-  });
+  // While the options menu is open we keep the card in its zoomed state, so
+  // the portaled menu's anchor rect never moves — otherwise leaving the card
+  // with the mouse would shrink the card under the open menu and drag the
+  // menu along with it (bad layout shift).
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const watchMutation = useMutation({
-    mutationFn: ({ itemId, played }: { itemId: number; played: boolean }) =>
-      api.setWatched(itemId, played),
-    onSuccess: () => {
+  const updateWatch = (request: Promise<unknown>) => {
+    void request.then(() => {
       void queryClient.invalidateQueries({ queryKey: ["home"] });
       void queryClient.invalidateQueries({ queryKey: ["items"] });
       void queryClient.invalidateQueries({ queryKey: ["title", item.id] });
-    },
-  });
+    }).catch(() => {});
+  };
 
   // Quiet prefetch with hover dwell delay (100ms) so rapid scrolling doesn't flood the network
   const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,6 +138,9 @@ export function Poster({
           "bg-surface border border-line/40",
           "transition-[transform,border-color] duration-200 ease-out hover:z-20 hover:scale-[1.03] hover:border-line-strong",
           "focus-within:ring-2 focus-within:ring-white/20",
+          // Freeze the zoom while the menu is open (covers hover-out), and stay
+          // above neighboring cards even when the pointer isn't on us.
+          menuOpen && "z-30 scale-[1.03] border-line-strong",
           className,
         )}
       >
@@ -211,8 +209,15 @@ export function Poster({
 
       {/* More Options Menu for Continue Watching cards */}
       {wide && (
-        <div className="absolute right-2 top-2 z-20 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          <Menu.Root>
+        <div
+          className={cx(
+            "absolute right-2 top-2 z-20 transition-opacity",
+            menuOpen
+              ? "opacity-100"
+              : "opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100",
+          )}
+        >
+          <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
             <Menu.Trigger
               type="button"
               onClick={(e) => {
@@ -249,7 +254,7 @@ export function Poster({
               <Menu.Item
                 onClick={(e) => {
                   e.stopPropagation();
-                  watchMutation.mutate({ itemId: item.id, played: true });
+                  updateWatch(api.setWatched(item.id, true));
                 }}
               >
                 <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
@@ -259,7 +264,7 @@ export function Poster({
               <Menu.Item
                 onClick={(e) => {
                   e.stopPropagation();
-                  clearWatchMutation.mutate(item.id);
+                  updateWatch(api.clearWatch(item.id));
                 }}
                 className="text-red-400 data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-300"
               >
