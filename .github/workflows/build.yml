@@ -162,7 +162,7 @@ jobs:
           path: release
 
       - name: Create update checksums
-        run: cd release && shasum -a 256 Plexy-*-arm64.zip > SHA256SUMS
+        run: cd release && shasum -a 256 "Plexy Beta-"*-arm64.zip > SHA256SUMS
 
       - name: Create or update release
         env:
@@ -172,14 +172,22 @@ jobs:
           set -euo pipefail
 
           version="$(node -p "require('./package.json').version")"
-          tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+          if [[ "$version" == *-beta.* ]]; then
+            tag="v${version}"
+            prerelease_flag="--prerelease"
+            latest_flag=""
+          else
+            tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+            prerelease_flag=""
+            latest_flag="--latest"
+          fi
 
           cat > release-notes.md <<EOF
-          ## Plexy ${tag}
+          ## Plexy Beta ${tag}
 
           **Web app:** ${SITE_URL}
 
-          **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**.
+          **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy Beta** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy Beta.app** into **Applications**.
 
           This release is ad-hoc signed, but it is not Developer ID signed or notarized. On first launch, macOS may say it cannot verify Plexy and block it. After trying to open Plexy from Applications:
 
@@ -191,7 +199,7 @@ jobs:
 
           Advanced Terminal alternative:
 
-              xattr -dr com.apple.quarantine /Applications/Plexy.app
+              xattr -dr com.apple.quarantine "/Applications/Plexy Beta.app"
 
           The web app asks for your Plexy server address on first launch and remembers it on that device. The Mac app includes its own server.
 
@@ -203,8 +211,8 @@ jobs:
             gh release edit "$tag" --notes-file release-notes.md
           else
             gh release create "$tag" release/* \
-              --title "Plexy ${tag}" \
+              --title "Plexy Beta ${tag}" \
               --notes-file release-notes.md \
               --target "$GITHUB_SHA" \
-              --latest
+              $prerelease_flag $latest_flag
           fi

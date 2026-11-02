@@ -26,15 +26,16 @@ export interface UpdateStatus {
 }
 
 function versionFromTag(tag: string): string | null {
-  const match = tag.match(/^v?(\d+\.\d+\.\d+(?:-(?:beta|build)\.\d+)?)$/);
+  const match = tag.match(/^v?(\d+\.\d+\.\d+(?:-beta\.\d+)?)(?:-build\.\d+)?$/);
   return match?.[1] ?? null;
 }
 
 function compareReleaseTags(left: string, right: string): number {
   const parse = (tag: string) => {
     const version = versionFromTag(tag);
-    const match = version?.match(/^(\d+)\.(\d+)\.(\d+)(?:-(beta|build)\.(\d+))?$/);
-    return match ? { parts: match.slice(1, 4).map(Number), kind: match[4] ?? "stable", sequence: Number(match[5] ?? 0) } : null;
+    const match = version?.match(/^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/);
+    const build = tag.match(/-build\.(\d+)$/);
+    return match ? { parts: match.slice(1, 4).map(Number), beta: match[4] === undefined ? null : Number(match[4]), build: Number(build?.[1] ?? 0) } : null;
   };
   const a = parse(left);
   const b = parse(right);
@@ -43,11 +44,10 @@ function compareReleaseTags(left: string, right: string): number {
     const difference = a.parts[index]! - b.parts[index]!;
     if (difference) return difference;
   }
-  // Preserve the existing build.N ordering while treating beta.N as a normal prerelease.
-  if (a.kind === "build" || b.kind === "build") return a.sequence - b.sequence;
-  if (a.kind === "stable") return b.kind === "stable" ? 0 : 1;
-  if (b.kind === "stable") return -1;
-  return a.sequence - b.sequence;
+  if (a.beta === null && b.beta !== null) return 1;
+  if (a.beta !== null && b.beta === null) return -1;
+  if (a.beta !== null && b.beta !== null && a.beta !== b.beta) return a.beta - b.beta;
+  return a.build - b.build;
 }
 
 async function latestRelease(): Promise<Release> {
