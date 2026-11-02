@@ -39,7 +39,7 @@ import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal"
 import { PageLoader } from "../../components/page-loader";
 import { LibraryFolderForm } from "../../components/library-folder-form";
 import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "../../lib/playback-diagnostics-consent";
-import type { DesktopSystemUsage, DesktopUpdateStatus } from "../../electron";
+import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "../../electron";
 import { getPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "../../lib/playback-preferences";
 import {
   clearPrefetchCache,
@@ -1451,18 +1451,21 @@ function Settings() {
 function DesktopUpdateSettings() {
   const [installedVersion, setInstalledVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<DesktopUpdateProgress | null>(null);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   useEffect(() => {
     if (!window.electronAPI?.isElectron) return;
     void window.electronAPI.getVersion().then(setInstalledVersion).catch(() => setInstalledVersion(null));
+    return window.electronAPI.onUpdateProgress(setUpdateProgress);
   }, []);
   if (!window.electronAPI?.isElectron) return null;
 
   const check = async () => {
     setChecking(true);
     setMessage(null);
+    setUpdateProgress(null);
     try {
       const result = await window.electronAPI!.checkForUpdates();
       setUpdateStatus(result);
@@ -1481,14 +1484,34 @@ function DesktopUpdateSettings() {
   const install = async () => {
     setInstalling(true);
     setMessage("Preparing the update…");
+    setUpdateProgress({ phase: "downloading", downloadedBytes: 0, totalBytes: null });
     try { await window.electronAPI!.installUpdate(); }
     catch (error) {
       setMessage(`Could not start the update: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
       setInstalling(false);
+      setUpdateProgress(null);
     }
   };
   const currentBuild = updateStatus?.currentTag.match(/-build\.(\d+)$/)?.[1];
   const latestBuild = updateStatus?.latestTag?.match(/-build\.(\d+)$/)?.[1];
+  const downloaded = updateProgress?.downloadedBytes ?? 0;
+  const total = updateProgress?.totalBytes ?? null;
+  const progressPercent = total ? Math.min(100, Math.round((downloaded / total) * 100)) : null;
+  const progressLabel = updateProgress?.phase === "downloading"
+    ? "Downloading update"
+    : updateProgress?.phase === "verifying"
+      ? "Verifying download"
+      : updateProgress?.phase === "waiting-for-approval"
+        ? "Download ready"
+        : updateProgress?.phase === "installing"
+          ? "Installing and reopening"
+          : "";
+  const formatUpdateBytes = (bytes: number) => bytes >= 1024 ** 3
+    ? `${(bytes / 1024 ** 3).toFixed(2)} GB`
+    : bytes >= 1024 ** 2
+      ? `${(bytes / 1024 ** 2).toFixed(1)} MB`
+      : `${(bytes / 1024).toFixed(0)} KB`;
   return (
     <section className="rounded-2xl border border-line/70 bg-surface p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1510,6 +1533,45 @@ function DesktopUpdateSettings() {
           )}
         </div>
       </div>
+      {installing && updateProgress && (
+        <div className="mt-4 rounded-xl border border-line/70 bg-surface p-4" aria-live="polite">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium text-ink">{progressLabel}</span>
+            {progressPercent !== null && <span className="tabular-nums text-ink-muted">{progressPercent}%</span>}
+          </div>
+          <div
+            className="mt-3 h-2 overflow-hidden rounded-full bg-line"
+            role="progressbar"
+            aria-label={progressLabel}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent ?? undefined}
+          >
+            <div
+              className={`h-full rounded-full bg-primary transition-[width] duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
+              style={progressPercent === null ? undefined : { width: `${progressPercent}%` }}
+            />
+          </div>
+          {updateProgress.phase === "downloading" && (
+            <p className="mt-2 text-xs text-ink-muted">
+              {formatUpdateBytes(downloaded)} downloaded
+              {total !== null ? ` · ${formatUpdateBytes(Math.max(0, total - downloaded))} left` : ""}
+            </p>
+          )}
+          {updateProgress.phase === "waiting-for-approval" && (
+            <p className="mt-2 text-xs text-ink-muted">
+              {updateStatus?.requiresAdministrator
+                ? "macOS will ask you to authorize replacing Plexy in /Applications. Plexy does not save your password."
+                : "Plexy is ready to replace the app and reopen."}
+            </p>
+          )}
+        </div>
+      )}
+      {updateStatus?.requiresAdministrator && (
+        <p className="mt-3 text-xs text-ink-muted">
+          Because Plexy is in the shared /Applications folder, macOS asks for administrator approval for each update. For password-free updates, move Plexy Beta.app to your user Applications folder (~/Applications) and open it from there. Plexy never stores your password.
+        </p>
+      )}
       {message && <p role="status" className={`mt-3 text-xs ${message.startsWith("Could not") || message.includes("missing") ? "text-amber-400" : "text-ink-muted"}`}>{message}</p>}
     </section>
   );

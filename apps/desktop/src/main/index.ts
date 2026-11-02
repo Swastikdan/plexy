@@ -258,7 +258,9 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle("app:check-for-updates", () => getUpdateStatus());
-  ipcMain.handle("app:install-update", () => checkForUpdates());
+  ipcMain.handle("app:install-update", (event) => checkForUpdates((progress) => {
+    if (!event.sender.isDestroyed()) event.sender.send("app:update-progress", progress);
+  }));
 
   ipcMain.handle("app:get-server-url", () => {
     return readServerPreference();

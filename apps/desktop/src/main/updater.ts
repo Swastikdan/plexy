@@ -25,8 +25,15 @@ export interface UpdateStatus {
   updateAvailable: boolean;
   currentIsNewer: boolean;
   canInstall: boolean;
+  requiresAdministrator: boolean;
   error?: string;
 }
+
+export type UpdateProgress = {
+  phase: "downloading" | "verifying" | "waiting-for-approval" | "installing";
+  downloadedBytes: number;
+  totalBytes: number | null;
+};
 
 function versionFromTag(tag: string): string | null {
   const match = tag.match(/^v?(\d+\.\d+\.\d+(?:-beta\.\d+)?)(?:-build\.\d+)?$/);
@@ -72,12 +79,26 @@ function checksumAssetName(version: string): string {
 }
 
 async function installedTag(): Promise<string> {
-  let tag = app.getVersion();
+  const appVersion = app.getVersion();
   try {
     const state = JSON.parse(await readFile(path.join(app.getPath("userData"), "update-state.json"), "utf8")) as { tag?: unknown };
-    if (typeof state.tag === "string") tag = state.tag;
+    // The marker survives a manual reinstall. Ignore it when the newly
+    // installed bundle has a newer version, but retain build tags when the
+    // package version itself has not changed (for example 1.0.0-build.6).
+    if (typeof state.tag === "string" && versionFromTag(state.tag) && compareReleaseTags(state.tag, appVersion) >= 0) {
+      return state.tag;
+    }
   } catch { /* Older/manual installs have no update marker. */ }
-  return tag;
+  return appVersion;
+}
+
+function installedAppPath(): string {
+  return app.getPath("exe").replace(/\/Contents\/MacOS\/[^/]+$/, "");
+}
+
+function installedInSystemApplications(): boolean {
+  const target = installedAppPath();
+  return target.startsWith("/Applications/") || target === "/Applications/Plexy.app";
 }
 
 export async function getUpdateStatus(): Promise<UpdateStatus> {
@@ -90,6 +111,7 @@ export async function getUpdateStatus(): Promise<UpdateStatus> {
     updateAvailable: false,
     currentIsNewer: false,
     canInstall: false,
+    requiresAdministrator: installedInSystemApplications(),
   };
   if (!supported) return status;
   try {
@@ -114,14 +136,42 @@ export async function getUpdateStatus(): Promise<UpdateStatus> {
   }
 }
 
-async function fetchBytes(url: string, maxBytes: number): Promise<Buffer> {
+async function fetchBytes(
+  url: string,
+  maxBytes: number,
+  onProgress?: (downloadedBytes: number, totalBytes: number | null) => void,
+  expectedTotalBytes?: number,
+): Promise<Buffer> {
   const response = await fetch(url, { headers: { "User-Agent": "Plexy-Desktop-Updater", Accept: "application/octet-stream" } });
   if (!response.ok) throw new Error(`Download failed (${response.status})`);
   const length = Number(response.headers.get("content-length") ?? 0);
   if (length > maxBytes) throw new Error("The update file is too large.");
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > maxBytes) throw new Error("The update file is too large.");
-  return bytes;
+  if (!response.body) throw new Error("The update download returned no data.");
+
+  const totalBytes = length || expectedTotalBytes || null;
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let downloadedBytes = 0;
+  let lastReportedAt = 0;
+  onProgress?.(0, totalBytes);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      downloadedBytes += value.byteLength;
+      if (downloadedBytes > maxBytes) throw new Error("The update file is too large.");
+      chunks.push(Buffer.from(value));
+      const now = Date.now();
+      if (now - lastReportedAt >= 100 || (totalBytes !== null && downloadedBytes >= totalBytes)) {
+        onProgress?.(downloadedBytes, totalBytes);
+        lastReportedAt = now;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  onProgress?.(downloadedBytes, totalBytes);
+  return Buffer.concat(chunks, downloadedBytes);
 }
 
 function shellQuote(value: string): string {
@@ -142,7 +192,7 @@ function run(command: string, args: string[]): Promise<{ code: number | null; st
   });
 }
 
-export async function checkForUpdates(): Promise<void> {
+export async function checkForUpdates(onProgress?: (progress: UpdateProgress) => void): Promise<void> {
   if (!app.isPackaged || process.platform !== "darwin" || process.arch !== "arm64") {
     await dialog.showMessageBox({ type: "info", title: "Plexy Updates", message: "Updates are available for packaged Apple Silicon builds." });
     return;
@@ -176,13 +226,20 @@ export async function checkForUpdates(): Promise<void> {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "plexy-update-"));
     let handedOffToInstaller = false;
     try {
-      const archive = await fetchBytes(zip.browser_download_url, MAX_DOWNLOAD_BYTES);
+      const archive = await fetchBytes(
+        zip.browser_download_url,
+        MAX_DOWNLOAD_BYTES,
+        (downloadedBytes, totalBytes) => onProgress?.({ phase: "downloading", downloadedBytes, totalBytes }),
+        zip.size,
+      );
+      onProgress?.({ phase: "verifying", downloadedBytes: archive.length, totalBytes: archive.length });
       const checksumFile = sums?.browser_download_url ? await fetchBytes(sums.browser_download_url, 100_000) : null;
       const expected = checksumFile
         ? checksumFile.toString("utf8").split(/\r?\n/).find((line) => line.trim().endsWith(`  ${checksumAssetName(version)}`))?.split(/\s+/)[0]
         : zip.digest?.replace(/^sha256:/i, "");
       const actual = createHash("sha256").update(archive).digest("hex");
       if (!expected || !/^[a-f0-9]{64}$/i.test(expected) || actual !== expected.toLowerCase()) throw new Error("The downloaded update failed its SHA-256 check.");
+      onProgress?.({ phase: "waiting-for-approval", downloadedBytes: archive.length, totalBytes: archive.length });
       const archivePath = path.join(tempDir, zip.name!);
       await writeFile(archivePath, archive, { mode: 0o600 });
 
@@ -194,7 +251,7 @@ export async function checkForUpdates(): Promise<void> {
       if (!entries.length || entries.some((entry) => entry.startsWith("/") || entry.split("/").some((part) => part === "..") || !entry.startsWith(`${APP_BUNDLE_NAME}/`))) {
         throw new Error("The update archive contains unexpected files.");
       }
-      const target = app.getPath("exe").replace(/\/Contents\/MacOS\/[^/]+$/, "");
+      const target = installedAppPath();
       if (!target.endsWith("/Plexy.app") && !target.endsWith(`/${APP_BUNDLE_NAME}`)) throw new Error("Could not determine the installed Plexy application path.");
       const installScript = path.join(tempDir, "install-update.sh");
       const versionMarker = path.join(app.getPath("userData"), "update-state.json");
@@ -226,10 +283,14 @@ export async function checkForUpdates(): Promise<void> {
       const answer = await dialog.showMessageBox({
         type: "question", title: "Install Plexy update?",
         message: `Plexy ${version} is ready to install.`,
-        detail: "Plexy will quit and reopen after replacing the app. macOS may ask you to approve the change. Your library and settings are stored separately and will be kept.",
+        detail: installedInSystemApplications()
+          ? "Plexy will quit and reopen after replacing the app. macOS will ask for administrator approval because Plexy is installed in the shared Applications folder. Your password is not stored; your library and settings will be kept."
+          : "Plexy will quit and reopen after replacing the app. Your library and settings are stored separately and will be kept.",
         buttons: ["Install and Relaunch", "Later"], defaultId: 0, cancelId: 1,
       });
       if (answer.response !== 0) return;
+
+      onProgress?.({ phase: "installing", downloadedBytes: archive.length, totalBytes: archive.length });
 
       if (target.startsWith("/Applications/") || target === "/Applications/Plexy.app") {
         const appleScript = `do shell script ${JSON.stringify(`/bin/bash ${shellQuote(installScript)}`)} with administrator privileges`;
