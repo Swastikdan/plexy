@@ -2603,20 +2603,27 @@ function Crashes() {
 function SystemUsage() {
   const [live, setLive] = useState(false);
   const [desktopUsage, setDesktopUsage] = useState<DesktopSystemUsage | null>(null);
+  const [usageHistory, setUsageHistory] = useState<Array<{ cpu: number; memory: number }>>([]);
   const [transferred, setTransferred] = useState(() => getTransferredBytes());
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const refreshingRef = useRef(false);
   const nav = navigator as Navigator & { deviceMemory?: number; connection?: { downlink?: number; effectiveType?: string; rtt?: number } };
   const perf = performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } };
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (sampleUsage = true) => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
     setRefreshing(true);
     try {
-      if (window.electronAPI?.isElectron) {
-        try { setDesktopUsage(await window.electronAPI.getSystemUsage()); }
-        catch { setDesktopUsage(null); }
+      if (sampleUsage && window.electronAPI?.isElectron) {
+        try {
+          const usage = await window.electronAPI.getSystemUsage();
+          setDesktopUsage(usage);
+          setUsageHistory((history) => [...history, {
+            cpu: Math.max(0, Math.min(100, usage.cpuPercent)),
+            memory: usage.appMemoryBytes / 1024 ** 2,
+          }].slice(-60));
+        } catch { setDesktopUsage(null); }
       }
       setTransferred(getTransferredBytes());
       setNow(Date.now());
@@ -2629,18 +2636,22 @@ function SystemUsage() {
     void refresh();
     if (!live) return;
     let timer: number | undefined;
+    let usageTimer: number | undefined;
     const schedule = () => {
       if (timer !== undefined) window.clearInterval(timer);
-      timer = document.hidden ? undefined : window.setInterval(() => void refresh(), 15000);
+      if (usageTimer !== undefined) window.clearInterval(usageTimer);
+      timer = document.hidden ? undefined : window.setInterval(() => void refresh(false), 1000);
+      usageTimer = document.hidden ? undefined : window.setInterval(() => void refresh(true), 5000);
     };
     const onVisibilityChange = () => {
       schedule();
-      if (!document.hidden) void refresh();
+      if (!document.hidden) void refresh(true);
     };
     schedule();
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       if (timer !== undefined) window.clearInterval(timer);
+      if (usageTimer !== undefined) window.clearInterval(usageTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [live, refresh]);
@@ -2650,20 +2661,27 @@ function SystemUsage() {
   return (
     <Section title="System usage">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-ink-muted">{desktopUsage ? "Plexy desktop process metrics" : "Browser-visible estimates"} · {refreshing ? "refreshing…" : `refreshed ${new Date(now).toLocaleTimeString()}`}</p>
+        <p className="text-xs text-ink-muted">{desktopUsage ? "Plexy desktop process metrics" : "Browser-visible estimates"} · {refreshing ? "refreshing…" : `updated ${new Date(now).toLocaleTimeString()}`}</p>
         <div className="flex gap-2">
           <Button variant="surface" className="h-8 px-3 text-xs" onClick={() => void refresh()} disabled={refreshing}>Refresh</Button>
-          <Button variant={live ? "primary" : "surface"} className="h-8 px-3 text-xs" onClick={() => setLive((value) => !value)}>{live ? "Live · 15s" : "Live updates off"}</Button>
+          <Button variant={live ? "primary" : "surface"} className="h-8 px-3 text-xs" onClick={() => setLive((value) => !value)}>{live ? "Live · 1s / 5s" : "Live updates off"}</Button>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {live && desktopUsage && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <UsageGraph title="CPU" value={desktopUsage.cpuPercent} history={usageHistory.map((point) => point.cpu)} />
+          <UsageGraph title="Plexy memory" value={desktopUsage.appMemoryBytes / 1024 ** 2} suffix=" MB" maxValue={desktopUsage.systemMemoryTotalBytes / 1024 ** 2} history={usageHistory.map((point) => point.memory)} detail={`${fmtBytes(desktopUsage.systemMemoryFreeBytes)} free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} system memory`} />
+        </div>
+      )}
+      {live && !desktopUsage && <p className="mt-4 rounded-xl border border-line/70 bg-surface px-4 py-3 text-sm text-ink-muted">Live system graphs are available in the Plexy desktop app. This browser does not expose CPU and memory process metrics.</p>}
+      {!live && <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <UsageMetric title="Plexy CPU" value={desktopUsage ? `${desktopUsage.cpuPercent.toFixed(1)}%` : `${navigator.hardwareConcurrency || "—"} logical cores`} detail={desktopUsage ? "Combined Plexy desktop processes" : "Live CPU load is unavailable in browser mode"} />
         <UsageMetric title="Memory" value={desktopUsage ? `${fmtBytes(desktopUsage.appMemoryBytes)} Plexy` : memory ? `${fmtBytes(memory.usedJSHeapSize)} page heap` : "Unavailable"} detail={desktopUsage ? `${fmtBytes(desktopUsage.systemMemoryFreeBytes)} OS-reported free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} total` : nav.deviceMemory ? `Device memory: ~${nav.deviceMemory} GB` : "Device memory estimate unavailable"} />
         <UsageMetric title="GPU" value={desktopUsage && desktopUsage.appGpuMemoryBytes > 0 ? `${fmtBytes(desktopUsage.appGpuMemoryBytes)} Plexy GPU process` : gpu} detail={desktopUsage ? "GPU memory is estimated from the Plexy GPU process; utilization is not exposed" : "Renderer reported by this browser"} />
         <UsageMetric title="Network" value={nav.connection?.effectiveType ?? "Connection estimate unavailable"} detail={nav.connection?.downlink ? `Estimated ${nav.connection.downlink} Mbps · ${nav.connection.rtt ?? "—"} ms RTT` : "Live throughput is not exposed by this browser"} />
         <UsageMetric title="Page data" value={fmtBytes(transferred)} detail="Transfer size across resources loaded in this tab" />
-      </div>
-      <p className="mt-4 text-[11px] text-ink-muted">CPU and memory describe Plexy’s desktop processes plus system memory availability. Page data is a cumulative browser transfer estimate; network throughput and GPU utilization are not exposed.</p>
+      </div>}
+      <p className="mt-4 text-[11px] text-ink-muted">{live ? "The graph shows the last five minutes. CPU and memory samples refresh every five seconds; the status line refreshes every second." : "CPU and memory describe Plexy’s desktop processes plus system memory availability. Page data is a cumulative browser transfer estimate; network throughput and GPU utilization are not exposed."}</p>
     </Section>
   );
 }
@@ -2675,4 +2693,17 @@ function getTransferredBytes() {
 
 function UsageMetric({ title, value, detail }: { title: string; value: string; detail: string }) {
   return <div className="rounded-xl border border-line/70 bg-surface px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{title}</p><p className="mt-1 truncate text-sm font-semibold" title={value}>{value}</p><p className="mt-1 text-xs text-ink-muted">{detail}</p></div>;
+}
+
+function UsageGraph({ title, value, suffix = "%", maxValue = 100, history, detail }: { title: string; value: number; suffix?: string; maxValue?: number; history: number[]; detail?: string }) {
+  const points = history.length > 1 ? history : [value, value];
+  const scale = maxValue > 0 ? maxValue : 100;
+  const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${(index / (points.length - 1)) * 100} ${36 - (Math.max(0, Math.min(scale, point)) / scale) * 30}`).join(" ");
+  return <div className="overflow-hidden rounded-xl border border-line/70 bg-surface px-4 py-3">
+    <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{title}</p>{detail && <p className="mt-1 text-[11px] text-ink-muted">{detail}</p>}</div><p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}{suffix}</p></div>
+    <svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={`${title} usage history`} className="mt-3 h-16 w-full text-brand-text">
+      <path d="M 0 36 H 100 M 0 21 H 100 M 0 6 H 100" stroke="currentColor" strokeOpacity=".12" strokeWidth=".5" fill="none" />
+      <path d={path} stroke="currentColor" strokeWidth="1.5" fill="none" vectorEffect="non-scaling-stroke" />
+    </svg>
+  </div>;
 }
