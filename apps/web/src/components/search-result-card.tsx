@@ -57,7 +57,7 @@ export function SearchResultCard({ item }: { item: ItemCard }) {
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink",
       )}
     >
-      <div className="relative aspect-video w-[136px] shrink-0 self-center overflow-hidden bg-surface-2 sm:w-[176px]">
+      <div className="relative w-[136px] shrink-0 self-stretch overflow-hidden bg-surface-2 sm:w-[176px]">
         {image ? (
           <img
             src={image}
