@@ -166,12 +166,13 @@ jobs:
           set -euo pipefail
 
           version="$(node -p "require('./package.json').version")"
+          # Give every successful run its own release, including beta builds.
+          # Re-running a workflow intentionally updates that run's release.
+          tag="v${version}-build.${GITHUB_RUN_NUMBER}"
           if [[ "$version" == *-beta.* ]]; then
-            tag="v${version}"
             prerelease_flag="--prerelease"
             latest_flag=""
           else
-            tag="v${version}-build.${GITHUB_RUN_NUMBER}"
             prerelease_flag=""
             latest_flag="--latest"
           fi
