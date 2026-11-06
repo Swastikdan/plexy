@@ -44,7 +44,17 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+
       - name: Install dependencies
+        # CI installs FFmpeg explicitly below; the web build does not need it.
+        env:
+          SKIP_FFMPEG: "true"
         run: bun install --frozen-lockfile
 
       - name: Build web app
@@ -73,18 +83,36 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+
       - name: Install dependencies
+        # CI installs FFmpeg explicitly below; the web build does not need it.
+        env:
+          SKIP_FFMPEG: "true"
         run: bun install --frozen-lockfile
 
+      - name: Cache FFmpeg runtime
+        uses: actions/cache@v4
+        with:
+          path: node_modules/node-av/binary
+          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs') }}
+
       - name: Ensure FFmpeg runtime is installed
-        run: |
-          if [ ! -x node_modules/node-av/binary/ffmpeg ]; then
-            env -u SKIP_FFMPEG node node_modules/node-av/dist/ffmpeg/install.js
-          fi
-          if [ ! -x node_modules/node-av/binary/ffmpeg ]; then
-            echo "::error::node-av did not install its macOS FFmpeg binary. Check the package install log and network access to its GitHub release assets."
-            exit 1
-          fi
+        run: node scripts/install-macos-ffmpeg.mjs
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-macos-arm64-${{ hashFiles('bun.lock') }}
+          restore-keys: electron-macos-arm64-
 
       - name: Verify Apple Silicon runner
         run: test "$(uname -m)" = "arm64"

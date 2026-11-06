@@ -7,6 +7,7 @@
     "output": "dist/mac",
     "buildResources": "build"
   },
+  "npmRebuild": false,
   "electronLanguages": ["en"],
   "files": [
     "dist/**/*",
