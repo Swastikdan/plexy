@@ -1,7 +1,7 @@
 /// Fullscreen Cinema Player using Video.js 10 and Plexy playback engine.
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
-import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useParams, useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ArrowLeft, SkipForward } from "lucide-react";
 
@@ -102,6 +102,7 @@ function ControlsVisibility({ onChange }: { onChange: (visible: boolean) => void
 function WatchRoute() {
   const { fileId } = useParams({ from: Route.id });
   const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -141,7 +142,6 @@ function WatchRoute() {
   const autoAdvanceRef = useRef(false);
   const autoAdvanceTriggeredRef = useRef(false);
 
-  // Audio track and subtitle sync state
   const [selectedAudioIndex, setSelectedAudioIndex] = useState<number>(0);
   const [subtitleOffset, setSubtitleOffset] = useState<number>(0);
   // Total shift currently applied to loaded cue times relative to their
@@ -188,7 +188,6 @@ function WatchRoute() {
     }
   }, []);
 
-  // Fetch complete player manifest
   const hasInitializedAudioRef = useRef(false);
   useEffect(() => {
     playbackStartedAtRef.current = performance.now();
@@ -225,23 +224,16 @@ function WatchRoute() {
     };
   }, [fileId]);
 
-  const play = useQuery({
-    queryKey: ["play", fileId, caps],
-    queryFn: async () => {
-      const manifest = await api.play(Number(fileId), JSON.parse(caps));
-      if (manifest.duration) {
-        setKnownDuration(manifest.duration);
-      }
-      return manifest;
-    },
-    enabled: !!caps,
-  });
+  const play = useQuery({ ...queries.play(Number(fileId), caps), enabled: !!caps });
+
+  useEffect(() => {
+    if (play.data?.duration) setKnownDuration(play.data.duration);
+  }, [play.data?.duration]);
 
   useEffect(() => {
     playbackPathRef.current = play.data?.path ?? null;
   }, [play.data?.path]);
 
-  // Set default audio track from manifest once on initial load
   useEffect(() => {
     if (!hasInitializedAudioRef.current && play.data?.audioTracks && play.data.audioTracks.length > 0) {
       hasInitializedAudioRef.current = true;
@@ -253,7 +245,6 @@ function WatchRoute() {
     }
   }, [play.data?.audioTracks, play.data?.selectedAudioIndex]);
 
-  // Subtitle tracks
   const tracksQuery = useQuery({ ...queries.subtitles(Number(fileId)), enabled: !!caps });
   const tracks = (tracksQuery.data?.tracks ?? []) as (SubtitleTrack & { isDefault?: boolean })[];
 
@@ -362,11 +353,28 @@ function WatchRoute() {
     setRestartAt(next);
   }, [fileId]);
 
-  // Fast trickplay track URL for scrub previews
   const trickplayTrackUrl = useMemo(() => {
     if (!play.data || play.data.path === "unsupported") return null;
     return api.trickplayTrackUrl(Number(fileId));
   }, [fileId, play.data]);
+
+  const mediaTrackElements = (
+    <>
+      {trickplayTrackUrl && (
+        <track kind="metadata" label="thumbnails" src={trickplayTrackUrl} default />
+      )}
+      {tracks.map((t) => (
+        <track
+          key={t.track}
+          label={t.title || t.language || `Track ${t.track}`}
+          kind="subtitles"
+          src={api.subtitlesUrl(Number(fileId), t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`)}
+          srcLang={t.language ?? undefined}
+          default={playbackPreferences.autoSubtitles && t.isDefault}
+        />
+      ))}
+    </>
+  );
 
   // Warm this file's trickplay sheets. When managed prefetch is active the
   // service worker serves the scrubber from that cache, so the sheets are not
@@ -393,7 +401,6 @@ function WatchRoute() {
     if (trickplay?.ready && trickplay.trackUrl) prefetchTrickplayTrack(trickplay.trackUrl);
   }, [play.data?.trickplay?.sprites, play.data?.trickplay?.ready, play.data?.trickplay?.trackUrl]);
 
-  // Immediate loading state feedback on stream changes
   useEffect(() => {
     if (!streamUrl) return;
     setIsBuffering(true);
@@ -746,7 +753,7 @@ function WatchRoute() {
     const series = play.data?.next?.title;
     if (series && getNextSkipCount(series) < 3) return;
     autoAdvanceRef.current = true;
-    void navigate({ to: "/watch/$fileId", params: { fileId: String(next) } });
+    void navigate({ to: "/watch/$fileId", params: { fileId: String(next) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
   }, [navigate, play.data?.nextFileId, play.data?.next?.title]);
 
   const playNextEpisode = useCallback(() => {
@@ -755,7 +762,7 @@ function WatchRoute() {
     const series = play.data?.next?.title;
     if (series) rememberNextSkip(series);
     setShowNextPrompt(false);
-    void navigate({ to: "/watch/$fileId", params: { fileId: String(next) } });
+    void navigate({ to: "/watch/$fileId", params: { fileId: String(next) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
   }, [navigate, play.data?.nextFileId, play.data?.next?.title]);
 
   const handleTimeUpdate = useCallback(() => {
@@ -791,7 +798,7 @@ function WatchRoute() {
     ) {
       autoAdvanceTriggeredRef.current = true;
       autoAdvanceRef.current = true;
-      void navigate({ to: "/watch/$fileId", params: { fileId: String(play.data.nextFileId) } });
+      void navigate({ to: "/watch/$fileId", params: { fileId: String(play.data.nextFileId) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
       return;
     }
     setShowNextPrompt((visible) => {
@@ -819,7 +826,7 @@ function WatchRoute() {
     if (activeSkipSegment === "outro" && play.data?.nextFileId) {
       if (series) rememberNextSkip(series);
       autoAdvanceRef.current = true;
-      void navigate({ to: "/watch/$fileId", params: { fileId: String(play.data.nextFileId) } });
+      void navigate({ to: "/watch/$fileId", params: { fileId: String(play.data.nextFileId) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
       return;
     }
     videoRef.current.currentTime = marker.end;
@@ -930,16 +937,20 @@ function WatchRoute() {
   }, [knownDuration, effectivePath]);
 
   const nextEpisode = play.data?.next ?? null;
-  // The back control opens the title this file belongs to, not the app shell.
-  // Episodes list the series they belong to; the manifest supplies that.
+  // Return to the existing detail entry so Back cannot reopen playback.
+  // Direct playback links have no detail entry, so replace them with one.
   const detailItemId = play.data?.parentItemId ?? play.data?.itemId ?? null;
   const leavePlayer = useCallback(() => {
-    if (detailItemId != null) {
-      void navigate({ to: "/title/$itemId", params: { itemId: String(detailItemId) } });
-    } else {
-      void navigate({ to: "/" });
+    if (router.state.location.state.playerFromTitle) {
+      router.history.back();
+      return;
     }
-  }, [detailItemId, navigate]);
+    if (detailItemId != null) {
+      void navigate({ to: "/title/$itemId", params: { itemId: String(detailItemId) }, replace: true });
+    } else {
+      void navigate({ to: "/", replace: true });
+    }
+  }, [detailItemId, navigate, router]);
 
   return (
     <div
@@ -1099,24 +1110,7 @@ function WatchRoute() {
                       onError={handleMediaError}
                       className="h-full w-full object-contain"
                     >
-                      {trickplayTrackUrl && (
-                        <track
-                          kind="metadata"
-                          label="thumbnails"
-                          src={trickplayTrackUrl}
-                          default
-                        />
-                      )}
-                      {tracks.map((t) => (
-                        <track
-                          key={t.track}
-                          label={t.title || t.language || `Track ${t.track}`}
-                          kind="subtitles"
-                          src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
-                          srcLang={t.language ?? undefined}
-                          default={playbackPreferences.autoSubtitles && t.isDefault}
-                        />
-                      ))}
+                      {mediaTrackElements}
                     </HlsJsVideo>
                     </Suspense>
                   ) : (
@@ -1141,24 +1135,7 @@ function WatchRoute() {
                       onError={handleMediaError}
                       className="h-full w-full object-contain"
                     >
-                      {trickplayTrackUrl && (
-                        <track
-                          kind="metadata"
-                          label="thumbnails"
-                          src={trickplayTrackUrl}
-                          default
-                        />
-                      )}
-                      {tracks.map((t) => (
-                        <track
-                          key={t.track}
-                          label={t.title || t.language || `Track ${t.track}`}
-                          kind="subtitles"
-                          src={`/api/subtitles/${fileId}/${t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`}`}
-                          srcLang={t.language ?? undefined}
-                          default={playbackPreferences.autoSubtitles && t.isDefault}
-                        />
-                      ))}
+                      {mediaTrackElements}
                     </Video>
                   )
                 )}

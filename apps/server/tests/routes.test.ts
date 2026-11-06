@@ -2,17 +2,30 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { buildApp } from "../src/app";
 import { runMigrations, run } from "../src/db";
 import { initConfig, APP_VERSION } from "../src/config";
+import { createUser } from "../src/accounts";
 import { createDevice } from "../src/auth";
 
 describe("Elysia API Routes (PRD 9)", () => {
   let app: ReturnType<typeof buildApp>;
+  let testUserId: number;
 
   beforeAll(async () => {
     await runMigrations();
     await initConfig();
     run("INSERT OR IGNORE INTO libraries (id, name, type, language) VALUES (1, 'Test Lib', 'movies', 'en-US')");
     run("INSERT OR IGNORE INTO items (id, library_id, kind, name, sort_title) VALUES (1, 1, 'movie', 'Test Movie', 'test movie')");
+    const user = await createUser("routes-admin", "routes-test-password-long", "admin");
+    testUserId = user.id;
+    const { token } = createDevice("Routes admin", null, null, user.id);
     app = buildApp();
+    const handle = app.handle.bind(app);
+    app.handle = (request: Request) => {
+      if (new URL(request.url).pathname !== "/api/server/status") {
+        const headers = new Headers(request.headers); headers.set("authorization", `Bearer ${token}`);
+        request = new Request(request, { headers });
+      }
+      return handle(request);
+    };
   });
 
   test("public status probe omits operational details; paired status includes them", async () => {
@@ -25,7 +38,7 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(typeof data.setupComplete).toBe("boolean");
     expect(data).not.toHaveProperty("recentScans");
 
-    const { token } = createDevice("Status test device");
+    const { token } = createDevice("Status test device", null, null, testUserId);
     const paired = await app.handle(new Request("http://localhost:8765/api/server/status", {
       headers: { Authorization: `Bearer ${token}` },
     }));
@@ -49,22 +62,19 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(events[0]).not.toHaveProperty("filePath");
   });
 
-  test("GET /api/home returns home payload structure", async () => {
-    const res = await app.handle(new Request("http://localhost:8765/api/home"));
-    expect(res.status).toBe(200);
+  test("GET /api/items honours the requested limit", async () => {
+    run("INSERT OR IGNORE INTO items (id, library_id, kind, name, sort_title) VALUES (30, 1, 'movie', 'Limit A', 'limit a'), (31, 1, 'movie', 'Limit B', 'limit b')");
+    try {
+      const all = await (await app.handle(new Request("http://localhost:8765/api/items"))).json();
+      expect(all.items.length).toBeGreaterThanOrEqual(2);
 
-    const data = await res.json();
-    expect(data).toHaveProperty("featured");
-    expect(data).toHaveProperty("rows");
-    expect(Array.isArray(data.rows)).toBe(true);
-  });
-
-  test("GET /api/items returns item list with limit", async () => {
-    const res = await app.handle(new Request("http://localhost:8765/api/items?limit=10"));
-    expect(res.status).toBe(200);
-
-    const data = await res.json();
-    expect(Array.isArray(data.items)).toBe(true);
+      const res = await app.handle(new Request("http://localhost:8765/api/items?limit=1"));
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.items).toHaveLength(1);
+    } finally {
+      run("DELETE FROM items WHERE id IN (30, 31)");
+    }
   });
 
   test("POST /api/progress saves watch progress", async () => {
@@ -85,14 +95,20 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(data.ok).toBe(true);
   });
 
-  test("GET /api/search splits titles and episodes for query", async () => {
-    const res = await app.handle(
-      new Request("http://localhost:8765/api/search?q=Avatar"),
-    );
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(Array.isArray(data.titles)).toBe(true);
-    expect(Array.isArray(data.episodes)).toBe(true);
+  test("GET /api/search finds a matched title and keeps episodes in their own list", async () => {
+    run("INSERT OR IGNORE INTO items (id, library_id, kind, name, sort_title, match_status) VALUES (40, 1, 'movie', 'Zebra Searchable', 'zebra searchable', 'matched')");
+    try {
+      const res = await app.handle(
+        new Request("http://localhost:8765/api/search?q=Zebra"),
+      );
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.titles.map((item: any) => item.id)).toContain(40);
+      expect(data.titles.map((item: any) => item.id)).not.toContain(12);
+      expect(data.episodes.length).toBe(0);
+    } finally {
+      run("DELETE FROM items WHERE id = 40");
+    }
   });
 
   test("GET /api/items/:id returns series with seasons and episodes", async () => {
@@ -171,7 +187,7 @@ describe("Elysia API Routes (PRD 9)", () => {
 
   test("nextUpEpisodes and GET /api/home handles played episodes without crashing", async () => {
     // Mark episode 12 as played
-    run("INSERT OR REPLACE INTO watch_state (item_id, position_seconds, duration_seconds, played) VALUES (12, 2700, 2700, 1)");
+    run("INSERT OR REPLACE INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played) VALUES (?, 12, 2700, 2700, 1)", testUserId);
     const res = await app.handle(new Request("http://localhost:8765/api/home"));
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -190,8 +206,8 @@ describe("Elysia API Routes (PRD 9)", () => {
 
     try {
       // Episode 911 is finished; episode 912 is mid-playback.
-      run("INSERT OR REPLACE INTO watch_state (item_id, position_seconds, duration_seconds, played) VALUES (911, 2700, 2700, 1)");
-      run("INSERT OR REPLACE INTO watch_state (item_id, position_seconds, duration_seconds, played) VALUES (912, 600, 2700, 0)");
+      run("INSERT OR REPLACE INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played) VALUES (?, 911, 2700, 2700, 1)", testUserId);
+      run("INSERT OR REPLACE INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played) VALUES (?, 912, 600, 2700, 0)", testUserId);
 
       const inProgress = await (await app.handle(new Request("http://localhost:8765/api/home"))).json();
       expect(rowsOf(inProgress, "continue")).toContain(912);

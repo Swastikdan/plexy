@@ -1,3 +1,4 @@
+import { getSignedInUser } from "./auth";
 /// Typed client runtime configuration
 /// (docs/MOBILE_AND_DISTRIBUTION_DETAILED_PLAN.md, workstream B).
 ///
@@ -90,7 +91,7 @@ export function getClientRuntime(): ClientRuntime {
     serverHosted: mode === "server-hosted",
     // Mirrors the server's own authorization boundary instead of inventing a
     // new one in the UI.
-    canManageServer: mode === "bundled" || isLoopbackServerUrl(serverUrl),
+    canManageServer: getSignedInUser()?.role === "admin" && (mode === "bundled" || isLoopbackServerUrl(serverUrl)),
     installed: isInstalledClient(),
   };
 }

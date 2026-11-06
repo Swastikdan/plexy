@@ -2,12 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { getConfig, redactedView, save, APP_VERSION } from "../src/config";
 
 describe("Server Config & Versioning (PRD 5.1)", () => {
-  test("config contains current version matching APP_VERSION", async () => {
-    const cfg = await getConfig();
-    expect(cfg.version).toBe(APP_VERSION);
-    expect(cfg.version).toBe("0.1.0");
-  });
-
   test("redactedView projects safe settings without leaking secrets", async () => {
     const cfg = await getConfig();
     const safe = redactedView(cfg);

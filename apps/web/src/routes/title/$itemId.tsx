@@ -33,6 +33,7 @@ import { PageLoader } from "../../components/page-loader";
 import { prefetchAssets } from "../../lib/asset-prefetch";
 import { prefetchTriggerEnabled } from "../../lib/prefetch-config";
 import { artworkUrl } from "../../lib/artwork-url";
+import { useStoredFlag } from "../../lib/use-stored-flag";
 
 // Capabilities do not change during a session; probing once keeps hover
 // prefetches free of layout work.
@@ -54,7 +55,6 @@ function episodeDisplayTitle(name: string, episodeNumber: number): string {
   return `Episode ${episodeNumber}`;
 }
 
-/** Format seconds as 00:00:00 (matching template) */
 function formatTime(secs: number): string {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -203,31 +203,8 @@ function DetailView({
   const hasResume = resumePos > 15 && !isPlayed;
   const watchPercent = Math.min(100, Math.max(0, activeWatch?.percent ?? 0));
 
-  const [inWatchlist, setInWatchlist] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(`plexy:watchlist:${item.id}`) === "true";
-  });
-
-  const [isFavorite, setIsFavorite] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(`plexy:favorite:${item.id}`) === "true";
-  });
-
-  const toggleWatchlist = () => {
-    setInWatchlist((prev) => {
-      const next = !prev;
-      localStorage.setItem(`plexy:watchlist:${item.id}`, String(next));
-      return next;
-    });
-  };
-
-  const toggleFavorite = () => {
-    setIsFavorite((prev) => {
-      const next = !prev;
-      localStorage.setItem(`plexy:favorite:${item.id}`, String(next));
-      return next;
-    });
-  };
+  const [inWatchlist, toggleWatchlist] = useStoredFlag(`plexy:watchlist:${item.id}`);
+  const [isFavorite, toggleFavorite] = useStoredFlag(`plexy:favorite:${item.id}`);
 
   const displayRuntime = activeEpisode?.runtime || metadata?.runtime || null;
   const displayDate = formatDate((activeEpisode as any)?.airDate, item.year);
@@ -235,11 +212,8 @@ function DetailView({
   const displayGenres = metadata?.genres.slice(0, 3).join(", ");
   const displayOverview = activeEpisode?.overview || metadata?.overview || item.overview || null;
 
-  const baseRating = item.rating ?? metadata?.rating ?? 7.8;
-  const tmdbScore = Math.round(baseRating * 10);
-  const imdbScore = baseRating.toFixed(1);
-  const rtCritics = Math.min(99, Math.max(60, Math.round(baseRating * 10 + 2)));
-  const rtAudience = Math.min(99, Math.max(65, Math.round(baseRating * 10 - 1)));
+  const rating = item.rating ?? metadata?.rating ?? null;
+  const tmdbScore = rating == null ? null : Math.round(rating * 10);
 
   const resolutionBadge = file?.height
     ? file.height >= 2160
@@ -294,15 +268,13 @@ function DetailView({
 
   const handlePrimaryPlay = () => {
     if (primaryFileId) {
-      navigate({ to: "/watch/$fileId", params: { fileId: String(primaryFileId) } });
+      navigate({ to: "/watch/$fileId", params: { fileId: String(primaryFileId) }, state: { playerFromTitle: true } });
     }
   };
 
   return (
     <div className="space-y-10">
-      {/* Detail hero banner */}
       <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-sm sm:rounded-sm bg-surface flex flex-col justify-end">
-        {/* Backdrop image */}
         <img
           src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
           alt={item.name}
@@ -315,7 +287,6 @@ function DetailView({
           }}
         />
 
-        {/* Cinematic directional masks */}
         <div
           className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/85 via-35% via-canvas/30 to-black/10 pointer-events-none"
           aria-hidden
@@ -325,7 +296,6 @@ function DetailView({
           aria-hidden
         />
 
-        {/* Content container */}
         <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12 animate-in fade-in duration-300">
           {item.kind === "episode" && item.parentId && (
             <Link
@@ -338,7 +308,6 @@ function DetailView({
             </Link>
           )}
 
-          {/* Unmatched / review notice */}
           {unmatched && item.kind !== "episode" && (
             <div className="mb-5 flex items-center gap-3 rounded-sm border border-amber-500/25 bg-amber-500/8 px-4 py-2 text-sm text-amber-300">
               <Sparkles size={16} className="shrink-0" />
@@ -356,9 +325,7 @@ function DetailView({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr] gap-6 sm:gap-10 items-end">
-            {/* Left Column: Logo/Title + Resume Button with Progress + 5 Action Icon Buttons */}
             <div className="flex flex-col space-y-4 sm:space-y-5">
-              {/* Logo or Stylized Title */}
               {logo ? (
                 <img
                   src={logo}
@@ -371,7 +338,6 @@ function DetailView({
                 </h1>
               )}
 
-              {/* Primary Resume / Play Button with Progress Bar */}
               {(file || (item.kind === "series" && episodes && episodes.length > 0)) && (
                 <button
                   type="button"
@@ -417,9 +383,7 @@ function DetailView({
                 </button>
               )}
 
-              {/* Row of 5 Action Icon Buttons (keeping app default rounded-sm) */}
               <div className="flex items-center gap-2">
-                {/* 1. Watched / Unwatched toggle */}
                 <button
                   type="button"
                   onClick={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
@@ -431,7 +395,6 @@ function DetailView({
                   {isPlayed ? <CheckCircle2 size={16} className="text-[#3b7df9]" /> : <Eye size={16} />}
                 </button>
 
-                {/* 2. Watchlist */}
                 <button
                   type="button"
                   onClick={toggleWatchlist}
@@ -445,7 +408,6 @@ function DetailView({
                   <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
                 </button>
 
-                {/* 3. Favorite */}
                 <button
                   type="button"
                   onClick={toggleFavorite}
@@ -459,7 +421,6 @@ function DetailView({
                   <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
                 </button>
 
-                {/* 4. Trailer / Preview */}
                 {trailer ? (
                   <button
                     type="button"
@@ -481,7 +442,6 @@ function DetailView({
                   </button>
                 )}
 
-                {/* 5. More Options Menu */}
                 <Menu.Root>
                   <Menu.Trigger
                     type="button"
@@ -518,9 +478,7 @@ function DetailView({
               </div>
             </div>
 
-            {/* Right Column: Episode Title + Metadata specs + Synopsis + Ratings row */}
             <div className="flex flex-col justify-end space-y-3 pb-1">
-              {/* Subtitle / Episode Header */}
               <h2 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-md">
                 {item.kind === "series" && activeEpisode ? (
                   <>
@@ -531,7 +489,6 @@ function DetailView({
                 )}
               </h2>
 
-              {/* Meta Specs Line: 57 min   13 Oct 2017   [A]   1080p   Drama, Crime */}
               <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-white/70">
                 {displayRuntime && (
                   <span className="font-medium text-white/85">{displayRuntime} min</span>
@@ -552,43 +509,21 @@ function DetailView({
                 )}
               </div>
 
-              {/* Overview Synopsis */}
               {displayOverview && (
                 <p className="max-w-2xl text-xs sm:text-sm leading-relaxed text-white/80 line-clamp-3 sm:line-clamp-4">
                   {displayOverview}
                 </p>
               )}
 
-              {/* Ratings Badges Row: TMDB 79%   IMDb 8.6   🍅 97%   🍿 95% */}
-              <div className="flex flex-wrap items-center gap-4 sm:gap-5 pt-1">
-                {/* TMDB Badge */}
+              {/* TMDB user score, the only rating the server actually stores. */}
+              {tmdbScore !== null && (
                 <div className="flex items-center gap-1.5 font-bold text-xs" title="TMDB User Score">
                   <span className="rounded-[2px] bg-[#01b4e4] px-1 py-0.5 text-[9px] font-black uppercase text-black leading-none">
                     TMDB
                   </span>
                   <span className="text-white/90 tabular-nums">{tmdbScore}%</span>
                 </div>
-
-                {/* IMDb Badge */}
-                <div className="flex items-center gap-1.5 font-bold text-xs" title="IMDb Rating">
-                  <span className="rounded-[2px] bg-[#f5c518] px-1.5 py-0.5 text-[10px] font-black uppercase text-black leading-none">
-                    IMDb
-                  </span>
-                  <span className="text-white/90 tabular-nums">{imdbScore}</span>
-                </div>
-
-                {/* Rotten Tomatoes Critics */}
-                <div className="flex items-center gap-1.5 font-bold text-xs" title="Rotten Tomatoes Tomatometer">
-                  <span className="text-base select-none leading-none">🍅</span>
-                  <span className="text-white/90 tabular-nums">{rtCritics}%</span>
-                </div>
-
-                {/* Rotten Tomatoes Audience */}
-                <div className="flex items-center gap-1.5 font-bold text-xs" title="Rotten Tomatoes Audience Score">
-                  <span className="text-base select-none leading-none">🍿</span>
-                  <span className="text-white/90 tabular-nums">{rtAudience}%</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -601,7 +536,6 @@ function DetailView({
         </div>
       </section>
 
-      {/* Main grid: synopsis and episodes on the left, cast and media details on the right */}
       <div className="grid gap-12 lg:grid-cols-[1fr_380px]">
         <div className="min-w-0 space-y-10">
           {item.overview && (
@@ -681,16 +615,15 @@ function DetailView({
                             navigate({
                               to: "/watch/$fileId",
                               params: { fileId: String(targetFileId) },
+                              state: { playerFromTitle: true },
                             });
                           }}
                           className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3.5 text-left focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2 rounded-lg"
                         >
-                          {/* Episode index number on desktop */}
                           <div className="hidden sm:flex w-6 shrink-0 justify-center font-display text-xs font-semibold tabular-nums text-ink-muted/70 transition-colors group-hover:text-ink">
                             {String(epNum).padStart(2, "0")}
                           </div>
 
-                          {/* Episode thumbnail */}
                           <div className="relative aspect-video w-24 min-[400px]:w-32 sm:w-40 md:w-44 shrink-0 overflow-hidden rounded-lg bg-surface-2 border border-line/50">
                             {ep.poster || ep.backdrop ? (
                               <img
@@ -706,21 +639,18 @@ function DetailView({
                               </div>
                             )}
 
-                            {/* Play overlay affordance */}
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-2xs transition-opacity duration-150 group-hover:opacity-100">
                               <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white text-black shadow-md transition-transform duration-150 group-hover:scale-105 active:scale-95">
                                 <Play size={14} className="ml-0.5" fill="currentColor" />
                               </div>
                             </div>
 
-                            {/* Duration tag */}
                             {ep.runtime && (
                               <div className="absolute bottom-1 right-1 rounded-sm bg-black/80 px-1 py-0.2 text-[9px] font-semibold text-white/90">
                                 {ep.runtime}m
                               </div>
                             )}
 
-                            {/* Watch progress line */}
                             {ep.watch && ep.watch.percent > 0 && (
                               <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden">
                                 <div
@@ -731,7 +661,6 @@ function DetailView({
                             )}
                           </div>
 
-                          {/* Episode info */}
                           <div className="min-w-0 flex-1 py-0.5">
                             <div className="flex items-center gap-2">
                               <span className="rounded-sm bg-brand/10 text-brand-text px-1.5 py-0.2 text-[10px] font-bold tabular-nums shrink-0">
@@ -759,7 +688,6 @@ function DetailView({
                           </div>
                         </button>
 
-                        {/* Per-episode quick controls */}
                         <div className="flex shrink-0 items-center gap-0.5 pr-1">
                           <button
                             type="button"
@@ -803,7 +731,6 @@ function DetailView({
 
         </div>
 
-        {/* Right column: Top Cast and technical media details */}
         {(cast?.length || file) && (
           <aside className="h-fit space-y-6">
             {cast && cast.length > 0 && (
@@ -842,7 +769,7 @@ function DetailView({
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 inline-block align-top">
                         <p className="truncate text-xs font-semibold text-ink">{c.name}</p>
                         {c.character && (
                           <p className="truncate text-[11px] text-ink-muted">{c.character}</p>

@@ -1,7 +1,7 @@
 name: Build & Release
 
 # Runs on every push to `main`: builds the web client and macOS app, then
-# publishes a GitHub release. Cloudflare deployments are intentionally manual.
+# publishes a GitHub release. Static hosting is configured separately.
 # Manual runs must target `main`.
 on:
   push:

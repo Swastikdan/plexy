@@ -55,6 +55,21 @@ export interface FileFacts {
   subtitlesJson: string | null;
 }
 
+/** Adapter for a `media_files` row, so every caller classifies the same facts. */
+export function rowPlayabilityFacts(row: {
+  container?: unknown;
+  video_codec?: unknown;
+  audio_json?: unknown;
+  subtitles_json?: unknown;
+}): FileFacts {
+  return {
+    container: (row.container as string | null) ?? "",
+    videoCodec: (row.video_codec as string | null) ?? null,
+    audioJson: (row.audio_json as string | null) ?? "[]",
+    subtitlesJson: (row.subtitles_json as string | null) ?? "[]",
+  };
+}
+
 /**
  * Classify before playback, refining probe facts with the browser's report.
  * Reason strings are written for people, shown in the player status chip.

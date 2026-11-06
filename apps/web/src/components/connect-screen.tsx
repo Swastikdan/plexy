@@ -1,7 +1,7 @@
 /// Connection screen for hosted web builds and for a desktop app whose bundled
 /// backend could not start. The address is verified before it is saved, then
 /// the page reloads so every query and media URL uses the new server.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -48,6 +48,16 @@ export function ConnectScreen({
     () => initialValue ?? getServerOverride(),
   );
   const [busy, setBusy] = useState(false);
+  const [discovered, setDiscovered] = useState<Array<{ id: string; name: string; url: string }>>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const discover = async () => {
+    if (!window.electronAPI?.discoverServers) return;
+    setDiscovering(true);
+    try { setDiscovered(await window.electronAPI.discoverServers()); }
+    catch { /* manual address remains available */ }
+    finally { setDiscovering(false); }
+  };
+  useEffect(() => { void discover(); }, []);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [connectedVersion, setConnectedVersion] = useState<string | null>(null);
 
@@ -116,7 +126,7 @@ export function ConnectScreen({
             <img src="/icon.svg" alt="" className="h-8 w-8" />
           </div>
           <h1 className="font-sans text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Connect to your server
+            Choose a server
           </h1>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">
             Point this client at the Mac or home server that holds your film and TV library.
@@ -131,6 +141,11 @@ export function ConnectScreen({
             }}
             className="space-y-3"
           >
+            <div className="space-y-2">
+              {window.electronAPI?.discoverServers && <button type="button" disabled={discovering} onClick={() => void discover()} className="text-sm underline">{discovering ? "Looking for servers on your network…" : "Find servers on this network"}</button>}
+              {discovered.map(server => <button type="button" key={server.id} onClick={() => setValue(server.url)} className="block w-full rounded-lg border border-line p-3 text-left"><span className="block text-sm font-semibold">{server.name}</span><span className="text-xs text-ink-muted">{server.url}</span></button>)}
+              {!window.electronAPI?.discoverServers && <p className="text-xs text-ink-muted">Open your server’s client link or enter its address. Automatic network discovery is available in the desktop app.</p>}
+            </div>
             <label htmlFor="plexy-server-url" className="block space-y-2">
               <span className="flex items-center gap-2 text-xs font-medium text-ink-muted">
                 <Server size={13} />
@@ -252,8 +267,7 @@ export function ConnectScreen({
               <p>
                 Check that Plexy is running, LAN access is enabled, both devices
                 are on the same Wi-Fi, and the computer firewall allows Plexy.
-                After connecting, enter the pairing code shown in the server's
-                Security settings.
+                After connecting, sign in with your username and password or a pairing key from your account.
               </p>
             )}
             {secure && (

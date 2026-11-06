@@ -10,9 +10,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { ConnectScreen } from "./connect-screen";
 import { PairScreen } from "./pair-screen";
-import { getApiBase, probeServer } from "../server-config";
+import { getApiBase, probeServer, setServerUrl } from "../server-config";
 import { getClientRuntime } from "../runtime-config";
-import { getAuthDevice } from "../auth";
+import { accountRequest, isLocalPage, type SetupState, getAuthDevice } from "../auth";
 import { reportConnectionHealth, subscribeConnectionHealth, type ConnectionHealth } from "../lib/connection-health";
 
 type GateState =
@@ -31,11 +31,19 @@ export function ServerGate({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     const check = async () => {
+      if (window.location.pathname === "/setup" && isLocalPage()) setServerUrl(window.location.origin);
       const base = getApiBase();
       const primary = await probeServer(base);
       if (cancelled) return;
 
       if (primary.ok) {
+        const setup = await accountRequest<SetupState>("/setup").catch(() => null);
+        const setupPage = window.location.pathname === "/setup";
+        const clientPage = window.location.pathname === "/connect";
+        if (setup && isLocalPage() && !setup.ownerCreated && !setup.setupComplete && !clientPage) {
+          if (!setupPage) { window.location.replace("/setup"); return; }
+          if (!setup.ownerCreated) { setState({ phase: "ready" }); return; }
+        }
         const device = await getAuthDevice();
         if (cancelled) return;
         if (!device) {

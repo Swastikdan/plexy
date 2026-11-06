@@ -1,5 +1,6 @@
 export interface ElectronAPI {
   isElectron: boolean;
+  discoverServers: () => Promise<Array<{ id: string; name: string; url: string }>>;
   platform: string;
   selectFolder: () => Promise<string | null>;
   openLogs: () => Promise<void>;

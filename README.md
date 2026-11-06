@@ -118,7 +118,7 @@ it, so replacing the app keeps your library, watch state, and paired devices:
 | --- | --- |
 | `~/Library/Application Support/Plexy/library.sqlite` | Catalog, watch state, settings, auth tokens (hashed) |
 | `~/Library/Application Support/Plexy/backups/` | Automatic snapshot taken before any schema migration |
-| `~/Library/Application Support/@plexy/desktop/auth-token` | Desktop device token (owner-only `0600` file) |
+| `~/Library/Application Support/@plexy/desktop/` | Persistent client cookies and trusted server fingerprints |
 | `~/Library/Logs/Plexy/` | Logs |
 
 Because the build is not signed, macOS may block the replacement app again;
@@ -128,30 +128,54 @@ takes a database snapshot first, so an interrupted upgrade can be rolled back by
 copying the newest file from `backups/` over `library.sqlite` while Plexy is
 stopped.
 
-### Device authentication
+### Accounts, setup, and pairing
 
-Every `/api/*` route now requires a paired device. The only public endpoint is
-`/api/server/status`, which the connection screen uses to probe an address.
+- **Server setup:** open `/setup` on the server computer. Create the first
+  administrator with a username and a password of at least 12 characters, then
+  configure metadata and libraries or skip those steps. Completion is stored in
+  SQLite; changing metadata settings, restarting, or updating does not reopen
+  setup. An interrupted setup resumes from the saved step.
+- **Client sign-in:** open `/connect` to choose a server, then sign in with a
+  username/password or a pairing key. There is no automatic local admin login.
+- **My account:** open `/account` to manage your own devices, change your
+  password, or create a pairing key after confirming your current password.
+  Keys are random, expire in ten minutes, work once, and always sign in as the
+  issuing user. Administrators cannot request another user's pairing key.
+- **Users and permissions:** administrators manage accounts from My account.
+  New users have no content access until explicitly granted a library, folder,
+  or title. Exclusions override grants. Maturity limits and blocking unrated
+  content apply to catalog, search, artwork, subtitles, downloads, and streams.
+  Watch progress is private to each account. Administrators have full content
+  access; server filesystem and diagnostic operations additionally require a
+  direct local connection.
+- Passwords use Argon2id; only hashes of session tokens and pairing keys are
+  stored. Password changes revoke other sessions and pending keys. The account
+  migration invalidates old account-free device tokens, preserves libraries,
+  and assigns existing watch progress to the first owner account.
 
-- **Desktop app** — signs in automatically. On launch it asks its bundled server
-  for a token over loopback, stores it as an owner-only file in its userData
-  directory, and installs it as an HttpOnly cookie so images, video, HLS
-  segments, and event streams authenticate without any URL changes. It does not
-  use the macOS Keychain: the build is ad-hoc signed, so macOS would ask for your
-  login password on every launch instead of remembering the grant.
-- **This machine in a browser** — the pairing screen offers **This is the server
-  machine**, which signs in with one click (loopback is the owner boundary here).
-- **Phones, TVs, other computers** — open **Settings → Security** on the server,
-  click **Generate pairing code**, and enter the six-digit code on the other
-  device. Codes are single-use and expire after 10 minutes. A headless server
-  with LAN access enabled prints a first-device code at startup when nothing is
-  paired yet.
-- **Revoking** — Settings → Security lists paired devices and can revoke any of
-  them. Changing the database or replacing the app does not sign devices out,
-  because only token hashes are stored in `library.sqlite`.
+### Secure local network access
 
-Admin screens (settings, libraries, scans, matching, logs) remain restricted to
-the computer running Plexy, independent of the device token.
+Enable LAN access in server settings and restart. The HTTP listener stays on
+loopback for this computer. Other devices use a separate HTTPS listener on
+`PORT + 1` (default `8766`, override with `PLEXY_LAN_PORT`).
+
+The server generates and saves a private local certificate and owner-only key.
+Find its SHA-256 fingerprint in **My account**. The desktop client's Choose a
+server screen discovers `_plexy._tcp` services with Bonjour/mDNS and asks you to
+compare the fingerprint before trusting a local certificate. A changed pinned
+certificate is rejected. To intentionally re-pair a replaced server certificate,
+quit the client and remove that host's entry from `trusted-servers.json` in the
+client's userData directory, then verify the new fingerprint.
+
+Browsers cannot browse mDNS services directly. Open the server's HTTPS client
+link from Settings, trust its local certificate in that browser after checking
+the fingerprint, then sign in. Browser certificate trust is separate from Plexy
+account authentication. Alternatively supply a certificate already trusted by
+clients using both `PLEXY_TLS_CERT` and `PLEXY_TLS_KEY`.
+
+Discovery announces only server identity and transport. It never grants access.
+Multicast isolation and guest Wi-Fi can prevent discovery; manual server
+addresses remain supported. No bundled public tunnel or relay is started.
 
 ### Automatic library discovery
 
@@ -162,43 +186,16 @@ matching again. Newly added or changed titles are processed in the background,
 and open catalog views refresh when the scan finishes. Scheduled scans defer
 when another scan is already in progress.
 
-### 4. Hosted Web Build (Cloudflare Workers)
+### 4. Hosted Web Build
 
-`bun run build:web` produces `dist/web`, a static SPA. The GitHub Actions
-workflow deploys it as a Cloudflare Worker with static assets (see
-`wrangler.json`).
+`bun run build:web` produces `dist/web`, a static SPA that can be hosted on an
+HTTPS static server with an `index.html` fallback for routes. `/connect` is the
+client entry link; `/setup` belongs to the actual server installation.
 
-A hosted client has no backend of its own. On first launch it shows a
-**Connect to your Plexy server** screen and saves the address on the device
-(localStorage; Electron also persists it in its userData directory). The Mac app
-normally uses its bundled server and never shows this screen.
-
-After connecting, a hosted client must be paired once (see **Device
-authentication** above): the server's `/api/*` routes reject unauthenticated
-requests, so enter a pairing code from **Settings → Security** on the server.
-The cookie is HttpOnly, so images, streams, and HLS segments keep working
-without tokens in URLs.
-
-- On the same Wi-Fi, enable LAN access and open the server's printed
-  `http://<lan-ip>:<port>` address directly on the phone. That loads the app and
-  streams from the laptop over the local network; the hosted HTTPS page cannot
-  call that plain-HTTP address because browsers block mixed content. The phone
-  must also be paired once.
-- For a hosted HTTPS page to call a different HTTPS server, set
-  `PLEXY_ALLOWED_ORIGINS` on the server to the exact frontend origin, such as
-  `https://plexy.example.com` (comma-separated for multiple origins). Other
-  cross-origin browser clients are denied by default. Browser third-party
-  cookie restrictions may still affect hosted-to-server sign-in. Opening the
-  server's own HTTPS URL or using a native client avoids that dependency.
-- Use a private network such as Tailscale for remote personal streaming. A
-  public Cloudflare Tunnel hostname proxies media through Cloudflare; Cloudflare
-  currently restricts video and large-file delivery over public hostnames on
-  Free, Pro, and Business plans. Private-network routes are not subject to that
-  restriction.
-- `VITE_API_URL` can seed a default address at build time. Viewers can still
-  change it from the Server icon in the top bar.
-- The backend supports credentialed CORS for exact origins listed in
-  `PLEXY_ALLOWED_ORIGINS`.
+For a separately hosted HTTPS client, list its exact origin in
+`PLEXY_ALLOWED_ORIGINS` on the server. Cross-site browser cookie policies can
+still affect sign-in and media; opening the server's own HTTPS URL avoids that
+dependency. `VITE_API_URL` can seed an initial server address.
 
 #### Installing Plexy Client on a phone (PWA)
 
@@ -214,45 +211,10 @@ working.
   Screen**. iOS only installs PWAs from Safari.
 - **Android:** open it in Chrome, then menu → **Install app**.
 - Installation needs a secure context: serve the client over HTTPS, or open the
-  server's own `http://localhost` address. A phone view of
-  `http://192.168.x.x:8765` cannot register a service worker — the app still
-  works in a browser tab there.
+  server's own `http://localhost` address. For a local HTTPS address on a phone,
+  trust the server certificate in the browser before installing the client.
 - Regenerate the icons with `bun run icons:pwa` after editing
   `apps/web/public/client-icon.svg` or `client-icon-maskable.svg`.
-
-#### Deploy the web client from your machine
-
-The GitHub Actions workflow deploys automatically on `build`, but you can also
-deploy the same static build yourself:
-
-```sh
-cp .env.deploy.example .env.deploy   # optional; gitignored
-bun run deploy:web                   # build dist/web + wrangler deploy
-bun run deploy:web:dry               # build + validate, upload nothing
-```
-
-The command reads `.env.deploy`, builds `dist/web`, then runs
-`npx --yes wrangler@4 deploy` against `wrangler.json`. You only need Cloudflare
-credentials once:
-
-- **Browser login (easiest):** run `npx --yes wrangler@4 login` and leave the
-  Cloudflare lines in `.env.deploy` empty. Wrangler stores the session on your
-  Mac.
-- **API token:** put `CLOUDFLARE_API_TOKEN` (Workers Scripts: Edit) and
-  `CLOUDFLARE_ACCOUNT_ID` in `.env.deploy`, or export them in your shell.
-  Never commit them.
-
-`PLEXY_DEFAULT_SERVER_URL` is optional. Leave it empty and viewers are asked for
-their Plexy server on first launch; set it to pre-fill that field in the hosted
-build. It must be `https://` because the hosted page is HTTPS.
-
-If `wrangler deploy` succeeds but no public URL is printed, enable the free
-`workers.dev` subdomain once: Cloudflare dashboard → **Workers & Pages** →
-`plexy` → **Settings** → **Domains & Routes** → **workers.dev**. The local
-command has no release notes, so `PLEXY_SITE_URL` is not used here — it only
-tells the GitHub release notes which URL to link to.
-
----
 
 ## Planned Client and Server targets
 
@@ -274,8 +236,6 @@ The product split is described in [the detailed distribution plan](docs/MOBILE_A
 | `bun run build:desktop` | Build standalone backend server and package macOS `.app` + `.dmg` |
 | `bun run icons:pwa` | Regenerate the PWA and apple-touch icons from the source SVGs |
 | `bun run package:mac` | Package macOS Electron app, `.dmg`, and `.zip` distribution |
-| `bun run deploy:web` | Build `dist/web` and deploy it to Cloudflare Workers |
-| `bun run deploy:web:dry` | Build and validate the Worker bundle without uploading |
 | `bun run start` | Run server from source with Bun |
 | `bun run test` | Run backend test suite (`apps/server/tests`) |
 | `bun run typecheck` | Typecheck all packages with strict TypeScript |
@@ -324,57 +284,16 @@ generated and shipped so far.
   - `PLEXY_LOG_LEVEL`: Log level (`debug`, `info`, `warn`, `error`).
   - `PLEXY_ALLOWED_ORIGINS`: Comma-separated exact HTTPS frontend origins allowed to make credentialed cross-origin requests. Same-origin requests do not need this setting. Running from source (`bun dev`) already trusts browser origins on this machine's own addresses (the Vite page and the LAN URL it prints), so local development needs no entry here.
 - The desktop app prefers port `8765` so LAN bookmarks stay valid; it falls back to a random free port only when `8765` is already taken.
-- LAN access is off by default (`bindAddress: "127.0.0.1"`). Enable it in **Server → Settings → Network & Access**, then restart Plexy. That page lists the exact `http://<lan-ip>:<port>` addresses to open on phones and TVs.
+- LAN access is off by default (`bindAddress: "127.0.0.1"`). Enable it in **Server → Settings → Network & Access**, then restart Plexy. That page lists the exact `https://<lan-ip>:<lan-port>` addresses to open on phones and TVs.
 
 ---
 
-## CI/CD (`main` → Cloudflare + GitHub Release)
+## CI/CD (GitHub Release)
 
-`.github/workflows/build.yml` runs on every push to `main` (manual
-`workflow_dispatch` runs are also restricted to `main`). Pushing to `main` is the
-release switch.
-
-What it does:
-
-1. Builds `dist/web` and deploys it with `wrangler deploy` to the Worker
-   described by `wrangler.json`.
-2. Builds the Apple Silicon macOS `.dmg` and `.zip` on `macos-15`.
-3. Creates a GitHub Release tagged `v<version>-build.<run>` containing the site
-   URL in the notes and both macOS files as assets.
-
-### Repository secrets
-
-| Secret | Purpose |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | API token with **Workers Scripts: Edit** (and account read) |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
-
-### Repository variables (optional)
-
-| Variable | Purpose |
-| --- | --- |
-| `PLEXY_SITE_URL` | Public URL of the Worker or custom domain used in release notes. If omitted, the workflow uses the deployed `workers.dev` URL. |
-| `PLEXY_DEFAULT_SERVER_URL` | Optional server address baked into the hosted web build as the default. Viewers can still change it. |
-| `RELEASE_ACTORS` | Comma-separated GitHub logins allowed to publish (no spaces). Defaults to the repository owner. |
-
-### One-time setup
-
-1. Create a Cloudflare API token with **Workers Scripts: Edit**.
-2. Add the two secrets above.
-3. Enable a `workers.dev` subdomain for the account, or set `PLEXY_SITE_URL` to
-   a custom domain.
-4. Protect the `main` branch so only you can push to it. The workflow also
-   checks `RELEASE_ACTORS`.
-
-`wrangler.json` sets the Worker name (`plexy`) and points static assets at
-`dist/web` with SPA fallback routing.
-
-### TMDB token
-
-The TMDB token belongs to the Plexy **server**, not the web or Mac client, so it
-is not baked into either build. Enter it in the Mac app's first-run setup (it is
-stored in the local config) or in the server's `.env` / Settings page. The
-Cloudflare Worker serves only static files and never sees the token.
+`.github/workflows/build.yml` builds the static web client and Apple Silicon
+macOS artifacts and publishes a GitHub Release. Static hosting is configured
+separately. The TMDB token belongs to the server and is configured in server
+settings or its environment; it is never baked into the client.
 
 ---
 

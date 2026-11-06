@@ -52,7 +52,7 @@ async function recentLinesFromFile(): Promise<string[]> {
 
 export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/logs/stream", (ctx) => {
-    const denied = denyIfNotLocal(ctx, "GET /api/logs/stream");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -80,7 +80,7 @@ export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .get("/logs", async ({ query, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "GET /api/logs");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     let lines = await recentLinesFromFile();
     if (query.level) lines = lines.filter((l) => l.includes(`"level":"${query.level}"`));
@@ -96,7 +96,7 @@ export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .get("/crashes", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "GET /api/crashes");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     try {
       const files = await readdir(crashDir());
@@ -116,7 +116,7 @@ export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .get("/crashes/:id", async ({ params, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "GET /api/crashes/:id");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     const id = params.id.replace(/[^\w.-]/g, ""); // no traversal
     if (!id.startsWith("crash-")) {

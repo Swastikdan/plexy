@@ -131,10 +131,17 @@ export function Poster({
     : ({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } } as const);
 
   return (
-    <div className="min-w-0">
+    <div
+      className={cx(
+        "min-w-0 overflow-hidden rounded-[var(--radius-poster)]",
+        !wide && "inline-block align-top",
+        wide && "flex flex-col",
+        className,
+      )}
+    >
       <div
         className={cx(
-          "group relative block overflow-hidden rounded-[var(--radius-poster)]",
+          "group relative block h-full overflow-hidden rounded-[var(--radius-poster)]",
           "bg-surface border border-line/40",
           "transition-[transform,border-color] duration-200 ease-out hover:z-20 hover:scale-[1.03] hover:border-line-strong",
           "focus-within:ring-2 focus-within:ring-white/20",

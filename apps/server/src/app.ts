@@ -1,3 +1,4 @@
+import { isDirectLoopbackContext } from "./essentials";
 /// The Elysia application (PRD 4, 9).
 ///
 /// Assembles every route module plus the embedded SPA fallback so one process
@@ -18,6 +19,7 @@ import { mediaRoutes } from "./routes-media";
 import { logsRoutes } from "./routes-logs";
 import { diagnosticsRoutes } from "./routes-diagnostics";
 import { log } from "./logger";
+import { accessGuard } from "./access";
 import { authGuard } from "./auth";
 
 function configuredCorsOrigins(): Set<string> {
@@ -101,11 +103,23 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
       const requestId = crypto.randomUUID();
       (request as Request & { __plexyRequestId?: string }).__plexyRequestId = requestId;
       set.headers["x-request-id"] = requestId;
+      set.headers["x-content-type-options"] = "nosniff";
+      set.headers["referrer-policy"] = "no-referrer";
+      if (new URL(request.url).pathname.startsWith("/api/")) set.headers["cache-control"] = "private, no-store";
       if (request.headers.has("origin") && !originAllowed(request)) {
         return Response.json({ error: "This browser origin is not allowed." }, { status: 403 });
       }
     })
+    .onRequest(ctx => {
+      const path = new URL(ctx.request.url).pathname;
+      if (path.startsWith("/api/") && path !== "/api/server/status" && path !== "/api/auth/setup" && ctx.request.method !== "OPTIONS" && new URL(ctx.request.url).protocol !== "https:" && !isDirectLoopbackContext(ctx)) {
+        return Response.json({ error: "Use the server’s HTTPS address to sign in or access media.", code: "HTTPS_REQUIRED" }, { status: 426 });
+      }
+    })
     .onRequest((ctx) => authGuard(ctx, options.requireAuth))
+    .onRequest(ctx => {
+      if (Bun.env.NODE_ENV !== "test" || options.requireAuth) return accessGuard(ctx);
+    })
     .use(authRoutes)
     .use(adminRoutes)
     .use(catalogRoutes)

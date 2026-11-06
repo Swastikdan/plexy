@@ -58,6 +58,11 @@ function configPath(): string {
   return join(resolveDataDir(), "config.json");
 }
 
+/** Development convenience token from the environment, never persisted by itself. */
+function envTmdbToken(): string | undefined {
+  return Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || Bun.env.TMDB_TOKEN || undefined;
+}
+
 export async function initConfig(): Promise<Config> {
   await mkdir(resolveDataDir(), { recursive: true });
   let raw: Partial<Config> = {};
@@ -65,7 +70,7 @@ export async function initConfig(): Promise<Config> {
   const parsed = ConfigSchema.safeParse(raw);
   cache = parsed.success ? parsed.data : ConfigSchema.parse({});
   // Env token during development per PRD 14; packaged config wins if present.
-  const envToken = Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || Bun.env.TMDB_TOKEN;
+  const envToken = envTmdbToken();
   if (!cache.tmdbToken && envToken) {
     cache.tmdbToken = envToken;
     await save({});
@@ -92,36 +97,15 @@ export async function save(patch: Patch): Promise<Config> {
   return next;
 }
 
-/** Safe-to-send projection: token presence only, never the token itself. */
+/** Safe-to-send projection: the token itself is replaced by its presence/source. */
 export function redactedView(cfg: Config) {
+  const { tmdbToken, ...settings } = cfg;
+  const envToken = envTmdbToken();
   return {
+    ...settings,
     version: cfg.version ?? APP_VERSION,
-    port: cfg.port,
-    bindAddress: cfg.bindAddress,
-    logLevel: cfg.logLevel,
-    metadataLanguage: cfg.metadataLanguage,
-    preferredAudioLanguage: cfg.preferredAudioLanguage,
-    metadataRegion: cfg.metadataRegion,
-    imageQuality: cfg.imageQuality,
-    autoOptimize: cfg.autoOptimize,
-    skipSegmentsEnabled: cfg.skipSegmentsEnabled,
-    optimizeMaxCacheGb: cfg.optimizeMaxCacheGb,
-    probeConcurrency: cfg.probeConcurrency,
-    hasTmdbToken: cfg.tmdbToken.length > 0,
-    tokenSource:
-      (Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || Bun.env.TMDB_TOKEN) &&
-      cfg.tmdbToken === (Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || Bun.env.TMDB_TOKEN)
-        ? "env"
-        : "settings",
-    note: cfg.note,
-
-    // Prefetch settings
-    prefetchAggressiveLocal: cfg.prefetchAggressiveLocal,
-    prefetchMaxConcurrent: cfg.prefetchMaxConcurrent,
-    prefetchMaxCacheMb: cfg.prefetchMaxCacheMb,
-    prefetchOnHover: cfg.prefetchOnHover,
-    prefetchOnScroll: cfg.prefetchOnScroll,
-    prefetchNextCount: cfg.prefetchNextCount,
+    hasTmdbToken: tmdbToken.length > 0,
+    tokenSource: envToken && tmdbToken === envToken ? "env" : "settings",
   };
 }
 

@@ -5,6 +5,7 @@
 /// Loopback remains the trust boundary for owner-only admin
 /// routes (`essentials.denyIfNotLocal`), while every `/api/*` endpoint now
 /// requires a valid device token — including on LAN.
+import { getUser, type User } from "./accounts";
 import { q, run, type Row } from "./db";
 import { log } from "./logger";
 import { remoteAddress, type LoopbackContext } from "./essentials";
@@ -16,6 +17,7 @@ const LAST_SEEN_THROTTLE_MS = 60_000;
 
 export interface AuthDevice {
   id: number;
+  userId: number;
   deviceId: string | null;
   name: string;
   createdAt: string;
@@ -35,12 +37,6 @@ function newToken(): string {
   return Buffer.from(bytes).toString("base64url");
 }
 
-function newPairingCode(): string {
-  const bytes = new Uint32Array(1);
-  crypto.getRandomValues(bytes);
-  return String(bytes[0]! % 1_000_000).padStart(6, "0");
-}
-
 function hash(value: string): string {
   return new Bun.CryptoHasher("sha256").update(value).digest("hex");
 }
@@ -55,6 +51,7 @@ function shaEqual(a: string, b: string): boolean {
 function toDevice(row: Row): AuthDevice {
   return {
     id: Number(row.id),
+    userId: Number(row.user_id),
     deviceId: row.device_id == null ? null : String(row.device_id),
     name: String(row.name ?? "Device"),
     createdAt: String(row.created_at ?? ""),
@@ -71,7 +68,11 @@ function touch(device: AuthDevice, remoteIp?: string | null): void {
   if (now - previous < LAST_SEEN_THROTTLE_MS) {
     if (remoteIp && remoteIp !== device.lastIp) {
       try {
-        run("UPDATE auth_devices SET last_ip = ? WHERE id = ?", remoteIp, device.id);
+        run(
+          "UPDATE auth_devices SET last_ip = ? WHERE id = ?",
+          remoteIp,
+          device.id,
+        );
         device.lastIp = remoteIp;
       } catch {
         /* last_ip is advisory; never fail a request over it */
@@ -82,7 +83,7 @@ function touch(device: AuthDevice, remoteIp?: string | null): void {
   lastSeenWrites.set(device.id, now);
   try {
     run(
-      "UPDATE auth_devices SET last_seen = datetime('now'), last_ip = COALESCE(?, last_ip) WHERE id = ?",
+      "UPDATE auth_devices SET last_seen = datetime('now'), last_ip = COALESCE(?, last_ip), expires_at = datetime('now', '+30 days') WHERE id = ?",
       remoteIp ?? null,
       device.id,
     );
@@ -93,11 +94,14 @@ function touch(device: AuthDevice, remoteIp?: string | null): void {
 }
 
 /** Resolve a raw bearer token to its device, or null when invalid/revoked. */
-export function verifyToken(token: string, remoteIp?: string | null): AuthDevice | null {
+export function verifyToken(
+  token: string,
+  remoteIp?: string | null,
+): AuthDevice | null {
   const raw = String(token ?? "").trim();
   if (!raw) return null;
   const row = q<Row, [string]>(
-    "SELECT id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ? AND revoked = 0",
+    "SELECT id, user_id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ? AND revoked = 0 AND user_id IS NOT NULL AND expires_at > datetime('now') AND EXISTS(SELECT 1 FROM users WHERE users.id=auth_devices.user_id AND disabled=0)",
   ).get(hash(raw));
   if (!row) return null;
   const device = toDevice(row);
@@ -110,7 +114,7 @@ export function peekToken(token: string): AuthDevice | null {
   const raw = String(token ?? "").trim();
   if (!raw) return null;
   const row = q<Row, [string]>(
-    "SELECT id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ? AND revoked = 0",
+    "SELECT id, user_id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ? AND revoked = 0 AND user_id IS NOT NULL AND expires_at > datetime('now') AND EXISTS(SELECT 1 FROM users WHERE users.id=auth_devices.user_id AND disabled=0)",
   ).get(hash(raw));
   return row ? toDevice(row) : null;
 }
@@ -120,16 +124,30 @@ export function peekToken(token: string): AuthDevice | null {
  * replaced in place, so the desktop app can rotate credentials on every launch
  * without leaving stale entries behind.
  */
-export function createDevice(name: string, deviceId?: string | null, lastIp?: string | null): AuthResult {
+export function createDevice(
+  name: string,
+  deviceId?: string | null,
+  lastIp?: string | null,
+  userId?: number,
+): AuthResult {
+  if (!userId || !getUser(userId) || getUser(userId)?.disabled)
+    throw new Error("An active user is required.");
   const token = newToken();
-  const label = String(name ?? "").trim().slice(0, 80) || "Device";
-  const id = deviceId ? String(deviceId).trim().slice(0, 120) || null : null;
+  const label =
+    String(name ?? "")
+      .trim()
+      .slice(0, 80) || "Device";
+  const id = deviceId
+    ? `${userId}:${String(deviceId).trim().slice(0, 100)}`
+    : null;
 
   if (id) {
-    const existing = q<Row, [string]>("SELECT id FROM auth_devices WHERE device_id = ?").get(id);
+    const existing = q<Row, [string]>(
+      "SELECT id FROM auth_devices WHERE device_id = ?",
+    ).get(id);
     if (existing) {
       run(
-        "UPDATE auth_devices SET name = ?, token_hash = ?, revoked = 0, last_seen = datetime('now'), last_ip = COALESCE(?, last_ip) WHERE id = ?",
+        "UPDATE auth_devices SET name = ?, token_hash = ?, revoked = 0, last_seen = datetime('now'), last_ip = COALESCE(?, last_ip), expires_at = datetime('now', '+30 days') WHERE id = ?",
         label,
         hash(token),
         lastIp ?? null,
@@ -141,19 +159,23 @@ export function createDevice(name: string, deviceId?: string | null, lastIp?: st
   }
 
   run(
-    "INSERT INTO auth_devices (device_id, name, token_hash, last_ip) VALUES (?, ?, ?, ?)",
+    "INSERT INTO auth_devices (device_id, name, token_hash, last_ip, user_id, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now', '+30 days'))",
     id,
     label,
     hash(token),
     lastIp ?? null,
+    userId,
   );
-  const row = q<Row, [string]>("SELECT id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ?")
-    .get(hash(token))!;
+  const row = q<Row, [string]>(
+    "SELECT id, user_id, device_id, name, created_at, last_seen, last_ip FROM auth_devices WHERE token_hash = ?",
+  ).get(hash(token))!;
   return { token, device: toDevice(row) };
 }
 
 export function revokeDevice(id: number): boolean {
-  const row = q<Row, [number]>("SELECT id FROM auth_devices WHERE id = ? AND revoked = 0").get(id);
+  const row = q<Row, [number]>(
+    "SELECT id FROM auth_devices WHERE id = ? AND revoked = 0 AND user_id IS NOT NULL AND expires_at > datetime('now') AND EXISTS(SELECT 1 FROM users WHERE users.id=auth_devices.user_id AND disabled=0)",
+  ).get(id);
   if (!row) return false;
   run("UPDATE auth_devices SET revoked = 1 WHERE id = ?", id);
   lastSeenWrites.delete(id);
@@ -176,7 +198,9 @@ export function revokeByToken(token: string): boolean {
 }
 
 export function listDevices(): Array<AuthDevice & { revoked: boolean }> {
-  return q<Row>("SELECT id, device_id, name, created_at, last_seen, last_ip, revoked FROM auth_devices ORDER BY created_at DESC")
+  return q<Row>(
+    "SELECT id, user_id, device_id, name, created_at, last_seen, last_ip, revoked FROM auth_devices ORDER BY created_at DESC",
+  )
     .all()
     .map((row) => ({ ...toDevice(row), revoked: Number(row.revoked) === 1 }));
 }
@@ -192,29 +216,52 @@ export interface PairingCode {
   expiresAt: string;
 }
 
-export function createPairingCode(label = "Device"): PairingCode {
-  const code = newPairingCode();
+export function createPairingCode(
+  label = "Device",
+  userId?: number,
+): PairingCode {
+  if (!userId || !getUser(userId) || getUser(userId)?.disabled)
+    throw new Error("An active user is required.");
+  const code = newToken();
+  run("UPDATE auth_pairing SET used=1 WHERE user_id=?", userId);
   // Housekeeping: expired codes are useless and can be dropped on every mint.
   run("DELETE FROM auth_pairing WHERE expires_at < datetime('now', '-1 day')");
   run(
-    "INSERT INTO auth_pairing (code_hash, label, expires_at) VALUES (?, ?, datetime('now', ?))",
+    "INSERT INTO auth_pairing (code_hash, label, user_id, expires_at) VALUES (?, ?, ?, datetime('now', ?))",
     hash(code),
     String(label ?? "Device").slice(0, 80),
+    userId,
     `+${PAIRING_CODE_TTL_MINUTES} minutes`,
   );
-  const row = q<Row, [string]>("SELECT expires_at FROM auth_pairing WHERE code_hash = ? ORDER BY id DESC LIMIT 1")
-    .get(hash(code));
+  const row = q<Row, [string]>(
+    "SELECT expires_at FROM auth_pairing WHERE code_hash = ? ORDER BY id DESC LIMIT 1",
+  ).get(hash(code));
   return { code, expiresAt: String(row?.expires_at ?? "") };
 }
 
 const pairingAttempts = new Map<string, number[]>();
 
 /** Cheap in-memory throttle so a LAN client cannot brute-force six digits. */
-export function pairingAllowed(remote: string | null): boolean {
+export function pairingAllowed(
+  remote: string | null,
+  limit = PAIRING_MAX_ATTEMPTS_PER_MINUTE,
+): boolean {
+  if (pairingAttempts.size > 10000) {
+    for (const [key, times] of pairingAttempts)
+      if (!times.some((time) => Date.now() - time < 60000))
+        pairingAttempts.delete(key);
+    if (
+      pairingAttempts.size > 10000 &&
+      !pairingAttempts.has(remote ?? "unknown")
+    )
+      return false;
+  }
   const key = remote ?? "unknown";
   const now = Date.now();
-  const attempts = (pairingAttempts.get(key) ?? []).filter((t) => now - t < 60_000);
-  if (attempts.length >= PAIRING_MAX_ATTEMPTS_PER_MINUTE) {
+  const attempts = (pairingAttempts.get(key) ?? []).filter(
+    (t) => now - t < 60_000,
+  );
+  if (attempts.length >= limit) {
     pairingAttempts.set(key, attempts);
     return false;
   }
@@ -229,26 +276,29 @@ export function redeemPairingCode(
   deviceId?: string | null,
   lastIp?: string | null,
 ): AuthResult | null {
-  const raw = String(code ?? "").replace(/\D/g, "").slice(0, 6);
-  if (raw.length !== 6) return null;
+  const raw = String(code ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(raw)) return null;
 
   // Claim the code in one statement so simultaneous requests cannot both
   // observe it as unused and mint two device tokens.
-  const row = q<{ id: number }, [string]>(`
+  const row = q<{ id: number; user_id: number }, [string]>(`
     UPDATE auth_pairing
     SET used = 1
     WHERE id = (
       SELECT id FROM auth_pairing
-      WHERE code_hash = ? AND used = 0 AND expires_at > datetime('now')
+      WHERE code_hash = ? AND used = 0 AND expires_at > datetime('now') AND EXISTS(SELECT 1 FROM users WHERE users.id=auth_pairing.user_id AND disabled=0)
       ORDER BY id DESC LIMIT 1
     )
     AND used = 0 AND expires_at > datetime('now')
-    RETURNING id
+    RETURNING id, user_id
   `).get(hash(raw));
   if (!row) return null;
 
-  const result = createDevice(name || "Device", deviceId, lastIp);
-  log.info("auth", "device paired", { id: result.device.id, name: result.device.name });
+  const result = createDevice(name || "Device", null, lastIp, row.user_id);
+  log.info("auth", "device paired", {
+    id: result.device.id,
+    name: result.device.name,
+  });
   return result;
 }
 
@@ -288,10 +338,7 @@ export function isSecureRequest(request: Request): boolean {
   } catch {
     /* ignore */
   }
-  const forwarded = request.headers.get("x-forwarded-proto");
-  if (forwarded?.split(",")[0]?.trim().toLowerCase() === "https") return true;
-  const origin = request.headers.get("origin");
-  return Boolean(origin?.startsWith("https://"));
+  return false;
 }
 
 /**
@@ -312,7 +359,7 @@ export function sessionCookie(request: Request, token: string): string {
     }
   }
   const sameSite = crossSite && secure ? "None" : "Lax";
-  const maxAge = 60 * 60 * 24 * 365;
+  const maxAge = 60 * 60 * 24 * 30;
   return [
     `plexy_session=${encodeURIComponent(token)}`,
     "Path=/",
@@ -350,9 +397,12 @@ const PUBLIC_API_PATHS = new Set(["/api/server/status", "/api/server/status/"]);
  * The test suite drives `app.handle()` directly through `buildApp()`, where
  * there is no socket to pair from, so authentication is opt-out there.
  */
-export function authGuard(ctx: LoopbackContext, force = false): Response | undefined {
+export function authGuard(
+  ctx: LoopbackContext,
+  force = false,
+): Response | undefined {
   const { request } = ctx;
-  if (Bun.env.PLEXY_AUTH_DISABLED === "1") return undefined;
+  // The test harness drives app.handle() without a socket or a token.
   if (Bun.env.NODE_ENV === "test" && !force) return undefined;
 
   let url: URL;
@@ -374,9 +424,17 @@ export function authGuard(ctx: LoopbackContext, force = false): Response | undef
 
   return Response.json(
     {
-      error: "Authentication required. Pair this device with your Plexy server.",
+      error:
+        "Authentication required. Pair this device with your Plexy server.",
       code: "UNAUTHORIZED",
     },
     { status: 401 },
   );
+}
+
+/** Resolve account identity from the server credential; never from a client user id. */
+export function requestUser(request: Request): User | null {
+  const token = tokenFromRequest(request);
+  const device = token ? peekToken(token) : null;
+  return device ? getUser(device.userId) : null;
 }

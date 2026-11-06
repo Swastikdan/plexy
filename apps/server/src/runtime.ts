@@ -7,7 +7,7 @@
 export interface LiveBinding {
   bind: string;
   port: number;
-  /** Reachable `http://<lan-ip>:<port>` URLs, only when bound to 0.0.0.0. */
+  /** Reachable `https://<lan-ip>:<lan-port>` URLs, only when bound to 0.0.0.0. */
   lanUrls: string[];
 }
 

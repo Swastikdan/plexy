@@ -34,7 +34,6 @@ export function useIsFullscreen(): boolean {
   useEffect(() => {
     let isSubscribed = true;
 
-    // Check with Electron IPC if available
     if (window.electronAPI?.isFullScreen) {
       window.electronAPI
         .isFullScreen()

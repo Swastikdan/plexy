@@ -2,7 +2,7 @@
 /// Provides thumb-accessible navigation on mobile devices for Home, Libraries and Settings.
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Film, Tv, Settings } from "lucide-react";
+import { Home, Film, Tv, Settings, UserRound } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "./poster";
 import { getClientRuntime } from "../runtime-config";
@@ -28,6 +28,7 @@ export function BottomNav() {
     ...(tvCount === null || tvCount > 0
       ? [{ to: "/library/$kind" as const, label: "TV Shows", icon: Tv, params: { kind: "tv" as const } }]
       : []),
+    { to: "/account" as const, label: "Account", icon: UserRound, params: undefined },
     ...(runtime.canManageServer
       ? [{ to: "/admin" as const, label: "Settings", icon: Settings, params: undefined }]
       : []),

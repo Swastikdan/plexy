@@ -1,3 +1,5 @@
+import { canAccessFile } from "./access";
+import { requestUser } from "./auth";
 /// Media routes (PRD 5.8, 9).
 ///
 /// - `GET /api/play/:fileId`             one-shot manifest: play path, title,
@@ -18,11 +20,11 @@
 import { Elysia, t } from "elysia";
 import { stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { q, run, type Row } from "./db";
+import { q, type Row } from "./db";
 import { log } from "./logger";
 import {
   canonicalCodec, classifyPlayability, preferredAudioBitrate, preferredVideoBitrate,
-  rangeResponse, type BrowserCaps,
+  rangeResponse, rowPlayabilityFacts, type BrowserCaps,
 } from "./playback";
 import {
   optimizationView, usableOptimizedPath, pauseOptimizer, resumeOptimizer,
@@ -30,6 +32,7 @@ import {
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { resolveFfmpeg } from "./ffmpeg";
 import { getConfig } from "./config";
+import { storeProbeFacts } from "./media-facts";
 import { getSkipSegments } from "./skip-segments";
 import { isPreparedHlsAsset, preparedStreamAvailable, readPreparedPlaylist } from "./hls-preparation";
 import {
@@ -49,6 +52,43 @@ function getFile(fileOrItemId: number): Row | null {
   );
 }
 
+/** The requested file, or the item's newest available file. Null when missing on disk. */
+async function openableFile(fileOrItemId: number): Promise<Row | null> {
+  const row = getFile(fileOrItemId);
+  if (!row) return null;
+  try {
+    if ((await stat(String(row.path))).isFile()) return row;
+  } catch { /* fall through */ }
+  q("UPDATE media_files SET unavailable = 1 WHERE id = ?").run(Number(row.id));
+  return null;
+}
+
+const MAX_HEIGHT_OPTIONS = [360, 480, 720, 1080, 1440, 2160] as const;
+
+function parseMaxHeight(value: unknown): number | undefined | null {
+  if (value === undefined) return undefined;
+  const height = Number(value);
+  return (MAX_HEIGHT_OPTIONS as readonly number[]).includes(height) ? height : null;
+}
+
+function audioIndex(value: unknown): number {
+  const index = Number(value);
+  return Number.isInteger(index) && index >= 0 ? index : 0;
+}
+
+function watchStateFor(itemId: number | null, request: Request) {
+  if (!itemId) return null;
+  const watch = q<Row>(
+    `SELECT position_seconds, duration_seconds, played
+     FROM watch_state WHERE item_id = ? AND user_id = ? LIMIT 1`,
+  ).get(itemId, requestUser(request)?.id ?? 0);
+  return watch ? {
+    position: Number(watch.position_seconds),
+    duration: watch.duration_seconds != null ? Number(watch.duration_seconds) : null,
+    played: !!Number(watch.played),
+  } : null;
+}
+
 /** Just-in-time probe helper: if a file has not been analyzed or previously failed, probe it on-demand before playback. */
 async function ensureFileProbed(row: Row): Promise<Row> {
   if (row.video_codec || !row.path) return row;
@@ -58,29 +98,7 @@ async function ensureFileProbed(row: Row): Promise<Row> {
     const { probe } = await import("./worker-host");
     const facts = await probe(row.path as string, { timeoutMs: 20_000 });
     if (facts) {
-      run(
-        `UPDATE media_files SET
-          container=$container, duration=$duration, bitrate=$bitrate,
-          video_codec=$vc, video_profile=$vp, width=$w, height=$h, fps=$fps, hdr=$hdr,
-          audio_json=$audio, subtitles_json=$subs, analysis_status='probed',
-          analysis_error=NULL, probed_at=$at
-         WHERE id=$id`,
-        {
-          $id: row.id,
-          $container: facts.container,
-          $duration: facts.duration,
-          $bitrate: facts.bitrate,
-          $vc: facts.video?.codec ?? null,
-          $vp: facts.video?.profile ?? null,
-          $w: facts.video?.width ?? null,
-          $h: facts.video?.height ?? null,
-          $fps: facts.video?.fps ?? null,
-          $hdr: facts.video?.hdr ?? null,
-          $audio: JSON.stringify(facts.audio),
-          $subs: JSON.stringify(facts.subtitles),
-          $at: new Date().toISOString(),
-        },
-      );
+      storeProbeFacts(Number(row.id), facts);
       const fresh = getFile(Number(row.id));
       if (fresh) return fresh;
     }
@@ -88,19 +106,6 @@ async function ensureFileProbed(row: Row): Promise<Row> {
     log.warn("media", "just-in-time probe failed", { fileId: row.id, message: String(err) });
   }
   return row;
-}
-
-/** Null exactly when the file cannot be opened (missing disk = unavailable). */
-async function openablePath(fileId: number): Promise<string | null> {
-  const row = getFile(fileId);
-  if (!row) return null;
-  const path = String(row.path);
-  try {
-    const st = await stat(path);
-    if (st.isFile()) return path;
-  } catch { /* fall through */ }
-  q("UPDATE media_files SET unavailable = 1 WHERE id = ?").run(fileId);
-  return null;
 }
 
 interface ConversionOptions {
@@ -511,12 +516,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       : defaultAudioIndex;
     const selectedAudioNeedsConversion = selectedAudioIndex !== defaultAudioIndex;
 
-    let verdict = classifyPlayability({
-      container: (row.container as string | null) ?? "",
-      videoCodec: row.video_codec as string | null,
-      audioJson: (row.audio_json as string | null) ?? "[]",
-      subtitlesJson: (row.subtitles_json as string | null) ?? "[]",
-    }, parseCaps(ctx.query.caps));
+    let verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
 
     // A prepared copy is a plain fast-start MP4: the browser can play and seek
     // it natively, so the "likely" path from probe facts no longer applies.
@@ -531,18 +531,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       verdict = { path: "hls", reason: "Prepared adaptive quality streams are ready" };
     }
 
-    const watch = row.item_id
-      ? q<Row>(
-          `SELECT position_seconds, duration_seconds, played
-           FROM watch_state WHERE item_id = ? LIMIT 1`,
-        ).get(row.item_id as number) ?? null
-      : null;
+    const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
 
     const context = itemContext(row);
     const versions = row.item_id == null ? [] : q<Row>(
       `SELECT id, width, height, video_codec, hdr, size FROM media_files
        WHERE item_id = ? AND unavailable = 0 ORDER BY height DESC, size DESC, id DESC`,
-    ).all(row.item_id as number).map((version) => {
+    ).all(row.item_id as number).filter(version => !requestUser(ctx.request) || canAccessFile(requestUser(ctx.request), Number(version.id))).map((version) => {
       const height = version.height == null ? null : Number(version.height);
       const codec = version.video_codec == null ? null : String(version.video_codec);
       const hdr = version.hdr == null ? null : String(version.hdr);
@@ -589,11 +584,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       next: context.next,
       parentItemId: context.parentItemId,
       parentPublicId: context.parentPublicId,
-      watch: watch ? {
-        position: Number(watch.position_seconds),
-        duration: watch.duration_seconds != null ? Number(watch.duration_seconds) : null,
-        played: !!Number(watch.played),
-      } : null,
+      watch,
       tracks,
       trickplay,
       optimization: optimizationView(row),
@@ -623,28 +614,14 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     let row = getFile(Number(ctx.params.fileId));
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });
     row = await ensureFileProbed(row);
-    const verdict = classifyPlayability({
-      container: (row.container as string | null) ?? "",
-      videoCodec: row.video_codec as string | null,
-      audioJson: (row.audio_json as string | null) ?? "[]",
-      subtitlesJson: (row.subtitles_json as string | null) ?? "[]",
-    }, parseCaps(ctx.query.caps));
+    const verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
 
-    const watch = row.item_id
-      ? q<Row>(
-          `SELECT position_seconds, duration_seconds, played
-           FROM watch_state WHERE item_id = ? LIMIT 1`,
-        ).get(row.item_id as number) ?? null
-      : null;
+    const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
     return {
       ...verdict,
       fileId: Number(row.id),
       itemId: row.item_id as number | null,
-      watch: watch ? {
-        position: Number(watch.position_seconds),
-        duration: watch.duration_seconds != null ? Number(watch.duration_seconds) : null,
-        played: !!Number(watch.played),
-      } : null,
+      watch,
     };
   }, {
     params: t.Object({ fileId: t.Numeric() }),
@@ -653,18 +630,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Direct HTTP Range streaming; prefers the prepared fast-start copy. */
   .get("/stream/:fileId", async (ctx) => {
-    let fileId = Number(ctx.params.fileId);
-    let path = await openablePath(fileId);
-    if (!path) {
-      const fRow = q<Row>("SELECT id FROM media_files WHERE item_id = ? AND unavailable = 0 ORDER BY id DESC LIMIT 1").get(fileId);
-      if (fRow) {
-        fileId = Number(fRow.id);
-        path = await openablePath(fileId);
-      }
-    }
-    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
-
-    const row = getFile(fileId)!;
+    const row = await openableFile(Number(ctx.params.fileId));
+    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    const path = String(row.path);
     const prepared = await usableOptimizedPath(row);
     const servePath = prepared ?? path;
     const st = await stat(servePath);
@@ -681,16 +649,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Authenticated download response for a selected source or one-shot quality transcode. */
   .get("/download/:fileId", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
-    const path = await openablePath(fileId);
-    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
-    let row = getFile(fileId)!;
-    const maxHeight = ctx.query.maxHeight === undefined ? undefined : Number(ctx.query.maxHeight);
-    const audioIndex = Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
-      ? Number(ctx.query.audio)
-      : 0;
-    const supportedMaxHeights = [360, 480, 720, 1080, 1440, 2160];
-    if (maxHeight !== undefined && !supportedMaxHeights.includes(maxHeight)) {
-      return Response.json({ error: "maxHeight must be one of 360, 480, 720, 1080, 1440, or 2160." }, { status: 400 });
+    let row = await openableFile(fileId);
+    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    const path = String(row.path);
+    const maxHeight = parseMaxHeight(ctx.query.maxHeight);
+    const audio = audioIndex(ctx.query.audio);
+    if (maxHeight === null) {
+      return Response.json({ error: `maxHeight must be one of ${MAX_HEIGHT_OPTIONS.join(", ")}.` }, { status: 400 });
     }
 
     if (maxHeight !== undefined) {
@@ -703,8 +668,8 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
           mode: "transcode",
           height: (row.height as number | null) ?? null,
           sourceBitrate: (row.bitrate as number | null) ?? null,
-          channels: firstChannelCount(row, audioIndex),
-          audioIndex,
+          channels: firstChannelCount(row, audio),
+          audioIndex: audio,
           maxHeight,
         });
         response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}-${maxHeight}p.mp4`);
@@ -732,12 +697,10 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Remux = container-only problem (PRD 5.8). Copy packets, near instant. */
   .get("/stream/:fileId/remux", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
-    const path = await openablePath(fileId);
-    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const row = getFile(fileId)!;
-    const requestedAudio = Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
-      ? Number(ctx.query.audio)
-      : 0;
+    const row = await openableFile(fileId);
+    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    const path = String(row.path);
+    const requestedAudio = audioIndex(ctx.query.audio);
     try {
       return await conversionResponse(path, {
         mode: "remux",
@@ -771,24 +734,22 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
    */
   .get("/stream/:fileId/transcode", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
-    const path = await openablePath(fileId);
-    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const row = getFile(fileId)!;
+    const row = await openableFile(fileId);
+    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    const path = String(row.path);
     const start = ctx.query.start ? Number(ctx.query.start) : 0;
-    const maxHeight = ctx.query.maxHeight ? Number(ctx.query.maxHeight) : undefined;
-    const supportedMaxHeights = [360, 480, 720, 1080, 1440, 2160];
-    if (maxHeight !== undefined && !supportedMaxHeights.includes(maxHeight)) {
-      return Response.json({ error: "maxHeight must be one of 360, 480, 720, 1080, 1440, or 2160." }, { status: 400 });
+    const maxHeight = parseMaxHeight(ctx.query.maxHeight);
+    if (maxHeight === null) {
+      return Response.json({ error: `maxHeight must be one of ${MAX_HEIGHT_OPTIONS.join(", ")}.` }, { status: 400 });
     }
+    const audio = audioIndex(ctx.query.audio);
     try {
       return await conversionResponse(path, {
         mode: "transcode",
         height: (row.height as number | null) ?? null,
         sourceBitrate: (row.bitrate as number | null) ?? null,
-        channels: firstChannelCount(row, Number(ctx.query.audio) || 0),
-        audioIndex: Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
-          ? Number(ctx.query.audio)
-          : 0,
+        channels: firstChannelCount(row, audio),
+        audioIndex: audio,
         maxHeight,
         trimStart: Number.isFinite(start) && start > 0 ? start : undefined,
       });
@@ -809,17 +770,14 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Cached adaptive HLS stream with several server-generated resolutions. */
   .get("/stream/:fileId/hls/:asset", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
-    const path = await openablePath(fileId);
-    if (!path) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const row = getFile(fileId)!;
+    const row = await openableFile(fileId);
+    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
     const asset = String(ctx.params.asset);
     if (!isPreparedHlsAsset(asset)) {
       return Response.json({ error: "Invalid HLS asset" }, { status: 404 });
     }
-    const audioIndex = Number.isInteger(Number(ctx.query.audio)) && Number(ctx.query.audio) >= 0
-      ? Number(ctx.query.audio)
-      : 0;
-    const response = await readPreparedPlaylist(row, asset, new URL(ctx.request.url).origin, audioIndex);
+    const audio = audioIndex(ctx.query.audio);
+    const response = await readPreparedPlaylist(row, asset, new URL(ctx.request.url).origin, audio);
     return response ?? Response.json({ error: "Prepared quality streams are not available for this title." }, { status: 404 });
   }, {
     params: t.Object({ fileId: t.Numeric(), asset: t.String() }),
@@ -856,7 +814,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       }
     }
 
-    // TMDB artwork: serve from local originals/derived cache
     const { cacheArtworkOriginal, getOrCreateDerivative } = await import("./artwork");
     const meta = await cacheArtworkOriginal(String(row.url));
     if (meta) {
@@ -869,7 +826,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       });
     }
 
-    // Offline / unavailable fallback placeholder
     const isBackdrop = row.kind === "backdrop";
     const h = isBackdrop ? Math.round(targetWidth * 0.5625) : Math.round(targetWidth * 1.5);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${h}" viewBox="0 0 ${targetWidth} ${h}">
@@ -910,7 +866,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       });
     }
 
-    // Offline fallback avatar with the person's initial
     const initial = (String(person.name ?? "?")[0] ?? "?").toUpperCase();
     const h = Math.round(targetWidth * 1.5);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${h}" viewBox="0 0 ${targetWidth} ${h}">

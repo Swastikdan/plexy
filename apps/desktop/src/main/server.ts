@@ -27,7 +27,7 @@ async function waitForServer(port: number, timeoutMs = 15000): Promise<boolean> 
         return true;
       }
     } catch {
-      // Server not ready yet
+      // Retry until the deadline; a refused connection just means it is starting.
     }
     await new Promise((r) => setTimeout(r, 60));
   }
@@ -57,7 +57,6 @@ function resolveDevServerEntry(): string {
   const candidate = path.join(root, "apps/server/src/main.ts");
   if (existsSync(candidate)) return candidate;
 
-  // Fallback checks
   const fallbacks = [
     path.resolve(process.cwd(), "apps/server/src/main.ts"),
     path.resolve(__dirname, "../../../apps/server/src/main.ts"),
@@ -175,7 +174,6 @@ export async function startServer(): Promise<{ url: string; port: number }> {
     serverProcess = null;
   });
 
-  // Wait for server to become healthy on the dynamic port
   const ready = await waitForServer(activePort, 15000);
   if (!ready) {
     const detail = capturedStderr ? `:\n${capturedStderr.trim()}` : "";

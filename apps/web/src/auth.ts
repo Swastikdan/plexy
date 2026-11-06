@@ -2,10 +2,9 @@
 ///
 /// The server issues an HttpOnly `plexy_session` cookie, so normal API calls,
 /// images, video streams and HLS segments authenticate automatically. The
-/// desktop app additionally stores a token in the macOS Keychain and installs
-/// the same cookie before the window loads; this module only needs to report
-/// whether a credential exists and to pair new devices.
-import { getApiBase } from "./server-config";
+/// desktop uses the same persistent cookie. Account credentials are required
+/// on every client, including the server machine.
+import { getApiBase, isLoopbackServerUrl } from "./server-config";
 
 export interface AuthDevice {
   id: number;
@@ -56,8 +55,9 @@ export async function getAuthDevice(): Promise<AuthDevice | null> {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { authenticated?: boolean; device?: AuthDevice } | null;
+    if (!res.ok) { currentUser = null; return null; }
+    const body = (await res.json()) as { authenticated?: boolean; device?: AuthDevice; user?: AccountUser } | null;
+    currentUser = body?.user ?? null;
     return body?.authenticated && body.device ? body.device : null;
   } catch {
     return null;
@@ -71,50 +71,13 @@ export function isLocalPage(): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
 }
 
-/**
- * First-run login on the server machine. Loopback is already the owner trust
- * boundary on the server, so no code is needed here; the server still records
- * the device and returns the same cookie a paired device would get.
- */
-export async function loginOnServerMachine(name?: string): Promise<AuthAttempt> {
-  try {
-    const res = await fetch(apiUrl("/api/auth/local"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ name: name || "This Mac" }),
-    });
-    if (!res.ok) return { ok: false, error: await readError(res) };
-    const body = (await res.json()) as { device?: AuthDevice } | null;
-    const device = await getAuthDevice();
-    if (!device) return { ok: false, error: cookieBlockedMessage() };
-    return { ok: true, device: device ?? body?.device };
-  } catch {
-    return { ok: false, error: `Cannot reach the Plexy server at ${getApiBase()}.` };
-  }
-}
-
-/** Exchange a six-digit pairing code for a session. */
+/** Exchange a single-use account pairing key for a session. */
 export async function pairDevice(code: string, name?: string): Promise<AuthAttempt> {
-  const digits = String(code ?? "").replace(/\D/g, "");
-  if (digits.length !== 6) {
-    return { ok: false, error: "Enter the six-digit code shown in Plexy on the server." };
-  }
   try {
-    const res = await fetch(apiUrl("/api/auth/pair"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ code: digits, name: name || "Paired device" }),
-    });
-    if (!res.ok) return { ok: false, error: await readError(res) };
-    const body = (await res.json()) as { device?: AuthDevice } | null;
+    await accountRequest("/pair", { code: code.trim(), name: name || "Paired device" });
     const device = await getAuthDevice();
-    if (!device) return { ok: false, error: cookieBlockedMessage() };
-    return { ok: true, device: device ?? body?.device };
-  } catch {
-    return { ok: false, error: `Cannot reach the Plexy server at ${getApiBase()}.` };
-  }
+    return device ? { ok: true, device } : { ok: false, error: cookieBlockedMessage() };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Could not pair." }; }
 }
 
 export async function logout(): Promise<void> {
@@ -134,12 +97,12 @@ export interface PairingCode {
 }
 
 /** Owner-only: mint a code to type on another device. */
-export async function createPairingCode(label?: string): Promise<PairingCode> {
+export async function createPairingCode(password: string): Promise<PairingCode> {
   const res = await fetch(apiUrl("/api/auth/pairing-code"), {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ label: label || "Device" }),
+    body: JSON.stringify({ password }),
   });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as PairingCode;
@@ -159,8 +122,8 @@ export async function listDevices(): Promise<AuthDevice[]> {
 
 /** Owner-only: revoke a device. */
 export async function revokeDevice(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`/api/auth/devices/${id}`), {
-    method: "DELETE",
+  const res = await fetch(apiUrl(`/api/auth/devices/${id}/revoke`), {
+    method: "POST",
     credentials: "include",
   });
   if (!res.ok) throw new Error(await readError(res));
@@ -168,9 +131,25 @@ export async function revokeDevice(id: number): Promise<void> {
 
 /** Owner-only: permanently remove a device after it has been revoked. */
 export async function removeRevokedDevice(id: number): Promise<void> {
-  const res = await fetch(apiUrl(`/api/auth/devices/${id}/remove`), {
+  const res = await fetch(apiUrl(`/api/auth/devices/${id}`), {
     method: "DELETE",
     credentials: "include",
   });
   if (!res.ok) throw new Error(await readError(res));
 }
+
+export interface AccountUser { id: number; username: string; role: "admin" | "user"; disabled: boolean; maxAge: number | null; blockUnrated: boolean }
+export interface SetupState { ownerCreated: boolean; setupComplete: boolean; step: number }
+export async function accountRequest<T = any>(path: string, body?: unknown, method?: string): Promise<T> {
+  if (!isLoopbackServerUrl(getApiBase()) && new URL(getApiBase()).protocol !== "https:") throw new Error("Use the server’s HTTPS address to sign in securely.");
+  const response = await fetch(apiUrl(`/api/auth${path}`), { method: method || (body === undefined ? "GET" : "POST"), credentials: "include", cache: "no-store", headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<T>;
+}
+export async function login(username: string, password: string): Promise<void> {
+  await accountRequest("/login", { username, password });
+  if (!await getAuthDevice()) throw new Error(cookieBlockedMessage());
+}
+
+let currentUser: AccountUser | null = null;
+export function getSignedInUser(): AccountUser | null { return currentUser; }

@@ -1,3 +1,6 @@
+import { setupState } from "./accounts";
+import { requestUser } from "./auth";
+import { canAccessItem } from "./access";
 /// Admin routes (PRD 5.1, 5.2, 9).
 ///
 /// Loopback-only per PRD 5.10: settings + TMDB test, server-side folder
@@ -13,7 +16,7 @@ import { getConfig, save, redactedView } from "./config";
 import { setLogLevel, getLogLevel, log } from "./logger";
 import { APP_VERSION, crashDir } from "./crash";
 import { clearTmdbCache, testToken } from "./tmdb";
-import { denyIfNotLocal, isDirectLoopbackContext } from "./essentials";
+import { denyIfNotLocal, isAdminContext } from "./essentials";
 import { tokenFromRequest, verifyToken } from "./auth";
 import { startScan, currentScan, onScanProgress } from "./scan";
 import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
@@ -103,11 +106,12 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const hasLibraries = Boolean(q<Row>("SELECT id FROM libraries LIMIT 1").get());
     // Server onboarding configures the metadata source. Libraries are managed
     // independently, so users can finish setup before adding media folders.
-    const setupComplete = Boolean(cfg.tmdbToken);
+    const { setupComplete, ownerCreated } = setupState();
     // This public probe exists only to identify the server and decide whether
     // pairing is needed. Operational details are for authenticated clients.
     const serverId = getServerId();
-    if (!authenticated) return { version: APP_VERSION, serverId, setupComplete };
+    if (!authenticated) return { version: APP_VERSION, serverId, setupComplete, ownerCreated };
+    if (requestUser(ctx.request)?.role !== "admin") return { version: APP_VERSION, serverId, setupComplete, ownerCreated, adminAvailable: false };
 
     const live = getLiveBinding();
     const recentScans = q<Row>(
@@ -120,7 +124,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       bun: Bun.version,
       startedAt: new Date(startedAt).toISOString(),
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
-      adminAvailable: isDirectLoopbackContext(ctx),
+      adminAvailable: isAdminContext(ctx),
       // Report the address the listener actually bound to, not just what is
       // saved: the owner can change the setting while the server is running.
       bind: live.bind || cfg.bindAddress,
@@ -131,6 +135,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       hasTmdbToken,
       hasLibraries,
       setupComplete,
+      ownerCreated,
       scan: currentScan,
       recentScans,
       optimizer: await optimizerStatus({ includeFiles: false }),
@@ -144,7 +149,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .put("/settings", async ({ body, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "PUT /api/settings");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     const patch: Record<string, unknown> = {};
     if (body.logLevel) setLogLevel(body.logLevel);
@@ -212,7 +217,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .post("/tmdb/cache/clear", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/tmdb/cache/clear");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const removed = clearTmdbCache();
     log.info("tmdb", "response cache cleared", { removed });
@@ -221,7 +226,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Backfill intro/recap/credits markers for titles that lack a fresh lookup. */
   .post("/skip-segments/refresh", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/skip-segments/refresh");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const result = await refreshMissingSkipSegments();
     log.info("player", "manual skip marker refresh", result);
@@ -230,7 +235,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Reset the catalog and generated caches while preserving media originals and config.json. */
   .post("/database/reset", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/database/reset");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     if (currentScan?.status === "running") {
       return Response.json({ error: "Wait for the current library scan to finish before resetting Plexy data." }, { status: 409 });
@@ -282,7 +287,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Queue every probed file again, including previous failures. */
   .post("/optimize/run", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/optimize/run");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const requested = await enqueueMissingOptimizations({ includeFailed: true });
     log.info("optimizer", "manual preparation run requested", { queued: requested });
@@ -290,13 +295,13 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .get("/stream-preparation/status", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "GET /api/stream-preparation/status");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     return streamPreparationStatus();
   })
 
   .post("/stream-preparation/run", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/stream-preparation/run");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const itemIds = ctx.body.itemIds;
     if (!itemIds.length) return Response.json({ error: "Select at least one title" }, { status: 400 });
@@ -309,7 +314,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   }, { body: t.Object({ itemIds: t.Array(t.Number({ minimum: 1 })) }) })
 
   .post("/stream-preparation/cancel", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/stream-preparation/cancel");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     cancelStreamPreparation();
     log.info("media", "adaptive stream preparation cancelled");
@@ -318,7 +323,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Delete every prepared copy; the originals are untouched. */
   .post("/optimize/clear", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/optimize/clear");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const removed = await clearOptimizerCache();
     log.info("optimizer", "prepared copies cleared", { removed });
@@ -327,7 +332,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** "Test TMDB token": success message or the exact failure (PRD 5.1). */
   .post("/settings/tmdb/test", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/settings/tmdb/test");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     return await testToken();
   })
@@ -337,7 +342,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
    * Plexy. The UI must never imply this is a browser-side file picker.
    */
   .get("/local-folders", async ({ query, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "GET /api/local-folders");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     const target = expandPath(query.path || "~");
     try {
@@ -364,8 +369,14 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   // --- libraries (loopback-only per PRD 5.10) --------------------------------
   .get("/libraries", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "GET /api/libraries");
-    if (denied) return denied;
+    const user = requestUser(ctx.request);
+    if (!isAdminContext(ctx)) {
+      const libraries = q<Row>("SELECT * FROM libraries ORDER BY id").all().flatMap(library => {
+        const visible = q<Row>("SELECT id,kind,match_status FROM items WHERE library_id=? AND kind IN ('movie','series')").all(library.id).filter(item => canAccessItem(user, Number(item.id)));
+        return visible.length ? [{ id: Number(library.id), name: String(library.name), type: String(library.type), language: String(library.language), paths: [], counts: { items: visible.filter(item => item.match_status === "matched").length, review: 0, unmatched: 0 } }] : [];
+      });
+      return { libraries };
+    }
     const rows = q<Row>("SELECT * FROM libraries ORDER BY id").all();
     return {
       libraries: rows.map((row) => {
@@ -395,7 +406,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .post("/libraries", async ({ body, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "POST /api/libraries");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
 
     // Validate each root: exists, readable, not overlapping another library.
@@ -452,7 +463,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .patch("/libraries/:id", async ({ params, body, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "PATCH /api/libraries/:id");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -508,7 +519,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Removing a library deletes its records only — media is never touched. */
   .delete("/libraries/:id", async ({ params, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "DELETE /api/libraries/:id");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     q("DELETE FROM libraries WHERE id = ?").run(Number(params.id));
     log.info("scanner", "library removed", { id: Number(params.id) });
@@ -516,7 +527,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   })
 
   .post("/libraries/:id/scan", async ({ params, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "POST /api/libraries/:id/scan");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     const id = Number(params.id);
     const scanId = startScan([id]);

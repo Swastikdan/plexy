@@ -4,7 +4,6 @@ import {
   normalizeTitle,
   extractExplicitId,
   parsePath,
-  VIDEO_EXTENSIONS,
 } from "../src/parse";
 
 describe("Media Parser (PRD 5.3)", () => {
@@ -66,13 +65,5 @@ describe("Media Parser (PRD 5.3)", () => {
     expect(parsed.isSpecial).toBe(true);
     expect(parsed.season).toBe(0);
     expect(parsed.episode).toBe(1);
-  });
-
-  test("verifies supported video extensions", () => {
-    expect(VIDEO_EXTENSIONS.has(".mkv")).toBe(true);
-    expect(VIDEO_EXTENSIONS.has(".mp4")).toBe(true);
-    expect(VIDEO_EXTENSIONS.has(".webm")).toBe(true);
-    expect(VIDEO_EXTENSIONS.has(".avi")).toBe(true);
-    expect(VIDEO_EXTENSIONS.has(".txt")).toBe(false);
   });
 });

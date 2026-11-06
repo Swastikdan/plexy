@@ -24,6 +24,12 @@
       "sourceType": "github",
       "skillPath": "skills/panelui/SKILL.md",
       "computedHash": "fdb514f87c7e5083d4cd12002b56f10e822f3aa6bc9ea0611fb35676b2b22627"
+    },
+    "untangle-codebase": {
+      "source": "caldoai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/untangle-codebase/SKILL.md",
+      "computedHash": "d5e9e1c4a1f30f34c0120dea773d0170004d6c19ef5e8f236c35773bd6c5bdbc"
     }
   }
 }

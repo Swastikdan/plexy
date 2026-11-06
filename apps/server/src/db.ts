@@ -6,7 +6,7 @@
 /// sites stay terse; correctness of the SQL itself is runtime-checked by
 /// SQLite's strict mode typing and exercised by the scan tests.
 import { Database, type Statement } from "bun:sqlite";
-import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync, chmodSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { resolveDataDir } from "./paths";
@@ -17,7 +17,11 @@ mkdirSync(resolveDataDir(), { recursive: true });
 
 export const db = new Database(join(resolveDataDir(), "library.sqlite"), { create: true });
 
+try { chmodSync(join(resolveDataDir(), "library.sqlite"), 0o600); } catch { /* platform may not support POSIX modes */ }
 db.run("PRAGMA journal_mode = WAL");
+for (const suffix of ["-wal", "-shm"]) {
+  try { chmodSync(join(resolveDataDir(), `library.sqlite${suffix}`), 0o600); } catch { /* may not exist yet */ }
+}
 db.run("PRAGMA foreign_keys = ON");
 // Medium is a good WAL trade-off for a laptop that can lose power.
 db.run("PRAGMA synchronous = NORMAL");
@@ -171,6 +175,7 @@ function backupBeforeMigrations(pending: string[]): void {
     const label = (pending[pending.length - 1] ?? "migration").replace(/\.sql$/, "");
     const target = join(backupDir, `library-before-${stamp}-${label}.sqlite`);
     run("VACUUM INTO ?", target);
+    chmodSync(target, 0o600);
 
     const snapshots = readdirSync(backupDir)
       .filter((name) => name.startsWith("library-before-") && name.endsWith(".sqlite"))

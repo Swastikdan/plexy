@@ -31,7 +31,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
    * auto-match can be found and remapped manually, and `?q=` narrows the list.
    */
   .get("/matches/review", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "GET /api/matches/review");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
 
     const filter = (ctx.query.status ?? "attention") as ReviewFilter;
@@ -144,7 +144,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
 
   /** TMDB search straight from the fix-match dialog (no saved state). */
   .post("/match/search", async ({ body, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "POST /api/match/search");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     try {
       const results = await search(body.type, body.query, body.year ?? null);
@@ -172,7 +172,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
 
   /** Preview a candidate before applying (PRD 5.5 "Fix match" flow). */
   .get("/match/preview/:type/:tmdbId", async ({ params, server, request }) => {
-    const denied = denyIfNotLocal({ server, request }, "GET /api/match/preview");
+    const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     try {
       const full = await detail(params.type as "movie" | "tv", Number(params.tmdbId));
@@ -198,7 +198,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
    * the matcher skips the item entirely.
    */
   .post("/items/:id/match", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/items/:id/match");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const itemId = Number(ctx.params.id);
     const row = q<Row>("SELECT * FROM items WHERE id = ?").get(itemId);
@@ -252,7 +252,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
 
   /** Explicit metadata refresh (S in PRD 5.5, exposed for matched items). */
   .post("/items/:id/refresh", async (ctx) => {
-    const denied = denyIfNotLocal(ctx, "POST /api/items/:id/refresh");
+    const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const row = q<Row>("SELECT * FROM items WHERE id = ?").get(Number(ctx.params.id));
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });

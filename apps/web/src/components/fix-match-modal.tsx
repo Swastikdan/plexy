@@ -53,7 +53,6 @@ export function FixMatchModal({
     }>
   >([]);
 
-  // Update query state when modal opens or initialTitle changes
   useEffect(() => {
     if (open) {
       const cleaned = cleanSearchTitle(initialTitle);

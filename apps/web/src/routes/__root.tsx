@@ -15,7 +15,7 @@ function Shell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const watching = matchRoute({ to: "/watch/$fileId", fuzzy: true });
   const connecting = matchRoute({ to: "/connect", fuzzy: true });
-  const chrome = !watching && !connecting;
+  const chrome = !watching && !connecting && pathname !== "/setup";
 
   return (
     <ServerGate>

@@ -1,3 +1,4 @@
+import { requestUser } from "./auth";
 /// Shared route essentials.
 ///
 /// `isLoopbackContext` enforces PRD 5.10 server-side: settings, libraries,
@@ -24,10 +25,26 @@ export function remoteAddress(ctx: LoopbackContext): string | null {
   }
 }
 
+/** Elysia's in-process `handle()` has no socket; only the test harness uses it. */
+function isInProcessTestRequest(ctx: LoopbackContext): boolean {
+  return Bun.env.NODE_ENV === "test" && !ctx.server;
+}
+
 /** True when the request physically arrived from the host itself. */
 export function isLoopbackContext(ctx: LoopbackContext): boolean {
-  if (Bun.env.NODE_ENV === "test" && !ctx.server) return true;
-  return isLoopbackAddress(remoteAddress(ctx));
+  return isInProcessTestRequest(ctx) || isLoopbackAddress(remoteAddress(ctx));
+}
+
+/**
+ * Owner surface: the signed-out in-process test harness, or a signed-in admin
+ * whose request arrived directly on the host.
+ */
+export function isAdminContext(ctx: LoopbackContext): boolean {
+  if (isInProcessTestRequest(ctx)) return true;
+  return (
+    isDirectLoopbackContext(ctx) &&
+    requestUser(ctx.request)?.role === "admin"
+  );
 }
 
 /**
@@ -37,6 +54,10 @@ export function isLoopbackContext(ctx: LoopbackContext): boolean {
  */
 export function isDirectLoopbackContext(ctx: LoopbackContext): boolean {
   if (!isLoopbackContext(ctx)) return false;
+  // A browser using a rebound DNS hostname is not the local owner UI.
+  try {
+    if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(new URL(ctx.request.url).hostname)) return false;
+  } catch { return false; }
   return ![
     "forwarded",
     "x-forwarded-for",
@@ -47,14 +68,11 @@ export function isDirectLoopbackContext(ctx: LoopbackContext): boolean {
 }
 
 /**
- * Return a 403 Response when the caller is not on the host, else null.
+ * Return a 403 Response unless the caller is the owner on the host, else null.
  * Handlers: `const denied = denyIfNotLocal(ctx); if (denied) return denied;`
  */
-export function denyIfNotLocal(
-  ctx: LoopbackContext,
-  what: string,
-): Response | null {
-  if (isDirectLoopbackContext(ctx)) return null;
+export function denyIfNotLocal(ctx: LoopbackContext): Response | null {
+  if (isAdminContext(ctx)) return null;
   return Response.json(
     { error: "This area is only available on the computer running Plexy." },
     { status: 403 },

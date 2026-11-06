@@ -38,6 +38,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
 import { PageLoader } from "../../components/page-loader";
 import { LibraryFolderForm } from "../../components/library-folder-form";
+import { UserManagement } from "../../components/user-management";
 import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "../../lib/playback-diagnostics-consent";
 import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "../../electron";
 import { getPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "../../lib/playback-preferences";
@@ -50,8 +51,14 @@ import {
 
 const ERROR_TEXT = "text-red-500";
 
-const ADMIN_TABS = ["libraries", "review", "settings", "logs"] as const;
-type AdminTab = (typeof ADMIN_TABS)[number];
+const ADMIN_TABS = [
+  { key: "libraries", label: "Libraries" },
+  { key: "review", label: "Fix matches" },
+  { key: "settings", label: "Settings" },
+  { key: "logs", label: "Logs" },
+] as const;
+type AdminTab = (typeof ADMIN_TABS)[number]["key"];
+const ADMIN_TAB_KEYS: readonly string[] = ADMIN_TABS.map((entry) => entry.key);
 
 function AdminRoute() {
   const { tab = "libraries" } = Route.useSearch();
@@ -70,13 +77,6 @@ function AdminRoute() {
       return next;
     });
   }, [tab]);
-
-  const tabs = [
-    ["libraries", "Libraries"],
-    ["review", "Fix matches"],
-    ["settings", "Settings"],
-    ["logs", "Logs"],
-  ] as const;
 
   const switchTab = (nextTab: AdminTab) => {
     if (nextTab === tab) return;
@@ -145,7 +145,7 @@ function AdminRoute() {
         aria-label="Admin sections"
       >
         <div className="inline-flex min-w-max items-center gap-1.5 rounded-xl border border-line/60 bg-surface p-1" role="tablist">
-          {tabs.map(([key, label]) => (
+          {ADMIN_TABS.map(({ key, label }) => (
             <button
               key={key}
               role="tab"
@@ -231,7 +231,7 @@ export const Route = createFileRoute("/admin/")({
   component: AdminRoute,
   validateSearch: (search: Record<string, unknown>): { tab?: AdminTab } => {
     const tab = String(search.tab ?? "");
-    return (ADMIN_TABS as readonly string[]).includes(tab) ? { tab: tab as AdminTab } : {};
+    return ADMIN_TAB_KEYS.includes(tab) ? { tab: tab as AdminTab } : {};
   },
 });
 
@@ -553,14 +553,15 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
             {entry.tmdbId ? ` (TMDB ${entry.tmdbId})` : ""}. Choosing another result replaces and locks it.
           </p>
         )}
-        <a
-          href={`/title/${entry.id}`}
+        <Link
+          to="/title/$itemId"
+          params={{ itemId: String(entry.id) }}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-brand-text hover:underline"
         >
           Open title page <ExternalLink size={12} aria-hidden />
-        </a>
+        </Link>
       </div>
 
       <form
@@ -760,6 +761,7 @@ function Settings() {
 
   return (
     <div className="space-y-3">
+      <UserManagement />
       <DesktopUpdateSettings />
       <SystemUsage />
       <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
@@ -771,7 +773,6 @@ function Settings() {
           <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>
         <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      {/* TMDB Metadata Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
@@ -891,7 +892,6 @@ function Settings() {
         </div>
         {cacheMessage && <p className="text-xs font-medium text-brand-text">{cacheMessage}</p>}
 
-        {/* Token input & test */}
         <form
           onSubmit={async (e) => {
             e.preventDefault();
@@ -988,7 +988,6 @@ function Settings() {
           <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>
         <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      {/* Network & Access Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div>
           <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
@@ -1155,10 +1154,8 @@ function Settings() {
         </div>
       </div>
 
-      {/* Security Card */}
       <SecuritySettings />
 
-      {/* Server Connection Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -1200,7 +1197,6 @@ function Settings() {
           <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>
         <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      {/* Playback Preferences Card */}
       <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm">
         <h2 className="font-display text-base font-bold text-ink flex items-center gap-2 mb-4">
           <HardDrive size={17} className="text-brand-text" />
@@ -1242,7 +1238,6 @@ function Settings() {
             </Select.Root>
           </div>
         </div>
-        {/* Playback Preparation Card */}
         <div className="mb-5 grid gap-4 md:grid-cols-1">
           <label className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
             <span className="block text-xs font-semibold text-ink-muted">Preferred audio language</span>
@@ -1448,6 +1443,10 @@ function Settings() {
   );
 }
 
+function releaseBuild(tag: string | null | undefined): string | undefined {
+  return tag?.match(/-build\.(\d+)$/)?.[1];
+}
+
 function DesktopUpdateSettings() {
   const [installedVersion, setInstalledVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
@@ -1493,8 +1492,8 @@ function DesktopUpdateSettings() {
       setUpdateProgress(null);
     }
   };
-  const currentBuild = updateStatus?.currentTag.match(/-build\.(\d+)$/)?.[1];
-  const latestBuild = updateStatus?.latestTag?.match(/-build\.(\d+)$/)?.[1];
+  const currentBuild = releaseBuild(updateStatus?.currentTag);
+  const latestBuild = releaseBuild(updateStatus?.latestTag);
   const downloaded = updateProgress?.downloadedBytes ?? 0;
   const total = updateProgress?.totalBytes ?? null;
   const progressPercent = total ? Math.min(100, Math.round((downloaded / total) * 100)) : null;
@@ -1824,13 +1823,14 @@ function PrefetchSettings() {
  * paired, and revoke a device.
  */
 function SecuritySettings() {
+  const [pairPassword, setPairPassword] = useState("");
   const queryClient = useQueryClient();
   const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const devices = useQuery({ queryKey: ["auth-devices"], queryFn: listDevices });
 
   const mint = useMutation({
-    mutationFn: () => createPairingCode("New device"),
+    mutationFn: () => createPairingCode(pairPassword),
     onSuccess: (result) => {
       setPairing(result);
       setCopied(false);
@@ -1864,7 +1864,7 @@ function SecuritySettings() {
         </h2>
         <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-muted">
           Phones, TVs, and other computers must pair once before they can browse
-          or stream. The desktop app signs in automatically. Paired devices stay
+          or stream. Each device signs in to an individual account. Paired devices stay
           signed in across app updates.
         </p>
       </div>
@@ -1875,12 +1875,13 @@ function SecuritySettings() {
             Pair a new device
           </span>
           <p className="text-xs leading-relaxed text-ink-muted">
-            Generate a six-digit code, then enter it on the other device. Each
+            Generate a key for your own account, then enter it on the other device. Each
             code works once and expires after 10 minutes.
           </p>
+          <label className="block text-xs">Confirm your password<input type="password" autoComplete="current-password" value={pairPassword} onChange={event => setPairPassword(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-line bg-surface px-3" /></label>
           <Button
             variant="surface"
-            disabled={mint.isPending}
+            disabled={mint.isPending || !pairPassword}
             onClick={() => mint.mutate()}
             className="mt-1"
           >
@@ -1891,7 +1892,7 @@ function SecuritySettings() {
           {pairing && (
             <div className="mt-2 rounded-xl border border-brand/30 bg-brand/10 p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-2xl tracking-[0.35em] text-ink">
+                <span className="break-all font-mono text-sm text-ink">
                   {pairing.code}
                 </span>
                 <button
@@ -2048,7 +2049,6 @@ function OptimizerSettings() {
 
   return (
     <div className="space-y-4">
-      {/* Metrics row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
           <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Prepared Files</span>
@@ -2072,7 +2072,6 @@ function OptimizerSettings() {
         </div>
       </div>
 
-      {/* Progress bar */}
       {total > 0 && (
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs text-ink-muted">
@@ -2088,7 +2087,6 @@ function OptimizerSettings() {
         </div>
       )}
 
-      {/* Local storage directory */}
       {data.cacheDir && (
         <div className="rounded-xl border border-line/60 bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
@@ -2116,7 +2114,6 @@ function OptimizerSettings() {
         </div>
       )}
 
-      {/* Prepared files collapsible list */}
       {data.files && data.files.length > 0 && (
         <div>
           <button
@@ -2158,7 +2155,6 @@ function OptimizerSettings() {
         <span>Automatically prepare files in the background</span>
       </label>
 
-      {/* Actions and Cache limit */}
       <div className="flex flex-col sm:flex-row sm:items-end gap-3 pt-2">
         <div className="space-y-1">
           <span className="text-xs text-ink-muted font-medium">Cache limit (GB, 0 = unlimited)</span>
@@ -2329,9 +2325,7 @@ function Logs() {
 
   return (
     <div className="space-y-4">
-      {/* Console toolbar */}
       <div className="rounded-2xl border border-line/70 bg-surface p-3.5 sm:p-4 space-y-3 shadow-sm">
-        {/* Row 1: Search & Component filter & Actions */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
           <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 text-xs sm:text-sm text-ink-muted transition-colors focus-within:border-brand/70">
             <Search size={14} className="shrink-0 text-ink-muted/80" aria-hidden />
@@ -2409,7 +2403,6 @@ function Logs() {
           </div>
         </div>
 
-        {/* Row 2: Level pills & Auto-scroll status */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-line/40">
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by level">
             {LOG_LEVELS.map((l) => (
@@ -2451,15 +2444,12 @@ function Logs() {
         </div>
       </div>
 
-      {/* Info indicator */}
       <div className="flex items-center justify-between text-xs text-ink-muted px-1">
         <span>Showing {entries.length} of {allEntries.length} lines (buffer {MAX_LOGS})</span>
         {isError && <span className="text-red-400 font-medium">Failed to read live logs</span>}
       </div>
 
-      {/* Terminal Viewport */}
       <div className="rounded-2xl border border-line/70 bg-[#0d0d0f] shadow-inner font-mono overflow-hidden">
-        {/* Header row on desktop */}
         <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3 py-2 border-b border-white/10 bg-white/[0.03] text-[11px] font-semibold text-white/50 uppercase tracking-wider">
           <span>Time</span>
           <span>Level</span>
@@ -2467,7 +2457,6 @@ function Logs() {
           <span>Message</span>
         </div>
 
-        {/* Scrollable logs */}
         <div
           ref={scrollRef}
           className="min-h-[360px] max-h-[540px] overflow-auto divide-y divide-white/[0.04]"
@@ -2497,7 +2486,6 @@ function LogRow({ entry }: { entry: LogEntry }) {
 
   return (
     <div className="hover:bg-white/[0.03] text-xs transition-colors">
-      {/* Desktop view: 4 clean aligned columns */}
       <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] items-baseline gap-3 px-3 py-1.5 font-mono">
         <span className="text-[11px] tabular-nums text-white/45 shrink-0">
           {logTime(entry)}
@@ -2525,7 +2513,6 @@ function LogRow({ entry }: { entry: LogEntry }) {
         </div>
       </div>
 
-      {/* Mobile view: readable stacked card */}
       <div className="sm:hidden p-2.5 space-y-1 font-mono">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
@@ -2557,7 +2544,6 @@ function LogRow({ entry }: { entry: LogEntry }) {
         )}
       </div>
 
-      {/* Context JSON view */}
       {hasContext && expanded && (
         <pre className="mx-3 mb-2 p-2.5 rounded-lg bg-black/80 border border-white/10 text-[11px] text-white/80 overflow-x-auto whitespace-pre-wrap">
           {JSON.stringify(entry.context, null, 2)}

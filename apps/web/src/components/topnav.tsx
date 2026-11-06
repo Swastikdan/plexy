@@ -1,10 +1,11 @@
+import { getClientRuntime } from "../runtime-config";
 /// Top navigation — sticky header that transitions to a solid blur on scroll,
 /// with an intelligent responsive layout for desktop & mobile,
 /// zero-title library filtering, and interactive feedback.
 import { useEffect, useState } from "react";
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Settings, Film, Tv, Home, Server } from "lucide-react";
+import { Search, Settings, Film, Tv, Home, Server, UserRound } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "./poster";
 import { useIsFullscreen } from "../lib/use-fullscreen";
@@ -45,10 +46,8 @@ export function TopNav() {
   const isFullscreen = useIsFullscreen();
   const isHome = pathname === "/";
 
-  // Check libraries to see whether movies or TV shows have titles
   const { data: libraries } = useQuery(queries.libraries());
 
-  // If on /title/:itemId, extract the id and query the title to get its display name
   const titleMatch = pathname.match(/^\/title\/([^/?#]+)/);
   const titleId = titleMatch ? titleMatch[1] : null;
   const { data: titleData } = useQuery({
@@ -196,8 +195,10 @@ export function TopNav() {
               <Search size={17} />
             </Link>
 
-            {/* Settings button - desktop only (mobile accesses via bottom bar) */}
-            <Link
+            <Link to="/account" title="My account" aria-label="My account" className="inline-flex h-8 w-8 items-center justify-center text-ink-muted hover:text-ink"><UserRound size={17} /></Link>
+
+            {/* Server settings are visible only to a local administrator. */}
+            {getClientRuntime().canManageServer && <Link
               to="/admin"
               search={{ tab: "settings" }}
               aria-label="Settings"
@@ -205,7 +206,7 @@ export function TopNav() {
               className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2"
             >
               <Settings size={17} />
-            </Link>
+            </Link>}
           </div>
         </div>
 

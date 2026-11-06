@@ -235,12 +235,13 @@ export interface ServerStatus {
   /** Bind address saved in config; differs from `bind` until a restart applies it. */
   savedBind?: string;
   restartRequired?: boolean;
-  /** Reachable `http://<lan-ip>:<port>` URLs while bound to 0.0.0.0. */
+  /** Reachable `https://<lan-ip>:<lan-port>` URLs while bound to 0.0.0.0. */
   lanUrls?: string[];
   port?: number;
   hasTmdbToken?: boolean;
   hasLibraries?: boolean;
   setupComplete?: boolean;
+  ownerCreated?: boolean;
   scan?: {
     scanId: number;
     status: string;
@@ -324,4 +325,66 @@ export interface ServerSettings {
   prefetchOnHover: boolean;
   prefetchOnScroll: boolean;
   prefetchNextCount: number;
+}
+
+/** The three library kinds the setup and admin screens can create. */
+export type LibraryType = "movies" | "tv" | "anime";
+
+/** `GET /api/settings` */
+export interface SettingsResponse {
+  settings: ServerSettings;
+  logLevel: string;
+}
+
+/** `GET /api/stream-preparation/status` */
+export interface StreamPreparationStatus {
+  total: number;
+  ready: number;
+  queued: number;
+  running: number;
+  failed: number;
+  cancelled: number;
+  error: string | null;
+  progress: number;
+  current: { title: string; progress: number } | null;
+}
+
+/** One TMDB search hit used by fix-match. */
+export interface TmdbMatchResult {
+  tmdbId: number;
+  type: string;
+  title: string;
+  year: number | null;
+  overview: string | null;
+  poster: string | null;
+}
+
+/** `POST /api/match/search` */
+export interface TmdbMatchSearchResponse {
+  results: TmdbMatchResult[];
+}
+
+/** One folder entry from `GET /api/local-folders`. */
+export interface LocalFolderEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  hasVideos: boolean;
+}
+
+/** `GET /api/local-folders` */
+export interface LocalFoldersResponse {
+  path: string;
+  parent: string | null;
+  entries: LocalFolderEntry[];
+}
+
+/** `GET /api/logs` */
+export interface LogsResponse {
+  lines: string[];
+}
+
+/** `GET /api/crashes` */
+export interface CrashesResponse {
+  crashes: Array<{ id: string; ts: string }>;
 }
