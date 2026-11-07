@@ -75,6 +75,54 @@ const ACTIVE_COLOR = "#ffffff";
 const TAB_BAR_HEIGHT = 56;
 const TV_SIDEBAR_WIDTH = 220;
 
+// ── TV sidebar item ─────────────────────────────────────────────────────────
+function TvSidebarItem({
+  item,
+  isActive,
+  onPress,
+}: {
+  item: { id: Tab; label: string; icon: IconName };
+  isActive: boolean;
+  onPress: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const showWhite = isActive;
+
+  return (
+    <Pressable
+      key={item.id}
+      hasTVPreferredFocus={isActive}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tvNavItem,
+        showWhite && styles.tvNavItemActive,
+        focused && !showWhite && styles.tvNavItemFocused,
+        pressed && { opacity: 0.8 },
+      ]}
+    >
+      <Icon
+        name={item.icon}
+        size={20}
+        color={showWhite ? "#000000" : focused ? "#ffffff" : INACTIVE_COLOR}
+      />
+      <Text
+        style={[
+          styles.tvNavLabel,
+          showWhite
+            ? styles.tvNavLabelActive
+            : focused
+              ? styles.tvNavLabelFocused
+              : styles.tvNavLabelInactive,
+        ]}
+      >
+        {item.label}
+      </Text>
+    </Pressable>
+  );
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export function NativeApp({ platform }: { platform: NativePlatform }) {
@@ -380,54 +428,6 @@ function Shell({
       </View>
     </View>
   );
-
-  // ── TV sidebar item ─────────────────────────────────────────────────────────
-  const TvSidebarItem = ({
-    item,
-    isActive,
-    onPress,
-  }: {
-    item: { id: Tab; label: string; icon: IconName };
-    isActive: boolean;
-    onPress: () => void;
-  }) => {
-    const [focused, setFocused] = useState(false);
-    const showWhite = isActive;
-
-    return (
-      <Pressable
-        key={item.id}
-        hasTVPreferredFocus={isActive}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.tvNavItem,
-          showWhite && styles.tvNavItemActive,
-          focused && !showWhite && styles.tvNavItemFocused,
-          pressed && { opacity: 0.8 },
-        ]}
-      >
-        <Icon
-          name={item.icon}
-          size={20}
-          color={showWhite ? "#000000" : focused ? "#ffffff" : INACTIVE_COLOR}
-        />
-        <Text
-          style={[
-            styles.tvNavLabel,
-            showWhite
-              ? styles.tvNavLabelActive
-              : focused
-                ? styles.tvNavLabelFocused
-                : styles.tvNavLabelInactive,
-          ]}
-        >
-          {item.label}
-        </Text>
-      </Pressable>
-    );
-  };
 
   // ── Mobile bottom tab bar ────────────────────────────────────────────────────
   const MobileTabBar = () => {
