@@ -30,7 +30,7 @@ function Users() {
       <h2 className="text-xl font-bold">Users & permissions</h2>
       <p className="text-sm text-ink-muted">
         New users have no library access until you grant it. Administrators have
-        full access. Each user creates their own pairing keys.
+        full access. Each user creates their own pairing codes.
       </p>
       <form
         className="space-y-3"

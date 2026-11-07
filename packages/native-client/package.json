@@ -8,7 +8,9 @@
     "test": "bun test tests"
   },
   "dependencies": {
-    "@plexy/api-client": "workspace:*"
+    "@plexy/api-client": "workspace:*",
+    "expo-haptics": "~57.0.3",
+    "expo-intent-launcher": "~57.0.1"
   },
   "peerDependencies": {
     "expo": "57.0.32",

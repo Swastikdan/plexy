@@ -95,7 +95,7 @@ export function catalogCache(scope: string): import("./api").CatalogCache {
           const keys = await readJson<string[]>(indexKey, []);
           const next = [...keys.filter((k) => k !== path), path];
           await writeJson(prefix + path, value);
-          while (next.length > 30)
+          while (next.length > 200)
             await AsyncStorage.removeItem(prefix + next.shift()!);
           await writeJson(indexKey, next);
         });
@@ -103,3 +103,23 @@ export function catalogCache(scope: string): import("./api").CatalogCache {
     },
   };
 }
+
+export const detailCache = {
+  key(scope: string, id: string | number) {
+    return `plexy.detail.${scopeKey(scope)}.${id}`;
+  },
+  async get<T = import("./api").TitleDetail>(
+    scope: string,
+    id: string | number,
+  ): Promise<T | null> {
+    return readJson<T | null>(this.key(scope, id), null);
+  },
+  async set(
+    scope: string,
+    id: string | number,
+    value: import("./api").TitleDetail,
+  ): Promise<void> {
+    await writeJson(this.key(scope, id), value);
+  },
+};
+

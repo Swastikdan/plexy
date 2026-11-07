@@ -129,9 +129,9 @@ describe("accounts and scoped pairing", () => {
     });
     expect(minted.status).toBe(200);
     const key = (await minted.json()).code;
-    expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(key).toMatch(/^\d{6}$/);
     const [first, second] = await Promise.all([
-      request("/auth/pair", undefined, { code: key, userId }),
+      request("/auth/pair", undefined, { code: `${key.slice(0, 3)} ${key.slice(3)}`, userId }),
       request("/auth/pair", undefined, { code: key, userId }),
     ]);
     expect([first.status, second.status].sort()).toEqual([200, 401]);
@@ -150,6 +150,22 @@ describe("accounts and scoped pairing", () => {
     expect(
       (await request("/auth/pair", undefined, { code: nextKey })).status,
     ).toBe(401);
+  });
+  test("six-digit codes preserve leading zeros and reject malformed input", () => {
+    const ownerId = peekToken(owner)!.userId;
+    const code = "000123";
+    run(
+      "INSERT INTO auth_pairing(code_hash,label,user_id,expires_at) VALUES(?,?,?,datetime('now','+10 minutes'))",
+      new Bun.CryptoHasher("sha256").update(code).digest("hex"),
+      "Leading zero test",
+      ownerId,
+    );
+    for (const invalid of ["00123", "0001234", "abc123", "000.123"])
+      expect(redeemPairingCode(invalid, "Invalid code")).toBeNull();
+    const paired = redeemPairingCode("000-123", "Numeric code");
+    expect(paired?.device.userId).toBe(ownerId);
+    expect(paired?.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(redeemPairingCode(code, "Already used")).toBeNull();
   });
   test("library and maturity restrictions protect direct media and metadata paths", async () => {
     run(

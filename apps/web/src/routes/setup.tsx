@@ -159,7 +159,7 @@ function SetupRoute() {
                 </p>
               )}
               <p className="text-xs text-ink-muted">
-                Manage users, content permissions, and your own pairing keys in
+                Manage users, content permissions, and your own pairing codes in
                 My account.
               </p>
             </div>

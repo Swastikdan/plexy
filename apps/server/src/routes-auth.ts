@@ -170,7 +170,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       );
       return paired
         ? result(ctx.request, paired)
-        : error("The pairing key is invalid, expired, or already used.", 401);
+        : error("The pairing code is invalid, expired, or already used.", 401);
     },
     {
       body: t.Object({

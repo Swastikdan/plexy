@@ -39,7 +39,7 @@ export function PairScreen({
           }}
           aria-pressed={mode === "pair"}
         >
-          Pairing key
+          Pairing code
         </button>
       </div>
       <form
@@ -91,18 +91,22 @@ export function PairScreen({
           </>
         ) : (
           <label className="block text-sm">
-            Your pairing key
-            <textarea
+            Your pairing code
+            <input
               required
-              autoComplete="off"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              placeholder="000000"
               spellCheck={false}
               value={key}
-              onChange={(e) => setKey(e.target.value)}
-              className="mt-2 w-full rounded-lg border border-line bg-surface p-3 font-mono"
+              onChange={(e) => setKey(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+              className="mt-2 w-full rounded-lg border border-line bg-surface p-3 font-mono text-center text-2xl tracking-[0.3em] tabular-nums"
             />
             <span className="mt-2 block text-xs text-ink-muted">
-              Create a key in My account on a device where you are signed in.
-              The key signs in to that same account and works once.
+              Create a six-digit code in My account on a device where you are signed in.
+              The code signs in to that same account and works once.
             </span>
           </label>
         )}
@@ -114,7 +118,7 @@ export function PairScreen({
         <Button
           type="submit"
           variant="primary"
-          disabled={busy}
+          disabled={busy || (mode === "pair" && key.length !== 6)}
           className="h-11 w-full"
         >
           {busy ? "Signing in…" : "Sign in"}

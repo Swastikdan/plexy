@@ -646,6 +646,8 @@ export function DownloadPicker({
             backgroundColor: colors.elevated,
             borderWidth: 1,
             borderColor: colors.strong,
+            borderRadius: 20,
+            overflow: "hidden",
             width: "100%",
             maxWidth: 660,
             maxHeight: "90%",
@@ -660,17 +662,14 @@ export function DownloadPicker({
             ) : (
               <>
                 <Label muted>
-                  Choose a source version, or ask your server to generate a
-                  smaller file. Default:{" "}
-                  {preferences.defaultDownloadHeight
-                    ? `${preferences.defaultDownloadHeight}p`
-                    : "best available"}
-                  .
+                  {versions.length > 1
+                    ? "Choose a resolution for download."
+                    : "Download source media file directly to your device."}
                 </Label>
                 {versions.map((version, index) => (
                   <Button
                     key={version.fileId}
-                    label={`${index === 0 ? "Best available · " : ""}${version.label} · ${sizeLabel(version.size)}`}
+                    label={`${index === 0 ? "Best quality · " : ""}${version.label} · ${sizeLabel(version.size)}`}
                     primary={
                       preferences.defaultDownloadHeight
                         ? version.height === preferences.defaultDownloadHeight
@@ -687,69 +686,23 @@ export function DownloadPicker({
                     onPress={() => void enqueue(fileId, "Original source")}
                   />
                 )}
-                <Heading>Other resolutions</Heading>
-                <View
-                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-                >
-                  {caps.map((height) => (
-                    <Button
-                      key={height}
-                      label={`${height}p`}
-                      disabled={busy}
-                      onPress={() => {
-                        const existing = versions.find(
-                          (v) => v.height === height,
-                        );
-                        if (existing)
-                          void enqueue(existing.fileId, existing.label);
-                        else setGenerate(height);
-                      }}
-                    />
-                  ))}
-                </View>
-                {generate && (
-                  <View
-                    style={{
-                      gap: 12,
-                      padding: 16,
-                      borderWidth: 1,
-                      borderColor: colors.strong,
-                    }}
-                  >
-                    <Label>
-                      Your server will convert this file while transferring, up
-                      to {generate}p without upscaling. This can take
-                      significant CPU/GPU time. If interrupted, this generated
-                      download restarts from the beginning. Output size is not
-                      known in advance.
-                    </Label>
-                    <Button
-                      label={`Generate up to ${generate}p and download`}
-                      disabled={busy}
-                      onPress={() =>
-                        void enqueue(
-                          best?.fileId || fileId,
-                          `Generated up to ${generate}p`,
-                          generate,
-                        )
-                      }
-                    />
-                    <Button
-                      label="Use best available source instead"
-                      disabled={busy}
-                      onPress={() =>
-                        void enqueue(
-                          best?.fileId || fileId,
-                          best?.label || "Original source",
-                        )
-                      }
-                    />
-                    <Button
-                      label="Cancel generation"
-                      disabled={busy}
-                      onPress={() => setGenerate(null)}
-                    />
-                  </View>
+                {/* Only show other resolutions if the server actually has multiple pre-generated versions */}
+                {versions.length > 1 && (
+                  <>
+                    <Heading>Available resolutions</Heading>
+                    <View
+                      style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                    >
+                      {versions.map((v) => (
+                        <Button
+                          key={v.fileId}
+                          label={`${v.height ? `${v.height}p` : v.label}`}
+                          disabled={busy}
+                          onPress={() => void enqueue(v.fileId, v.label)}
+                        />
+                      ))}
+                    </View>
+                  </>
                 )}
               </>
             )}

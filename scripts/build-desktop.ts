@@ -87,7 +87,14 @@ async function buildDesktop() {
 
   // 1. Build Web Frontend
   console.log("1. Building Web UI (Vite + React)...");
-  execSync("bun run --filter @plexy/web build", { stdio: "inherit" });
+  if (process.env.PLEXY_REUSE_WEB_BUILD === "true") {
+    if (!existsSync(join(rootDir, "dist/web/index.html"))) {
+      throw new Error("Verified website artifact is missing dist/web/index.html");
+    }
+    console.log("✓ Reusing verified web build");
+  } else {
+    execSync("bun run --filter @plexy/web build", { stdio: "inherit" });
+  }
   console.log("✓ Web UI built in dist/web");
 
   // 2. Copy Migrations

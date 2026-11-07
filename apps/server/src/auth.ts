@@ -4,6 +4,7 @@
 /// storage (an owner-only file for the desktop app) or in an HttpOnly cookie.
 /// Administration requires an active administrator account on every client.
 /// Remote API requests use HTTPS, and device tokens remain scoped to accounts.
+import { randomInt } from "node:crypto";
 import { getUser, type User } from "./accounts";
 import { q, run, type Row } from "./db";
 import { log } from "./logger";
@@ -223,7 +224,13 @@ export function createPairingCode(
 ): PairingCode {
   if (!userId || !getUser(userId) || getUser(userId)?.disabled)
     throw new Error("An active user is required.");
-  const code = newToken();
+  // Avoid collisions across accounts and recently issued codes.
+  let code: string;
+  do {
+    code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+  } while (q<Row, [string]>(
+    "SELECT id FROM auth_pairing WHERE code_hash = ? LIMIT 1",
+  ).get(hash(code)));
   run("UPDATE auth_pairing SET used=1 WHERE user_id=?", userId);
   // Housekeeping: expired codes are useless and can be dropped on every mint.
   run("DELETE FROM auth_pairing WHERE expires_at < datetime('now', '-1 day')");
@@ -277,8 +284,8 @@ export function redeemPairingCode(
   deviceId?: string | null,
   lastIp?: string | null,
 ): AuthResult | null {
-  const raw = String(code ?? "").trim();
-  if (!/^[A-Za-z0-9_-]{43}$/.test(raw)) return null;
+  const raw = String(code ?? "").replace(/[\s-]/g, "");
+  if (!/^\d{6}$/.test(raw)) return null;
 
   // Claim the code in one statement so simultaneous requests cannot both
   // observe it as unused and mint two device tokens.

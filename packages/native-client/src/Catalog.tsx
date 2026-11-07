@@ -3,6 +3,7 @@ import {
   FlatList,
   Image,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,9 +17,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Search as SearchIcon, Play, ArrowLeft, Download, Check, Tv as TvIcon, Info, Film, RefreshCw } from "lucide-react-native";
 import { useClient, useDownloads } from "./context";
 import { useResource } from "./hooks";
-import { Button, Card, Loading, Notice } from "./ui";
+import { Button, Card, Loading, Notice, PosterImage } from "./ui";
 import { colors, fonts, timeLabel } from "./theme";
 import type { ItemCard } from "./api";
+import { triggerHaptic } from "./haptics";
 
 export type OpenTitle = (id: string | number) => void;
 
@@ -48,6 +50,8 @@ export function Hero({
   onDownload,
   downloadState,
   width,
+  preferred,
+  onHeroFocus,
 }: {
   item: ItemCard;
   onOpen: () => void;
@@ -60,41 +64,47 @@ export function Hero({
   onDownload?: () => void;
   downloadState?: { state: string; bytes: number; expected: number };
   width?: number;
+  preferred?: boolean;
+  onHeroFocus?: () => void;
 }) {
   const { api, platform } = useClient();
-  const playLabel = actionLabel ?? (item.watch?.position ? "▶  Continue" : "▶  Play");
+  const [playFocus, setPlayFocus] = useState(false);
+  const [detailFocus, setDetailFocus] = useState(false);
+  const [trailerFocus, setTrailerFocus] = useState(false);
+  const [watchedFocus, setWatchedFocus] = useState(false);
+  const [downloadFocus, setDownloadFocus] = useState(false);
+  const playLabel = actionLabel ?? (item.watch?.position ? "Continue" : "Play");
 
-  // Build metadata line: Year, runtime, rating, episode info
-  const metaParts: string[] = [];
+  // Build metadata line: Year, runtime, rating, episode info, and genres all in the same row
+  const metaParts: React.ReactNode[] = [];
   if (item.year) metaParts.push(String(item.year));
   if (item.runtime) metaParts.push(`${item.runtime}m`);
   if ((item as any).seasonNumber != null && (item as any).episodeNumber != null) {
     metaParts.push(`S${(item as any).seasonNumber} E${(item as any).episodeNumber}`);
   }
   if (item.rating != null) {
-    metaParts.push(`★ ${item.rating.toFixed(1)}`);
+    metaParts.push(
+      <Text key="rating" style={styles.heroMetaRating}>
+        ★ {item.rating.toFixed(1)}
+      </Text>,
+    );
+  }
+  if (item.genres?.length > 0) {
+    metaParts.push(item.genres.slice(0, 3).join(", "));
   }
 
   return (
     <View
       style={[
         styles.heroContainer,
-        { height: platform.tv ? 420 : 430 },
+        { height: platform.tv ? 280 : 430 },
         width ? { width } : null,
       ]}
     >
       {item.backdrop ? (
-        <Image
-          source={api.image(item.backdrop)}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
+        <PosterImage source={api.image(item.backdrop)} style={StyleSheet.absoluteFill as never} />
       ) : item.poster ? (
-        <Image
-          source={api.image(item.poster)}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
+        <PosterImage source={api.image(item.poster)} style={StyleSheet.absoluteFill as never} />
       ) : null}
 
       {/* Top tint */}
@@ -111,100 +121,146 @@ export function Hero({
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Content: Title full width, metadata, genres, big Play button + Action icons */}
+      {/* Content: Title full width, metadata with genres inline, Play button + Action icons */}
       <View
         style={[
           styles.heroContent,
           platform.tv && styles.heroContentTV,
         ]}
       >
-        {/* Title taking full width */}
-        <Text style={[styles.heroTitle, platform.tv && styles.heroTitleTV]} numberOfLines={2}>
-          {item.name}
-        </Text>
+        {/* Slide header: non-focusable, unselectable title and metadata */}
+        <View style={styles.heroSlideHeader}>
+          {/* Title taking full width */}
+          <Text
+            style={[styles.heroTitle, platform.tv && styles.heroTitleTV]}
+            numberOfLines={2}
+            selectable={false}
+          >
+            {item.name}
+          </Text>
 
-        {/* Metadata row under title */}
-        {metaParts.length > 0 && (
-          <View style={styles.heroMetaRow}>
-            {metaParts.map((part, index) => (
-              <React.Fragment key={index}>
-                {index > 0 && <Text style={styles.heroMetaDot}>·</Text>}
-                <Text style={styles.heroMetaText}>{part}</Text>
-              </React.Fragment>
-            ))}
-          </View>
-        )}
-
-        {/* Genre pills */}
-        {item.genres?.length > 0 && (
-          <View style={styles.heroPillRow}>
-            {item.genres.slice(0, 3).map((g) => (
-              <GenrePill key={g} label={g} />
-            ))}
-          </View>
-        )}
+          {/* Metadata row under title: Year, rating, and genres in the exact same row */}
+          {metaParts.length > 0 && (
+            <View style={styles.heroMetaRow}>
+              {metaParts.map((part, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 && <Text style={styles.heroMetaDot}>·</Text>}
+                  {typeof part === "string" ? (
+                    <Text style={styles.heroMetaText} selectable={false}>{part}</Text>
+                  ) : (
+                    part
+                  )}
+                </React.Fragment>
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* CTA row: Big Play button (primary) + Action icon buttons */}
         <View style={styles.heroButtons}>
           <Pressable
-            onPress={onOpen}
+            onPress={() => {
+              triggerHaptic("medium");
+              onOpen();
+            }}
             disabled={disabled}
+            onFocus={() => {
+              setPlayFocus(true);
+              onHeroFocus?.();
+            }}
+            onBlur={() => setPlayFocus(false)}
+            hasTVPreferredFocus={platform.tv && preferred}
             style={({ pressed }) => [
               styles.heroPlayBtn,
               disabled && styles.heroBtnDisabled,
+              platform.tv && playFocus && styles.heroFocusRing,
+              platform.tv && playFocus && styles.heroPlayBtnFocused,
               pressed && styles.heroBtnPressed,
             ]}
           >
-            <Text style={styles.heroPlayBtnText}>{playLabel}</Text>
+            <Play size={platform.tv ? 18 : 16} color="#fff" fill="#fff" />
+            <Text style={styles.heroPlayBtnText}>
+              {playLabel.replace(/^([▶▸]\s*)+/, "")}
+            </Text>
           </Pressable>
 
-          {/* Details button: only show the icon */}
+          {/* Details button: larger icon button */}
           {onDetails && (
             <Pressable
-              onPress={onDetails}
+              onPress={() => {
+                triggerHaptic("light");
+                onDetails();
+              }}
+              onFocus={() => {
+                setDetailFocus(true);
+                onHeroFocus?.();
+              }}
+              onBlur={() => setDetailFocus(false)}
               style={({ pressed }) => [
                 styles.heroIconBtn,
+                platform.tv && detailFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
-              hitSlop={8}
+              hitSlop={10}
               accessibilityLabel="Details"
             >
-              <Info size={20} color="#fff" strokeWidth={2} />
+              <Info size={platform.tv ? 22 : 20} color="#fff" strokeWidth={2.2} />
+              {platform.tv && detailFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
 
-          {/* Trailer link button: only show the icon */}
+          {/* Trailer link button: larger icon button */}
           {onTrailer && (
             <Pressable
-              onPress={onTrailer}
+              onPress={() => {
+                triggerHaptic("light");
+                onTrailer();
+              }}
+              onFocus={() => {
+                setTrailerFocus(true);
+                onHeroFocus?.();
+              }}
+              onBlur={() => setTrailerFocus(false)}
               style={({ pressed }) => [
                 styles.heroIconBtn,
+                platform.tv && trailerFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
-              hitSlop={8}
+              hitSlop={10}
               accessibilityLabel="Watch Trailer"
             >
-              <Film size={20} color="#fff" strokeWidth={2} />
+              <Film size={platform.tv ? 22 : 20} color="#fff" strokeWidth={2.2} />
+              {platform.tv && trailerFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
 
-          {/* Watched toggle button: only show the icon, toggles watched state */}
+          {/* Watched toggle button: larger icon button */}
           {onToggleWatched && (
             <Pressable
-              onPress={onToggleWatched}
+              onPress={() => {
+                triggerHaptic("light");
+                onToggleWatched();
+              }}
+              onFocus={() => {
+                setWatchedFocus(true);
+                onHeroFocus?.();
+              }}
+              onBlur={() => setWatchedFocus(false)}
               style={({ pressed }) => [
                 styles.heroIconBtn,
                 isWatched && styles.heroIconBtnWatched,
+                platform.tv && watchedFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={8}
               accessibilityLabel={isWatched ? "Mark Unwatched" : "Mark Watched"}
             >
               <Check
-                size={20}
+                size={18}
                 color={isWatched ? "#000000" : "#fff"}
                 strokeWidth={isWatched ? 2.6 : 2}
               />
+              {platform.tv && watchedFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
 
@@ -212,10 +268,16 @@ export function Hero({
           {onDownload && (
             <Pressable
               onPress={onDownload}
+              onFocus={() => {
+                setDownloadFocus(true);
+                onHeroFocus?.();
+              }}
+              onBlur={() => setDownloadFocus(false)}
               style={({ pressed }) => [
                 styles.heroIconBtn,
                 downloadState?.state === "downloading" && { borderColor: colors.brand, width: "auto", minWidth: 48, paddingHorizontal: 12 },
                 downloadState?.state === "completed" && { borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.18)" },
+                platform.tv && downloadFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={8}
@@ -223,18 +285,19 @@ export function Hero({
             >
               {downloadState?.state === "downloading" ? (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Download size={18} color={colors.brand} strokeWidth={2.4} />
-                  <Text style={{ color: colors.brand, fontSize: 13, fontFamily: fonts.bold }}>
+                  <Download size={16} color={colors.brand} strokeWidth={2.4} />
+                  <Text style={{ color: colors.brand, fontSize: 12, fontFamily: fonts.bold }}>
                     {downloadState.expected ? `${Math.min(100, Math.round((downloadState.bytes / downloadState.expected) * 100))}%` : "..."}
                   </Text>
                 </View>
               ) : downloadState?.state === "completed" ? (
-                <Check size={20} color="#22c55e" strokeWidth={2.6} />
+                <Check size={18} color="#22c55e" strokeWidth={2.6} />
               ) : downloadState?.state === "queued" ? (
                 <Text style={{ color: colors.muted, fontSize: 11, fontFamily: fonts.medium }}>Queued</Text>
               ) : (
-                <Download size={20} color="#fff" strokeWidth={2} />
+                <Download size={18} color="#fff" strokeWidth={2} />
               )}
+              {platform.tv && downloadFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
         </View>
@@ -250,49 +313,85 @@ export function HeroCarousel({
   items,
   onPlay,
   open,
+  onHeroFocus,
 }: {
   items: ItemCard[];
   onPlay: (item: ItemCard) => void;
   open: OpenTitle;
+  onHeroFocus?: () => void;
 }) {
   const { width } = useWindowDimensions();
+  const { platform } = useClient();
   const [activeIndex, setActiveIndex] = useState(0);
+  const [focusedDot, setFocusedDot] = useState<number | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const carouselScrollRef = useRef<ScrollView>(null);
 
   if (!items.length) return null;
 
+  const slideWidth = containerWidth || (platform.tv ? width - 58 : width);
+
+  const goToSlide = (idx: number) => {
+    const clamped = Math.max(0, Math.min(items.length - 1, idx));
+    setActiveIndex(clamped);
+    carouselScrollRef.current?.scrollTo({ x: clamped * slideWidth, animated: true });
+  };
+
   return (
-    <View style={{ width: "100%", position: "relative" }}>
+    <View
+      style={{ width: "100%", position: "relative" }}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        if (w > 0 && w !== containerWidth) setContainerWidth(w);
+      }}
+    >
       <ScrollView
+        ref={carouselScrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(e) => {
-          const index = Math.round(e.nativeEvent.contentOffset.x / (width || 1));
+          const index = Math.round(e.nativeEvent.contentOffset.x / (slideWidth || 1));
           setActiveIndex(Math.max(0, Math.min(items.length - 1, index)));
         }}
         scrollEventThrottle={16}
       >
-        {items.map((it) => (
+        {items.map((it, i) => (
           <Hero
             key={it.id}
             item={it}
-            width={width}
+            width={slideWidth}
+            preferred={platform.tv && i === 0}
+            onHeroFocus={onHeroFocus}
             onOpen={() => onPlay(it)}
             onDetails={() => open(it.publicId)}
           />
         ))}
       </ScrollView>
 
-      {/* Pagination dots */}
+      {/* Pagination dots / interactive on TV */}
       {items.length > 1 && (
-        <View style={styles.carouselDots}>
+        <View style={styles.carouselDots} pointerEvents="box-none">
           {items.map((_, i) => (
-            <View
+            <Pressable
               key={i}
-              style={[
+              focusable={platform.tv}
+              onFocus={() => {
+                setFocusedDot(i);
+                goToSlide(i);
+                onHeroFocus?.();
+              }}
+              onBlur={() => setFocusedDot(null)}
+              onPress={() => goToSlide(i)}
+              style={({ pressed }) => [
                 styles.carouselDot,
                 i === activeIndex && styles.carouselDotActive,
+                focusedDot === i && styles.carouselDotFocused,
+                pressed && { opacity: 0.7 },
               ]}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Slide ${i + 1} of ${items.length}`}
             />
           ))}
         </View>
@@ -323,46 +422,51 @@ export function ContinueWatchingCard({
   const remainingLabel = remaining > 0 ? `${Math.ceil(remaining / 60)}m left` : (duration ? timeLabel(duration) : null);
   const progressRatio = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0;
 
-  const epNumber = (item as any).episodeNumber ?? item.episodeNumber;
+  const isSeries = item.kind === "series";
+  const epNumber = isSeries ? null : ((item as any).episodeNumber ?? item.episodeNumber);
   const epLabel = epNumber != null ? `E${epNumber}` : null;
   const rawName = String(item.name || "").trim();
   const cleanedName = rawName
     .replace(/^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i, "")
     .trim();
 
+  const [focus, setFocus] = useState(false);
+
   const title = item.parentTitle || (cleanedName || rawName);
-  const subtitle =
-    epNumber != null
+  let subtitle = isSeries
+    ? "TV Series"
+    : epNumber != null
       ? `Episode ${epNumber}${cleanedName && item.parentTitle ? ` · ${cleanedName}` : ""}`
       : item.year ? `${item.year}` : "Resume playing";
+  // Never repeat the title as its own subtitle
+  if (subtitle === title) {
+    subtitle = isSeries ? "TV Series" : "";
+  }
 
   return (
     <Pressable
       onPress={onPress}
-      onFocus={onFocus}
+      onFocus={() => {
+        setFocus(true);
+        onFocus?.();
+      }}
+      onBlur={() => setFocus(false)}
       style={({ pressed }) => [
         styles.cwCard,
-        preferred && styles.cwCardFocused,
+        Platform.isTV && focus && styles.cwCardFocused,
+        preferred && Platform.isTV && styles.cwPreferred,
         pressed && { opacity: 0.8 },
       ]}
     >
       {/* 16:9 Thumbnail container */}
       <View style={styles.cwThumbWrap}>
-        {item.backdrop ? (
-          <Image
-            source={api.image(item.backdrop)}
-            style={styles.cwThumb}
-            resizeMode="cover"
-          />
-        ) : item.poster ? (
-          <Image
-            source={api.image(item.poster)}
-            style={styles.cwThumb}
-            resizeMode="cover"
-          />
-        ) : (
+        <PosterImage source={api.image(item.backdrop || item.poster)} />
+        {!item.backdrop && !item.poster && (
           <View style={[styles.cwThumb, styles.cwThumbPlaceholder]} />
         )}
+
+        {/* White focus ring when selected */}
+        {focus && <View style={styles.cwFocusRing} pointerEvents="none" />}
 
         {/* Top-left badge: Episode number */}
         {epLabel && (
@@ -394,7 +498,9 @@ export function ContinueWatchingCard({
       {/* Info below thumbnail */}
       <View style={styles.cwInfo}>
         <Text style={styles.cwTitle} numberOfLines={1}>{title}</Text>
-        <Text style={styles.cwSubtitle} numberOfLines={1}>{subtitle}</Text>
+        {!!subtitle && (
+          <Text style={styles.cwSubtitle} numberOfLines={1}>{subtitle}</Text>
+        )}
       </View>
     </Pressable>
   );
@@ -411,6 +517,7 @@ function CatalogRow({
   isContinueWatching = false,
   focusId,
   focused,
+  onRowFocus,
 }: {
   title: string;
   items: ItemCard[];
@@ -419,17 +526,19 @@ function CatalogRow({
   isContinueWatching?: boolean;
   focusId: number | null;
   focused: (id: number) => void;
+  onRowFocus?: () => void;
 }) {
   const { api, platform } = useClient();
   const ref = useRef<FlatList<ItemCard>>(null);
-  const cardWidth = isContinueWatching ? 220 : (platform.tv ? 200 : 150);
+  const cardWidth = isContinueWatching
+    ? (platform.tv ? 168 : 220)
+    : (platform.tv ? 124 : 150);
 
   return (
     <View style={styles.rowContainer}>
       {/* Section header */}
       <View style={styles.rowHeader}>
         <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSeeAll}>See all</Text>
       </View>
 
       <FlatList
@@ -449,9 +558,8 @@ function CatalogRow({
             <ContinueWatchingCard
               item={item}
               api={api}
-              preferred={platform.tv && focusId === item.id}
               onFocus={() => {
-                focused(item.id);
+                onRowFocus?.();
                 if (platform.tv)
                   ref.current?.scrollToIndex({
                     index,
@@ -460,7 +568,6 @@ function CatalogRow({
                   });
               }}
               onPress={() => {
-                focused(item.id);
                 if (onPlay) {
                   onPlay(item);
                 } else {
@@ -473,9 +580,8 @@ function CatalogRow({
               width={cardWidth}
               item={item}
               api={api}
-              preferred={platform.tv && focusId === item.id}
               onFocus={() => {
-                focused(item.id);
+                onRowFocus?.();
                 if (platform.tv)
                   ref.current?.scrollToIndex({
                     index,
@@ -484,7 +590,6 @@ function CatalogRow({
                   });
               }}
               onPress={() => {
-                focused(item.id);
                 open(item.publicId);
               }}
             />
@@ -544,13 +649,44 @@ export function HomeScreen({
     }).catch(() => open(item.publicId));
   }, [api, play, open]);
 
-  // Carousel items: up to 5 items (featured + items from rows)
+  // Normalize any item: if it is an episode, convert to full TV series card
+  const toFullSeriesOrMovie = React.useCallback((it: ItemCard): ItemCard => {
+    if (it.kind === "episode") {
+      const seriesId = it.parentId || it.id;
+      return {
+        ...it,
+        id: seriesId,
+        publicId: it.parentPublicId || it.publicId,
+        name:
+          it.parentTitle ||
+          it.name
+            .replace(
+              /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
+              "",
+            )
+            .trim() ||
+          it.name,
+        kind: "series",
+        seasonNumber: null,
+        episodeNumber: null,
+      };
+    }
+    return it;
+  }, []);
+
+  // Carousel items: up to 5 items (featured + items from rows) — movies and TV series only (NO episodes)
   const carouselItems = React.useMemo(() => {
     const list: ItemCard[] = [];
-    if (data.value?.featured) list.push(data.value.featured);
+    const isShowOrMovie = (it: ItemCard) => it.kind === "movie" || it.kind === "series";
+
+    if (data.value?.featured && isShowOrMovie(data.value.featured)) {
+      list.push(data.value.featured);
+    }
     if (data.value?.rows) {
       for (const row of data.value.rows) {
+        if (row.key === "next" || row.key === "continue") continue;
         for (const it of row.items) {
+          if (!isShowOrMovie(it)) continue;
           if (!list.some((existing) => existing.id === it.id)) {
             list.push(it);
           }
@@ -562,19 +698,75 @@ export function HomeScreen({
     return list;
   }, [data.value]);
 
+  // TV row-snap scrolling: rows record their vertical position so focus
+  // entering a row snaps the page so the row header sits near the top,
+  // instead of the page drifting "half way" through content.
+  const scrollRef = useRef<ScrollView>(null);
+  const rowYs = useRef<Record<string, number>>({});
+  const snapToRow = React.useCallback((key: string) => {
+    if (!Platform.isTV) return;
+    const y = rowYs.current[key];
+    if (y != null) scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+  }, []);
+
+  const recordRowY =
+    (key: string) =>
+    (e: { nativeEvent: { layout: { y: number } } }) => {
+      rowYs.current[key] = e.nativeEvent.layout.y;
+    };
+
+  // Continue watching: only full series or movies with progress, deduplicated
+  const continueItems = React.useMemo(() => {
+    if (!data.value?.rows) return [];
+    const continueRow = data.value.rows.find(
+      (r) => r.items.some((i) => i.watch?.position && !i.watch?.played),
+    );
+    if (!continueRow) return [];
+    const seen = new Set<string>();
+    const list: ItemCard[] = [];
+    for (const it of continueRow.items) {
+      if (!it.watch?.position || it.watch?.played) continue;
+      const normalized = toFullSeriesOrMovie(it);
+      const key = `${normalized.kind}-${normalized.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push(normalized);
+    }
+    return list;
+  }, [data.value, toFullSeriesOrMovie]);
+
+  // Other rows: filter out "next" (next up episodes) and continue watching, normalize to full titles
+  const otherRows = React.useMemo(() => {
+    if (!data.value?.rows) return [];
+    const continueRowKey = data.value.rows.find(
+      (r) => r.items.some((i) => i.watch?.position && !i.watch?.played),
+    )?.key;
+    return data.value.rows
+      .filter((r) => r.key !== "next" && r.key !== continueRowKey)
+      .map((r) => {
+        const seen = new Set<string>();
+        const items: ItemCard[] = [];
+        for (const it of r.items) {
+          const normalized = toFullSeriesOrMovie(it);
+          const key = `${normalized.kind}-${normalized.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          items.push(normalized);
+        }
+        return { ...r, items };
+      })
+      .filter((r) => r.items.length > 0);
+  }, [data.value, toFullSeriesOrMovie]);
+
   if (data.loading) return <Loading />;
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
 
-  // Filter rows that have watch progress for "Continue Watching"
-  const continueRow = data.value?.rows.find(
-    (r) => r.items.some((i) => i.watch?.position && !i.watch?.played),
-  );
-  const otherRows = data.value?.rows.filter((r) => r !== continueRow) ?? [];
-
   return (
     <ScrollView
+      ref={scrollRef}
       contentContainerStyle={styles.homeContainer}
       showsVerticalScrollIndicator={false}
+      removeClippedSubviews={false}
       refreshControl={
         <RefreshControl
           refreshing={data.loading}
@@ -585,39 +777,49 @@ export function HomeScreen({
     >
       {/* Hero Carousel */}
       {carouselItems.length > 0 && (
-        <HeroCarousel
-          items={carouselItems}
-          onPlay={handlePlay}
-          open={open}
-        />
+        <View onLayout={recordRowY("hero")}>
+          <HeroCarousel
+            items={carouselItems}
+            onPlay={handlePlay}
+            open={open}
+            onHeroFocus={() => {
+              if (focusId != null) focused(null as any);
+              scrollRef.current?.scrollTo({ y: 0, animated: true });
+            }}
+          />
+        </View>
       )}
 
-      {/* Continue watching row with custom wide landscape cards & instant play */}
-      {continueRow && (
-        <CatalogRow
-          key={continueRow.key}
-          title="Continue Watching"
-          items={continueRow.items.filter(
-            (i) => i.watch?.position && !i.watch?.played,
-          )}
-          open={open}
-          onPlay={handlePlay}
-          isContinueWatching={true}
-          focusId={active ? focusId : null}
-          focused={focused}
-        />
+      {/* Continue watching row with full series or movie cards */}
+      {continueItems.length > 0 && (
+        <View onLayout={recordRowY("cw")}>
+          <CatalogRow
+            key="continue-watching"
+            title="Continue Watching"
+            items={continueItems}
+            open={open}
+            onPlay={handlePlay}
+            isContinueWatching={true}
+            focusId={active ? focusId : null}
+            focused={focused}
+            onRowFocus={() => snapToRow("cw")}
+          />
+        </View>
       )}
 
-      {/* Rest of the rows */}
+      {/* Rest of the rows (full movies and series only) */}
       {otherRows.map((row) => (
-        <CatalogRow
-          key={row.key}
-          title={row.title}
-          items={row.items}
-          open={open}
-          focusId={active ? focusId : null}
-          focused={focused}
-        />
+        <View key={row.key} onLayout={recordRowY(row.key)}>
+          <CatalogRow
+            key={row.key}
+            title={row.title}
+            items={row.items}
+            open={open}
+            focusId={active ? focusId : null}
+            focused={focused}
+            onRowFocus={() => snapToRow(row.key)}
+          />
+        </View>
       ))}
 
       {!data.value?.rows.length && (
@@ -630,22 +832,63 @@ export function HomeScreen({
 }
 
 // ---------------------------------------------------------------------------
+// FilterChip — pill with a visible TV focus state
+// ---------------------------------------------------------------------------
+function FilterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onFocus={() => setFocus(true)}
+      onBlur={() => setFocus(false)}
+      onPress={onPress}
+      style={[
+        styles.filterChip,
+        active && styles.filterChipActive,
+        focus && styles.filterChipFocusedTv,
+      ]}
+    >
+      <Text
+        style={[
+          styles.filterChipText,
+          active && styles.filterChipTextActive,
+          focus && styles.filterChipTextFocusedTv,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // LibraryScreen
 // ---------------------------------------------------------------------------
 export function LibraryScreen({
   kind,
   open,
   openDownloads,
+  defaultSubTab,
 }: {
   kind: "movie" | "series";
   open: OpenTitle;
   openDownloads?: () => void;
+  defaultSubTab?: "movie" | "series" | "downloads";
 }) {
   const { api, platform, progress } = useClient();
   const downloadEntries = useDownloads();
   const { width } = useWindowDimensions();
   type LibraryTab = "movie" | "series" | "downloads";
-  const [activeTab, setActiveTab] = useState<LibraryTab>(kind);
+  const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || kind);
   const [dlFilter, setDlFilter] = useState<"all" | "movie" | "series">("all");
   const [sort, setSort] = useState("name");
   const [unwatched, setUnwatched] = useState(false);
@@ -656,9 +899,15 @@ export function LibraryScreen({
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const ref = useRef<FlatList<ItemCard>>(null);
 
-  // Probe both movies and series to auto-hide empty tabs
-  const movieProbe = useResource((signal) => api.items("movie", 0, "name", signal), [api]);
-  const seriesProbe = useResource((signal) => api.items("series", 0, "name", signal), [api]);
+  // Probe both movies and series to auto-hide empty tabs when online
+  const movieProbe = useResource(
+    (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("movie", 0, "name", signal)),
+    [api, defaultSubTab],
+  );
+  const seriesProbe = useResource(
+    (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("series", 0, "name", signal)),
+    [api, defaultSubTab],
+  );
 
   const hasMovies = (movieProbe.value?.items?.length ?? 0) > 0;
   const hasSeries = (seriesProbe.value?.items?.length ?? 0) > 0;
@@ -673,7 +922,7 @@ export function LibraryScreen({
     }
   }, [hasMovies, hasSeries, movieProbe.value, seriesProbe.value, activeTab]);
 
-  const showLibTabs = !platform.tv;
+  const showLibTabs = true;
 
   const data = useResource(
     (signal) => (activeTab === "downloads" ? Promise.resolve({ items: [] }) : api.items(activeTab, 0, sort, signal, unwatched)),
@@ -761,9 +1010,9 @@ export function LibraryScreen({
   }, [downloadedCards, dlFilter]);
 
   const items = activeTab === "downloads" ? filteredDownloadedItems : [...(data.value?.items || []), ...extra];
-  const available = width - (platform.tv ? 210 : 0) - 32;
-  const columns = Math.max(2, Math.floor(available / (platform.tv ? 185 : 150)));
-  const cardWidth = Math.floor(available / columns) - 12;
+  const available = width - (platform.tv ? 58 : 0) - 32;
+  const columns = Math.max(2, Math.floor(available / (platform.tv ? 126 : 150)));
+  const cardWidth = Math.floor(available / columns) - 10;
 
   function reset(nextSort: string, nextUnwatched: boolean) {
     setExtra([]);
@@ -801,26 +1050,32 @@ export function LibraryScreen({
   return (
     <View style={styles.libraryRoot}>
       {/* Tab bar — Movies | TV Shows | Downloads */}
-      {showLibTabs && (
+      {showLibTabs && defaultSubTab !== "downloads" && (
         <View style={styles.libTabBar}>
-          {(["movie", "series", "downloads"] as const).map((tab) => {
+          {(platform.tv
+            ? (["movie", "series"] as const)
+            : (["movie", "series", "downloads"] as const)
+          ).map((tab) => {
             const active = activeTab === tab;
-            const label = tab === "movie" ? "Movies" : tab === "series" ? "TV Shows" : "Downloads";
+            const label =
+              tab === "movie"
+                ? "Movies"
+                : tab === "series"
+                  ? "TV Shows"
+                  : "Downloads";
             return (
-              <Pressable
+              <FilterChip
                 key={tab}
+                label={label}
+                active={active}
                 onPress={() => {
+                  triggerHaptic("selection");
                   setActiveTab(tab);
                   setExtra([]);
                   setEnd(false);
                   setMoreError("");
                 }}
-                style={[styles.libTab, active && styles.libTabActive]}
-              >
-                <Text style={[styles.libTabText, active && styles.libTabTextActive]}>
-                  {label}
-                </Text>
-              </Pressable>
+              />
             );
           })}
         </View>
@@ -834,30 +1089,21 @@ export function LibraryScreen({
           style={{ flexGrow: 0 }}
           contentContainerStyle={styles.filterRow}
         >
-          <Pressable
+          <FilterChip
+            label={`All (${downloadedCards.length})`}
+            active={dlFilter === "all"}
             onPress={() => setDlFilter("all")}
-            style={[styles.filterChip, dlFilter === "all" && styles.filterChipActive]}
-          >
-            <Text style={[styles.filterChipText, dlFilter === "all" && styles.filterChipTextActive]}>
-              All ({downloadedCards.length})
-            </Text>
-          </Pressable>
-          <Pressable
+          />
+          <FilterChip
+            label={`Movies (${downloadedCards.filter((i) => i.kind === "movie").length})`}
+            active={dlFilter === "movie"}
             onPress={() => setDlFilter("movie")}
-            style={[styles.filterChip, dlFilter === "movie" && styles.filterChipActive]}
-          >
-            <Text style={[styles.filterChipText, dlFilter === "movie" && styles.filterChipTextActive]}>
-              Movies ({downloadedCards.filter((i) => i.kind === "movie").length})
-            </Text>
-          </Pressable>
-          <Pressable
+          />
+          <FilterChip
+            label={`TV Shows (${downloadedCards.filter((i) => i.kind === "series").length})`}
+            active={dlFilter === "series"}
             onPress={() => setDlFilter("series")}
-            style={[styles.filterChip, dlFilter === "series" && styles.filterChipActive]}
-          >
-            <Text style={[styles.filterChipText, dlFilter === "series" && styles.filterChipTextActive]}>
-              TV Shows ({downloadedCards.filter((i) => i.kind === "series").length})
-            </Text>
-          </Pressable>
+          />
         </ScrollView>
       ) : (
         <ScrollView
@@ -867,24 +1113,18 @@ export function LibraryScreen({
           contentContainerStyle={styles.filterRow}
         >
           {FILTERS.map(([key, label]) => (
-            <Pressable
+            <FilterChip
               key={key}
+              label={label}
+              active={sort === key}
               onPress={() => reset(key, unwatched)}
-              style={[styles.filterChip, sort === key && styles.filterChipActive]}
-            >
-              <Text style={[styles.filterChipText, sort === key && styles.filterChipTextActive]}>
-                {label}
-              </Text>
-            </Pressable>
+            />
           ))}
-          <Pressable
+          <FilterChip
+            label="Unwatched"
+            active={unwatched}
             onPress={() => reset(sort, !unwatched)}
-            style={[styles.filterChip, unwatched && styles.filterChipActive]}
-          >
-            <Text style={[styles.filterChipText, unwatched && styles.filterChipTextActive]}>
-              Unwatched
-            </Text>
-          </Pressable>
+          />
         </ScrollView>
       )}
 
@@ -910,12 +1150,20 @@ export function LibraryScreen({
               preferred={platform.tv && item.id === focusedId}
               onFocus={() => {
                 setFocusedId(item.id);
-                if (platform.tv)
-                  ref.current?.scrollToIndex({
-                    index: Math.floor(index / columns),
-                    viewPosition: 0.5,
-                    animated: false,
+                if (platform.tv) {
+                  // numColumns FlatList renders rows, so convert the flat
+                  // index to a row and keep it near the top of the viewport
+                  // with a plain offset scroll (scrollToIndex would target
+                  // the wrong item and land the grid badly out of position).
+                  const rowIndex = Math.floor(index / columns);
+                  const cardHeight = Math.round(cardWidth * 1.5 + 30);
+                  const rowStep = cardHeight + 16;
+                  const target = rowIndex >= 3 ? (rowIndex - 2) * rowStep + 4 : 0;
+                  ref.current?.scrollToOffset({
+                    offset: Math.max(0, target),
+                    animated: true,
                   });
+                }
               }}
               onPress={() => {
                 setFocusedId(item.id);
@@ -970,6 +1218,7 @@ export function SearchScreen({
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [focusId, focused] = useState<number | null>(null);
+  const [inputFocus, setInputFocus] = useState(false);
 
   React.useEffect(() => {
     const timer = setTimeout(() => setDebounced(query.trim()), 300);
@@ -1013,10 +1262,11 @@ export function SearchScreen({
     [api, play, open],
   );
 
-  // Grid config (2 cols for search results)
-  const available = width - 32;
-  const columns = 2;
-  const cardWidth = Math.floor(available / columns) - 12;
+  // Grid config (responsive cols for search results)
+  const isTv = Platform.isTV;
+  const available = width - (isTv ? 58 : 0) - 32;
+  const columns = isTv ? Math.max(3, Math.floor(available / 126)) : 2;
+  const cardWidth = Math.floor(available / columns) - 10;
 
   return (
     <ScrollView
@@ -1024,19 +1274,29 @@ export function SearchScreen({
       contentContainerStyle={styles.searchContainer}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.searchHeading}>Search</Text>
+      <Text style={[styles.searchHeading, Platform.isTV && styles.searchHeadingTv]}>Search</Text>
 
-      {/* Shorter, compact search bar */}
-      <View style={styles.searchInputWrap}>
-        <SearchIcon size={18} color={colors.muted} style={{ marginRight: 8 }} />
+      {/* Shorter, compact search bar — extra wide on TV */}
+      <View
+        style={[
+          styles.searchInputWrap,
+          Platform.isTV && styles.searchInputWrapTv,
+          Platform.isTV && inputFocus && styles.searchInputWrapTvFocused,
+        ]}
+      >
         <TextInput
-          style={styles.searchInput}
+          style={[
+            styles.searchInput,
+            Platform.isTV && styles.searchInputTv,
+          ]}
           value={query}
           onChangeText={setQuery}
           placeholder="Movies, shows and episodes…"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
           autoCorrect={false}
+          onFocus={() => setInputFocus(true)}
+          onBlur={() => setInputFocus(false)}
         />
         {!!query && (
           <Pressable onPress={() => setQuery("")} style={{ padding: 4 }}>
@@ -1181,6 +1441,8 @@ export function DetailScreen({
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
   const [season, setSeason] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"episodes" | "details">("episodes");
+  const [tabFocus, setTabFocus] = useState<string | null>(null);
+  const [seasonFocus, setSeasonFocus] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
   const [downloadingSeason, setDownloadingSeason] = useState(false);
   const [overrideWatched, setOverrideWatched] = useState<boolean | null>(null);
@@ -1558,8 +1820,9 @@ export function DetailScreen({
               {/* Hero section */}
               <Hero
                 item={item}
+                preferred={true}
                 actionLabel={
-                  item.watch?.position && !isSeriesWatched ? "▶  Resume" : "▶  Play"
+                  item.watch?.position && !isSeriesWatched ? "Resume" : "Play"
                 }
                 disabled={!getFirstPlayableFileId()}
                 onOpen={() => {
@@ -1590,7 +1853,13 @@ export function DetailScreen({
                     <View style={styles.detailTabBar}>
                       <Pressable
                         onPress={() => setDetailTab("episodes")}
-                        style={[styles.detailTabItem, detailTab === "episodes" && styles.detailTabItemActive]}
+                        onFocus={() => setTabFocus("episodes")}
+                        onBlur={() => setTabFocus(null)}
+                        style={[
+                          styles.detailTabItem,
+                          detailTab === "episodes" && styles.detailTabItemActive,
+                          tabFocus === "episodes" && styles.detailTabItemFocusedTv,
+                        ]}
                       >
                         <Text style={[styles.detailTabItemText, detailTab === "episodes" && styles.detailTabItemTextActive]}>
                           Episodes
@@ -1598,7 +1867,13 @@ export function DetailScreen({
                       </Pressable>
                       <Pressable
                         onPress={() => setDetailTab("details")}
-                        style={[styles.detailTabItem, detailTab === "details" && styles.detailTabItemActive]}
+                        onFocus={() => setTabFocus("details")}
+                        onBlur={() => setTabFocus(null)}
+                        style={[
+                          styles.detailTabItem,
+                          detailTab === "details" && styles.detailTabItemActive,
+                          tabFocus === "details" && styles.detailTabItemFocusedTv,
+                        ]}
                       >
                         <Text style={[styles.detailTabItemText, detailTab === "details" && styles.detailTabItemTextActive]}>
                           Cast & Details
@@ -1623,7 +1898,13 @@ export function DetailScreen({
                                   <Pressable
                                     key={s.number}
                                     onPress={() => setSeason(s.number)}
-                                    style={[styles.seasonPill, active && styles.seasonPillActive]}
+                                    onFocus={() => setSeasonFocus(s.number)}
+                                    onBlur={() => setSeasonFocus(null)}
+                                    style={[
+                                      styles.seasonPill,
+                                      active && styles.seasonPillActive,
+                                      seasonFocus === s.number && styles.seasonPillFocusedTv,
+                                    ]}
                                   >
                                     <Text style={[styles.seasonPillText, active && styles.seasonPillTextActive]}>
                                       {s.name || `Season ${s.number}`}
@@ -1923,26 +2204,8 @@ function EpisodeCard({
             {epDisplayTitle}
           </Text>
 
-          {/* Action buttons: Watched toggle + Download state */}
+          {/* Action buttons: Download state */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {onToggleWatched && !platform.tv && (
-              <Pressable
-                onPress={() => onToggleWatched(ep)}
-                style={({ pressed }) => [
-                  styles.epWatchedToggleBtn,
-                  watched && styles.epWatchedToggleBtnActive,
-                  pressed && { opacity: 0.6 },
-                ]}
-                hitSlop={6}
-                accessibilityLabel={watched ? "Mark unwatched" : "Mark watched"}
-              >
-                <Check
-                  size={13}
-                  color={watched ? "#fff" : colors.muted}
-                  strokeWidth={watched ? 2.5 : 2}
-                />
-              </Pressable>
-            )}
 
             {ep.fileId && !platform.tv && (
               dl ? (
@@ -2034,14 +2297,15 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
   },
   heroContentTV: {
-    paddingHorizontal: 48,
-    paddingBottom: 44,
-    maxWidth: 760,
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    maxWidth: 500,
+    gap: 6,
   },
   heroPillRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: 5,
   },
   heroTitle: {
     fontFamily: fonts.black,
@@ -2051,12 +2315,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   heroTitleTV: {
-    fontSize: 44,
-    lineHeight: 52,
+    fontSize: 20,
+    lineHeight: 24,
   },
   heroSubtitle: {
     fontFamily: fonts.regular,
-    fontSize: 13,
+    fontSize: 12,
     color: "rgba(255,255,255,0.65)",
     letterSpacing: 0.1,
   },
@@ -2064,30 +2328,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
-    gap: 6,
+    gap: 5,
   },
   heroMetaText: {
     fontFamily: fonts.medium,
-    fontSize: 13,
+    fontSize: 11,
     color: "rgba(255,255,255,0.75)",
   },
   heroMetaDot: {
     color: "rgba(255,255,255,0.5)",
-    fontSize: 13,
+    fontSize: 11,
   },
   heroButtons: {
     flexDirection: "row",
     gap: 12,
     marginTop: 6,
     alignItems: "center",
-    width: "100%",
   },
   heroPlayBtn: {
-    flex: 1,
+    flex: 0,
+    alignSelf: "flex-start",
     backgroundColor: colors.brand,
-    borderRadius: 50,
-    paddingHorizontal: 20,
-    paddingVertical: 13,
+    borderRadius: 22,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2097,12 +2362,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 15,
     color: "#fff",
-    letterSpacing: 0.1,
+    letterSpacing: 0.2,
   },
   heroIconBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.45)",
     backgroundColor: "rgba(255,255,255,0.1)",
@@ -2114,19 +2379,20 @@ const styles = StyleSheet.create({
     borderColor: "#ffffff",
   },
   heroDetailsBtn: {
-    flex: 3,
-    borderRadius: 50,
+    flex: 0,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.6)",
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    minHeight: 32,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
   heroDetailsBtnText: {
     fontFamily: fonts.bold,
-    fontSize: 15,
+    fontSize: 12.5,
     color: "#fff",
   },
   heroBtnDisabled: {
@@ -2135,17 +2401,61 @@ const styles = StyleSheet.create({
   heroBtnPressed: {
     opacity: 0.78,
   },
+  // --- TV hero focus states ---
+  heroSlideHeader: {
+    borderRadius: 8,
+    padding: 2,
+  },
+  heroSlideHeaderFocused: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.45)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginHorizontal: -8,
+    marginVertical: -4,
+  },
+  heroMetaRating: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: "rgba(255,255,255,0.85)",
+  },
+  heroFocusRing: {
+    borderWidth: 2,
+    borderColor: "#ffffff",
+  },
+  heroPlayBtnFocused: {
+    borderColor: "#ffffff",
+    borderWidth: 2,
+    zIndex: 3,
+    elevation: 8,
+  },
+  heroIconBtnFocused: {
+    borderColor: "#ffffff",
+    backgroundColor: "rgba(255,255,255,0.28)",
+    zIndex: 3,
+    elevation: 8,
+  },
+  iconBtnFocusRing: {
+    position: "absolute" as const,
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderWidth: 2,
+    borderColor: "#ffffff",
+    borderRadius: 16,
+  },
 
   // --- Hero Carousel ---
   carouselDots: {
     position: "absolute",
-    bottom: 12,
-    left: 0,
-    right: 0,
+    top: 18,
+    right: 28,
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
     gap: 6,
+    zIndex: 10,
   },
   carouselDot: {
     width: 6,
@@ -2154,22 +2464,43 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.35)",
   },
   carouselDotActive: {
-    width: 18,
+    width: 20,
     backgroundColor: colors.brand,
+  },
+  carouselDotFocused: {
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+    transform: [{ scale: 1.25 }],
   },
 
   // --- Continue Watching Card ---
   cwCard: {
-    width: 220,
-    gap: 8,
+    width: 168,
+    gap: 6,
   },
   cwCardFocused: {
-    transform: [{ scale: 1.04 }],
+    zIndex: 3,
+    elevation: 8,
+  },
+  cwPreferred: {
+    zIndex: 3,
+    elevation: 8,
+  },
+  cwFocusRing: {
+    position: "absolute" as const,
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderWidth: 2.5,
+    borderColor: "#ffffff",
+    borderRadius: 8,
+    zIndex: 5,
   },
   cwThumbWrap: {
     width: "100%",
     aspectRatio: 16 / 9,
-    borderRadius: 10,
+    borderRadius: 8,
     overflow: "hidden",
     backgroundColor: colors.surface,
     justifyContent: "center",
@@ -2184,37 +2515,37 @@ const styles = StyleSheet.create({
   },
   cwBadge: {
     position: "absolute",
-    top: 8,
-    left: 8,
+    top: 6,
+    left: 6,
     backgroundColor: "rgba(0,0,0,0.72)",
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
   },
   cwBadgeText: {
     fontFamily: fonts.bold,
-    fontSize: 11,
+    fontSize: 9.5,
     color: "#fff",
   },
   cwDuration: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 6,
+    right: 6,
     backgroundColor: "rgba(0,0,0,0.72)",
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
   },
   cwDurationText: {
     fontFamily: fonts.medium,
-    fontSize: 11,
+    fontSize: 9.5,
     color: "#fff",
   },
   cwPlayCircle: {
     position: "absolute",
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: "rgba(0,0,0,0.55)",
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.8)",
@@ -2227,7 +2558,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 3,
+    height: 2.5,
     backgroundColor: "rgba(255,255,255,0.2)",
   },
   cwProgressFill: {
@@ -2239,45 +2570,47 @@ const styles = StyleSheet.create({
   },
   cwTitle: {
     fontFamily: fonts.bold,
-    fontSize: 14,
+    fontSize: 12,
+    lineHeight: 15,
     color: colors.ink,
   },
   cwSubtitle: {
     fontFamily: fonts.regular,
-    fontSize: 12,
+    fontSize: 10.5,
     color: colors.muted,
   },
 
   // --- Catalog row ---
   rowContainer: {
-    marginBottom: 32,
-    gap: 12,
+    marginBottom: 20,
+    gap: 6,
   },
   rowHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
+    marginBottom: 2,
   },
   rowTitle: {
     fontFamily: fonts.bold,
-    fontSize: 18,
+    fontSize: 15,
     color: colors.ink,
     letterSpacing: -0.2,
   },
   rowSeeAll: {
     fontFamily: fonts.medium,
-    fontSize: 13,
+    fontSize: 11,
     color: colors.muted,
   },
   rowList: {
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 10,
   },
 
   // --- Home ---
   homeContainer: {
-    paddingBottom: 36,
+    paddingBottom: 28,
   },
   homeRefresh: {
     paddingHorizontal: 20,
@@ -2298,7 +2631,7 @@ const styles = StyleSheet.create({
   },
   libTab: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 10,
     alignItems: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
@@ -2308,7 +2641,7 @@ const styles = StyleSheet.create({
   },
   libTabText: {
     fontFamily: fonts.medium,
-    fontSize: 15,
+    fontSize: 13,
     color: colors.muted,
   },
   libTabTextActive: {
@@ -2316,14 +2649,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
   },
   filterRow: {
-    gap: 8,
+    gap: 6,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 50,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 16,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
@@ -2334,14 +2667,21 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     fontFamily: fonts.medium,
-    fontSize: 13,
+    fontSize: 11,
     color: colors.muted,
   },
   filterChipTextActive: {
     color: "#fff",
   },
+  filterChipFocusedTv: {
+    borderWidth: 2,
+    borderColor: "#ffffff",
+  },
+  filterChipTextFocusedTv: {
+    fontFamily: fonts.bold,
+  },
   libGrid: {
-    gap: 16,
+    gap: 12,
     paddingHorizontal: 16,
     paddingBottom: 24,
     paddingTop: 4,
@@ -2349,15 +2689,19 @@ const styles = StyleSheet.create({
 
   // --- Search ---
   searchContainer: {
-    padding: 20,
-    gap: 20,
-    paddingBottom: 40,
+    padding: 16,
+    gap: 14,
+    paddingBottom: 32,
   },
   searchHeading: {
     fontFamily: fonts.black,
     fontSize: 34,
     color: colors.ink,
     letterSpacing: -0.5,
+  },
+  searchHeadingTv: {
+    fontSize: 18,
+    lineHeight: 22,
   },
   searchInputWrap: {
     flexDirection: "row",
@@ -2372,11 +2716,29 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
   },
+  searchInputWrapTv: {
+    maxWidth: "100%",
+    width: "100%",
+    height: 38,
+    alignSelf: "stretch",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderWidth: 2,
+    borderColor: colors.line,
+  },
+  searchInputWrapTvFocused: {
+    borderColor: "#ffffff",
+  },
   searchInput: {
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.ink,
+  },
+  searchInputTv: {
+    fontSize: 13,
+    paddingVertical: 0,
   },
   searchHint: {
     fontFamily: fonts.regular,
@@ -2514,6 +2876,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     color: colors.ink,
   },
+  detailTabItemFocusedTv: {
+    borderBottomWidth: 3,
+    borderBottomColor: "#ffffff",
+  },
 
   // Season pills
   seasonPill: {
@@ -2537,21 +2903,23 @@ const styles = StyleSheet.create({
     color: "#000000",
     fontFamily: fonts.bold,
   },
+  seasonPillFocusedTv: {
+    borderWidth: 2,
+    borderColor: "#ffffff",
+  },
 
   // Episode card
   epCard: {
     flexDirection: "row",
     gap: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 10,
-    borderTopWidth: 1,
-    borderColor: colors.line,
   },
   epCardFocused: {
     backgroundColor: "rgba(255,255,255,0.08)",
     borderWidth: 1.5,
-    borderColor: "#ffffff",
+    borderColor: "rgba(255,255,255,0.65)",
   },
   epThumbWrap: {
     width: 148,

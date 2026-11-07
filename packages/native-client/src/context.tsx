@@ -12,6 +12,7 @@ import { PlexyApi, type Session } from "./api";
 import {
   catalogCache,
   defaultPreferences,
+  detailCache,
   preferenceKey,
   readJson,
   writeJson,
@@ -42,6 +43,8 @@ interface ClientContext {
   ready: boolean;
   storageError: string | null;
   cachedCatalog: boolean;
+  isOnline: boolean;
+  checkConnection: () => Promise<boolean>;
 }
 const Context = createContext<ClientContext | null>(null);
 export function ClientProvider({
@@ -51,6 +54,7 @@ export function ClientProvider({
 }: React.PropsWithChildren<{ session: Session; platform: NativePlatform }>) {
   const [preferences, setPreferences] = useState(defaultPreferences);
   const [cachedCatalog, setCachedCatalog] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const preferencesRef = useRef(preferences);
@@ -59,8 +63,15 @@ export function ClientProvider({
     () =>
       new PlexyApi(session.profile.url, session.token, {
         cache: catalogCache(session.profile.id),
+        detailCache,
+        scope: session.profile.id,
         onCacheUsed: () => setCachedCatalog(true),
-        onFreshCatalog: () => setCachedCatalog(false),
+        onFreshCatalog: () => {
+          setCachedCatalog(false);
+          setIsOnline(true);
+        },
+        onOffline: () => setIsOnline(false),
+        onOnline: () => setIsOnline(true),
       }),
     [session],
   );
@@ -128,6 +139,29 @@ export function ClientProvider({
       ),
     );
   };
+  const checkConnection = React.useCallback(async () => {
+    try {
+      const net = await NetInfo.fetch();
+      if (!net.isConnected) {
+        setIsOnline(false);
+        return false;
+      }
+      await api.status(3500);
+      setIsOnline(true);
+      return true;
+    } catch {
+      setIsOnline(false);
+      return false;
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void NetInfo.fetch().then((s) => {
+      if (!s.isConnected) setIsOnline(false);
+      else void checkConnection();
+    });
+  }, [checkConnection]);
+
   return (
     <Context.Provider
       value={{
@@ -141,6 +175,8 @@ export function ClientProvider({
         ready,
         storageError,
         cachedCatalog,
+        isOnline,
+        checkConnection,
       }}
     >
       {children}

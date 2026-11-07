@@ -71,7 +71,7 @@ export function isLocalPage(): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
 }
 
-/** Exchange a single-use account pairing key for a session. */
+/** Exchange a single-use account pairing code for a session. */
 export async function pairDevice(code: string, name?: string): Promise<AuthAttempt> {
   try {
     await accountRequest("/pair", { code: code.trim(), name: name || "Paired device" });

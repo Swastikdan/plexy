@@ -65,6 +65,8 @@
         "expo-constants": "~57.0.23",
         "expo-file-system": "~57.0.7",
         "expo-font": "~57.0.4",
+        "expo-haptics": "~57.0.3",
+        "expo-intent-launcher": "~57.0.1",
         "expo-keep-awake": "~57.0.2",
         "expo-linear-gradient": "~57.0.2",
         "expo-navigation-bar": "~57.0.3",
@@ -111,6 +113,7 @@
         "expo": "57.0.32",
         "expo-file-system": "~57.0.7",
         "expo-font": "~57.0.4",
+        "expo-intent-launcher": "~57.0.1",
         "expo-keep-awake": "~57.0.2",
         "expo-linear-gradient": "~57.0.2",
         "expo-navigation-bar": "~57.0.3",
@@ -183,6 +186,8 @@
       "version": "1.0.0",
       "dependencies": {
         "@plexy/api-client": "workspace:*",
+        "expo-haptics": "~57.0.3",
+        "expo-intent-launcher": "~57.0.1",
       },
       "peerDependencies": {
         "@expo-google-fonts/archivo": "^0.4.2",
@@ -1160,6 +1165,10 @@
     "expo-file-system": ["expo-file-system@57.0.7", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-1vkZRadOsIputFDBcclqBa1pO3iXOO6iIsdqJipQWw4V5TSnWgmRTuOF7ro8IzrVue+PHbum++KCG3Tawem4cg=="],
 
     "expo-font": ["expo-font@57.0.4", "", { "dependencies": { "fontfaceobserver": "^2.1.0" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-7WOMC2oA6xCfOm8bbofqWn2bIqyWFm7YLEnpc/gA1MJH0Ll0TfT/3+CqRkoW2eNRWMS8sxrz5WukUmSvmNquHA=="],
+
+    "expo-haptics": ["expo-haptics@57.0.3", "", { "peerDependencies": { "expo": "*" } }, "sha512-qucUXtwtJdtECKSQK5D6TQBc/0SxKj7s5wQ4mrfSxhZsHrS9a4rcxINl/gbruMaY9spTXStco32ST4pV0vXmxw=="],
+
+    "expo-intent-launcher": ["expo-intent-launcher@57.0.1", "", { "peerDependencies": { "expo": "*" } }, "sha512-BYiPEOUeW3AkW/uxEESbS2UBw9LasJ8Heb6A8kF9Ueh6pqrXQHMNJFHzfrOP8qZfv9G2e8CTzrtzpN5p0vH5fA=="],
 
     "expo-keep-awake": ["expo-keep-awake@57.0.2", "", { "peerDependencies": { "expo": "*", "react": "*" } }, "sha512-GqgH746wtJImmsbyHmCQoi7cOslKuWQBbJHXr53S35Bpf5UvxCAztvnitUEd7D0QvFN2rvkOhylbZpgZZfBLlQ=="],
 

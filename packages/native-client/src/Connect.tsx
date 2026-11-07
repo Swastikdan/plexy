@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import {
   ApiError,
   PlexyApi,
@@ -205,16 +205,23 @@ export function Connect({
     }
   }
   return (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{
-        padding: tv ? 48 : 24,
-        flexGrow: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        backgroundColor: colors.canvas,
-      }}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
     >
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          padding: tv ? 48 : 24,
+          paddingBottom: tv ? 48 : 140,
+          flexGrow: 1,
+          justifyContent: tv ? "center" : undefined,
+          alignItems: "center",
+          backgroundColor: colors.canvas,
+        }}
+      >
       <View style={{ width: "100%", maxWidth: tv ? 620 : 480, gap: 20 }}>
         <Label muted>Plexy{tv ? " TV" : ""}</Label>
         <Heading large>Connect to your server</Heading>
@@ -387,7 +394,7 @@ export function Connect({
         )}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Button
-            label="Pairing key"
+            label="Pairing code"
             selected={mode === "pair"}
             disabled={busy}
             onPress={() => setMode("pair")}
@@ -402,17 +409,20 @@ export function Connect({
         {mode === "pair" ? (
           <>
             <Field
-              label="Pairing key"
+              label="Pairing code"
               value={code}
-              onChangeText={setCode}
+              onChangeText={(value) => setCode(value.replace(/[^0-9]/g, "").slice(0, 6))}
+              keyboardType="number-pad"
+              textContentType="oneTimeCode"
+              maxLength={6}
+              placeholder="000000"
               autoCapitalize="none"
               autoCorrect={false}
-              secureTextEntry
               editable={!busy}
               onSubmitEditing={() => void connect()}
             />
             <Label muted>
-              Generate a pairing key from your account in the existing Plexy
+              Generate a pairing code from your account in the existing Plexy
               app.
             </Label>
           </>
@@ -443,7 +453,7 @@ export function Connect({
           disabled={
             busy ||
             !url ||
-            (mode === "pair" ? !code.trim() : !username.trim() || !password)
+            (mode === "pair" ? code.length !== 6 : !username.trim() || !password)
           }
           onPress={() => void connect()}
         />
@@ -452,5 +462,6 @@ export function Connect({
         )}
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

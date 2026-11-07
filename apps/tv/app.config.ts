@@ -6,12 +6,12 @@ const config: ExpoConfig = {
   platforms: ["android"],
   scheme: "plexy-tv",
   userInterfaceStyle: "dark",
-  icon: "../../apps/web/public/icons/pwa-512.png",
+  icon: "../../build/icon.png",
   backgroundColor: "#080808",
   orientation: "landscape",
   android: {
     package: "app.plexy.tv",
-    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 3,
+    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 2000,
     allowBackup: false,
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
@@ -35,7 +35,7 @@ const config: ExpoConfig = {
         isTV: true,
         androidTVRequired: true,
         androidTVBanner: "./assets/tv-banner.png",
-        androidTVIcon: "../../apps/web/public/icons/pwa-512.png",
+        androidTVIcon: "../../build/icon.png",
       },
     ],
   ],

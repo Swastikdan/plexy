@@ -3,10 +3,12 @@ import {
   Animated,
   BackHandler,
   Easing,
+  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
+  ToastAndroid,
   View,
 } from "react-native";
 import {
@@ -32,38 +34,32 @@ import {
   SearchScreen,
   DetailScreen,
 } from "./Catalog";
-import { DownloadsScreen, DownloadPicker } from "./DownloadsScreen";
+import { DownloadPicker } from "./DownloadsScreen";
 import { SettingsScreen } from "./Settings";
 import { PlayerScreen } from "./Player";
+import { triggerHaptic } from "./haptics";
 import type { DownloadEntry } from "./downloads";
 import { colors } from "./theme";
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
-type MobileTab = "home" | "libraries" | "downloads" | "search" | "settings";
-type TvTab = "home" | "movies" | "tv" | "downloads" | "search" | "settings";
-type Tab = MobileTab | TvTab;
+type Tab = "home" | "libraries" | "search" | "settings";
 
 type Route =
   | { key: number; type: "detail"; id: string | number }
-  | { key: number; type: "downloads" }
   | { key: number; type: "player"; fileId: number; offline?: DownloadEntry };
 
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
-const mobileTabs: Array<{ id: MobileTab; label: string; icon: IconName }> = [
+const mobileTabs: Array<{ id: Tab; label: string; icon: IconName }> = [
   { id: "home", label: "Home", icon: "home" },
   { id: "libraries", label: "Libraries", icon: "library" },
-  { id: "downloads", label: "Downloads", icon: "download" },
   { id: "search", label: "Search", icon: "search" },
-  { id: "settings", label: "Settings", icon: "settings" },
 ];
 
-const tvTabs: Array<{ id: TvTab; label: string; icon: IconName }> = [
+const tvTabs: Array<{ id: Tab; label: string; icon: IconName }> = [
   { id: "home", label: "Home", icon: "home" },
-  { id: "movies", label: "Movies", icon: "film" },
-  { id: "tv", label: "TV Shows", icon: "tv" },
-  { id: "downloads", label: "Downloads", icon: "download" },
+  { id: "libraries", label: "Libraries", icon: "library" },
   { id: "search", label: "Search", icon: "search" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
@@ -79,37 +75,63 @@ function PageTransition({
   children: React.ReactNode;
   isDetail?: boolean;
 }) {
+  const isTv = Platform.isTV;
   const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const [mounted, setMounted] = useState(visible);
 
   useEffect(() => {
     if (visible) {
-      anim.setValue(0);
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: isDetail ? 240 : 180,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      setMounted(true);
+      if (isTv) {
+        anim.setValue(1);
+      } else {
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: isDetail ? 200 : 160,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }).start();
+      }
+    } else {
+      if (isTv) {
+        anim.setValue(0);
+        setMounted(false);
+      } else {
+        Animated.timing(anim, {
+          toValue: 0,
+          duration: 130,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished) setMounted(false);
+        });
+      }
     }
-  }, [visible, isDetail, anim]);
+  }, [visible, isDetail, anim, isTv]);
+
+  if (!mounted && !visible) {
+    return null;
+  }
 
   return (
     <Animated.View
-      style={{
-        flex: 1,
-        display: visible ? "flex" : "none",
-        opacity: anim,
-        transform: [
-          {
-            translateY: anim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [isDetail ? 16 : 8, 0],
-            }),
-          },
-        ],
-      }}
+      style={[
+        StyleSheet.absoluteFill,
+        !isTv && {
+          opacity: anim,
+          transform: [
+            {
+              scale: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.97, 1],
+              }),
+            },
+          ],
+        },
+      ]}
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+      pointerEvents={visible ? "auto" : "none"}
     >
       {children}
     </Animated.View>
@@ -124,17 +146,20 @@ const TAB_BAR_BORDER = "#1a1a1a";
 const INACTIVE_COLOR = "#666666";
 const ACTIVE_COLOR = "#ffffff";
 const TAB_BAR_HEIGHT = 56;
-const TV_SIDEBAR_WIDTH = 220;
+const TV_SIDEBAR_WIDTH = 210;
 
-// ── TV sidebar item ─────────────────────────────────────────────────────────
 function TvSidebarItem({
   item,
   isActive,
   onPress,
+  onFocus,
+  collapsed,
 }: {
   item: { id: Tab; label: string; icon: IconName };
   isActive: boolean;
   onPress: () => void;
+  onFocus?: () => void;
+  collapsed?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const showWhite = isActive;
@@ -142,34 +167,43 @@ function TvSidebarItem({
   return (
     <Pressable
       key={item.id}
-      hasTVPreferredFocus={isActive}
-      onFocus={() => setFocused(true)}
+      hasTVPreferredFocus={item.id === "home"}
+      onFocus={() => {
+        setFocused(true);
+        onFocus?.();
+      }}
       onBlur={() => setFocused(false)}
       onPress={onPress}
+      accessibilityRole="tab"
+      accessibilityLabel={item.label}
       style={({ pressed }) => [
-        styles.tvNavItem,
-        showWhite && styles.tvNavItemActive,
-        focused && !showWhite && styles.tvNavItemFocused,
+        collapsed ? styles.tvNavItemCollapsed : styles.tvNavItem,
+        showWhite && (collapsed ? styles.tvNavItemCollapsedActive : styles.tvNavItemActive),
+        focused && !showWhite && (collapsed ? styles.tvNavItemCollapsedFocused : styles.tvNavItemFocused),
+        focused && { transform: [{ scale: 1.06 }] },
         pressed && { opacity: 0.8 },
       ]}
     >
       <Icon
         name={item.icon}
-        size={20}
+        size={collapsed ? 18 : 16}
         color={showWhite ? "#000000" : focused ? "#ffffff" : INACTIVE_COLOR}
       />
-      <Text
-        style={[
-          styles.tvNavLabel,
-          showWhite
-            ? styles.tvNavLabelActive
-            : focused
-              ? styles.tvNavLabelFocused
-              : styles.tvNavLabelInactive,
-        ]}
-      >
-        {item.label}
-      </Text>
+      {!collapsed && (
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.tvNavLabel,
+            showWhite
+              ? styles.tvNavLabelActive
+              : focused
+                ? styles.tvNavLabelFocused
+                : styles.tvNavLabelInactive,
+          ]}
+        >
+          {item.label}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -257,9 +291,12 @@ function Shell({
     ready,
     storageError,
     cachedCatalog,
+    isOnline,
+    checkConnection,
   } = useClient();
 
   const isTv = platform.tv;
+  const insets = useSafeAreaInsets();
   const defaultTab: Tab = "home";
 
   const [tab, setTab] = useState<Tab>(defaultTab);
@@ -270,6 +307,9 @@ function Shell({
     item: ItemCard;
     fileId: number;
   } | null>(null);
+  const [checkingConnection, setCheckingConnection] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [toggleFocused, setToggleFocused] = useState(false);
 
   const current = routes[routes.length - 1];
 
@@ -277,6 +317,19 @@ function Shell({
   const activeDownloads = downloadEntries.filter(
     (e) => e.state === "downloading" || e.state === "queued",
   );
+  const completedDownloads = downloadEntries.filter(
+    (e) => e.state === "completed" || Boolean(e.uri),
+  );
+  const hasCompletedDownloads = completedDownloads.length > 0;
+
+  const handleRetryConnection = async () => {
+    setCheckingConnection(true);
+    try {
+      await checkConnection();
+    } finally {
+      setCheckingConnection(false);
+    }
+  };
 
   const back = React.useCallback(
     () => setRoutes((previous) => previous.slice(0, -1)),
@@ -291,12 +344,7 @@ function Shell({
 
   const openDownloads = () => {
     if (!isTv) {
-      switchTab("downloads");
-    } else {
-      setRoutes((previous) => [
-        ...previous,
-        { type: "downloads", key: Date.now() },
-      ]);
+      switchTab("libraries");
     }
   };
 
@@ -315,6 +363,8 @@ function Shell({
     [],
   );
 
+  const lastBackPress = useRef(0);
+
   useEffect(() => {
     if (current?.type === "player") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -327,13 +377,22 @@ function Shell({
         return true;
       }
       if (tab !== "home") {
-        setTab("home");
+        switchTab("home");
         return true;
       }
-      return false;
+      if (isTv) {
+        return true;
+      }
+      const now = Date.now();
+      if (now - lastBackPress.current < 2000) {
+        return false;
+      }
+      lastBackPress.current = now;
+      ToastAndroid.show("Press back again to exit", ToastAndroid.SHORT);
+      return true;
     });
     return () => sub.remove();
-  }, [current?.type, routes.length, picker, tab, back]);
+  }, [current?.type, routes.length, picker, tab, back, isTv]);
 
   async function signout(remove: boolean) {
     await downloads.dispose();
@@ -345,6 +404,10 @@ function Shell({
   }
 
   const switchTab = (id: Tab) => {
+    triggerHaptic("selection");
+    if (id === "home") {
+      setFocusId(null);
+    }
     setTab(id);
     setVisited((previous) => new Set([...previous, id]));
     setRoutes([]);
@@ -380,23 +443,9 @@ function Shell({
     if (screen === "libraries") {
       return (
         <LibraryScreen
-          kind="series"
+          kind="movie"
           open={open}
           openDownloads={openDownloads}
-        />
-      );
-    }
-    if (screen === "movies") {
-      return <LibraryScreen kind="movie" open={open} />;
-    }
-    if (screen === "tv") {
-      return <LibraryScreen kind="series" open={open} />;
-    }
-    if (screen === "downloads") {
-      return (
-        <DownloadsScreen
-          back={() => switchTab("home")}
-          play={(entry) => play(entry.fileId, entry)}
         />
       );
     }
@@ -409,6 +458,7 @@ function Shell({
           connect={connect}
           signout={signout}
           sessionChanged={sessionChanged}
+          back={!isTv ? () => switchTab("home") : undefined}
         />
       );
     }
@@ -417,14 +467,33 @@ function Shell({
 
   // ── TV sidebar ───────────────────────────────────────────────────────────────
   const tvSidebar = (
-    <FocusGroup style={styles.tvSidebar}>
-      {/* Branding */}
-      <View style={styles.tvBrandRow}>
-        <Text style={styles.tvBrandText}>Plexy</Text>
+    <FocusGroup style={[styles.tvSidebar, sidebarCollapsed && styles.tvSidebarCollapsed]}>
+      {/* Branding & Collapse/Expand Toggle */}
+      <View style={[styles.tvBrandRow, sidebarCollapsed && styles.tvBrandRowCollapsed]}>
+        {!sidebarCollapsed && <Text style={styles.tvBrandText}>Plexy</Text>}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+          onPress={() => setSidebarCollapsed((c) => !c)}
+          onFocus={() => setToggleFocused(true)}
+          onBlur={() => setToggleFocused(false)}
+          style={({ pressed }) => [
+            styles.tvSidebarToggle,
+            sidebarCollapsed && styles.tvSidebarToggleCollapsed,
+            toggleFocused && styles.tvSidebarToggleFocused,
+            pressed && { opacity: 0.75 },
+          ]}
+        >
+          <Icon
+            name={sidebarCollapsed ? "panelLeftOpen" : "panelLeftClose"}
+            size={16}
+            color={toggleFocused ? "#ffffff" : "rgba(255, 255, 255, 0.75)"}
+          />
+        </Pressable>
       </View>
 
       {/* Nav items */}
-      <View style={styles.tvNavItems}>
+      <View style={[styles.tvNavItems, sidebarCollapsed && styles.tvNavItemsCollapsed]}>
         {(activeTabs as typeof tvTabs).map((item) => {
           const isActive = tab === item.id;
           return (
@@ -432,18 +501,26 @@ function Shell({
               key={item.id}
               item={item}
               isActive={isActive}
+              collapsed={sidebarCollapsed}
               onPress={() => switchTab(item.id)}
+              onFocus={() => {
+                if (item.id === "home") {
+                  setFocusId(null);
+                }
+              }}
             />
           );
         })}
       </View>
 
       {/* User info at bottom */}
-      <View style={styles.tvUserRow}>
-        <UserAvatar name={displayUsername} size={32} />
-        <Text style={styles.tvUserName} numberOfLines={1}>
-          {displayUsername}
-        </Text>
+      <View style={[styles.tvUserRow, sidebarCollapsed && styles.tvUserRowCollapsed]}>
+        <UserAvatar name={displayUsername} size={sidebarCollapsed ? 26 : 28} />
+        {!sidebarCollapsed && (
+          <Text style={styles.tvUserName} numberOfLines={1}>
+            {displayUsername}
+          </Text>
+        )}
       </View>
     </FocusGroup>
   );
@@ -455,22 +532,9 @@ function Shell({
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Downloads"
-          onPress={openDownloads}
-          style={styles.mobileHeaderBtn}
-        >
-          <Icon name="download" size={18} color="rgba(255,255,255,0.85)" />
-          {activeDownloads.length > 0 && (
-            <View style={styles.downloadBadge}>
-              <Text style={styles.downloadBadgeText}>{activeDownloads.length}</Text>
-            </View>
-          )}
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
           accessibilityLabel="Settings"
           onPress={() => switchTab("settings")}
-          style={{ padding: 2 }}
+          style={{ padding: 4 }}
         >
           <UserAvatar name={displayUsername} size={32} />
         </Pressable>
@@ -480,31 +544,29 @@ function Shell({
 
   // ── Mobile bottom tab bar ────────────────────────────────────────────────────
   const MobileTabBar = () => {
-    const insets = useSafeAreaInsets();
-    const bottomPadding = Math.max(insets.bottom, 6);
+    const bottomPadding = Math.max(insets.bottom, 8);
     return (
       <View
         style={[
           styles.tabBar,
           {
             paddingBottom: bottomPadding,
-            height: 58 + bottomPadding,
+            height: 74 + bottomPadding,
           },
         ]}
       >
         {(activeTabs as typeof mobileTabs).map((item) => {
           const isActive = tab === item.id;
-          const isDownloads = item.id === "downloads";
-          const showBadge = isDownloads && activeDownloads.length > 0;
 
           return (
             <Pressable
               key={item.id}
               onPress={() => switchTab(item.id)}
               android_ripple={{ borderless: true, color: "rgba(255, 255, 255, 0.15)" }}
+              hitSlop={{ top: 14, bottom: 10, left: 12, right: 12 }}
               style={({ pressed }) => [
                 styles.tabItem,
-                pressed && { opacity: 0.7 },
+                pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] },
               ]}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
@@ -518,14 +580,9 @@ function Shell({
               >
                 <Icon
                   name={item.icon}
-                  size={20}
+                  size={24}
                   color={isActive ? "#000000" : INACTIVE_COLOR}
                 />
-                {showBadge && (
-                  <View style={styles.tabBadge}>
-                    <Text style={styles.tabBadgeText}>{activeDownloads.length}</Text>
-                  </View>
-                )}
               </View>
               <Text
                 style={[
@@ -568,75 +625,110 @@ function Shell({
             isTv && styles.contentAreaTv,
           ]}
         >
-          {/* Mobile: contextual header */}
-          {!isTv && mobileHeader}
+          {/* Main content: Offline mode vs Online tab screens */}
+          {!isOnline && !current ? (
+            !hasCompletedDownloads ? (
+              <View style={styles.offlineEmptyRoot}>
+                <View style={styles.offlineCard}>
+                  <View style={styles.offlineIconCircle}>
+                    <Icon name="search" size={32} color="#ffffff" />
+                  </View>
+                  <Text style={styles.offlineTitle}>You are offline</Text>
+                  <Text style={styles.offlineSubtitle}>
+                    You don't have any downloads. Please come back when you are online.
+                  </Text>
+                  <Button
+                    label={checkingConnection ? "Connecting..." : "Retry Connection"}
+                    disabled={checkingConnection}
+                    onPress={() => void handleRetryConnection()}
+                    style={{ marginTop: 24, minWidth: 180 }}
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <View style={styles.offlineBanner}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Icon name="download" size={16} color="#3B7DF9" />
+                    <Text style={styles.offlineBannerText}>
+                      Offline Mode • Showing Downloads
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => void handleRetryConnection()}
+                    style={styles.offlineRetryBtn}
+                  >
+                    <Text style={styles.offlineRetryText}>
+                      {checkingConnection ? "Checking..." : "Reconnect"}
+                    </Text>
+                  </Pressable>
+                </View>
+                <LibraryScreen
+                  kind="series"
+                  defaultSubTab="downloads"
+                  open={open}
+                  openDownloads={openDownloads}
+                />
+              </View>
+            )
+          ) : (
+            <>
+              {/* Mobile: contextual header */}
+              {!isTv && mobileHeader}
 
-          {/* Offline catalog banner */}
-          {cachedCatalog && (
-            <Label muted style={{ padding: 12 }}>
-              Offline catalog. Connect to refresh your library, or open
-              Downloads to play saved media.
-            </Label>
+              {/* Offline catalog banner */}
+              {cachedCatalog && isOnline && (
+                <Label muted style={{ padding: 12 }}>
+                  Offline catalog. Connect to refresh your library, or open
+                  Downloads to play saved media.
+                </Label>
+              )}
+
+              <View style={{ flex: 1, position: "relative" }}>
+                {/* Tab screens (kept mounted once visited with smooth page transition) */}
+                {[...visited].map((screen) => {
+                  const isVisible = screen === tab && !current;
+                  return (
+                    <PageTransition
+                      key={screen}
+                      visible={isVisible}
+                    >
+                      <FocusGroup style={{ flex: 1 }}>
+                        {renderScreen(screen)}
+                      </FocusGroup>
+                    </PageTransition>
+                  );
+                })}
+
+                {/* Detail screens */}
+                {routes
+                  .filter((route) => route.type === "detail")
+                  .map(
+                    (route) =>
+                      route.type === "detail" && (
+                        <PageTransition
+                          key={route.key}
+                          visible={route === current}
+                          isDetail={true}
+                        >
+                          <FocusGroup style={{ flex: 1 }}>
+                            <DetailScreen
+                              id={route.id}
+                              back={back}
+                              play={(id) => play(id)}
+                              download={(item, fileId) => setPicker({ item, fileId })}
+                            />
+                          </FocusGroup>
+                        </PageTransition>
+                      ),
+                  )}
+              </View>
+            </>
           )}
-
-          {/* Tab screens (kept mounted once visited with smooth page transition) */}
-          {[...visited].map((screen) => {
-            const isVisible = screen === tab && !current;
-            return (
-              <PageTransition
-                key={screen}
-                visible={isVisible}
-              >
-                <FocusGroup style={{ flex: 1 }}>
-                  {renderScreen(screen)}
-                </FocusGroup>
-              </PageTransition>
-            );
-          })}
-
-          {/* Detail screens */}
-          {routes
-            .filter((route) => route.type === "detail")
-            .map(
-              (route) =>
-                route.type === "detail" && (
-                  <PageTransition
-                    key={route.key}
-                    visible={route === current}
-                    isDetail={true}
-                  >
-                    <DetailScreen
-                      id={route.id}
-                      back={back}
-                      play={(id) => play(id)}
-                      download={(item, fileId) => setPicker({ item, fileId })}
-                    />
-                  </PageTransition>
-                ),
-            )}
-
-          {/* Downloads screen */}
-          {routes
-            .filter((route) => route.type === "downloads")
-            .map(
-              (route) =>
-                route.type === "downloads" && (
-                  <PageTransition
-                    key={route.key}
-                    visible={route === current}
-                    isDetail={true}
-                  >
-                    <DownloadsScreen
-                      back={back}
-                      play={(entry) => play(entry.fileId, entry)}
-                    />
-                  </PageTransition>
-                ),
-            )}
         </View>
 
         {/* Mobile: bottom tab bar */}
-        {!isTv && <MobileTabBar />}
+        {!isTv && isOnline && <MobileTabBar />}
       </SafeAreaView>
 
       {/* Player overlay */}
@@ -734,28 +826,28 @@ const styles = StyleSheet.create({
   // ── Mobile bottom tab bar ─────────────────────────────────────────────────
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#08080a",
+    backgroundColor: "#000000",
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
     justifyContent: "space-around",
     paddingTop: 8,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
   },
   tabItem: {
     flex: 1,
-    minWidth: 52,
+    minWidth: 64,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 3,
-    gap: 3,
+    paddingVertical: 4,
+    gap: 4,
   },
   tabIconWrap: {
-    minWidth: 54,
-    height: 32,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: 16,
+    minWidth: 64,
+    height: 38,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
@@ -766,7 +858,7 @@ const styles = StyleSheet.create({
   tabBadge: {
     position: "absolute",
     top: -4,
-    right: 2,
+    right: 4,
     backgroundColor: BRAND_BLUE,
     borderRadius: 8,
     minWidth: 16,
@@ -781,54 +873,102 @@ const styles = StyleSheet.create({
     fontFamily: "Archivo_700Bold",
   },
   tabLabel: {
-    fontSize: 10.5,
-    letterSpacing: 0.1,
+    fontSize: 12,
+    letterSpacing: 0.15,
     textAlign: "center",
   },
 
   // ── TV sidebar ────────────────────────────────────────────────────────────
   tvSidebar: {
-    width: TV_SIDEBAR_WIDTH,
+    width: 176,
     backgroundColor: "#0a0a0a",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: TAB_BAR_BORDER,
-    paddingVertical: 24,
+    paddingVertical: 16,
     justifyContent: "space-between",
   },
+  tvSidebarCollapsed: {
+    width: 56,
+    alignItems: "center",
+  },
   tvBrandRow: {
-    paddingHorizontal: 24,
-    paddingBottom: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingBottom: 20,
+  },
+  tvBrandRowCollapsed: {
+    paddingHorizontal: 0,
+    justifyContent: "center",
+    paddingBottom: 20,
+    width: "100%",
   },
   tvBrandText: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "900",
     color: ACTIVE_COLOR,
     letterSpacing: -0.5,
     fontFamily: "Archivo_900Black",
   },
+  tvSidebarToggle: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  tvSidebarToggleCollapsed: {
+    alignSelf: "center",
+  },
+  tvSidebarToggleFocused: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 2,
+    borderColor: "#ffffff",
+  },
   tvNavItems: {
     flex: 1,
-    gap: 4,
-    paddingHorizontal: 12,
+    gap: 2,
+    paddingHorizontal: 8,
+  },
+  tvNavItemsCollapsed: {
+    paddingHorizontal: 0,
+    alignItems: "center",
+    width: "100%",
   },
   tvNavItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 10,
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  tvNavItemCollapsed: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    borderRadius: 8,
+    marginVertical: 1,
   },
   tvNavItemActive: {
     backgroundColor: "#ffffff",
   },
+  tvNavItemCollapsedActive: {
+    backgroundColor: "#ffffff",
+  },
   tvNavItemFocused: {
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
-    borderWidth: 1.5,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    borderWidth: 2,
+    borderColor: "#ffffff",
+  },
+  tvNavItemCollapsedFocused: {
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    borderWidth: 2,
     borderColor: "#ffffff",
   },
   tvNavLabel: {
-    fontSize: 15,
+    fontSize: 12.5,
     letterSpacing: 0.1,
   },
   tvNavLabelActive: {
@@ -849,29 +989,104 @@ const styles = StyleSheet.create({
   tvUserRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+  },
+  tvUserRowCollapsed: {
+    paddingHorizontal: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    paddingTop: 16,
   },
   tvAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: BRAND_BLUE,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
   tvAvatarText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
     color: ACTIVE_COLOR,
     fontFamily: "Archivo_700Bold",
   },
   tvUserName: {
-    fontSize: 13,
+    fontSize: 11,
     color: INACTIVE_COLOR,
     fontFamily: "Archivo_400Regular",
     flex: 1,
+  },
+
+  // ── Offline mode styles ───────────────────────────────────────────────────
+  offlineEmptyRoot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+  },
+  offlineCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#111114",
+    borderRadius: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  offlineIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+  offlineTitle: {
+    fontSize: 20,
+    fontFamily: "Archivo_700Bold",
+    color: "#ffffff",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    fontFamily: "Archivo_400Regular",
+    color: "#999999",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(59, 125, 249, 0.12)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(59, 125, 249, 0.25)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  offlineBannerText: {
+    fontSize: 12.5,
+    fontFamily: "Archivo_600SemiBold",
+    color: "#ffffff",
+  },
+  offlineRetryBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
+  offlineRetryText: {
+    fontSize: 11,
+    fontFamily: "Archivo_600SemiBold",
+    color: "#ffffff",
   },
 });

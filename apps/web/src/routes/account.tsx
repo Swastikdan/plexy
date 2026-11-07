@@ -71,9 +71,9 @@ function AccountRoute() {
       <section className="space-y-4 rounded-xl border border-line p-5">
         <h2 className="text-xl font-bold">Pair another device</h2>
         <p className="text-sm text-ink-muted">
-          A key grants access to your account. Share it only with a device you
+          A six-digit code grants access to your account. Share it only with a device you
           trust. It expires after ten minutes and can be used once. Generating a
-          new key invalidates the previous one.
+          new code invalidates the previous one.
         </p>
         <form
           onSubmit={(e) => {
@@ -97,12 +97,12 @@ function AccountRoute() {
             />
           </label>
           <Button variant="primary" disabled={busy} type="submit">
-            Create my pairing key
+            Create my pairing code
           </Button>
         </form>
         {key && (
           <div className="space-y-2">
-            <p className="break-all rounded-lg border border-line bg-surface p-4 font-mono text-sm select-all">
+            <p className="rounded-lg border border-line bg-surface p-4 font-mono text-center text-3xl tracking-[0.3em] tabular-nums select-all">
               {key.code}
             </p>
             <p className="text-xs text-ink-muted">
@@ -115,7 +115,7 @@ function AccountRoute() {
               className="text-sm underline"
               onClick={() => void navigator.clipboard.writeText(key.code)}
             >
-              Copy key
+              Copy code
             </button>
           </div>
         )}
@@ -189,7 +189,7 @@ function AccountRoute() {
           </label>
           <p className="text-xs text-ink-muted">
             Changing your password signs out your other devices and invalidates
-            pairing keys.
+            pairing codes.
           </p>
           <Button disabled={busy} type="submit">
             Change password

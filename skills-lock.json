@@ -25,6 +25,12 @@
       "skillPath": "skills/panelui/SKILL.md",
       "computedHash": "fdb514f87c7e5083d4cd12002b56f10e822f3aa6bc9ea0611fb35676b2b22627"
     },
+    "tvos-design-guidelines": {
+      "source": "ehmo/platform-design-skills",
+      "sourceType": "github",
+      "skillPath": "skills/tvos/SKILL.md",
+      "computedHash": "7e8751618b4421617d083191150b6324eaa2bdf03509b3cc846763b770ff5b3f"
+    },
     "untangle-codebase": {
       "source": "caldoai/skills",
       "sourceType": "github",

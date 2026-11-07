@@ -9,13 +9,18 @@ const config: ExpoConfig = {
   platforms: ["android"],
   scheme: "plexy-mobile",
   userInterfaceStyle: "dark",
-  icon: "../../apps/web/public/icons/pwa-512.png",
+  icon: "../../build/icon.png",
   backgroundColor: "#080808",
   orientation: "default",
   android: {
     package: "app.plexy.mobile",
-    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 3,
+    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 2000,
     allowBackup: false,
+    adaptiveIcon: {
+      foregroundImage: "../../build/icon.png",
+      backgroundColor: "#080808",
+      monochromeImage: "../../build/icon.png",
+    },
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
       "android.permission.WRITE_EXTERNAL_STORAGE",

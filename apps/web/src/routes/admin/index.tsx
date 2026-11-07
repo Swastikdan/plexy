@@ -1875,7 +1875,7 @@ function SecuritySettings() {
             Pair a new device
           </span>
           <p className="text-xs leading-relaxed text-ink-muted">
-            Generate a key for your own account, then enter it on the other device. Each
+            Generate a six-digit code for your own account, then enter it on the other device. Each
             code works once and expires after 10 minutes.
           </p>
           <label className="block text-xs">Confirm your password<input type="password" autoComplete="current-password" value={pairPassword} onChange={event => setPairPassword(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-line bg-surface px-3" /></label>
@@ -1892,7 +1892,7 @@ function SecuritySettings() {
           {pairing && (
             <div className="mt-2 rounded-xl border border-brand/30 bg-brand/10 p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="break-all font-mono text-sm text-ink">
+                <span className="font-mono text-2xl tracking-[0.2em] tabular-nums text-ink">
                   {pairing.code}
                 </span>
                 <button

@@ -1,16 +1,30 @@
 name: Build & Release
 
-# Runs on every push to `main`: tests clients and server, builds all artifacts, then
-# publishes a GitHub release. Static hosting is configured separately.
-# Manual runs must target `main`.
+# Runs on push to `main` (with automatic target detection) or manual dispatch
+# targeting specific components (mobile, tv, desktop, backend, web, or all).
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Target component to build and release"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - mobile
+          - tv
+          - desktop
+          - backend
+          - web
 
 concurrency:
-  group: plexy-release
+  group: plexy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -21,53 +35,103 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  plan:
+    name: Determine build targets
+    runs-on: ubuntu-24.04
+    outputs:
+      build_web: ${{ steps.targets.outputs.build_web }}
+      build_desktop: ${{ steps.targets.outputs.build_desktop }}
+      build_mobile: ${{ steps.targets.outputs.build_mobile }}
+      build_tv: ${{ steps.targets.outputs.build_tv }}
+      build_server: ${{ steps.targets.outputs.build_server }}
+      android_targets: ${{ steps.targets.outputs.android_targets }}
+      any_build: ${{ steps.targets.outputs.any_build }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Detect targets
+        id: targets
+        env:
+          BUILD_TARGET: ${{ inputs.target || '' }}
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bun scripts/build-targets.ts
+
+  checks:
+    name: Tests and type checks
+    needs: plan
+    if: needs.plan.outputs.any_build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+        env:
+          SKIP_FFMPEG: "true"
+      - name: Verify target selection
+        run: bun test scripts/build-targets.test.ts
+      - name: Build and verify embedded website
+        if: needs.plan.outputs.build_web == 'true' || needs.plan.outputs.build_desktop == 'true'
+        run: bun run build:web && bun run --filter @plexy/web typecheck
+        env:
+          VITE_API_URL: ${{ vars.PLEXY_DEFAULT_SERVER_URL }}
+      - name: Verify backend
+        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
+        run: bun run --filter @plexy/server typecheck && bun run test:server
+      - name: Verify desktop
+        if: needs.plan.outputs.build_desktop == 'true'
+        run: bun x tsc --noEmit -p apps/desktop/tsconfig.json
+      - name: Verify Android clients
+        if: needs.plan.outputs.build_mobile == 'true' || needs.plan.outputs.build_tv == 'true'
+        run: bun run typecheck:native && bun run test:native
+      - name: Save verified website
+        if: needs.plan.outputs.build_web == 'true' || needs.plan.outputs.build_desktop == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: verified-web
+          path: dist/web
+          if-no-files-found: error
+
   web:
     name: Web app build
+    needs: [plan, checks]
     runs-on: ubuntu-24.04
-    # Only the owner (or logins listed in the RELEASE_ACTORS repository
-    # variable) can publish. Branch protection should also restrict `main`.
-    if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    if: |
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      needs.plan.outputs.build_web == 'true'
     outputs:
       site_url: ${{ vars.PLEXY_SITE_URL }}
     steps:
-      - name: Check out
-        uses: actions/checkout@v7
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v8
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
+          name: verified-web
+          path: dist/web
+      - name: Package website
+        run: tar -czf plexy-web.tar.gz -C dist/web .
+      - uses: actions/upload-artifact@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Cache Bun packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
-
-      - name: Install dependencies
-        # CI installs FFmpeg explicitly below; the web build does not need it.
-        env:
-          SKIP_FFMPEG: "true"
-        run: bun install --frozen-lockfile
-
-      - name: Build web app
-        run: bun run build:web
-        env:
-          # Optional: bake a default server address into the hosted build.
-          # Viewers can still change it from the connection screen.
-          VITE_API_URL: ${{ vars.PLEXY_DEFAULT_SERVER_URL }}
+          name: plexy-web
+          path: plexy-web.tar.gz
+          if-no-files-found: error
 
   mac:
     name: macOS app (Apple Silicon)
+    needs: [plan, checks]
     runs-on: macos-15
-    if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    if: |
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      needs.plan.outputs.build_desktop == 'true'
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -91,7 +155,6 @@ jobs:
           restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
 
       - name: Install dependencies
-        # CI installs FFmpeg explicitly below; the web build does not need it.
         env:
           SKIP_FFMPEG: "true"
         run: bun install --frozen-lockfile
@@ -117,9 +180,16 @@ jobs:
       - name: Verify Apple Silicon runner
         run: test "$(uname -m)" = "arm64"
 
+      - name: Reuse verified website
+        uses: actions/download-artifact@v8
+        with:
+          name: verified-web
+          path: dist/web
+
       - name: Build macOS app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          PLEXY_REUSE_WEB_BUILD: "true"
         run: bun run package:mac
 
       - name: Show artifacts
@@ -138,31 +208,18 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  checks:
-    name: Tests and type checks
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-        env:
-          SKIP_FFMPEG: "true"
-      - name: Generate web routes for a clean checkout
-        run: bun run build:web
-      - run: bun run typecheck
-      - run: bun run typecheck:native
-      - run: bun run test:server
-      - run: bun run test:native
-
   android:
     name: Android ${{ matrix.target }} APK
+    needs: [plan, checks]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        target: [mobile, tv]
+        target: ${{ fromJSON(needs.plan.outputs.android_targets) }}
+    if: |
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      (needs.plan.outputs.build_mobile == 'true' || needs.plan.outputs.build_tv == 'true')
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -194,6 +251,7 @@ jobs:
 
   server:
     name: Backend (${{ matrix.platform }})
+    needs: [plan, checks]
     strategy:
       fail-fast: false
       matrix:
@@ -203,6 +261,10 @@ jobs:
           - os: macos-15
             platform: macos-arm64
     runs-on: ${{ matrix.os }}
+    if: |
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      needs.plan.outputs.build_server == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -225,12 +287,19 @@ jobs:
     name: Publish GitHub release
     runs-on: ubuntu-24.04
     needs:
+      - plan
       - web
       - mac
       - checks
       - android
       - server
-    if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      needs.plan.outputs.any_build == 'true' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -242,13 +311,42 @@ jobs:
           merge-multiple: true
           path: release
 
+      - name: Verify selected release artifacts
+        env:
+          BUILD_WEB: ${{ needs.plan.outputs.build_web }}
+          BUILD_DESKTOP: ${{ needs.plan.outputs.build_desktop }}
+          BUILD_MOBILE: ${{ needs.plan.outputs.build_mobile }}
+          BUILD_TV: ${{ needs.plan.outputs.build_tv }}
+          BUILD_SERVER: ${{ needs.plan.outputs.build_server }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          require_asset() { compgen -G "release/$1" >/dev/null || { echo "Missing release asset: $1"; exit 1; }; }
+          if [ "$BUILD_WEB" = true ]; then require_asset 'plexy-web.tar.gz'; fi
+          if [ "$BUILD_DESKTOP" = true ]; then require_asset '*.dmg'; require_asset '*.zip'; fi
+          if [ "$BUILD_MOBILE" = true ]; then require_asset 'plexy-mobile-preview.apk'; fi
+          if [ "$BUILD_TV" = true ]; then require_asset 'plexy-tv-preview.apk'; fi
+          if [ "$BUILD_SERVER" = true ]; then
+            require_asset 'plexy-server-linux-x64.tar.gz'
+            require_asset 'plexy-server-macos-arm64.tar.gz'
+          fi
+
       - name: Create update checksums
-        run: cd release && sha256sum *.dmg *.zip *.apk *.tar.gz > SHA256SUMS
+        shell: bash
+        run: |
+          mkdir -p release
+          cd release
+          shopt -s nullglob
+          files=(*.dmg *.zip *.apk *.tar.gz)
+          if [ ${#files[@]} -gt 0 ]; then
+            sha256sum "${files[@]}" > SHA256SUMS
+          fi
 
       - name: Create or update release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          SITE_URL: ${{ needs.web.outputs.site_url }}
+          SITE_URL: ${{ needs.web.outputs.site_url || vars.PLEXY_SITE_URL }}
         run: |
           set -euo pipefail
 
@@ -267,7 +365,9 @@ jobs:
           cat > release-notes.md <<EOF
           ## Plexy Beta ${tag}
 
-          **Web app:** ${SITE_URL}
+          **Web app:** ${SITE_URL} (when configured). Download \`plexy-web.tar.gz\` to host the built website.
+
+          Only components affected by this change are attached to this release.
 
           **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy Beta** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy Beta.app** into **Applications**.
 
@@ -292,13 +392,28 @@ jobs:
           Built from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
           EOF
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" release/* --clobber
-            gh release edit "$tag" --notes-file release-notes.md
+          shopt -s nullglob
+          release_files=(release/*)
+
+          if [ ${#release_files[@]} -gt 0 ]; then
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "${release_files[@]}" --clobber
+              gh release edit "$tag" --notes-file release-notes.md
+            else
+              gh release create "$tag" "${release_files[@]}" \
+                --title "Plexy Beta ${tag}" \
+                --notes-file release-notes.md \
+                --target "$GITHUB_SHA" \
+                $prerelease_flag $latest_flag
+            fi
           else
-            gh release create "$tag" release/* \
-              --title "Plexy Beta ${tag}" \
-              --notes-file release-notes.md \
-              --target "$GITHUB_SHA" \
-              $prerelease_flag $latest_flag
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --notes-file release-notes.md
+            else
+              gh release create "$tag" \
+                --title "Plexy Beta ${tag}" \
+                --notes-file release-notes.md \
+                --target "$GITHUB_SHA" \
+                $prerelease_flag $latest_flag
+            fi
           fi

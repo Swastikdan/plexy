@@ -24,7 +24,7 @@ for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
     [
       Bun.env.PLEXY_GRADLE_BINARY || "./gradlew",
       ":app:assembleRelease",
-      `-PreactNativeArchitectures=${Bun.env.PLEXY_ANDROID_ARCHITECTURES || "arm64-v8a"}`,
+      `-PreactNativeArchitectures=${Bun.env.PLEXY_ANDROID_ARCHITECTURES || "armeabi-v7a,arm64-v8a"}`,
       "--max-workers=2",
       "--no-daemon",
     ],

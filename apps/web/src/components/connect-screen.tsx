@@ -267,7 +267,7 @@ export function ConnectScreen({
               <p>
                 Check that Plexy is running, LAN access is enabled, both devices
                 are on the same Wi-Fi, and the computer firewall allows Plexy.
-                After connecting, sign in with your username and password or a pairing key from your account.
+                After connecting, sign in with your username and password or a pairing code from your account.
               </p>
             )}
             {secure && (

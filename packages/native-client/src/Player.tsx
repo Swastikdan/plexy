@@ -5,6 +5,7 @@ import {
   findNodeHandle,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -167,6 +168,10 @@ function IconVolume({ size = 22, color = "#fff", muted = false }: { size?: numbe
 // Circular control button
 // ---------------------------------------------------------------------------
 
+// CircleBtn reports its focus state up so the key-event handler can defer
+// dpad left/right/select to native focus while a control is focused.
+const PlayerFocusCtx = React.createContext<(id: string | null) => void>(() => {});
+
 function CircleBtn({
   onPress,
   size = 44,
@@ -176,26 +181,48 @@ function CircleBtn({
   active = false,
   activeBg = "#ffffff",
   hasTVPreferredFocus = false,
+  focusId,
 }: {
   onPress: () => void;
   size?: number;
   bg?: string;
-  children: React.ReactNode;
+  children: React.ReactNode | ((props: { focused: boolean }) => React.ReactNode);
   disabled?: boolean;
   active?: boolean;
   activeBg?: string;
   hasTVPreferredFocus?: boolean;
+  focusId?: string;
 }) {
   const [focused, setFocused] = useState(false);
-  const currentBg = active ? activeBg : focused ? "rgba(255,255,255,0.35)" : bg;
+  const report = React.useContext(PlayerFocusCtx);
+  const isTv = Platform.isTV;
+  const isPlayBtn = focusId === "play";
+
+  // Clearly denoted TV focus: 3.5px high-contrast ring + scale lift
+  const ringWidth = focused ? (isTv ? 3.5 : 2) : 0;
+  const ringColor = focused ? (isPlayBtn || active ? "#3B7DF9" : "#ffffff") : "transparent";
+  const scale = isTv && focused ? 1.14 : 1;
+  const currentBg = (isTv && focused && isPlayBtn)
+    ? "#ffffff"
+    : active
+      ? activeBg
+      : focused
+        ? "rgba(255,255,255,0.36)"
+        : bg;
 
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      onFocus={() => {
+        setFocused(true);
+        report(focusId ?? "control");
+      }}
+      onBlur={() => {
+        setFocused(false);
+        report(null);
+      }}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       style={({ pressed }) => [
         {
@@ -206,12 +233,15 @@ function CircleBtn({
           justifyContent: "center",
           alignItems: "center",
           opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
-          borderWidth: focused && !active ? 2 : 0,
-          borderColor: "#ffffff",
+          borderWidth: ringWidth,
+          borderColor: ringColor,
+          transform: [{ scale }],
+          zIndex: focused ? 5 : 0,
+          elevation: focused ? 8 : 0,
         },
       ]}
     >
-      {children}
+      {typeof children === "function" ? children({ focused }) : children}
     </Pressable>
   );
 }
@@ -355,6 +385,28 @@ function Playback({
   const [timelineHandle, setTimelineHandle] = useState<number | undefined>();
   const timeline = useRef<View>(null);
   const [casting, setCasting] = useState(false);
+  const [fitMode, setFitMode] = useState<"contain" | "cover" | "fill" | "zoom">("contain");
+  const [fitToast, setFitToast] = useState<string | null>(null);
+  const toastTimeout = useRef<any>(null);
+
+  const showFitToast = (label: string) => {
+    setFitToast(label);
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
+    toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
+  };
+
+  const cycleFitMode = () => {
+    const modes: Array<{ mode: "contain" | "cover" | "fill" | "zoom"; label: string }> = [
+      { mode: "contain", label: "Best Fit" },
+      { mode: "cover", label: "Crop to Fill" },
+      { mode: "fill", label: "Stretch to Fill" },
+      { mode: "zoom", label: "125% Zoom" },
+    ];
+    const currentIndex = modes.findIndex((m) => m.mode === fitMode);
+    const next = modes[(currentIndex + 1) % modes.length]!;
+    setFitMode(next.mode);
+    showFitToast(next.label);
+  };
   const [muted, setMuted] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -382,6 +434,10 @@ function Playback({
   const lastInteraction = useRef(Date.now());
   const chosenStart = useRef(0);
   const initialized = useRef(false);
+  const scrubTargetRef = useRef<number | null>(null);
+  const scrubCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastScrubTime = useRef<number>(0);
+  const scrubStepMultiplier = useRef<number>(1);
   const player = useVideoPlayer(null, (instance) => {
     instance.timeUpdateEventInterval = 0.5;
     instance.staysActiveInBackground = false;
@@ -412,6 +468,8 @@ function Playback({
   };
   const seek = (seconds: number) => {
     if (casting) return;
+    if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
+    scrubTargetRef.current = null;
     const target = Math.max(
       0,
       Math.min(duration || Number.MAX_SAFE_INTEGER, seconds),
@@ -720,6 +778,15 @@ function Playback({
     if (ended) seek(0);
     player.playing ? player.pause() : player.play();
   };
+  // Which player control (if any) currently holds TV focus. Native focus is
+  // allowed to drive dpad movement while a control is focused; we only
+  // scrub/event-hijack when nothing is focused (or the timeline holds focus).
+  // Kept in a ref only: updating state on every focus move would re-render
+  // the whole player for no reason.
+  const tvFocusTargetRef = useRef<string | null>(null);
+  const reportControlFocus = useCallback((id: string | null) => {
+    tvFocusTargetRef.current = id;
+  }, []);
   const remoteEvent = (event: string) => {
     if (menu || resume) return;
     if (event === "playPause" || event === "play" || event === "pause") {
@@ -731,19 +798,55 @@ function Playback({
       reveal();
       return;
     }
-    // Remote Left / Right navigation
+    // Remote Left / Right navigation & continuous scrubbing
     if (["left", "right", "longLeft", "longRight"].includes(event)) {
-      const delta = event.toLowerCase().includes("left") ? -10 : 10;
-      const target = Math.max(0, Math.min(duration, (scrub ?? currentPosition.current) + delta));
+      // A control has focus: let native focus move between buttons instead
+      // of interpreting the key as a scrub.
+      const focusTarget = visible ? tvFocusTargetRef.current : null;
+      if (focusTarget && focusTarget !== "timeline") return;
+
+      const now = Date.now();
+      const timeSinceLast = now - lastScrubTime.current;
+      lastScrubTime.current = now;
+
+      // Holding D-pad down continuously fires events within ~300ms: accelerate smoothly
+      if (timeSinceLast < 350) {
+        scrubStepMultiplier.current = Math.min(6, scrubStepMultiplier.current + 0.35);
+      } else {
+        scrubStepMultiplier.current = 1;
+      }
+
+      const isRewind = event.toLowerCase().includes("left");
+      const baseDelta = (event.startsWith("long") ? 30 : 10) * scrubStepMultiplier.current;
+      const delta = isRewind ? -baseDelta : baseDelta;
+
+      const currentBase = scrubTargetRef.current ?? scrub ?? currentPosition.current;
+      const target = Math.max(0, Math.min(duration || Number.MAX_SAFE_INTEGER, Math.round(currentBase + delta)));
+
+      scrubTargetRef.current = target;
       setScrub(target);
-      seek(target);
       reveal();
+
+      // Debounce the actual heavy player seek so playback doesn't freeze or drop while scrubbing
+      if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
+      scrubCommitTimer.current = setTimeout(() => {
+        if (scrubTargetRef.current != null) {
+          const finalTarget = scrubTargetRef.current;
+          scrubTargetRef.current = null;
+          seek(finalTarget);
+        }
+      }, 550);
       return;
     }
     // Remote Select / Center
     if (event === "select" || event === "center" || event === "dpadCenter") {
-      if (scrub != null) {
-        seek(scrub);
+      const focusTarget = visible ? tvFocusTargetRef.current : null;
+      if (focusTarget && focusTarget !== "timeline") return; // native press handles it
+      if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
+      const target = scrubTargetRef.current ?? scrub;
+      if (target != null) {
+        scrubTargetRef.current = null;
+        seek(target);
         setScrub(null);
       } else if (!visible) {
         reveal();
@@ -781,6 +884,7 @@ function Playback({
   // Render
   // -------------------------------------------------------------------------
   return (
+    <PlayerFocusCtx.Provider value={reportControlFocus}>
     <View
       style={{
         flex: 1,
@@ -813,9 +917,47 @@ function Playback({
             pip.current = false;
             reveal();
           }}
-          style={StyleSheet.absoluteFill}
-          contentFit="contain"
+          style={[
+            StyleSheet.absoluteFill,
+            fitMode === "zoom" && { transform: [{ scale: 1.25 }] },
+          ]}
+          contentFit={fitMode === "zoom" ? "contain" : (fitMode as any)}
         />
+
+        {/* Fit mode HUD Toast */}
+        {!!fitToast && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 50,
+              alignSelf: "center",
+              backgroundColor: "rgba(10, 10, 14, 0.9)",
+              paddingHorizontal: 18,
+              paddingVertical: 10,
+              borderRadius: 22,
+              borderWidth: 1.2,
+              borderColor: "rgba(255, 255, 255, 0.25)",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.5,
+              shadowRadius: 8,
+              elevation: 8,
+              zIndex: 999,
+            }}
+          >
+            <Text
+              style={{
+                color: "#ffffff",
+                fontSize: 14,
+                fontFamily: fonts.bold,
+                letterSpacing: 0.2,
+              }}
+            >
+              {fitToast}
+            </Text>
+          </View>
+        )}
 
         {/* Tap-to-toggle controls */}
         <Pressable
@@ -1009,6 +1151,12 @@ function Playback({
       {/* ── Fullscreen overlay controls ── */}
       {show && layoutFull && (
         <FocusGroup style={StyleSheet.absoluteFill}>
+          <View
+            style={StyleSheet.absoluteFill}
+            pointerEvents={menu || resume ? "none" : "auto"}
+            importantForAccessibility={menu || resume ? "no-hide-descendants" : "auto"}
+            aria-hidden={!!(menu || resume)}
+          >
           {/* Gradient */}
           <LinearGradient
             pointerEvents="none"
@@ -1030,8 +1178,18 @@ function Playback({
             }}
           >
             {/* Back button */}
-            <CircleBtn onPress={exit} size={44} bg="rgba(0,0,0,0.45)">
-              <IconBack size={22} />
+            <CircleBtn
+              onPress={exit}
+              size={platform.tv ? 36 : 44}
+              bg="rgba(0,0,0,0.45)"
+              focusId="back"
+            >
+              {({ focused }) => (
+                <IconBack
+                  size={platform.tv ? 18 : 22}
+                  color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                />
+              )}
             </CircleBtn>
 
             {/* Top-Right cluster: Quality, Audio, Subtitles, Next, Cast, PiP, Settings */}
@@ -1041,6 +1199,8 @@ function Playback({
                   onPress={() => setMenu("quality")}
                   disabled={casting}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onFocus={() => reportControlFocus("quality")}
+                  onBlur={() => reportControlFocus(null)}
                   style={(state) => {
                     const pressed = state.pressed;
                     const focused = Boolean((state as any).focused);
@@ -1080,30 +1240,49 @@ function Playback({
               <CircleBtn
                 onPress={() => setMenu("audio")}
                 disabled={casting}
-                size={44}
+                size={platform.tv ? 36 : 44}
                 active={menu === "audio"}
                 bg="rgba(0,0,0,0.45)"
+                focusId="audio"
               >
-                <IconAudio size={22} color={menu === "audio" ? "#000000" : "#ffffff"} />
+                {({ focused }) => (
+                  <IconAudio
+                    size={platform.tv ? 18 : 22}
+                    color={menu === "audio" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                  />
+                )}
               </CircleBtn>
 
               <CircleBtn
                 onPress={() => setMenu("captions")}
                 disabled={casting}
-                size={44}
+                size={platform.tv ? 36 : 44}
                 active={Boolean(subtitle)}
                 bg="rgba(0,0,0,0.45)"
+                focusId="captions"
               >
-                <IconSubtitles size={22} color={subtitle ? "#000000" : "#ffffff"} active={!!subtitle} />
+                {({ focused }) => (
+                  <IconSubtitles
+                    size={platform.tv ? 18 : 22}
+                    color={subtitle ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                    active={!!subtitle}
+                  />
+                )}
               </CircleBtn>
 
               {!offline && !!manifest.nextFileId && (
                 <CircleBtn
                   onPress={() => next(manifest.nextFileId!)}
-                  size={44}
+                  size={platform.tv ? 36 : 44}
                   bg="rgba(0,0,0,0.45)"
+                  focusId="next"
                 >
-                  <IconNext size={22} />
+                  {({ focused }) => (
+                    <IconNext
+                      size={platform.tv ? 18 : 22}
+                      color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                    />
+                  )}
                 </CircleBtn>
               )}
 
@@ -1157,20 +1336,36 @@ function Playback({
                       setMessage("Picture in picture is unavailable on this device.");
                     });
                   }}
-                  size={44}
+                  size={platform.tv ? 36 : 44}
                   bg="rgba(0,0,0,0.45)"
                 >
                   <IconPip size={22} />
                 </CircleBtn>
               )}
 
+              {!platform.tv && (
+                <CircleBtn
+                  onPress={cycleFitMode}
+                  size={44}
+                  bg="rgba(0,0,0,0.45)"
+                >
+                  <Maximize size={20} color="#ffffff" />
+                </CircleBtn>
+              )}
+
               <CircleBtn
                 onPress={() => setMenu("settings")}
-                size={44}
+                size={platform.tv ? 36 : 44}
                 active={menu === "settings"}
                 bg="rgba(0,0,0,0.45)"
+                focusId="settings"
               >
-                <IconSettings size={22} color={menu === "settings" ? "#000000" : "#ffffff"} />
+                {({ focused }) => (
+                  <IconSettings
+                    size={platform.tv ? 18 : 22}
+                    color={menu === "settings" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                  />
+                )}
               </CircleBtn>
             </View>
           </View>
@@ -1182,7 +1377,7 @@ function Playback({
               justifyContent: "center",
               alignItems: "center",
               flexDirection: "row",
-              gap: platform.tv ? 40 : 28,
+              gap: platform.tv ? 32 : 28,
             }}
             pointerEvents="box-none"
           >
@@ -1190,7 +1385,7 @@ function Playback({
             {!!(manifest as any).previousFileId && (
               <CircleBtn
                 onPress={() => next((manifest as any).previousFileId)}
-                size={platform.tv ? 54 : 48}
+                size={48}
                 bg="rgba(0,0,0,0.4)"
               >
                 <IconBack size={20} />
@@ -1200,36 +1395,44 @@ function Playback({
             {/* Rewind 10s */}
             <CircleBtn
               onPress={() => seek(position - 10)}
-              size={platform.tv ? 62 : 54}
+              size={platform.tv ? 44 : 54}
               bg="rgba(0,0,0,0.45)"
               disabled={casting}
+              focusId="rewind"
             >
-              <IconRewind size={platform.tv ? 32 : 28} />
+              <IconRewind size={platform.tv ? 22 : 28} />
             </CircleBtn>
 
-            {/* Big Center Play/Pause button: white background with black icon */}
+            {/* Big Center Play/Pause button: on TV turns solid white when focused, frosted when not */}
             <CircleBtn
               onPress={togglePlay}
-              size={platform.tv ? 82 : 72}
-              active={true}
+              size={platform.tv ? 56 : 72}
+              active={!platform.tv}
               activeBg="#ffffff"
+              bg={platform.tv ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.45)"}
               disabled={casting}
+              focusId="play"
+              hasTVPreferredFocus={true}
             >
-              {playing ? (
-                <IconPause size={platform.tv ? 34 : 30} color="#000000" />
-              ) : (
-                <IconPlay size={platform.tv ? 36 : 32} color="#000000" />
-              )}
+              {({ focused }) => {
+                const darkIcon = (!platform.tv || focused);
+                return playing ? (
+                  <IconPause size={platform.tv ? 24 : 30} color={darkIcon ? "#000000" : "#ffffff"} />
+                ) : (
+                  <IconPlay size={platform.tv ? 26 : 32} color={darkIcon ? "#000000" : "#ffffff"} />
+                );
+              }}
             </CircleBtn>
 
             {/* Forward 10s */}
             <CircleBtn
               onPress={() => seek(position + 10)}
-              size={platform.tv ? 62 : 54}
+              size={platform.tv ? 44 : 54}
               bg="rgba(0,0,0,0.45)"
               disabled={casting}
+              focusId="forward"
             >
-              <IconForward size={platform.tv ? 32 : 28} />
+              <IconForward size={platform.tv ? 22 : 28} />
             </CircleBtn>
           </View>
 
@@ -1265,7 +1468,7 @@ function Playback({
             )}
 
             {/* Ended card */}
-            {ended && (
+            {ended && !resume && (
               <View
                 style={{
                   flexDirection: "row",
@@ -1274,34 +1477,57 @@ function Playback({
                   marginBottom: 8,
                 }}
               >
-                <TouchableOpacity
+                <Pressable
                   onPress={() => seek(0)}
-                  activeOpacity={0.8}
-                  style={styles.endBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Play again"
+                  onFocus={() => reportControlFocus("end")}
+                  onBlur={() => reportControlFocus(null)}
+                  style={(s: any) => [
+                    styles.endBtn,
+                    s.focused && Platform.isTV && styles.endBtnFocusedTv,
+                    s.pressed && { opacity: 0.8 },
+                  ]}
                 >
                   <Text style={styles.endBtnText}>Play again</Text>
-                </TouchableOpacity>
+                </Pressable>
                 {!offline && manifest.nextFileId && (
-                  <TouchableOpacity
+                  <Pressable
                     onPress={() => next(manifest.nextFileId!)}
-                    activeOpacity={0.8}
-                    style={[styles.endBtn, styles.endBtnPrimary]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Next episode"
+                    onFocus={() => reportControlFocus("end")}
+                    onBlur={() => reportControlFocus(null)}
+                    style={(s: any) => [
+                      styles.endBtn,
+                      styles.endBtnPrimary,
+                      s.focused && Platform.isTV && styles.endBtnFocusedTv,
+                      s.focused && Platform.isTV && styles.endBtnPrimaryFocusedTv,
+                      s.pressed && { opacity: 0.8 },
+                    ]}
                   >
                     <Text style={[styles.endBtnText, { color: "#000", fontWeight: "700" }]}>
                       {preferences.autoNext && !autoNextCancelled
                         ? `Next  · ${countdown}s`
                         : "Next episode"}
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
                 {preferences.autoNext && !autoNextCancelled && manifest.nextFileId && (
-                  <TouchableOpacity
+                  <Pressable
                     onPress={() => setAutoNextCancelled(true)}
-                    activeOpacity={0.8}
-                    style={styles.endBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel autoplay"
+                    onFocus={() => reportControlFocus("end")}
+                    onBlur={() => reportControlFocus(null)}
+                    style={(s: any) => [
+                      styles.endBtn,
+                      s.focused && Platform.isTV && styles.endBtnFocusedTv,
+                      s.pressed && { opacity: 0.8 },
+                    ]}
                   >
                     <Text style={styles.endBtnText}>Cancel</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
               </View>
             )}
@@ -1378,7 +1604,7 @@ function Playback({
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: platform.tv ? 20 : 15,
+                    fontSize: platform.tv ? 14 : 15,
                     fontFamily: fonts.bold,
                     letterSpacing: -0.2,
                   }}
@@ -1407,7 +1633,7 @@ function Playback({
                     <Text
                       style={{
                         color: "rgba(255,255,255,0.6)",
-                        fontSize: platform.tv ? 13 : 11,
+                        fontSize: platform.tv ? 11 : 11,
                         fontFamily: fonts.regular,
                         marginTop: 2,
                       }}
@@ -1422,7 +1648,7 @@ function Playback({
               <Text
                 style={{
                   color: "rgba(255,255,255,0.75)",
-                  fontSize: platform.tv ? 14 : 11,
+                  fontSize: platform.tv ? 11.5 : 11,
                   fontFamily: fonts.medium,
                 }}
               >
@@ -1462,6 +1688,7 @@ function Playback({
               onFocus={() => {
                 reveal();
                 setTimelineFocus(true);
+                reportControlFocus("timeline");
                 if (platform.tv)
                   setTimelineHandle(
                     findNodeHandle(timeline.current) || undefined,
@@ -1469,6 +1696,7 @@ function Playback({
               }}
               onBlur={() => {
                 setTimelineFocus(false);
+                reportControlFocus(null);
                 if (scrub != null) seek(scrub);
               }}
               onLayout={(e) => {
@@ -1594,17 +1822,23 @@ function Playback({
                 bottom: Math.max(insets.bottom, 16) + 150,
               }}
             >
-              <TouchableOpacity
+              <Pressable
                 onPress={() => seek(activeSkip[1]!.end)}
-                activeOpacity={0.85}
-                style={styles.skipPill}
+                accessibilityRole="button"
+                accessibilityLabel={`Skip ${activeSkip[0]}`}
+                style={(s: any) => [
+                  styles.skipPill,
+                  s.focused && Platform.isTV && styles.skipPillFocusedTv,
+                  s.pressed && { opacity: 0.85 },
+                ]}
               >
                 <Text style={styles.skipPillText}>
                   Skip {activeSkip[0]}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           )}
+          </View>
         </FocusGroup>
       )}
 
@@ -1638,46 +1872,57 @@ function Playback({
               elevation: 10,
             }}
           >
-            <TouchableOpacity
+            <Pressable
               onPress={() => {
                 setChoice((old) => ({ ...old, start: initialResume }));
                 setResume(false);
                 setStarted(true);
               }}
-              activeOpacity={0.85}
-              style={{
-                width: "100%",
-                paddingVertical: 14,
-                backgroundColor: colors.brand,
-                borderRadius: 12,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Resume from ${timeLabel(initialResume)}`}
+              hasTVPreferredFocus={true}
+              style={(s: any) => [
+                {
+                  width: "100%",
+                  paddingVertical: 14,
+                  backgroundColor: colors.brand,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+                s.focused && Platform.isTV && styles.resumeBtnPrimaryFocusedTv,
+                s.pressed && { opacity: 0.85 },
+              ]}
             >
               <Text style={{ color: "#fff", fontFamily: fonts.bold, fontSize: 15 }}>
                 Resume ({timeLabel(initialResume)})
               </Text>
-            </TouchableOpacity>
+            </Pressable>
 
-            <TouchableOpacity
+            <Pressable
               onPress={() => {
                 setResume(false);
                 setStarted(true);
               }}
-              activeOpacity={0.85}
-              style={{
-                width: "100%",
-                paddingVertical: 14,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                borderRadius: 12,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
+              accessibilityRole="button"
+              accessibilityLabel="Start from beginning"
+              style={(s: any) => [
+                {
+                  width: "100%",
+                  paddingVertical: 14,
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+                s.focused && Platform.isTV && styles.resumeBtnFocusedTv,
+                s.pressed && { opacity: 0.85 },
+              ]}
             >
               <Text style={{ color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14 }}>
                 Start from beginning
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       )}
@@ -1691,7 +1936,7 @@ function Playback({
         supportedOrientations={["portrait", "landscape"]}
       >
         <View style={styles.sheetBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenu(null)} />
+          <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={() => setMenu(null)} />
           <FocusGroup style={styles.sheetContainer}>
             {/* Drag handle */}
             <View style={styles.sheetHandle} />
@@ -1707,13 +1952,18 @@ function Playback({
                       ? "Video quality"
                       : "Player settings"}
               </Text>
-              <TouchableOpacity
+              <Pressable
+                focusable={true}
                 onPress={() => { setMenu(null); reveal(); }}
-                activeOpacity={0.7}
-                style={styles.sheetCloseBtn}
+                style={({ pressed }: any) => [
+                  styles.sheetCloseBtn,
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Close menu"
               >
                 <IconClose size={18} color="#fff" />
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             <ScrollView
@@ -1725,6 +1975,7 @@ function Playback({
                 <>
                   <SheetItem
                     label="Video quality"
+                    preferred={platform.tv}
                     onPress={() => setMenu("quality")}
                   />
 
@@ -1764,6 +2015,29 @@ function Playback({
                       setVolume(value);
                     }}
                   />
+                  {!platform.tv && (
+                    <>
+                      <View style={styles.sheetSectionLabel}>
+                        <Text style={styles.sheetSectionLabelText}>Screen fit & scaling</Text>
+                      </View>
+                      {[
+                        { mode: "contain" as const, label: "Best Fit (Contain)" },
+                        { mode: "cover" as const, label: "Crop to Fill (100% Full)" },
+                        { mode: "fill" as const, label: "Stretch (Full Screen)" },
+                        { mode: "zoom" as const, label: "125% Zoom (Smart Crop)" },
+                      ].map((item) => (
+                        <SheetItem
+                          key={item.mode}
+                          label={item.label}
+                          selected={fitMode === item.mode}
+                          onPress={() => {
+                            setFitMode(item.mode);
+                            showFitToast(item.label);
+                          }}
+                        />
+                      ))}
+                    </>
+                  )}
                   <SheetItem
                     label={`${diagnostics ? "Hide" : "Show"} playback diagnostics`}
                     onPress={() => setDiagnostics((v) => !v)}
@@ -1824,9 +2098,10 @@ function Playback({
                     </Text>
                   )
                 ) : (
-                  manifest.audioTracks?.map((track) => (
+                  manifest.audioTracks?.map((track, idx) => (
                     <SheetItem
                       key={track.index}
+                      preferred={platform.tv && idx === 0}
                       label={`${track.language || "Unknown language"} · ${track.codec.toUpperCase()} · ${track.channels} channels`}
                       selected={choice.audio === track.index}
                       onPress={() => void switchAudio(track.index)}
@@ -1839,6 +2114,7 @@ function Playback({
                 <>
                   <SheetItem
                     label="Off"
+                    preferred={platform.tv}
                     selected={!subtitle}
                     onPress={() => {
                       setSubtitle(null);
@@ -1923,6 +2199,7 @@ function Playback({
                     {manifest.path === "hls" && (
                       <SheetItem
                         label="Auto (adaptive)"
+                        preferred={platform.tv}
                         selected={choice.path === "hls" && !choice.uri}
                         onPress={() => {
                           setChoice((old) => ({
@@ -1997,6 +2274,7 @@ function Playback({
         </View>
       </Modal>
     </View>
+    </PlayerFocusCtx.Provider>
   );
 }
 
@@ -2008,28 +2286,46 @@ function SheetItem({
   label,
   selected,
   onPress,
+  preferred,
 }: {
   label: string;
   selected?: boolean;
   onPress: () => void;
+  preferred?: boolean;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
-    <TouchableOpacity
+    <Pressable
+      focusable={true}
+      hasTVPreferredFocus={preferred}
       onPress={onPress}
-      activeOpacity={0.7}
-      style={styles.sheetItem}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      style={({ pressed }) => [
+        styles.sheetItem,
+        selected && styles.sheetItemSelected,
+        focused && Platform.isTV && styles.sheetItemFocusedTv,
+        pressed && { opacity: 0.75 },
+      ]}
     >
       <Text
         style={[
           styles.sheetItemText,
           selected && styles.sheetItemTextSelected,
+          focused && Platform.isTV && styles.sheetItemTextFocusedTv,
         ]}
         numberOfLines={1}
       >
         {label}
       </Text>
-      {selected && <IconCheck size={20} color="#ffffff" />}
-    </TouchableOpacity>
+      {selected ? (
+        <View style={[styles.sheetCheckBadge, focused && Platform.isTV && styles.sheetCheckBadgeFocusedTv]}>
+          <IconCheck size={16} color={focused && Platform.isTV ? "#000000" : "#ffffff"} />
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -2050,6 +2346,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
+  skipPillFocusedTv: {
+    borderWidth: 2.5,
+    borderColor: "#ffffff",
+  },
 
   // End screen buttons
   endBtn: {
@@ -2059,6 +2359,16 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.25)",
+  },
+  endBtnFocusedTv: {
+    borderWidth: 2.5,
+    borderColor: "#ffffff",
+    zIndex: 3,
+    elevation: 6,
+  },
+  endBtnPrimaryFocusedTv: {
+    borderWidth: 3,
+    borderColor: "#3B7DF9",
   },
   endBtnPrimary: {
     backgroundColor: "#ffffff",
@@ -2100,6 +2410,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "rgba(255,255,255,0.1)",
     alignItems: "center",
+  },
+  resumeBtnFocusedTv: {
+    borderWidth: 3,
+    borderColor: "#ffffff",
+    transform: [{ scale: 1.05 }],
+    zIndex: 3,
+    elevation: 6,
+  },
+  resumeBtnPrimaryFocusedTv: {
+    borderWidth: 3,
+    borderColor: "#ffffff",
   },
   resumeBtnPrimary: {
     backgroundColor: "#ffffff",
@@ -2162,6 +2483,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(255,255,255,0.08)",
   },
+  sheetItemSelected: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  sheetItemFocusedTv: {
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    marginHorizontal: 12,
+    marginVertical: 2,
+    zIndex: 3,
+  },
   sheetItemText: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 15,
@@ -2171,6 +2502,21 @@ const styles = StyleSheet.create({
   sheetItemTextSelected: {
     color: "#ffffff",
     fontWeight: "700",
+  },
+  sheetItemTextFocusedTv: {
+    color: "#000000",
+    fontWeight: "700",
+  },
+  sheetCheckBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetCheckBadgeFocusedTv: {
+    backgroundColor: "#ffffff",
   },
   sheetSectionLabel: {
     paddingHorizontal: 20,

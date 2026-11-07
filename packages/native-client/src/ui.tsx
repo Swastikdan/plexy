@@ -1,4 +1,4 @@
-import React, { forwardRef, useState } from "react";
+import React, { forwardRef, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +10,7 @@ import {
   View,
   type StyleProp,
   type ViewStyle,
+  type ImageStyle,
   type TextInputProps,
 } from "react-native";
 import {
@@ -25,7 +26,10 @@ import {
   Home,
   Library,
   Maximize,
+  Menu,
   Minimize,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pause,
   Play,
   Search,
@@ -60,7 +64,10 @@ export const icons = {
   home: Home,
   library: Library,
   fullscreen: Maximize,
+  menu: Menu,
   minimize: Minimize,
+  panelLeftClose: PanelLeftClose,
+  panelLeftOpen: PanelLeftOpen,
   pause: Pause,
   play: Play,
   search: Search,
@@ -75,6 +82,81 @@ export const icons = {
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof icons;
+
+// ---------------------------------------------------------------------------
+// PosterImage
+// ---------------------------------------------------------------------------
+
+import { getCachedImageSync, resolveCachedImage } from "./image-cache";
+
+export function PosterImage({
+  source,
+  style,
+  resizeMode = "cover",
+}: {
+  source: { uri: string; headers?: Record<string, string> } | undefined;
+  style?: StyleProp<ImageStyle>;
+  resizeMode?: "cover" | "contain";
+}) {
+  const [resolvedUri, setResolvedUri] = useState<string | null>(() => {
+    if (!source?.uri) return null;
+    if (source.uri.startsWith("file://")) return source.uri;
+    return getCachedImageSync(source.uri);
+  });
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const lastUri = useRef("");
+  const uri = source?.uri || "";
+
+  if (lastUri.current !== uri) {
+    lastUri.current = uri;
+    if (failed || attempt) {
+      setFailed(false);
+      setAttempt(0);
+    }
+  }
+
+  useEffect(() => {
+    if (!source?.uri) return;
+    if (source.uri.startsWith("file://")) {
+      setResolvedUri(source.uri);
+      return;
+    }
+    const mem = getCachedImageSync(source.uri);
+    if (mem) {
+      setResolvedUri(mem);
+      return;
+    }
+    let active = true;
+    void resolveCachedImage(source.uri, source.headers).then((local) => {
+      if (active && local && local !== source.uri) {
+        setResolvedUri(local);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [source?.uri]);
+
+  if (!source || failed) return null;
+
+  const imageSource = resolvedUri
+    ? { uri: resolvedUri }
+    : source;
+
+  return (
+    <Image
+      key={resolvedUri || String(attempt)}
+      source={imageSource}
+      style={[{ width: "100%", height: "100%" }, style]}
+      resizeMode={resizeMode}
+      onError={() => {
+        if (attempt < 1) setAttempt((a) => a + 1);
+        else setFailed(true);
+      }}
+    />
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Icon
@@ -177,11 +259,11 @@ export function Heading({
       style={{
         fontFamily: fonts.black,
         fontSize: large
-          ? Platform.isTV ? 46 : 34
-          : Platform.isTV ? 30 : 24,
+          ? Platform.isTV ? 20 : 34
+          : Platform.isTV ? 15 : 24,
         lineHeight: large
-          ? Platform.isTV ? 54 : 42
-          : Platform.isTV ? 38 : 32,
+          ? Platform.isTV ? 24 : 42
+          : Platform.isTV ? 19 : 32,
         letterSpacing: -0.5,
       }}
     >
@@ -247,7 +329,8 @@ export const Button = forwardRef<
         isFilled ? styles.buttonPrimary : styles.buttonSecondary,
         compact && styles.buttonCompact,
         Platform.isTV && styles.buttonTV,
-        focused && styles.buttonFocused,
+        focused && Platform.isTV && styles.buttonFocusedTV,
+        focused && !Platform.isTV && styles.buttonFocused,
         pressed && { opacity: 0.75 },
         disabled && { opacity: 0.4 },
         style,
@@ -256,7 +339,7 @@ export const Button = forwardRef<
       {icon && (
         <Icon
           name={icon}
-          size={Platform.isTV ? 24 : compact ? 18 : 20}
+          size={Platform.isTV ? 16 : compact ? 18 : 20}
           color="#fff"
         />
       )}
@@ -264,8 +347,8 @@ export const Button = forwardRef<
         <Label
           style={{
             color: "#fff",
-            fontFamily: fonts.medium,
-            fontSize: Platform.isTV ? 20 : 15,
+            fontFamily: focused && Platform.isTV ? fonts.bold : fonts.medium,
+            fontSize: Platform.isTV ? 13 : 15,
           }}
         >
           {label}
@@ -325,7 +408,7 @@ export function Notice({
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={[styles.notice, { borderLeftColor: accent }]}
+      style={styles.notice}
     >
       <Label style={{ color: kind === "error" ? colors.danger : colors.ink }}>
         {message}
@@ -338,13 +421,15 @@ export function Notice({
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
-export function Loading() {
+export function Loading({ showLogo = true }: { showLogo?: boolean } = {}) {
   return (
     <View style={styles.loadingWrap}>
+      {showLogo && <PlexyLogo size={36} showText={true} />}
       <ActivityIndicator
-        size="large"
+        size="small"
         color={colors.brand}
         accessibilityLabel="Loading"
+        style={showLogo ? { marginTop: 18 } : undefined}
       />
     </View>
   );
@@ -371,7 +456,8 @@ export function Card({
   const [focus, setFocus] = useState(false);
   const isEpisode = item.kind === "episode";
   const aspectRatio = isEpisode ? 16 / 9 : 2 / 3;
-  const cardWidth = width || (Platform.isTV ? 200 : 150);
+  const isTv = Platform.isTV;
+  const cardWidth = width || (isTv ? (isEpisode ? 168 : 124) : 150);
   const hasProgress = !!item.watch && !item.watch.played;
   const isWatched = item.watch?.played;
 
@@ -390,8 +476,9 @@ export function Card({
         {
           width: cardWidth,
           gap: 8,
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed ? 0.85 : 1,
         },
+        isTv && focus && styles.cardFocused,
       ]}
     >
       {/* Image container */}
@@ -399,25 +486,21 @@ export function Card({
         style={[
           styles.cardImageWrap,
           { aspectRatio },
-          focus && styles.cardFocused,
+          focus && styles.cardImageFocusedTv,
         ]}
       >
-        {/* Poster / thumbnail */}
-        {item.poster ? (
-          <Image
-            source={api.image(item.poster)}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+        {/* Poster placeholder */}
+        <View style={styles.cardPlaceholder} pointerEvents="none">
+          <Icon
+            name={item.kind === "series" ? "tv" : "film"}
+            size={40}
+            color={colors.quiet}
           />
-        ) : (
-          <View style={styles.cardPlaceholder}>
-            <Icon
-              name={item.kind === "series" ? "tv" : "film"}
-              size={40}
-              color={colors.quiet}
-            />
-          </View>
-        )}
+        </View>
+        {/* Poster / thumbnail */}
+        <PosterImage source={api.image(item.poster)} />
+        {/* White focus ring when selected */}
+        {isTv && focus && <View style={styles.cardFocusRing} pointerEvents="none" />}
 
         {/* Bottom gradient overlay */}
         <LinearGradient
@@ -484,7 +567,7 @@ export function Card({
       <Label
         muted
         numberOfLines={1}
-        style={{ fontSize: Platform.isTV ? 15 : 11, fontFamily: fonts.medium }}
+        style={{ fontSize: Platform.isTV ? 13 : 11, fontFamily: fonts.medium }}
       >
         {isEpisode
           ? `Episode ${item.episodeNumber || 1}`
@@ -574,7 +657,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  tvText: { fontSize: 20, lineHeight: 28 },
+  tvText: { fontSize: 13, lineHeight: 18 },
 
   // --- Button ---
   button: {
@@ -601,12 +684,18 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   buttonTV: {
-    minHeight: 52,
-    paddingHorizontal: 22,
+    minHeight: 34,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   buttonFocused: {
     borderWidth: 2,
     borderColor: "#fff",
+  },
+  buttonFocusedTV: {
+    borderWidth: 2,
+    borderColor: "#ffffff",
   },
 
   // --- Field ---
@@ -627,8 +716,8 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: colors.elevated,
     borderRadius: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.brandLight,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
     gap: 14,
     marginVertical: 12,
   },
@@ -644,14 +733,32 @@ const styles = StyleSheet.create({
   // --- Card ---
   cardImageWrap: {
     backgroundColor: colors.elevated,
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: "hidden",
     justifyContent: "center",
     alignItems: "center",
   },
   cardFocused: {
-    borderWidth: 2.5,
-    borderColor: colors.brand,
+    transform: [{ scale: 1.015 }],
+    zIndex: 3,
+    elevation: 8,
+  },
+  cardImageFocusedTv: {
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  cardFocusRing: {
+    position: "absolute" as const,
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderWidth: 3.5,
+    borderColor: "#ffffff",
+    borderRadius: 8,
+    zIndex: 5,
   },
   cardPlaceholder: {
     ...StyleSheet.absoluteFill,

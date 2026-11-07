@@ -100,11 +100,11 @@ describe("authentication failure messages", () => {
     ).rejects.toThrow("Incorrect username or password.");
     globalThis.fetch = (async () =>
       Response.json(
-        { error: "The pairing key is invalid, expired, or already used." },
+        { error: "The pairing code is invalid, expired, or already used." },
         { status: 401 },
       )) as typeof fetch;
     await expect(api.pair("invalid-example", "Android")).rejects.toThrow(
-      "The pairing key is invalid, expired, or already used.",
+      "The pairing code is invalid, expired, or already used.",
     );
   });
   test("preserves password-confirmation errors in an existing session", async () => {

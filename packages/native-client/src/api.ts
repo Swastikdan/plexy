@@ -58,9 +58,14 @@ export function normalizeServerUrl(value: string) {
     throw new Error("Use the server address without a path.");
   return url.origin;
 }
+
 export interface CatalogCache {
   get<T>(path: string): Promise<T | null>;
   put(path: string, value: unknown): Promise<void>;
+}
+export interface DetailCache {
+  get(scope: string, id: string | number): Promise<TitleDetail | null>;
+  set(scope: string, id: string | number, value: TitleDetail): Promise<void>;
 }
 export class PlexyApi {
   readonly base: string;
@@ -69,8 +74,12 @@ export class PlexyApi {
     private token?: string,
     private options?: {
       cache?: CatalogCache;
+      detailCache?: DetailCache;
       onCacheUsed?: () => void;
       onFreshCatalog?: () => void;
+      onOffline?: () => void;
+      onOnline?: () => void;
+      scope?: string;
     },
   ) {
     this.base = normalizeServerUrl(url);
@@ -86,14 +95,31 @@ export class PlexyApi {
       );
     return url.toString();
   }
+  // Source objects are cached by path so React never sees a changed identity
+  // for the same image. On the new architecture Android clears the native
+  // image view whenever the source object identity changes, even for an
+  // identical URI, which leaves blank posters until the card is re-rendered
+  // by a focus event.
+  private imageCache = new Map<string, { uri: string; headers?: Record<string, string> }>();
+
   image(path: string | null) {
     if (!path) return undefined;
-    if (path.startsWith("file://")) return { uri: path };
-    const url = new URL(path, this.base);
-    if (url.username || url.password) return undefined;
-    if (url.origin === this.base)
-      return { uri: url.toString(), headers: this.headers() };
-    return url.protocol === "https:" ? { uri: url.toString() } : undefined;
+    const cached = this.imageCache.get(path);
+    if (cached) return cached;
+    let source: { uri: string; headers?: Record<string, string> } | undefined;
+    if (path.startsWith("file://")) {
+      source = { uri: path };
+    } else {
+      const url = new URL(path, this.base);
+      if (!(url.username || url.password)) {
+        if (url.origin === this.base)
+          source = { uri: url.toString(), headers: this.headers() };
+        else if (url.protocol === "https:")
+          source = { uri: url.toString() };
+      }
+    }
+    if (source) this.imageCache.set(path, source);
+    return source;
   }
   private cacheable(path: string, init: RequestInit) {
     return (
@@ -130,18 +156,22 @@ export class PlexyApi {
             ? "Your session has expired. Reconnect to this server."
             : data.error ||
                 (response.status === 401
-                  ? "The username, password or pairing key was not accepted."
+                  ? "The username, password or pairing code was not accepted."
                   : `The server returned ${response.status}.`),
           Number(response.headers.get("Retry-After")) || undefined,
         );
       }
       const value = (await response.json()) as T;
+      this.options?.onOnline?.();
       if (this.cacheable(path, init)) {
         void this.options?.cache?.put(path, value).catch(() => {});
         this.options?.onFreshCatalog?.();
       }
       return value;
     } catch (error) {
+      if (!(error instanceof ApiError)) {
+        this.options?.onOffline?.();
+      }
       if (
         !(error instanceof ApiError) &&
         !init.signal?.aborted &&
@@ -183,8 +213,12 @@ export class PlexyApi {
       signal?.removeEventListener("abort", abort);
     }
   }
-  status() {
-    return this.request<ServerStatus>("/api/server/status");
+  status(timeoutMs = 3500) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    return this.request<ServerStatus>("/api/server/status", {
+      signal: controller.signal,
+    }).finally(() => clearTimeout(t));
   }
   pair(code: string, name: string) {
     return this.request<AuthResult>("/api/auth/pair", {
@@ -225,10 +259,30 @@ export class PlexyApi {
       { signal },
     );
   }
-  detail(id: string | number, signal?: AbortSignal) {
-    return this.request<TitleDetail>(`/api/items/${encodeURIComponent(id)}`, {
-      signal,
-    });
+  async detail(id: string | number, signal?: AbortSignal) {
+    const path = `/api/items/${encodeURIComponent(id)}`;
+    try {
+      const result = await this.request<TitleDetail>(path, { signal });
+      if (this.options?.scope && this.options.detailCache) {
+        void this.options.detailCache.set(this.options.scope, id, result).catch(() => {});
+      }
+      return result;
+    } catch (error) {
+      if (
+        this.options?.scope &&
+        this.options.detailCache &&
+        !(error instanceof ApiError && error.status === 401)
+      ) {
+        const cached = await this.options.detailCache
+          .get(this.options.scope, id)
+          .catch(() => null);
+        if (cached) {
+          this.options?.onCacheUsed?.();
+          return cached;
+        }
+      }
+      throw error;
+    }
   }
   play(fileId: number, audio?: number) {
     // Conservative baseline; users can retry server conversion if device decoding fails.

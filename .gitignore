@@ -22,3 +22,17 @@ apps/mobile/android/
 apps/tv/android/
 *.jks
 *.keystore
+
+# Local agent instructions, design references, and debugging captures
+/Android TV screens/
+/tv_*.png
+
+# Desktop packaging resources regenerated from SVG sources during build
+/build/icon.png
+/build/icon.icns
+/build/background.png
+/build/background@2x.png
+/apps/desktop/build/icon.png
+/apps/desktop/build/icon.icns
+/apps/desktop/resources/icon.png
+/apps/desktop/resources/icon.icns
