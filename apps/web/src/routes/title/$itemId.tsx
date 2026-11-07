@@ -482,7 +482,7 @@ function DetailView({
               <h2 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-md">
                 {item.kind === "series" && activeEpisode ? (
                   <>
-                    S{activeEpisode.seasonNumber ?? selectedSeason} • E{activeEpisode.episodeNumber ?? 1} – {episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)}
+                    {episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)}
                   </>
                 ) : (
                   metadata?.tagline || item.name
@@ -490,6 +490,11 @@ function DetailView({
               </h2>
 
               <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-white/70">
+                {item.kind === "series" && activeEpisode && (
+                  <span className="font-medium text-white/90">
+                    Episode {activeEpisode.episodeNumber ?? 1}
+                  </span>
+                )}
                 {displayRuntime && (
                   <span className="font-medium text-white/85">{displayRuntime} min</span>
                 )}
@@ -663,9 +668,6 @@ function DetailView({
 
                           <div className="min-w-0 flex-1 py-0.5">
                             <div className="flex items-center gap-2">
-                              <span className="rounded-sm bg-brand/10 text-brand-text px-1.5 py-0.2 text-[10px] font-bold tabular-nums shrink-0">
-                                {badge}
-                              </span>
                               <h3 className="truncate text-xs sm:text-sm font-semibold text-ink transition-colors group-hover:text-white">
                                 {displayTitle}
                               </h3>
@@ -685,6 +687,10 @@ function DetailView({
                                 No description available.
                               </p>
                             )}
+
+                            <div className="mt-1 text-[11px] font-medium text-ink-muted">
+                              Episode {epNum}
+                            </div>
                           </div>
                         </button>
 

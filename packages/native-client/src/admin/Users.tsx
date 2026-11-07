@@ -3,7 +3,7 @@ import { View } from "react-native";
 import type { LibraryItem } from "../../../api-client/src/types";
 import { useClient } from "../context";
 import { useResource } from "../hooks";
-import { Button, Field, Heading, Label } from "../ui";
+import { Button, Field, Heading, Label, UserAvatar } from "../ui";
 import {
   confirmAction,
   Feedback,
@@ -58,14 +58,18 @@ export function AdminUsers() {
       <ResourceState resource={resource} />
       <Feedback action={action} />
       {resource.value?.users.map((entry) => (
-        <Button
-          key={entry.id}
-          label={`${entry.username} · ${entry.role}${entry.disabled ? " · Disabled" : ""}`}
-          selected={selected === entry.id}
-          onPress={() =>
-            setSelected((previous) => (previous === entry.id ? null : entry.id))
-          }
-        />
+        <View key={entry.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <UserAvatar name={entry.username} size={32} />
+          <View style={{ flex: 1 }}>
+            <Button
+              label={`${entry.username} · ${entry.role}${entry.disabled ? " · Disabled" : ""}`}
+              selected={selected === entry.id}
+              onPress={() =>
+                setSelected((previous) => (previous === entry.id ? null : entry.id))
+              }
+            />
+          </View>
+        </View>
       ))}
       {user && (
         <UserEditor

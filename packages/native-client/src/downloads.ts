@@ -27,6 +27,10 @@ export interface DownloadEntry {
   manifest: Playability;
   subtitles?: Record<string, Cue[]>;
   skips?: SkipSegments;
+  localPosterUri?: string;
+  seriesName?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
 }
 export class DownloadManager {
   entries: DownloadEntry[] = [];
@@ -164,10 +168,37 @@ export class DownloadManager {
     const dir = `${FS.documentDirectory}downloads/${scopeKey(this.scope)}/`;
     await FS.makeDirectoryAsync(dir, { intermediates: true });
     const id = `${fileId}-${maxHeight || "source"}-${Date.now()}`;
+
+    // Extract series and season info
+    const seriesName = manifest.title || (item as any).seriesName || (item.kind === "episode" ? (item as any).parentName : undefined);
+    const seasonNumber = manifest.seasonNumber ?? (item as any).seasonNumber;
+    const episodeNumber = manifest.episodeNumber ?? (item as any).episodeNumber;
+
+    let localPosterUri: string | undefined;
+    if (item.poster && item.poster.startsWith("file://")) {
+      localPosterUri = item.poster;
+    } else if (item.poster) {
+      try {
+        const artDir = `${dir}art/`;
+        await FS.makeDirectoryAsync(artDir, { intermediates: true });
+        const posterFile = `${artDir}item-${item.id}-poster.jpg`;
+        const res = await FS.downloadAsync(this.api.url(item.poster), posterFile, {
+          headers: this.api.headers(),
+        });
+        if (res.status === 200) {
+          localPosterUri = posterFile;
+        }
+      } catch {}
+    }
+
+    const savedItem: ItemCard = localPosterUri
+      ? { ...item, poster: localPosterUri }
+      : item;
+
     this.entries.push({
       id,
       fileId,
-      item,
+      item: savedItem,
       manifest: { ...manifest, fileId },
       label,
       maxHeight,
@@ -175,6 +206,10 @@ export class DownloadManager {
       bytes: 0,
       expected,
       uri: `${dir}${id}.media`,
+      localPosterUri,
+      seriesName,
+      seasonNumber,
+      episodeNumber,
     });
     await this.persist();
     void this.pump();
@@ -395,6 +430,20 @@ export class DownloadManager {
           }));
         }
         e.skips = await skips;
+        if (!e.localPosterUri && e.item.poster && !e.item.poster.startsWith("file://")) {
+          try {
+            const artDir = `${this.directory}art/`;
+            await FS.makeDirectoryAsync(artDir, { intermediates: true });
+            const posterPath = `${artDir}item-${e.item.id}-poster.jpg`;
+            const res = await FS.downloadAsync(this.api.url(e.item.poster), posterPath, {
+              headers: this.api.headers(),
+            });
+            if (res.status === 200) {
+              e.localPosterUri = posterPath;
+              e.item = { ...e.item, poster: posterPath };
+            }
+          } catch {}
+        }
         e.state = "completed";
       } catch (error) {
         if ((e.state as DownloadState) !== "paused") {

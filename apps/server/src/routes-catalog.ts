@@ -594,17 +594,53 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const userId = requestUser(request)?.id ?? 0;
     const itemId = parseItemId(params.itemId);
     if (itemId == null) return invalidItemId();
-    const exists = q<{ id: number }, [number]>("SELECT id FROM items WHERE id = ?").get(itemId);
-    if (!exists) return Response.json({ error: "Not found" }, { status: 404 });
+    const item = q<{ id: number; kind: string }, [number]>("SELECT id, kind FROM items WHERE id = ?").get(itemId);
+    if (!item) return Response.json({ error: "Not found" }, { status: 404 });
 
+    const playedVal = body.played ? 1 : 0;
     run(
       `INSERT INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played, updated_at)
        VALUES (?, ?, 0, NULL, ?, datetime('now'))
        ON CONFLICT(user_id,item_id) DO UPDATE SET
          position_seconds = 0, played = excluded.played, updated_at = datetime('now')`,
-      userId, itemId, body.played ? 1 : 0,
+      userId, itemId, playedVal,
     );
-    log.info("player", body.played ? "marked watched" : "marked unwatched", { itemId });
+
+    // If marking a series as watched / unwatched, cascade to all of its episodes!
+    if (String(item.kind) === "series") {
+      const episodes = q<{ id: number; duration: number | null }, [number]>(
+        "SELECT id, duration FROM items WHERE parent_id = ? AND kind = 'episode'",
+      ).all(itemId);
+      for (const ep of episodes) {
+        run(
+          `INSERT INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played, updated_at)
+           VALUES (?, ?, 0, ?, ?, datetime('now'))
+           ON CONFLICT(user_id,item_id) DO UPDATE SET
+             position_seconds = 0, played = excluded.played, updated_at = datetime('now')`,
+          userId, ep.id, ep.duration ?? null, playedVal,
+        );
+      }
+    } else if (String(item.kind) === "season") {
+      const season = q<{ parent_id: number | null; season_number: number | null }, [number]>(
+        "SELECT parent_id, season_number FROM items WHERE id = ?",
+      ).get(itemId);
+      if (season?.parent_id != null && season?.season_number != null) {
+        const episodes = q<{ id: number; duration: number | null }, [number, number]>(
+          "SELECT id, duration FROM items WHERE parent_id = ? AND season_number = ? AND kind = 'episode'",
+        ).all(Number(season.parent_id), Number(season.season_number));
+        for (const ep of episodes) {
+          run(
+            `INSERT INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played, updated_at)
+             VALUES (?, ?, 0, ?, ?, datetime('now'))
+             ON CONFLICT(user_id,item_id) DO UPDATE SET
+               position_seconds = 0, played = excluded.played, updated_at = datetime('now')`,
+            userId, ep.id, ep.duration ?? null, playedVal,
+          );
+        }
+      }
+    }
+
+    log.info("player", body.played ? "marked watched" : "marked unwatched", { itemId, kind: item.kind });
     return { ok: true, played: body.played };
   }, {
     params: t.Object({ itemId: t.Numeric() }),

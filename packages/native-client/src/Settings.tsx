@@ -4,7 +4,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useClient } from "./context";
 import { useResource } from "./hooks";
-import { Button, Field, Heading, Label, Notice } from "./ui";
+import { Button, Field, Heading, Label, Notice, UserAvatar } from "./ui";
 import { colors, fonts } from "./theme";
 import { sessionStore } from "./storage";
 import type { AuthResult, Session } from "./api";
@@ -80,11 +80,10 @@ export function SettingsScreen({
         subtitle="Current profile and connected server"
       >
         <View style={settingsStyles.serverRow}>
-          <View style={settingsStyles.serverAvatar}>
-            <Text style={settingsStyles.serverAvatarText}>
-              {(session.profile.username || session.profile.name || "U").charAt(0).toUpperCase()}
-            </Text>
-          </View>
+          <UserAvatar
+            name={session.profile.username || session.profile.name || "User"}
+            size={48}
+          />
           <View style={settingsStyles.serverInfo}>
             <Text style={settingsStyles.serverName}>
               {session.profile.username || "Account"}

@@ -1,6 +1,31 @@
-# GeekNative frontend feasibility and release plan
+# GeekNative frontend feasibility and release plan (superseded)
+
+**Superseded:** The user has cancelled the GeekNative/Kotlin/Jetpack Compose frontend approach. Build Android mobile and TV apps with React Native, preserve the current visual identity/player features, and use landscape for mobile fullscreen. The authoritative plan is [MOBILE_APP_BUILD_PLAN.md](MOBILE_APP_BUILD_PLAN.md). The following is historical research only.
 
 Assessed 6 November 2026 against the linked documentation and current Plexy source. This is a proposed implementation plan, not a completed native app or deployment.
+
+## Confirmed product scope (6 November 2026)
+
+The current target is **Android only**. iOS implementation, Apple signing and App Store release are out of scope. The platform comparisons below are retained as background research; this scope takes precedence over them and the earlier Expo proposal.
+
+Build a polished native Android client using Kotlin, Jetpack Compose and Media3/ExoPlayer, with GeekNative providing project conventions and shared design contracts. The UI may be redesigned for Android; matching the existing web layout is not an acceptance requirement. Plexy Server continues to run separately.
+
+Functional parity is the goal. Inventory the current web routes, controls and server capabilities before implementation and maintain a feature checklist mapping each user action to its Android screen, API endpoint and verification result. Include connection/account flows, libraries, search, collections and watchlists where supported, details and episode navigation, watched state, preferences, available account/settings actions, and all current playback actions. Server filesystem operations remain on the server; expose supported remote management through APIs where appropriate.
+
+Playback is required for the first usable build: authenticated direct streams and prepared HLS, seek/resume/progress, audio and subtitle selection, quality selection, skip markers, next episode, buffering recovery and useful errors. Verify authorization on nested media requests, device codec capabilities and server conversion fallback. A working catalog with a placeholder player is not a usable milestone.
+
+Offline downloads, casting, picture-in-picture and other planned mobile capabilities remain tracked work, with explicit acceptance criteria and device verification. Staging them after the initial playback proof does not remove them from the intended product. Clearly distinguish features already supported by Plexy from new server/API work; never mark unsupported capabilities complete based on UI alone.
+
+### Android delivery sequence
+
+1. Inventory existing functionality and establish the Android toolchain and isolated GeekNative scaffold.
+2. Implement server profiles, current authentication and secure credential storage.
+3. Prove direct and converted playback on a physical Android device, including authenticated HLS and progress reporting.
+4. Build the full native browsing and management experience using a consistent visual system, accessible controls, artwork-led screens and complete loading/error/empty states.
+5. Close the feature checklist, implement remaining mobile capabilities and test network interruption, session revocation and device/media compatibility.
+6. Produce a signed APK for device testing and an AAB for Google Play; complete release signing, privacy declarations and store testing before publication.
+
+This remains a build plan. No Android app or verified playback build has been delivered yet.
 
 ## Recommendation
 

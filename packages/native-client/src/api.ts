@@ -88,6 +88,7 @@ export class PlexyApi {
   }
   image(path: string | null) {
     if (!path) return undefined;
+    if (path.startsWith("file://")) return { uri: path };
     const url = new URL(path, this.base);
     if (url.username || url.password) return undefined;
     if (url.origin === this.base)

@@ -550,22 +550,35 @@ function Playback({
     setCues([]);
     if (!subtitle) return;
     if (offline) {
-      setCues(offline.subtitles?.[subtitle] || []);
-      if (!offline.subtitles?.[subtitle])
-        setMessage("This subtitle was not saved with the download.");
+      const match =
+        offline.subtitles?.[subtitle] ||
+        Object.entries(offline.subtitles || {}).find(([k]) =>
+          k === subtitle || k.endsWith(subtitle) || subtitle.endsWith(k)
+        )?.[1];
+      if (match && match.length > 0) {
+        setCues(match);
+      } else {
+        setMessage("This subtitle track is not available offline.");
+      }
       return;
     }
-    void api
-      .text(
-        `/api/subtitles/${manifest.fileId}/${encodeURIComponent(subtitle)}`,
-        controller.signal,
-      )
-      .then((text) => setCues(parseVtt(text)))
+    const encoded = encodeURIComponent(subtitle);
+    api
+      .text(`/api/subtitles/${manifest.fileId}/${encoded}`, controller.signal)
+      .then((text) => {
+        const parsed = parseVtt(text);
+        setCues(parsed);
+      })
       .catch(() => {
-        if (!controller.signal.aborted)
-          setMessage(
-            "Could not load the selected subtitle. Choose another track or retry.",
-          );
+        if (controller.signal.aborted) return;
+        api
+          .text(`/api/subtitles/${manifest.fileId}/${subtitle}`, controller.signal)
+          .then((text) => setCues(parseVtt(text)))
+          .catch(() => {
+            if (!controller.signal.aborted) {
+              setMessage("Subtitle track could not be loaded.");
+            }
+          });
       });
     return () => controller.abort();
   }, [api, manifest.fileId, offline, offline?.subtitles, subtitle]);

@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Animated,
   BackHandler,
+  Easing,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -23,7 +25,7 @@ import { Connect } from "./Connect";
 import { ClientProvider, useClient, useDownloads, type NativePlatform } from "./context";
 import { sessionStore } from "./storage";
 import { type Session, type ItemCard } from "./api";
-import { Button, Heading, Icon, Label, Loading, Notice, PlexyLogo, type IconName } from "./ui";
+import { Button, Heading, Icon, Label, Loading, Notice, PlexyLogo, UserAvatar, type IconName } from "./ui";
 import {
   HomeScreen,
   LibraryScreen,
@@ -38,7 +40,7 @@ import { colors } from "./theme";
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
-type MobileTab = "home" | "libraries" | "search" | "settings";
+type MobileTab = "home" | "libraries" | "downloads" | "search" | "settings";
 type TvTab = "home" | "movies" | "tv" | "downloads" | "search" | "settings";
 type Tab = MobileTab | TvTab;
 
@@ -52,6 +54,7 @@ type Route =
 const mobileTabs: Array<{ id: MobileTab; label: string; icon: IconName }> = [
   { id: "home", label: "Home", icon: "home" },
   { id: "libraries", label: "Libraries", icon: "library" },
+  { id: "downloads", label: "Downloads", icon: "download" },
   { id: "search", label: "Search", icon: "search" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
@@ -64,6 +67,54 @@ const tvTabs: Array<{ id: TvTab; label: string; icon: IconName }> = [
   { id: "search", label: "Search", icon: "search" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
+
+// ─── Page Transition ──────────────────────────────────────────────────────────
+
+function PageTransition({
+  visible,
+  children,
+  isDetail = false,
+}: {
+  visible: boolean;
+  children: React.ReactNode;
+  isDetail?: boolean;
+}) {
+  const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      anim.setValue(0);
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: isDetail ? 240 : 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible, isDetail, anim]);
+
+  return (
+    <Animated.View
+      style={{
+        flex: 1,
+        display: visible ? "flex" : "none",
+        opacity: anim,
+        transform: [
+          {
+            translateY: anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [isDetail ? 16 : 8, 0],
+            }),
+          },
+        ],
+      }}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -238,11 +289,16 @@ function Shell({
       { type: "detail", id, key: Date.now() },
     ]);
 
-  const openDownloads = () =>
-    setRoutes((previous) => [
-      ...previous,
-      { type: "downloads", key: Date.now() },
-    ]);
+  const openDownloads = () => {
+    if (!isTv) {
+      switchTab("downloads");
+    } else {
+      setRoutes((previous) => [
+        ...previous,
+        { type: "downloads", key: Date.now() },
+      ]);
+    }
+  };
 
   const play = (fileId: number, offline?: DownloadEntry) =>
     setRoutes((previous) => [
@@ -307,7 +363,6 @@ function Shell({
   const FocusGroup = platform.FocusGroup;
   const activeTabs = isTv ? tvTabs : mobileTabs;
   const displayUsername = session.profile.username || session.profile.name || "User";
-  const userInitial = displayUsername.charAt(0).toUpperCase();
 
   // ── Screen renderer ─────────────────────────────────────────────────────────
   const renderScreen = (screen: Tab) => {
@@ -385,11 +440,7 @@ function Shell({
 
       {/* User info at bottom */}
       <View style={styles.tvUserRow}>
-        <View style={styles.tvAvatar}>
-          <Text style={styles.tvAvatarText}>
-            {userInitial}
-          </Text>
-        </View>
+        <UserAvatar name={displayUsername} size={32} />
         <Text style={styles.tvUserName} numberOfLines={1}>
           {displayUsername}
         </Text>
@@ -419,11 +470,9 @@ function Shell({
           accessibilityRole="button"
           accessibilityLabel="Settings"
           onPress={() => switchTab("settings")}
-          style={styles.mobileAvatar}
+          style={{ padding: 2 }}
         >
-          <Text style={styles.mobileAvatarText}>
-            {userInitial}
-          </Text>
+          <UserAvatar name={displayUsername} size={32} />
         </Pressable>
       </View>
     </View>
@@ -439,12 +488,15 @@ function Shell({
           styles.tabBar,
           {
             paddingBottom: bottomPadding,
-            height: 56 + bottomPadding,
+            height: 58 + bottomPadding,
           },
         ]}
       >
         {(activeTabs as typeof mobileTabs).map((item) => {
           const isActive = tab === item.id;
+          const isDownloads = item.id === "downloads";
+          const showBadge = isDownloads && activeDownloads.length > 0;
+
           return (
             <Pressable
               key={item.id}
@@ -466,9 +518,14 @@ function Shell({
               >
                 <Icon
                   name={item.icon}
-                  size={22}
+                  size={20}
                   color={isActive ? "#000000" : INACTIVE_COLOR}
                 />
+                {showBadge && (
+                  <View style={styles.tabBadge}>
+                    <Text style={styles.tabBadgeText}>{activeDownloads.length}</Text>
+                  </View>
+                )}
               </View>
               <Text
                 style={[
@@ -522,24 +579,20 @@ function Shell({
             </Label>
           )}
 
-          {/* Tab screens (kept mounted once visited) */}
-          {[...visited].map((screen) => (
-            <View
-              key={screen}
-              style={{
-                flex: 1,
-                display: screen === tab && !current ? "flex" : "none",
-              }}
-              accessibilityElementsHidden={screen !== tab || !!current}
-              importantForAccessibility={
-                screen !== tab || !!current ? "no-hide-descendants" : "auto"
-              }
-            >
-              <FocusGroup style={{ flex: 1 }}>
-                {renderScreen(screen)}
-              </FocusGroup>
-            </View>
-          ))}
+          {/* Tab screens (kept mounted once visited with smooth page transition) */}
+          {[...visited].map((screen) => {
+            const isVisible = screen === tab && !current;
+            return (
+              <PageTransition
+                key={screen}
+                visible={isVisible}
+              >
+                <FocusGroup style={{ flex: 1 }}>
+                  {renderScreen(screen)}
+                </FocusGroup>
+              </PageTransition>
+            );
+          })}
 
           {/* Detail screens */}
           {routes
@@ -547,12 +600,10 @@ function Shell({
             .map(
               (route) =>
                 route.type === "detail" && (
-                  <View
+                  <PageTransition
                     key={route.key}
-                    style={{
-                      flex: 1,
-                      display: route === current ? "flex" : "none",
-                    }}
+                    visible={route === current}
+                    isDetail={true}
                   >
                     <DetailScreen
                       id={route.id}
@@ -560,7 +611,7 @@ function Shell({
                       play={(id) => play(id)}
                       download={(item, fileId) => setPicker({ item, fileId })}
                     />
-                  </View>
+                  </PageTransition>
                 ),
             )}
 
@@ -570,18 +621,16 @@ function Shell({
             .map(
               (route) =>
                 route.type === "downloads" && (
-                  <View
+                  <PageTransition
                     key={route.key}
-                    style={{
-                      flex: 1,
-                      display: route === current ? "flex" : "none",
-                    }}
+                    visible={route === current}
+                    isDetail={true}
                   >
                     <DownloadsScreen
                       back={back}
                       play={(entry) => play(entry.fileId, entry)}
                     />
-                  </View>
+                  </PageTransition>
                 ),
             )}
         </View>
@@ -685,33 +734,55 @@ const styles = StyleSheet.create({
   // ── Mobile bottom tab bar ─────────────────────────────────────────────────
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#050505",
+    backgroundColor: "#08080a",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
     justifyContent: "space-around",
-    paddingTop: 6,
+    paddingTop: 8,
+    paddingHorizontal: 6,
   },
   tabItem: {
     flex: 1,
+    minWidth: 52,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 2,
+    paddingVertical: 3,
     gap: 3,
   },
   tabIconWrap: {
-    paddingHorizontal: 16,
-    paddingVertical: 3,
-    borderRadius: 14,
+    minWidth: 54,
+    height: 32,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
   tabIconWrapActive: {
     backgroundColor: "#ffffff",
   },
+  tabBadge: {
+    position: "absolute",
+    top: -4,
+    right: 2,
+    backgroundColor: BRAND_BLUE,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  tabBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontFamily: "Archivo_700Bold",
+  },
   tabLabel: {
     fontSize: 10.5,
-    letterSpacing: 0.15,
+    letterSpacing: 0.1,
     textAlign: "center",
   },
 

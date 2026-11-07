@@ -13,8 +13,8 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Search as SearchIcon, Play, ArrowLeft, Download, Check, Tv as TvIcon, Info, Film } from "lucide-react-native";
-import { useClient } from "./context";
+import { Search as SearchIcon, Play, ArrowLeft, Download, Check, Tv as TvIcon, Info, Film, RefreshCw } from "lucide-react-native";
+import { useClient, useDownloads } from "./context";
 import { useResource } from "./hooks";
 import { Button, Card, Loading, Notice } from "./ui";
 import { colors, fonts, timeLabel } from "./theme";
@@ -46,6 +46,7 @@ export function Hero({
   onToggleWatched,
   isWatched,
   onDownload,
+  downloadState,
   width,
 }: {
   item: ItemCard;
@@ -57,6 +58,7 @@ export function Hero({
   onToggleWatched?: () => void;
   isWatched?: boolean;
   onDownload?: () => void;
+  downloadState?: { state: string; bytes: number; expected: number };
   width?: number;
 }) {
   const { api, platform } = useClient();
@@ -212,12 +214,27 @@ export function Hero({
               onPress={onDownload}
               style={({ pressed }) => [
                 styles.heroIconBtn,
+                downloadState?.state === "downloading" && { borderColor: colors.brand, width: "auto", minWidth: 48, paddingHorizontal: 12 },
+                downloadState?.state === "completed" && { borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.18)" },
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={8}
               accessibilityLabel="Download"
             >
-              <Download size={20} color="#fff" strokeWidth={2} />
+              {downloadState?.state === "downloading" ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Download size={18} color={colors.brand} strokeWidth={2.4} />
+                  <Text style={{ color: colors.brand, fontSize: 13, fontFamily: fonts.bold }}>
+                    {downloadState.expected ? `${Math.min(100, Math.round((downloadState.bytes / downloadState.expected) * 100))}%` : "..."}
+                  </Text>
+                </View>
+              ) : downloadState?.state === "completed" ? (
+                <Check size={20} color="#22c55e" strokeWidth={2.6} />
+              ) : downloadState?.state === "queued" ? (
+                <Text style={{ color: colors.muted, fontSize: 11, fontFamily: fonts.medium }}>Queued</Text>
+              ) : (
+                <Download size={20} color="#fff" strokeWidth={2} />
+              )}
             </Pressable>
           )}
         </View>
@@ -624,9 +641,12 @@ export function LibraryScreen({
   open: OpenTitle;
   openDownloads?: () => void;
 }) {
-  const { api, platform } = useClient();
+  const { api, platform, progress } = useClient();
+  const downloadEntries = useDownloads();
   const { width } = useWindowDimensions();
-  const [activeTab, setActiveTab] = useState<"movie" | "series">(kind);
+  type LibraryTab = "movie" | "series" | "downloads";
+  const [activeTab, setActiveTab] = useState<LibraryTab>(kind);
+  const [dlFilter, setDlFilter] = useState<"all" | "movie" | "series">("all");
   const [sort, setSort] = useState("name");
   const [unwatched, setUnwatched] = useState(false);
   const [extra, setExtra] = useState<ItemCard[]>([]);
@@ -645,26 +665,102 @@ export function LibraryScreen({
 
   React.useEffect(() => {
     if (movieProbe.value && seriesProbe.value) {
-      if (!hasMovies && hasSeries && activeTab !== "series") {
+      if (!hasMovies && hasSeries && activeTab === "movie") {
         setActiveTab("series");
-      } else if (hasMovies && !hasSeries && activeTab !== "movie") {
+      } else if (hasMovies && !hasSeries && activeTab === "series") {
         setActiveTab("movie");
       }
     }
   }, [hasMovies, hasSeries, movieProbe.value, seriesProbe.value, activeTab]);
 
-  const showLibTabs = !platform.tv && (
-    (!movieProbe.value || !seriesProbe.value)
-      ? true
-      : hasMovies && hasSeries
-  );
+  const showLibTabs = !platform.tv;
 
   const data = useResource(
-    (signal) => api.items(activeTab, 0, sort, signal, unwatched),
+    (signal) => (activeTab === "downloads" ? Promise.resolve({ items: [] }) : api.items(activeTab, 0, sort, signal, unwatched)),
     [api, activeTab, sort, unwatched],
   );
 
-  const items = [...(data.value?.items || []), ...extra];
+  // Construct offline downloaded media items
+  const downloadedCards = React.useMemo(() => {
+    const list: Array<ItemCard & { downloadCount?: number }> = [];
+    const seriesMap = new Map<string, typeof downloadEntries>();
+
+    downloadEntries.forEach((entry) => {
+      const isEpisode =
+        entry.item.kind === "episode" ||
+        entry.seriesName != null ||
+        entry.seasonNumber != null;
+      if (isEpisode) {
+        const name =
+          entry.seriesName ||
+          (entry.item as any).parentName ||
+          entry.item.name.split(" - ")[0] ||
+          "TV Show";
+        if (!seriesMap.has(name)) seriesMap.set(name, []);
+        seriesMap.get(name)!.push(entry);
+      } else {
+        const item = entry.item;
+        const watch = progress.latest(item.id);
+        list.push({
+          ...item,
+          poster: entry.localPosterUri || (item.poster?.startsWith("file://") ? item.poster : entry.localPosterUri) || item.poster,
+          watch: watch
+            ? {
+                position: watch.position,
+                duration: watch.duration || null,
+                played: watch.played,
+                percent: watch.played ? 100 : watch.duration ? Math.min(100, Math.round((watch.position / watch.duration) * 100)) : 0,
+              }
+            : item.watch,
+        });
+      }
+    });
+
+    seriesMap.forEach((eps, seriesName) => {
+      const first = eps[0]!;
+      const parentId =
+        (first.manifest as any).parentItemId ||
+        first.item.id;
+      const publicId =
+        first.manifest.parentPublicId ||
+        (first.item as any).parentPublicId ||
+        String(parentId);
+      const poster = eps.find((e) => e.localPosterUri)?.localPosterUri || first.item.poster;
+      const watchedCount = eps.filter(
+        (e) => progress.latest(e.item.id)?.played || e.item.watch?.played,
+      ).length;
+      const allWatched = watchedCount === eps.length;
+
+      list.push({
+        id: parentId,
+        publicId,
+        name: seriesName,
+        kind: "series",
+        poster,
+        overview: `${eps.length} downloaded episode${eps.length === 1 ? "" : "s"}`,
+        downloadCount: eps.length,
+        genres: [],
+        year: first.item.year,
+        runtime: null,
+        watch: {
+          position: watchedCount,
+          duration: eps.length,
+          played: allWatched,
+          percent: eps.length > 0 ? Math.round((watchedCount / eps.length) * 100) : 0,
+        },
+      } as any);
+    });
+
+    return list;
+  }, [downloadEntries, progress]);
+
+  const filteredDownloadedItems = React.useMemo(() => {
+    if (dlFilter === "movie") return downloadedCards.filter((i) => i.kind === "movie");
+    if (dlFilter === "series") return downloadedCards.filter((i) => i.kind === "series");
+    return downloadedCards;
+  }, [downloadedCards, dlFilter]);
+
+  const items = activeTab === "downloads" ? filteredDownloadedItems : [...(data.value?.items || []), ...extra];
   const available = width - (platform.tv ? 210 : 0) - 32;
   const columns = Math.max(2, Math.floor(available / (platform.tv ? 185 : 150)));
   const cardWidth = Math.floor(available / columns) - 12;
@@ -678,7 +774,7 @@ export function LibraryScreen({
   }
 
   async function loadMore() {
-    if (more || end || data.loading || !data.value || data.value.items.length < 60) return;
+    if (activeTab === "downloads" || more || end || data.loading || !data.value || data.value.items.length < 60) return;
     setMore(true);
     setMoreError("");
     try {
@@ -704,11 +800,12 @@ export function LibraryScreen({
 
   return (
     <View style={styles.libraryRoot}>
-      {/* Tab bar — only show if both movies and series exist */}
+      {/* Tab bar — Movies | TV Shows | Downloads */}
       {showLibTabs && (
         <View style={styles.libTabBar}>
-          {(["movie", "series"] as const).map((tab) => {
+          {(["movie", "series", "downloads"] as const).map((tab) => {
             const active = activeTab === tab;
+            const label = tab === "movie" ? "Movies" : tab === "series" ? "TV Shows" : "Downloads";
             return (
               <Pressable
                 key={tab}
@@ -721,7 +818,7 @@ export function LibraryScreen({
                 style={[styles.libTab, active && styles.libTabActive]}
               >
                 <Text style={[styles.libTabText, active && styles.libTabTextActive]}>
-                  {tab === "movie" ? "Movies" : "TV Shows"}
+                  {label}
                 </Text>
               </Pressable>
             );
@@ -730,46 +827,71 @@ export function LibraryScreen({
       )}
 
       {/* Filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={styles.filterRow}
-      >
-        {openDownloads && (
+      {activeTab === "downloads" ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={styles.filterRow}
+        >
           <Pressable
-            onPress={openDownloads}
-            style={[styles.filterChip, { borderColor: colors.brand, flexDirection: "row", alignItems: "center", gap: 5 }]}
+            onPress={() => setDlFilter("all")}
+            style={[styles.filterChip, dlFilter === "all" && styles.filterChipActive]}
           >
-            <Download size={13} color={colors.brand} />
-            <Text style={[styles.filterChipText, { color: colors.brand }]}>Downloads</Text>
-          </Pressable>
-        )}
-        {FILTERS.map(([key, label]) => (
-          <Pressable
-            key={key}
-            onPress={() => reset(key, unwatched)}
-            style={[styles.filterChip, sort === key && styles.filterChipActive]}
-          >
-            <Text style={[styles.filterChipText, sort === key && styles.filterChipTextActive]}>
-              {label}
+            <Text style={[styles.filterChipText, dlFilter === "all" && styles.filterChipTextActive]}>
+              All ({downloadedCards.length})
             </Text>
           </Pressable>
-        ))}
-        <Pressable
-          onPress={() => reset(sort, !unwatched)}
-          style={[styles.filterChip, unwatched && styles.filterChipActive]}
+          <Pressable
+            onPress={() => setDlFilter("movie")}
+            style={[styles.filterChip, dlFilter === "movie" && styles.filterChipActive]}
+          >
+            <Text style={[styles.filterChipText, dlFilter === "movie" && styles.filterChipTextActive]}>
+              Movies ({downloadedCards.filter((i) => i.kind === "movie").length})
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setDlFilter("series")}
+            style={[styles.filterChip, dlFilter === "series" && styles.filterChipActive]}
+          >
+            <Text style={[styles.filterChipText, dlFilter === "series" && styles.filterChipTextActive]}>
+              TV Shows ({downloadedCards.filter((i) => i.kind === "series").length})
+            </Text>
+          </Pressable>
+        </ScrollView>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={styles.filterRow}
         >
-          <Text style={[styles.filterChipText, unwatched && styles.filterChipTextActive]}>
-            Unwatched
-          </Text>
-        </Pressable>
-      </ScrollView>
+          {FILTERS.map(([key, label]) => (
+            <Pressable
+              key={key}
+              onPress={() => reset(key, unwatched)}
+              style={[styles.filterChip, sort === key && styles.filterChipActive]}
+            >
+              <Text style={[styles.filterChipText, sort === key && styles.filterChipTextActive]}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+          <Pressable
+            onPress={() => reset(sort, !unwatched)}
+            style={[styles.filterChip, unwatched && styles.filterChipActive]}
+          >
+            <Text style={[styles.filterChipText, unwatched && styles.filterChipTextActive]}>
+              Unwatched
+            </Text>
+          </Pressable>
+        </ScrollView>
+      )}
 
       {/* Grid */}
-      {data.loading ? (
+      {activeTab !== "downloads" && data.loading ? (
         <Loading />
-      ) : data.error ? (
+      ) : activeTab !== "downloads" && data.error ? (
         <Notice message={data.error} retry={data.retry} />
       ) : (
         <FlatList
@@ -790,7 +912,6 @@ export function LibraryScreen({
                 setFocusedId(item.id);
                 if (platform.tv)
                   ref.current?.scrollToIndex({
-                    // FlatList indexes rows when numColumns is set.
                     index: Math.floor(index / columns),
                     viewPosition: 0.5,
                     animated: false,
@@ -803,18 +924,28 @@ export function LibraryScreen({
             />
           )}
           onScrollToIndexFailed={() => {}}
-          ListEmptyComponent={<Notice message="No titles match this filter." />}
+          ListEmptyComponent={
+            <Notice
+              message={
+                activeTab === "downloads"
+                  ? "No downloaded media on this device."
+                  : "No titles match this filter."
+              }
+            />
+          }
           ListFooterComponent={
-            <View style={{ gap: 12, paddingTop: 8 }}>
-              {!!moreError && <Notice message={moreError} />}
-              {!end && data.value?.items.length === 60 && (
-                <Button
-                  label={more ? "Loading…" : "Load more"}
-                  disabled={more}
-                  onPress={() => void loadMore()}
-                />
-              )}
-            </View>
+            activeTab !== "downloads" ? (
+              <View style={{ gap: 12, paddingTop: 8 }}>
+                {!!moreError && <Notice message={moreError} />}
+                {!end && data.value?.items?.length === 60 && (
+                  <Button
+                    label={more ? "Loading…" : "Load more"}
+                    disabled={more}
+                    onPress={() => void loadMore()}
+                  />
+                )}
+              </View>
+            ) : null
           }
           onEndReached={() => void loadMore()}
           onEndReachedThreshold={0.4}
@@ -1045,38 +1176,357 @@ export function DetailScreen({
   play: (fileId: number) => void;
   download: (item: ItemCard, fileId: number) => void;
 }) {
-  const { api, platform, progress } = useClient();
+  const { api, platform, progress, downloads, preferences } = useClient();
+  const downloadEntries = useDownloads();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
   const [season, setSeason] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"episodes" | "details">("episodes");
   const [actionError, setActionError] = useState("");
+  const [downloadingSeason, setDownloadingSeason] = useState(false);
+  const [overrideWatched, setOverrideWatched] = useState<boolean | null>(null);
+  const [episodesWatchedOverride, setEpisodesWatchedOverride] = useState<Record<number, boolean>>({});
 
-  const detail = data.value;
+  // Check for offline download entries matching this id
+  const offlineMatches = React.useMemo(() => {
+    return downloadEntries.filter((e) => {
+      if (String(e.fileId) === String(id)) return true;
+      if (String(e.item.id) === String(id)) return true;
+      if (e.item.publicId === String(id)) return true;
+      if ((e.item as any).parentPublicId === String(id)) return true;
+      if (String((e.item as any).parentItemId) === String(id)) return true;
+      if (e.manifest?.parentPublicId === String(id)) return true;
+      if (String((e.manifest as any)?.parentItemId) === String(id)) return true;
+      if (e.seriesName && (e.seriesName === String(id) || e.item.name === String(id))) return true;
+      return false;
+    });
+  }, [downloadEntries, id]);
+
+  const synthesizedDetail = React.useMemo(() => {
+    if (!offlineMatches.length) return null;
+    const first = offlineMatches[0]!;
+    const isEpisode =
+      first.item.kind === "episode" ||
+      first.seriesName != null ||
+      first.seasonNumber != null;
+
+    if (!isEpisode) {
+      const watch = progress.latest(first.item.id);
+      const isPlayed = watch?.played ?? Boolean(first.item.watch?.played);
+      const pos = watch?.position ?? first.item.watch?.position ?? 0;
+      const dur = watch?.duration ?? first.item.watch?.duration ?? null;
+      const pct = isPlayed ? 100 : dur ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
+      return {
+        item: {
+          ...first.item,
+          poster: first.localPosterUri || first.item.poster,
+          watch: {
+            position: pos,
+            duration: dur,
+            played: isPlayed,
+            percent: pct,
+          },
+        },
+        file: {
+          fileId: first.fileId,
+          height: first.maxHeight,
+          videoCodec: null as string | null,
+          hdr: null as string | null,
+          container: null as string | null,
+        },
+        trailer: null as { provider: string; key: string } | null,
+        metadata: {
+          overview: first.item.overview,
+        },
+        cast: [],
+        seasons: [],
+        episodes: [],
+      };
+    }
+
+    // Series: group episodes by season
+    const seasonMap = new Map<number, typeof offlineMatches>();
+    offlineMatches.forEach((e) => {
+      const sNum = e.seasonNumber ?? (e.manifest.seasonNumber ?? 1);
+      if (!seasonMap.has(sNum)) seasonMap.set(sNum, []);
+      seasonMap.get(sNum)!.push(e);
+    });
+
+    const seasons = Array.from(seasonMap.keys())
+      .sort((a, b) => a - b)
+      .map((sNum) => ({
+        number: sNum,
+        name: `Season ${sNum}`,
+      }));
+
+    const episodes = offlineMatches
+      .sort((a, b) => {
+        const sDiff = (a.seasonNumber ?? 1) - (b.seasonNumber ?? 1);
+        if (sDiff !== 0) return sDiff;
+        return (a.episodeNumber ?? 1) - (b.episodeNumber ?? 1);
+      })
+      .map((e) => {
+        const epWatch = progress.latest(e.item.id);
+        const epPlayed = epWatch?.played ?? Boolean(e.item.watch?.played);
+        const epPos = epWatch?.position ?? e.item.watch?.position ?? 0;
+        const epDur = epWatch?.duration ?? e.item.watch?.duration ?? null;
+        const epPct = epPlayed ? 100 : epDur ? Math.min(100, Math.round((epPos / epDur) * 100)) : 0;
+        return {
+          id: e.item.id,
+          name: e.item.name,
+          overview: e.item.overview,
+          seasonNumber: e.seasonNumber ?? (e.manifest.seasonNumber ?? 1),
+          episodeNumber: e.episodeNumber ?? (e.manifest.episodeNumber ?? 1),
+          runtime: e.item.runtime,
+          poster: e.localPosterUri || e.item.poster,
+          fileId: e.fileId,
+          watch: {
+            position: epPos,
+            duration: epDur,
+            played: epPlayed,
+            percent: epPct,
+          },
+        };
+      });
+
+    const parentId =
+      (first.manifest as any).parentItemId ||
+      (first.item as any).parentItemId ||
+      first.item.id;
+    const publicId =
+      first.manifest.parentPublicId ||
+      (first.item as any).parentPublicId ||
+      String(parentId);
+    const seriesTitle =
+      first.seriesName ||
+      (first.item as any).parentName ||
+      first.item.name;
+
+    const allWatched = episodes.length > 0 && episodes.every((ep) => ep.watch?.played);
+    const watchedCount = episodes.filter((ep) => ep.watch?.played).length;
+
+    return {
+      item: {
+        ...first.item,
+        id: parentId,
+        publicId,
+        name: seriesTitle,
+        kind: "series" as const,
+        poster: first.localPosterUri || first.item.poster,
+        overview: `${episodes.length} downloaded episode${episodes.length === 1 ? "" : "s"} available offline.`,
+        genres: first.item.genres || [],
+        year: first.item.year,
+        runtime: null,
+        watch: {
+          position: watchedCount,
+          duration: episodes.length,
+          played: allWatched,
+          percent: episodes.length > 0 ? Math.round((watchedCount / episodes.length) * 100) : 0,
+        },
+      },
+      file: undefined,
+      trailer: null as { provider: string; key: string } | null,
+      metadata: {
+        overview: `${episodes.length} downloaded episode${episodes.length === 1 ? "" : "s"} available offline.`,
+      },
+      seasons,
+      episodes,
+      cast: [],
+    };
+  }, [offlineMatches, progress]);
+
+  // Merge server detail or fallback to offline synthesized detail
+  const detail = React.useMemo(() => {
+    const raw = data.value || synthesizedDetail;
+    if (!raw) return null;
+    const itemPoster =
+      offlineMatches.find((e) => e.localPosterUri)?.localPosterUri ||
+      raw.item.poster;
+    const itemWatch = progress.latest(raw.item.id);
+    const rawItemWatch = raw.item.watch;
+    const played = itemWatch ? itemWatch.played : Boolean(rawItemWatch?.played);
+    const pos = itemWatch ? itemWatch.position : (rawItemWatch?.position ?? 0);
+    const dur = itemWatch ? (itemWatch.duration || null) : (rawItemWatch?.duration ?? null);
+    const pct = played ? 100 : dur ? Math.min(100, Math.round((pos / dur) * 100)) : (rawItemWatch?.percent ?? 0);
+
+    const mergedWatch = {
+      position: pos,
+      duration: dur,
+      played,
+      percent: pct,
+    };
+
+    const enrichedEpisodes = raw.episodes?.map((ep: any) => {
+      const match = downloadEntries.find((d) => d.fileId === ep.fileId);
+      const epPoster = match?.localPosterUri || ep.poster;
+      const epWatch = progress.latest(ep.id);
+      const epPlayed = epWatch ? epWatch.played : Boolean(ep.watch?.played);
+      const epPos = epWatch ? epWatch.position : (ep.watch?.position ?? 0);
+      const epDur = epWatch ? epWatch.duration : (ep.watch?.duration ?? null);
+      const epPct = epPlayed ? 100 : epDur ? Math.min(100, Math.round((epPos / epDur) * 100)) : (ep.watch?.percent ?? 0);
+      return {
+        ...ep,
+        poster: epPoster,
+        watch: {
+          position: epPos,
+          duration: epDur,
+          played: epPlayed,
+          percent: epPct,
+        },
+      };
+    });
+
+    return {
+      ...raw,
+      item: {
+        ...raw.item,
+        poster: itemPoster,
+        watch: mergedWatch,
+      },
+      episodes: enrichedEpisodes || raw.episodes,
+    };
+  }, [data.value, synthesizedDetail, offlineMatches, downloadEntries, progress]);
+
   const item = detail?.item;
-  const selectedSeason = season ?? detail?.seasons?.[0]?.number;
+  const isSeriesWatched = overrideWatched ?? Boolean(item?.watch?.played);
 
   async function watched() {
     if (!item) return;
+    const nextPlayed = !isSeriesWatched;
+    setOverrideWatched(nextPlayed);
+
+    // Optimistically update all episodes to completed (or unwatched)
+    const newOverrides: Record<number, boolean> = {};
+    if (detail?.episodes) {
+      detail.episodes.forEach((ep: any) => {
+        newOverrides[ep.id] = nextPlayed;
+      });
+      setEpisodesWatchedOverride((prev) => ({ ...prev, ...newOverrides }));
+    }
+
     try {
       await progress.flush(api);
-      await progress.forget(item.id);
-      await api.watched(item.id, !item.watch?.played);
+      if (nextPlayed) {
+        if (detail?.episodes) {
+          for (const ep of detail.episodes) {
+            const dur = ep.runtime ? ep.runtime * 60 : 3600;
+            await progress.record({
+              itemId: ep.id,
+              position: dur,
+              duration: dur,
+              played: true,
+              updatedAt: Date.now(),
+            });
+          }
+        }
+        await progress.record({
+          itemId: item.id,
+          position: 100,
+          duration: 100,
+          played: true,
+          updatedAt: Date.now(),
+        });
+      } else {
+        if (detail?.episodes) {
+          for (const ep of detail.episodes) {
+            await progress.forget(ep.id);
+          }
+        }
+        await progress.forget(item.id);
+      }
+
+      await api.watched(item.id, nextPlayed);
       data.retry();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Could not update watched state.");
+      if (!synthesizedDetail) {
+        setActionError(e instanceof Error ? e.message : "Could not update watched state.");
+      }
     }
+  }
+
+  async function toggleEpisodeWatched(ep: any) {
+    const currentEpPlayed = episodesWatchedOverride[ep.id] ?? (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+    const nextPlayed = !currentEpPlayed;
+    setEpisodesWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
+    try {
+      if (nextPlayed) {
+        const dur = ep.runtime ? ep.runtime * 60 : 3600;
+        await progress.record({
+          itemId: ep.id,
+          position: dur,
+          duration: dur,
+          played: true,
+          updatedAt: Date.now(),
+        });
+      } else {
+        await progress.forget(ep.id);
+      }
+      await api.watched(ep.id, nextPlayed);
+    } catch {}
   }
 
   // Find first playable episode
   function getFirstPlayableFileId() {
     if (detail?.file?.fileId) return detail.file.fileId;
     const ep =
-      detail?.episodes?.find((e) => e.fileId && !e.watch?.played) ||
-      detail?.episodes?.find((e) => e.fileId);
+      detail?.episodes?.find((e: any) => e.fileId && !e.watch?.played) ||
+      detail?.episodes?.find((e: any) => e.fileId);
     return ep?.fileId ?? null;
   }
 
+  const selectedSeason = season ?? detail?.seasons?.[0]?.number;
+  const seasonEpisodes = (detail?.episodes || []).filter(
+    (e: any) => (selectedSeason == null || e.seasonNumber === selectedSeason) && e.fileId,
+  );
+  const completedSeasonEpisodes = seasonEpisodes.filter((e: any) =>
+    downloadEntries.some((d) => d.fileId === e.fileId && d.state === "completed"),
+  );
+  const activeSeasonEpisodes = seasonEpisodes.filter((e: any) =>
+    downloadEntries.some((d) => d.fileId === e.fileId && (d.state === "downloading" || d.state === "queued")),
+  );
+  const isSeasonDownloaded = seasonEpisodes.length > 0 && completedSeasonEpisodes.length === seasonEpisodes.length;
+  const isSeasonDownloading = activeSeasonEpisodes.length > 0;
+
+  async function downloadWholeSeason() {
+    if (!seasonEpisodes.length || isSeasonDownloaded || !item) return;
+    setDownloadingSeason(true);
+    try {
+      for (const ep of seasonEpisodes) {
+        const alreadyQueued = downloadEntries.some(
+          (d) => d.fileId === ep.fileId && (d.state === "completed" || d.state === "downloading" || d.state === "queued"),
+        );
+        if (alreadyQueued) continue;
+
+        try {
+          const manifest = await api.play(ep.fileId);
+          const maxHeight = preferences.defaultDownloadHeight;
+          const epItem: ItemCard = {
+            ...item,
+            id: ep.id,
+            name: ep.name || `Episode ${ep.episodeNumber}`,
+            poster: ep.poster || item.poster,
+            kind: "episode",
+            seasonNumber: ep.seasonNumber,
+            episodeNumber: ep.episodeNumber,
+          };
+          (epItem as any).seriesName = item.name;
+          await downloads.enqueue(
+            epItem,
+            manifest,
+            ep.fileId,
+            `${item.name} S${ep.seasonNumber}E${ep.episodeNumber}`,
+            maxHeight,
+          );
+        } catch (err) {
+          console.warn("Failed to enqueue episode", ep.id, err);
+        }
+      }
+    } finally {
+      setDownloadingSeason(false);
+    }
+  }
+
   const hasEpisodes = Boolean(detail?.episodes?.length);
+  const movieDl = detail?.file ? downloadEntries.find((d) => d.fileId === detail.file!.fileId) : undefined;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
@@ -1093,11 +1543,11 @@ export function DetailScreen({
         contentContainerStyle={styles.detailContainer}
         showsVerticalScrollIndicator={false}
       >
-        {data.loading ? (
+        {data.loading && !detail ? (
           <View style={{ padding: 32 }}>
             <Loading />
           </View>
-        ) : data.error ? (
+        ) : data.error && !detail ? (
           <View style={{ padding: 24 }}>
             <Notice message={data.error} retry={data.retry} />
           </View>
@@ -1105,11 +1555,11 @@ export function DetailScreen({
           detail &&
           item && (
             <>
-              {/* Hero section: full-width title, metadata below, big play button + trailer + watched toggle */}
+              {/* Hero section */}
               <Hero
                 item={item}
                 actionLabel={
-                  item.watch?.position && !item.watch.played ? "▶  Resume" : "▶  Play"
+                  item.watch?.position && !isSeriesWatched ? "▶  Resume" : "▶  Play"
                 }
                 disabled={!getFirstPlayableFileId()}
                 onOpen={() => {
@@ -1117,7 +1567,7 @@ export function DetailScreen({
                   if (fileId) play(fileId);
                 }}
                 onTrailer={
-                  detail.trailer?.provider.toLowerCase() === "youtube"
+                  detail.trailer?.provider?.toLowerCase() === "youtube"
                     ? () => {
                         void Linking.openURL(
                           `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
@@ -1126,8 +1576,9 @@ export function DetailScreen({
                     : undefined
                 }
                 onToggleWatched={() => void watched()}
-                isWatched={Boolean(item.watch?.played)}
+                isWatched={isSeriesWatched}
                 onDownload={detail.file ? () => download(item, detail.file!.fileId) : undefined}
+                downloadState={movieDl}
               />
 
               <View style={[styles.detailBody, platform.tv && styles.detailBodyTV]}>
@@ -1166,7 +1617,7 @@ export function DetailScreen({
                               showsHorizontalScrollIndicator={false}
                               contentContainerStyle={{ gap: 8 }}
                             >
-                              {detail.seasons.map((s) => {
+                              {detail.seasons.map((s: any) => {
                                 const active = selectedSeason === s.number;
                                 return (
                                   <Pressable
@@ -1184,20 +1635,70 @@ export function DetailScreen({
                           </View>
                         )}
 
+                        {/* Download whole season button */}
+                        {seasonEpisodes.length > 0 && !platform.tv && (
+                          <View style={styles.seasonDownloadBar}>
+                            <Pressable
+                              onPress={() => void downloadWholeSeason()}
+                              disabled={isSeasonDownloaded || isSeasonDownloading || downloadingSeason}
+                              style={({ pressed }) => [
+                                styles.downloadSeasonBtn,
+                                isSeasonDownloaded && styles.downloadSeasonBtnCompleted,
+                                (isSeasonDownloading || downloadingSeason) && styles.downloadSeasonBtnActive,
+                                pressed && { opacity: 0.8 },
+                              ]}
+                            >
+                              {isSeasonDownloaded ? (
+                                <>
+                                  <Check size={16} color="#22c55e" strokeWidth={2.5} />
+                                  <Text style={styles.downloadSeasonBtnTextCompleted}>
+                                    Season {selectedSeason ?? 1} Downloaded
+                                  </Text>
+                                </>
+                              ) : isSeasonDownloading || downloadingSeason ? (
+                                <>
+                                  <Download size={16} color={colors.brand} strokeWidth={2.2} />
+                                  <Text style={styles.downloadSeasonBtnTextActive}>
+                                    Downloading Season {selectedSeason ?? 1} ({activeSeasonEpisodes.length || seasonEpisodes.length} remaining)
+                                  </Text>
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={16} color="#ffffff" strokeWidth={2} />
+                                  <Text style={styles.downloadSeasonBtnText}>
+                                    Download Season {selectedSeason ?? 1} ({seasonEpisodes.length} {seasonEpisodes.length === 1 ? "Episode" : "Episodes"})
+                                  </Text>
+                                </>
+                              )}
+                            </Pressable>
+                          </View>
+                        )}
+
                         {/* Episodes list */}
                         {detail.episodes
-                          ?.filter((e) => selectedSeason == null || e.seasonNumber === selectedSeason)
-                          .map((ep) => (
-                            <EpisodeCard
-                              key={ep.id}
-                              ep={ep}
-                              api={api}
-                              platform={platform}
-                              play={play}
-                              download={download}
-                              item={item}
-                            />
-                          ))}
+                          ?.filter((e: any) => selectedSeason == null || e.seasonNumber === selectedSeason)
+                          .map((ep: any) => {
+                            const isEpWatched = episodesWatchedOverride[ep.id] ?? (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+                            return (
+                              <EpisodeCard
+                                key={ep.id}
+                                ep={{
+                                  ...ep,
+                                  watch: {
+                                    ...ep.watch,
+                                    played: isEpWatched,
+                                    position: isEpWatched ? (ep.watch?.duration || (ep.runtime ? ep.runtime * 60 : 3600)) : (ep.watch?.position || 0),
+                                  },
+                                }}
+                                api={api}
+                                platform={platform}
+                                play={play}
+                                download={download}
+                                item={item}
+                                onToggleWatched={toggleEpisodeWatched}
+                              />
+                            );
+                          })}
                       </>
                     ) : (
                       <>
@@ -1211,9 +1712,9 @@ export function DetailScreen({
                           <Text style={styles.detailQuality}>
                             {[
                               detail.file.height ? `${detail.file.height}p` : null,
-                              detail.file.videoCodec?.toUpperCase(),
-                              detail.file.hdr,
-                              detail.file.container?.toUpperCase(),
+                              (detail.file as any).videoCodec?.toUpperCase(),
+                              (detail.file as any).hdr,
+                              (detail.file as any).container?.toUpperCase(),
                             ]
                               .filter(Boolean)
                               .join(" · ")}
@@ -1221,11 +1722,11 @@ export function DetailScreen({
                         )}
 
                         {/* Cast */}
-                        {!!detail.cast.length && (
+                        {!!detail.cast?.length && (
                           <View style={{ gap: 12 }}>
                             <Text style={styles.detailSectionLabel}>Cast & Crew</Text>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
-                              {detail.cast.map((person, i) => (
+                              {detail.cast.map((person: any, i: number) => (
                                 <View key={`${person.name}-${i}`} style={styles.castCard}>
                                   {person.photo ? (
                                     <Image
@@ -1261,9 +1762,9 @@ export function DetailScreen({
                       <Text style={styles.detailQuality}>
                         {[
                           detail.file.height ? `${detail.file.height}p` : null,
-                          detail.file.videoCodec?.toUpperCase(),
-                          detail.file.hdr,
-                          detail.file.container?.toUpperCase(),
+                          (detail.file as any).videoCodec?.toUpperCase(),
+                          (detail.file as any).hdr,
+                          (detail.file as any).container?.toUpperCase(),
                         ]
                           .filter(Boolean)
                           .join(" · ")}
@@ -1271,11 +1772,11 @@ export function DetailScreen({
                     )}
 
                     {/* Movie Cast */}
-                    {!!detail.cast.length && (
+                    {!!detail.cast?.length && (
                       <View style={{ gap: 12 }}>
                         <Text style={styles.detailSectionLabel}>Cast & Crew</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
-                          {detail.cast.map((person, i) => (
+                          {detail.cast.map((person: any, i: number) => (
                             <View key={`${person.name}-${i}`} style={styles.castCard}>
                               {person.photo ? (
                                 <Image
@@ -1317,6 +1818,7 @@ function EpisodeCard({
   play,
   download,
   item,
+  onToggleWatched,
 }: {
   ep: any;
   api: any;
@@ -1324,15 +1826,21 @@ function EpisodeCard({
   play: (fileId: number) => void;
   download: (item: ItemCard, fileId: number) => void;
   item: ItemCard;
+  onToggleWatched?: (ep: any) => void;
 }) {
+  const { downloads } = useClient();
+  const downloadEntries = useDownloads();
   const [focused, setFocused] = useState(false);
-  const watched = ep.watch?.played;
-  const hasProgress = ep.watch?.position && !watched;
+  const watched = Boolean(ep.watch?.played);
+  const hasProgress = Boolean(ep.watch?.position && !watched);
   const duration = ep.runtime ? `${ep.runtime}:00` : null;
   const progress =
     hasProgress && ep.watch?.duration
       ? Math.min(1, ep.watch.position / ep.watch.duration)
       : null;
+
+  const dl = ep.fileId ? downloadEntries.find((d) => d.fileId === ep.fileId) : undefined;
+  const dlPercent = dl && dl.expected ? Math.min(100, Math.round((dl.bytes / dl.expected) * 100)) : 0;
 
   // Clean redundant S01E01 / Season 1 Episode 1 prefixes
   const rawName = String(ep.name || "").trim();
@@ -1342,6 +1850,17 @@ function EpisodeCard({
 
   // Show only the episode title; falls back to Episode {number} if name was empty
   const epDisplayTitle = cleanedTitle || (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName);
+
+  const epItem: ItemCard = {
+    ...item,
+    id: ep.id,
+    name: ep.name || `Episode ${ep.episodeNumber}`,
+    poster: ep.poster || item.poster,
+    kind: "episode",
+    seasonNumber: ep.seasonNumber,
+    episodeNumber: ep.episodeNumber,
+  };
+  (epItem as any).seriesName = item.name;
 
   return (
     <Pressable
@@ -1355,7 +1874,7 @@ function EpisodeCard({
         pressed && { opacity: 0.8 },
       ]}
     >
-      {/* Thumbnail with centered play button (no episode number badge covering thumbnail) */}
+      {/* Thumbnail with centered play button */}
       <View style={styles.epThumbWrap}>
         {ep.poster ? (
           <Image source={api.image(ep.poster)} style={styles.epThumb} resizeMode="cover" />
@@ -1379,10 +1898,17 @@ function EpisodeCard({
           </View>
         )}
 
-        {/* Progress bar */}
-        {progress !== null && (
+        {/* Progress bar on thumbnail */}
+        {(progress !== null || watched) && (
           <View style={styles.epProgressBar}>
-            <View style={[styles.epProgressFill, { width: `${Math.round(progress * 100)}%` }]} />
+            <View
+              style={[
+                styles.epProgressFill,
+                watched
+                  ? styles.epProgressWatched
+                  : { width: `${Math.round(progress! * 100)}%` },
+              ]}
+            />
           </View>
         )}
       </View>
@@ -1396,16 +1922,74 @@ function EpisodeCard({
           >
             {epDisplayTitle}
           </Text>
-          {ep.fileId && !platform.tv && (
-            <Pressable
-              onPress={() => download(item, ep.fileId!)}
-              style={({ pressed }) => [styles.epDownloadIconBtn, pressed && { opacity: 0.6 }]}
-              hitSlop={8}
-            >
-              <Download size={16} color={colors.muted} strokeWidth={1.8} />
-            </Pressable>
-          )}
+
+          {/* Action buttons: Watched toggle + Download state */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {onToggleWatched && !platform.tv && (
+              <Pressable
+                onPress={() => onToggleWatched(ep)}
+                style={({ pressed }) => [
+                  styles.epWatchedToggleBtn,
+                  watched && styles.epWatchedToggleBtnActive,
+                  pressed && { opacity: 0.6 },
+                ]}
+                hitSlop={6}
+                accessibilityLabel={watched ? "Mark unwatched" : "Mark watched"}
+              >
+                <Check
+                  size={13}
+                  color={watched ? "#fff" : colors.muted}
+                  strokeWidth={watched ? 2.5 : 2}
+                />
+              </Pressable>
+            )}
+
+            {ep.fileId && !platform.tv && (
+              dl ? (
+                dl.state === "downloading" ? (
+                  <View style={styles.epDlBadgeActive}>
+                    <Download size={12} color={colors.brand} strokeWidth={2.4} />
+                    <Text style={styles.epDlBadgeTextActive}>{dlPercent}%</Text>
+                  </View>
+                ) : dl.state === "queued" ? (
+                  <View style={styles.epDlBadgeQueued}>
+                    <Text style={styles.epDlBadgeTextQueued}>Queued</Text>
+                  </View>
+                ) : dl.state === "completed" ? (
+                  <View style={styles.epDlBadgeCompleted}>
+                    <Check size={13} color="#22c55e" strokeWidth={2.6} />
+                  </View>
+                ) : dl.state === "failed" ? (
+                  <Pressable
+                    onPress={() => downloads.retry(dl.id)}
+                    style={styles.epDlBadgeFailed}
+                    hitSlop={6}
+                  >
+                    <RefreshCw size={12} color="#ef4444" strokeWidth={2} />
+                    <Text style={styles.epDlBadgeTextFailed}>Retry</Text>
+                  </Pressable>
+                ) : null
+              ) : (
+                <Pressable
+                  onPress={() => download(epItem, ep.fileId!)}
+                  style={({ pressed }) => [styles.epDownloadIconBtn, pressed && { opacity: 0.6 }]}
+                  hitSlop={8}
+                  accessibilityLabel="Download episode"
+                >
+                  <Download size={15} color={colors.muted} strokeWidth={1.8} />
+                </Pressable>
+              )
+            )}
+          </View>
         </View>
+
+        {/* Live download bar under title if downloading */}
+        {dl?.state === "downloading" && (
+          <View style={{ height: 2, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 1, overflow: "hidden", marginTop: 2 }}>
+            <View style={{ width: `${dlPercent}%`, height: "100%", backgroundColor: colors.brand }} />
+          </View>
+        )}
+
         <Text style={styles.epOverview} numberOfLines={2}>
           {ep.overview || "No description available."}
         </Text>
@@ -2024,6 +2608,115 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: colors.brand,
     borderRadius: 2,
+  },
+  epProgressWatched: {
+    width: "100%",
+    backgroundColor: colors.brand,
+  },
+  epDlBadgeActive: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(0,102,204,0.15)",
+    borderWidth: 1,
+    borderColor: colors.brand,
+  },
+  epDlBadgeTextActive: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: colors.brand,
+  },
+  epDlBadgeQueued: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  epDlBadgeTextQueued: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: colors.muted,
+  },
+  epDlBadgeCompleted: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: "rgba(34,197,94,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  epDlBadgeFailed: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(239,68,68,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.4)",
+  },
+  epDlBadgeTextFailed: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: "#ef4444",
+  },
+  epWatchedToggleBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  epWatchedToggleBtnActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  seasonDownloadBar: {
+    paddingVertical: 6,
+  },
+  downloadSeasonBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  downloadSeasonBtnActive: {
+    borderColor: colors.brand,
+    backgroundColor: "rgba(0,102,204,0.12)",
+  },
+  downloadSeasonBtnCompleted: {
+    borderColor: "#22c55e",
+    backgroundColor: "rgba(34,197,94,0.12)",
+  },
+  downloadSeasonBtnText: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: "#ffffff",
+  },
+  downloadSeasonBtnTextActive: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: colors.brand,
+  },
+  downloadSeasonBtnTextCompleted: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: "#22c55e",
   },
   epInfo: {
     flex: 1,

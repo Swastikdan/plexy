@@ -8,7 +8,7 @@ import {
   type Session,
 } from "./api";
 import { sessionStore } from "./storage";
-import { Button, Field, Heading, Label, Notice } from "./ui";
+import { Button, Field, Heading, Label, Notice, UserAvatar } from "./ui";
 import { colors } from "./theme";
 import { lan, type DiscoveredServer, type ServerCertificate } from "./lan";
 import { connectionError, requiresSecureLanResolution } from "./lan-policy";
@@ -227,11 +227,16 @@ export function Connect({
             <Heading>Saved servers</Heading>
             {profiles.map((p) => (
               <View key={p.id} style={{ gap: 8 }}>
-                <Button
-                  label={`${p.name} · ${p.username}`}
-                  disabled={busy}
-                  onPress={() => void activate(p.id)}
-                />
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <UserAvatar name={p.username || p.name} size={36} />
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      label={`${p.name} · ${p.username}`}
+                      disabled={busy}
+                      onPress={() => void activate(p.id)}
+                    />
+                  </View>
+                </View>
                 <Button
                   label={`Remove saved server ${p.name}`}
                   disabled={busy}

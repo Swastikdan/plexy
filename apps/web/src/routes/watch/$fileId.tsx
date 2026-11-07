@@ -1033,23 +1033,39 @@ function WatchRoute() {
 
                 </div>
 
-                {/* Bottom title: season/episode + name, then the series name. */}
+                {/* Bottom title: episode title with small Episode {number} below */}
                 {(play.data?.title || play.data?.subtitle) && (
                   <div
                     className={`pointer-events-none absolute inset-x-5 bottom-28 z-20 origin-bottom-left transition-opacity duration-300 media-2xl:bottom-20 ${
                       controlsVisible ? "opacity-100" : "opacity-0"
                     }`}
                   >
-                    {play.data?.subtitle && (
-                      <p className="text-sm font-medium text-white/70 drop-shadow">
-                        {play.data.subtitle}
-                      </p>
-                    )}
-                    {play.data?.title && (
-                      <p className="mt-0.5 font-display text-xl font-bold text-white drop-shadow sm:text-2xl">
-                        {play.data.title}
-                      </p>
-                    )}
+                    {(() => {
+                      const rawSub = play.data?.subtitle ?? "";
+                      const cleanSub = rawSub.replace(/^(?:S\d+E\d+|E\d+|\d+x\d+|Episode\s+\d+|Ep\.?\s*\d+)\s*[·\-:–—]\s*/i, "").trim();
+                      const epMatch = rawSub.match(/(?:Episode\s+(\d+)|E(\d+))/i);
+                      const epNum = epMatch ? (epMatch[1] || epMatch[2]) : null;
+                      const hasSub = Boolean(rawSub);
+                      const displayTitle = hasSub ? (cleanSub || play.data?.title) : play.data?.title;
+                      const bottomText = hasSub
+                        ? (epNum ? `Episode ${epNum}` : rawSub)
+                        : null;
+
+                      return (
+                        <>
+                          {displayTitle && (
+                            <p className="font-display text-xl font-bold text-white drop-shadow sm:text-2xl">
+                              {displayTitle}
+                            </p>
+                          )}
+                          {bottomText && (
+                            <p className="mt-0.5 text-xs font-medium text-white/70 drop-shadow">
+                              {bottomText}
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 
