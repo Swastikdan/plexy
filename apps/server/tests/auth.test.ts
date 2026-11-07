@@ -237,7 +237,7 @@ describe("accounts and scoped pairing", () => {
     expect((await (await remote(owner)).json()).settings.note).toBe("Managed from mobile");
     expect((await remote(userToken)).status).toBe(403);
     expect((await remote(userToken, "PUT", { note: "Forbidden" })).status).toBe(403);
-    const guard = (path: string, method: string) => accessGuard({ request: new Request(`https://plexy.example/api${path}`, { method, headers: { Authorization: `Bearer ${userToken}` } }) });
+    const guard = (path: string, method: string) => accessGuard({ server: null, request: new Request(`https://plexy.example/api${path}`, { method, headers: { Authorization: `Bearer ${userToken}` } }) });
     expect(guard("/download/8001/info", "GET")).toBeUndefined();
     expect((await request("/download/8002", userToken, undefined, "HEAD")).status).toBe(404);
     expect(guard("/download/8001", "HEAD")).toBeUndefined();
