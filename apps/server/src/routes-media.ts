@@ -8,8 +8,7 @@ import { requestUser } from "./auth";
 /// - `GET /api/stream/:fileId`           direct HTTP Range streaming. Serves
 ///                                       the prepared fast-start copy when one
 ///                                       exists, otherwise the original.
-/// - `GET /api/stream/:fileId/remux`     default-audio container fallback;
-///                                       alternate-track remux is disabled.
+/// - `GET /api/stream/:fileId/remux`     container/audio-track selection fallback.
 /// - `GET /api/stream/:fileId/transcode` fallback re-encode for the same case.
 /// - `GET /api/subtitles/:fileId`        discovered tracks (embedded + sidecar).
 /// - `GET /api/subtitles/:fileId/:track` WebVTT, from the extracted cache.
@@ -19,6 +18,7 @@ import { requestUser } from "./auth";
 /// media file is never modified.
 import { Elysia, t } from "elysia";
 import { stat } from "node:fs/promises";
+import { extname } from "node:path";
 import { spawn } from "node:child_process";
 import { q, type Row } from "./db";
 import { log } from "./logger";
@@ -514,7 +514,8 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       && requestedAudioIndex < audioTracks.length
       ? requestedAudioIndex
       : defaultAudioIndex;
-    const selectedAudioNeedsConversion = selectedAudioIndex !== defaultAudioIndex;
+    // Optimizer output always maps 0:a:0, independently of language preferences.
+    const selectedAudioNeedsConversion = selectedAudioIndex !== 0;
 
     let verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
 
@@ -524,7 +525,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (prepared) {
       verdict = { path: "direct", reason: "Prepared for instant playback and seeking" };
     }
-    if (selectedAudioNeedsConversion && verdict.path === "direct") {
+    if (verdict.path === "direct" && !prepared && audioTracks.length > 1) {
       verdict = { path: "remux", reason: "Remuxing with selected audio track" };
     }
     if (await preparedStreamAvailable(row, selectedAudioIndex)) {
@@ -650,12 +651,12 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/download/:fileId/info", async ({ params }) => {
     const row = await openableFile(Number(params.fileId));
     if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const prepared = await usableOptimizedPath(row);
-    const info = await stat(prepared ?? String(row.path));
+    // Source downloads preserve every audio track and subtitle in the original.
+    const info = await stat(String(row.path));
     return {
       size: info.size,
-      etag: `"${Number(row.id)}-${prepared ? "optimized" : "original"}-${info.size}-${Math.trunc(info.mtimeMs)}"`,
-      source: prepared ? "optimized" : "original",
+      etag: `"${Number(row.id)}-original-${info.size}-${Math.trunc(info.mtimeMs)}"`,
+      source: "original",
     };
   }, { params: t.Object({ fileId: t.Numeric() }) })
   .get("/download/:fileId", async (ctx) => {
@@ -696,12 +697,10 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       }
     }
 
-    const prepared = await usableOptimizedPath(row);
-    const servePath = prepared ?? path;
-    const info = await stat(servePath);
-    // A mobile download may resume days later, after optimization replaced the
-    // original bytes. If-Range prevents appending a new representation to an old one.
-    const etag = `"${fileId}-${prepared ? "optimized" : "original"}-${info.size}-${Math.trunc(info.mtimeMs)}"`;
+    const info = await stat(path);
+    // A mobile download may resume days later, after the source was replaced.
+    // If-Range prevents appending a new representation to an old one.
+    const etag = `"${fileId}-original-${info.size}-${Math.trunc(info.mtimeMs)}"`;
     const ifRange = ctx.request.headers.get("If-Range");
     let downloadRequest = ctx.request;
     if (ifRange && ifRange !== etag) {
@@ -709,10 +708,11 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       headers.delete("Range");
       downloadRequest = new Request(ctx.request, { headers });
     }
-    const response = await rangeResponse(downloadRequest, Bun.file(servePath), info.size, "video/mp4");
+    const response = await rangeResponse(downloadRequest, Bun.file(path), info.size, "application/octet-stream");
     response.headers.set("ETag", etag);
-    response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}.mp4`);
-    response.headers.set("X-Plexy-Source", prepared ? "optimized" : "original");
+    const extension = extname(path).toLowerCase();
+    response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}${/^\.[a-z0-9]{1,8}$/.test(extension) ? extension : ".media"}`);
+    response.headers.set("X-Plexy-Source", "original");
     return response;
   }, {
     params: t.Object({ fileId: t.Numeric() }),

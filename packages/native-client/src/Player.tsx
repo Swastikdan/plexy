@@ -365,6 +365,7 @@ function Playback({
   >([]);
   const [volume, setVolume] = useState(1);
   const expectedUri = useRef("");
+  const audioRequest = useRef(0);
   const video = useRef<VideoView>(null);
   const offset = useRef(0);
   const currentPosition = useRef(0);
@@ -682,8 +683,10 @@ function Playback({
   const switchAudio = async (audio: number) => {
     setMenu(null);
     save();
+    const request = ++audioRequest.current;
     try {
       const updated = await api.play(manifest.fileId, audio);
+      if (!mounted.current || request !== audioRequest.current) return;
       setManifest(updated);
       setChoice((old) => ({
         path: updated.path,
@@ -692,6 +695,7 @@ function Playback({
         revision: old.revision + 1,
       }));
     } catch {
+      if (!mounted.current || request !== audioRequest.current) return;
       setMessage(
         "Could not switch audio tracks. Check the connection and try again.",
       );

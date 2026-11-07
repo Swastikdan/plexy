@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildApp } from "../src/app";
 import { runMigrations, run } from "../src/db";
-import { initConfig, APP_VERSION } from "../src/config";
+import { initConfig, APP_VERSION, save } from "../src/config";
 import { createUser } from "../src/accounts";
 import { createDevice } from "../src/auth";
 
@@ -103,6 +103,47 @@ describe("Elysia API Routes (PRD 9)", () => {
       expect(await changed.text()).toBe("0123456789");
       expect(changed.headers.get("etag")).toBe(etag);
     } finally { run("DELETE FROM media_files WHERE id=700"); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("audio selections use source track indices, independent of the preferred language", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plexy-audio-test-"));
+    const source = join(dir, "source.mp4");
+    const prepared = join(dir, "prepared.mp4");
+    await Bun.write(source, "all-audio-tracks");
+    await Bun.write(prepared, "first-track-only");
+    run(`INSERT INTO media_files (id, library_id, item_id, path, folder_key, size, mtime,
+      container, video_codec, audio_json, optimized_path, optimized_mtime)
+      VALUES (701,1,1,?,'audio-test',15,1,'mp4','h264',?,?,1)`, source,
+      JSON.stringify([{ codec: "aac", language: "hin", channels: 2, isDefault: true },
+        { codec: "aac", language: "eng", channels: 2 }]), prepared);
+    try {
+      for (const language of ["en", "hi"]) {
+        await save({ preferredAudioLanguage: language });
+        const preferred = await (await app.handle(new Request("http://localhost:8765/api/play/701"))).json();
+        expect(preferred.selectedAudioIndex).toBe(language === "en" ? 1 : 0);
+        expect(preferred.path).toBe(language === "en" ? "remux" : "direct");
+        // Repeated transitions must select the actual requested track, including index zero.
+        for (const audio of [1, 0, 1, 0]) {
+          const response = await app.handle(new Request(`http://localhost:8765/api/play/701?audio=${audio}`));
+          expect(response.status).toBe(200);
+          const manifest = await response.json();
+          expect(manifest.selectedAudioIndex).toBe(audio);
+          expect(manifest.path).toBe(audio === 0 ? "direct" : "remux");
+        }
+      }
+      const metadata = await (await app.handle(new Request("http://localhost:8765/api/download/701/info"))).json();
+      expect(metadata.source).toBe("original");
+      const download = await app.handle(new Request("http://localhost:8765/api/download/701"));
+      expect(download.headers.get("X-Plexy-Source")).toBe("original");
+      expect(await download.text()).toBe("all-audio-tracks");
+      run("UPDATE media_files SET optimized_path = NULL WHERE id = 701");
+      const original = await (await app.handle(new Request("http://localhost:8765/api/play/701?audio=0"))).json();
+      expect(original.path).toBe("remux");
+    } finally {
+      await save({ preferredAudioLanguage: "en" });
+      run("DELETE FROM media_files WHERE id=701");
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("POST /api/progress saves watch progress", async () => {

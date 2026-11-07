@@ -6,6 +6,8 @@ let responseStatus = 200;
 let responseSize = 1000;
 let resumeSeen: string | undefined;
 let block = false;
+let progressBurst = false;
+let transfers = 0;
 let release: (() => void) | undefined;
 const subscriptions = new Set<(s: typeof network) => void>();
 mock.module("expo-file-system/legacy", () => ({
@@ -33,9 +35,12 @@ mock.module("expo-file-system/legacy", () => ({
     progress: (data: unknown) => void,
     resumeData?: string,
   ) => {
+    transfers++;
     resumeSeen = resumeData;
     let cancelled = false;
     const run = async () => {
+      if (progressBurst) for (let i = 1; i <= 1000; i++)
+        progress({ totalBytesWritten: i, totalBytesExpectedToWrite: 1000 });
       if (block) {
         files.set(uri, { size: 400 });
         progress({ totalBytesWritten: 400, totalBytesExpectedToWrite: 1000 });
@@ -122,6 +127,8 @@ afterEach(async () => {
   responseSize = 1000;
   resumeSeen = undefined;
   block = false;
+  progressBurst = false;
+  transfers = 0;
   release = undefined;
   etag = '"source-1"';
 });
@@ -185,4 +192,53 @@ describe("persistent download queue", () => {
     expect(resumeSeen).toBeUndefined();
     expect(m.entries[0]?.bytes).toBe(1000);
   });
+  test("bounds progress publications during a burst of native chunk callbacks", async () => {
+    network = { isConnected: true, type: "wifi" };
+    progressBurst = true;
+    const m = manager();
+    await m.restore();
+    let updates = 0;
+    m.subscribe(() => updates++);
+    await m.enqueue(item, manifest, 7, "Source");
+    await until(() => m.entries[0]?.state === "completed");
+    expect(m.entries[0]?.bytes).toBe(1000);
+    expect(updates).toBeLessThan(15);
+  });
+  test("clear prevents queued transfers from starting while the active transfer stops", async () => {
+    network = { isConnected: true, type: "wifi" };
+    block = true;
+    const m = manager();
+    await m.restore();
+    await m.enqueue(item, manifest, 7, "Source");
+    await until(() => !!release);
+    await m.enqueue(item, manifest, 8, "Source");
+    await m.clear();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(m.entries).toEqual([]);
+    expect(transfers).toBe(1);
+  });
+  test("fetches optional subtitles with bounded concurrency and keeps media after an extra fails", async () => {
+    network = { isConnected: true, type: "wifi" };
+    let active = 0;
+    let peak = 0;
+    let fetched = 0;
+    const extrasApi = { ...api, text: async (path: string) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active--;
+      fetched++;
+      if (path.endsWith("/3")) throw new Error("Missing optional subtitle");
+      return "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n";
+    } } as unknown as PlexyApi;
+    const m = new DownloadManager("extras", extrasApi, () => prefs);
+    managers.push(m);
+    await m.restore();
+    await m.enqueue(item, { ...manifest, tracks: Array.from({ length: 7 }, (_, i) => ({ track: String(i) })) } as Playability, 7, "Source");
+    await until(() => fetched === 7 && Object.keys(m.entries[0]?.subtitles || {}).length === 6);
+    expect(peak).toBe(3);
+    expect(m.entries[0]?.state).toBe("completed");
+    expect(m.entries[0]?.subtitles?.["0"]?.[0]?.text).toBe("Hello");
+  });
+
 });

@@ -217,6 +217,8 @@ export class DownloadManager {
     await this.persist();
   }
   async clear() {
+    // Stop queued entries before awaiting the active task so pump cannot start another.
+    for (const e of this.entries) if (e.state === "queued") e.state = "paused";
     await this.pauseActive();
     for (const e of [...this.entries]) await this.remove(e.id);
   }
@@ -292,6 +294,7 @@ export class DownloadManager {
         return;
       }
       const resumeAt = e.maxHeight ? 0 : Number(e.resumeData) || 0;
+      let lastPublish = 0;
       let lastPersist = 0;
       let lastStorageCheck = 0;
       const task = FS.createDownloadResumable(
@@ -311,7 +314,11 @@ export class DownloadManager {
               : e.expected;
           const persist = Date.now() - lastPersist > 1500;
           if (persist) lastPersist = Date.now();
-          this.publish(persist);
+          // Native callbacks can fire for every chunk. Bound React renders and index writes.
+          if (persist || Date.now() - lastPublish >= 250) {
+            lastPublish = Date.now();
+            this.publish(persist);
+          }
           if (Date.now() - lastStorageCheck > 8000) {
             lastStorageCheck = Date.now();
             void FS.getFreeDiskStorageAsync()
@@ -370,22 +377,24 @@ export class DownloadManager {
         e.state = "completed";
         await this.persist();
         e.subtitles = {};
-        for (const track of e.manifest.tracks || []) {
-          if (this.stopped || !this.entries.includes(e)) break;
-          try {
-            const cues = parseVtt(
-              await this.api.text(
-                `/api/subtitles/${e.fileId}/${encodeURIComponent(track.track)}`,
-              ),
-            );
-            e.subtitles = { ...e.subtitles, [track.track]: cues };
-          } catch {
-            /* Media remains playable if an optional subtitle is unavailable. */
-          }
-        }
-        e.skips = await this.api
-          .skips(e.fileId)
+        // Fetch optional offline extras with bounded concurrency instead of one RTT per track.
+        const tracks = e.manifest.tracks || [];
+        const skips = this.api.skips(e.fileId)
           .catch(() => ({ intro: null, recap: null, outro: null }));
+        for (let i = 0; i < tracks.length; i += 3) {
+          if (this.stopped || !this.entries.includes(e)) break;
+          await Promise.all(tracks.slice(i, i + 3).map(async (track) => {
+            try {
+              const cues = parseVtt(await this.api.text(
+                `/api/subtitles/${e.fileId}/${encodeURIComponent(track.track)}`,
+              ));
+              e.subtitles![track.track] = cues;
+            } catch {
+              // Media remains playable if an optional subtitle is unavailable.
+            }
+          }));
+        }
+        e.skips = await skips;
         e.state = "completed";
       } catch (error) {
         if ((e.state as DownloadState) !== "paused") {
