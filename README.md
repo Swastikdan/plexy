@@ -6,6 +6,9 @@ The repository is structured as a clean **monorepo**:
 - **`apps/desktop`**: Full native Electron desktop application for macOS, featuring integrated lifecycle management for the backend server, macOS `hiddenInset` traffic lights, native Finder directory selection, and menu bar shortcuts.
 - **`apps/server`**: Elysia backend API server with FFmpeg/ffprobe probe & transcode, SQLite storage, TMDB matcher, and embedded SPA static serving.
 - **`apps/web`**: Netflix-style web app built with React 19, TanStack Router & Query, Tailwind CSS 4, and Lucide icons.
+- **`apps/mobile`**: React Native/Expo Android phone and tablet client, with custom native playback and offline downloads.
+- **`apps/tv`**: React Native Android TV client, with a remote-first layout and shared client logic.
+- **`packages/native-client`**: Shared native API/session, catalog, player, downloads and visual tokens. See [Android client setup and validation](docs/NATIVE_CLIENT_README.md).
 - **`packages/api-client`**: Typed RPC client powered by `@elysiajs/eden` Treaty, shared types, and browser capability probes.
 - **`dist/mac/mac-arm64/Plexy.app`**: Complete macOS Electron application bundle packaging both the compiled native backend binary and the optimized React UI.
 - **`dist/mac/Plexy-0.1.0-arm64.dmg`**: Production Apple Silicon macOS installer disk image with `/Applications` drag-and-drop link.
@@ -317,3 +320,5 @@ settings or its environment; it is never baked into the client.
   - 23 unit and integration tests across 5 test suites covering config, filename parsing (Emby/Jellyfin naming), candidate scoring, playability classification, and Elysia API routes.
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+Releases include the Apple Silicon desktop app, Android mobile and Android TV preview APKs, and backend-only archives for Linux x64 and macOS arm64. All build jobs and test checks must succeed before a release is published. APKs are internal previews using a test signing identity; store distribution requires production signing. Administrator accounts can manage server preferences, libraries, and users from the native Settings screen over HTTPS. Ordinary accounts retain their library and age restrictions.

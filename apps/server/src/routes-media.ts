@@ -647,6 +647,17 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   }, { params: t.Object({ fileId: t.Numeric() }) })
 
   /** Authenticated download response for a selected source or one-shot quality transcode. */
+  .get("/download/:fileId/info", async ({ params }) => {
+    const row = await openableFile(Number(params.fileId));
+    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    const prepared = await usableOptimizedPath(row);
+    const info = await stat(prepared ?? String(row.path));
+    return {
+      size: info.size,
+      etag: `"${Number(row.id)}-${prepared ? "optimized" : "original"}-${info.size}-${Math.trunc(info.mtimeMs)}"`,
+      source: prepared ? "optimized" : "original",
+    };
+  }, { params: t.Object({ fileId: t.Numeric() }) })
   .get("/download/:fileId", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
     let row = await openableFile(fileId);
@@ -658,6 +669,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       return Response.json({ error: `maxHeight must be one of ${MAX_HEIGHT_OPTIONS.join(", ")}.` }, { status: 400 });
     }
 
+    if (maxHeight !== undefined && ctx.request.method === "HEAD") {
+      return Response.json({ error: "Generated downloads do not support HEAD requests." }, { status: 400 });
+    }
     if (maxHeight !== undefined) {
       row = await ensureFileProbed(row);
       if (!row.height) {
@@ -685,7 +699,18 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const prepared = await usableOptimizedPath(row);
     const servePath = prepared ?? path;
     const info = await stat(servePath);
-    const response = await rangeResponse(ctx.request, Bun.file(servePath), info.size, "video/mp4");
+    // A mobile download may resume days later, after optimization replaced the
+    // original bytes. If-Range prevents appending a new representation to an old one.
+    const etag = `"${fileId}-${prepared ? "optimized" : "original"}-${info.size}-${Math.trunc(info.mtimeMs)}"`;
+    const ifRange = ctx.request.headers.get("If-Range");
+    let downloadRequest = ctx.request;
+    if (ifRange && ifRange !== etag) {
+      const headers = new Headers(ctx.request.headers);
+      headers.delete("Range");
+      downloadRequest = new Request(ctx.request, { headers });
+    }
+    const response = await rangeResponse(downloadRequest, Bun.file(servePath), info.size, "video/mp4");
+    response.headers.set("ETag", etag);
     response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}.mp4`);
     response.headers.set("X-Plexy-Source", prepared ? "optimized" : "original");
     return response;

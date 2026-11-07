@@ -14,3 +14,11 @@ apps/web/src/routeTree.gen.ts
 .env.deploy
 .build/
 /.agents
+
+# Native app build output and signing material
+apps/mobile/.expo/
+apps/tv/.expo/
+apps/mobile/android/
+apps/tv/android/
+*.jks
+*.keystore

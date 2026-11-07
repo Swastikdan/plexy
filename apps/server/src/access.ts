@@ -1,4 +1,4 @@
-import { isDirectLoopbackContext, type LoopbackContext } from "./essentials";
+import { type LoopbackContext } from "./essentials";
 import { q, type Row } from "./db";
 import type { User } from "./accounts";
 import { requestUser } from "./auth";
@@ -129,8 +129,8 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
   if (!user)
     return Response.json({ error: "Sign in required." }, { status: 401 });
   const viewer =
-    request.method === "GET" &&
-    /^\/api\/(?:home|items(?:\/[^/]+)?|search|libraries(?:\/\d+)?|play\/\d+|playability\/\d+|skip-segments\/\d+|stream\/\d+(?:\/[^/]+){0,2}|download\/\d+|images\/\d+|people\/\d+\/photo|trickplay\/\d+\/[^/]+|subtitles\/\d+(?:\/[^/]+)?)\/?$/.test(
+    ["GET", "HEAD"].includes(request.method) &&
+    /^\/api\/(?:home|items(?:\/[^/]+)?|search|libraries(?:\/\d+)?|play\/\d+|playability\/\d+|skip-segments\/\d+|stream\/\d+(?:\/[^/]+){0,2}|download\/\d+(?:\/info)?|images\/\d+|people\/\d+\/photo|trickplay\/\d+\/[^/]+|subtitles\/\d+(?:\/[^/]+)?)\/?$/.test(
       path,
     );
   const progress =
@@ -138,17 +138,7 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
     (path === "/api/progress" || /^\/api\/watch\/\d+\/played$/.test(path));
   const clearWatch =
     request.method === "DELETE" && /^\/api\/watch\/\d+$/.test(path);
-  if (user.role === "admin") {
-    if (!viewer && !progress && !clearWatch && !isDirectLoopbackContext(ctx))
-      return Response.json(
-        {
-          error:
-            "Server administration is only available on the server computer.",
-        },
-        { status: 403 },
-      );
-    return;
-  }
+  if (user.role === "admin") return;
   if (!viewer && !progress && !clearWatch)
     return Response.json(
       { error: "Administrator access required." },

@@ -1,4 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { buildApp } from "../src/app";
 import { runMigrations, run } from "../src/db";
 import { initConfig, APP_VERSION } from "../src/config";
@@ -75,6 +78,31 @@ describe("Elysia API Routes (PRD 9)", () => {
     } finally {
       run("DELETE FROM items WHERE id IN (30, 31)");
     }
+  });
+
+  test("downloads validate resumed bytes against the current source representation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plexy-download-test-"));
+    const path = join(dir, "source.mp4");
+    await Bun.write(path, "0123456789");
+    const info = await stat(path);
+    run("INSERT INTO media_files (id, library_id, item_id, path, folder_key, size, mtime, container, video_codec) VALUES (700, 1, 1, ?, 'download-test', 10, ?, 'mp4', 'h264')", path, Math.floor(info.mtimeMs));
+    try {
+      const infoResponse = await app.handle(new Request("http://localhost:8765/api/download/700/info"));
+      expect(infoResponse.status).toBe(200);
+      const metadata = await infoResponse.json();
+      const etag = metadata.etag;
+      expect(etag).toBeTruthy();
+      expect(metadata.size).toBe(10);
+      expect(metadata).not.toHaveProperty("path");
+      const resumed = await app.handle(new Request("http://localhost:8765/api/download/700", { headers: { Range: "bytes=4-", "If-Range": etag! } }));
+      expect(resumed.status).toBe(206);
+      expect(await resumed.text()).toBe("456789");
+      expect(resumed.headers.get("content-range")).toBe("bytes 4-9/10");
+      const changed = await app.handle(new Request("http://localhost:8765/api/download/700", { headers: { Range: "bytes=4-", "If-Range": '"old-representation"' } }));
+      expect(changed.status).toBe(200);
+      expect(await changed.text()).toBe("0123456789");
+      expect(changed.headers.get("etag")).toBe(etag);
+    } finally { run("DELETE FROM media_files WHERE id=700"); await rm(dir, { recursive: true, force: true }); }
   });
 
   test("POST /api/progress saves watch progress", async () => {

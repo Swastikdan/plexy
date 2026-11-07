@@ -1,4 +1,5 @@
 import { db, q, run, type Row } from "./db";
+import { log } from "./logger";
 
 export interface User {
   id: number;
@@ -87,10 +88,24 @@ export async function loginUser(
     memoryCost: 65536,
     timeCost: 3,
   });
-  const valid = await Bun.password.verify(
-    password,
-    row ? String(row.password_hash) : await dummyHash,
-  );
+  // Older provisioning/import paths bound the encoded hash as a SQLite BLOB.
+  // String(Uint8Array) produces comma-separated byte values, not the hash text,
+  // and Bun.password.verify then throws UnsupportedAlgorithm (HTTP 500).
+  const stored = row?.password_hash;
+  const hash = typeof stored === "string"
+    ? stored
+    : stored instanceof Uint8Array
+      ? Buffer.from(stored).toString("utf8")
+      : null;
+  let valid = false;
+  try {
+    valid = await Bun.password.verify(password, hash ?? await dummyHash);
+  } catch {
+    // A damaged/unsupported stored value must fail authentication rather than
+    // crash login, pairing-key creation or password confirmation. Never log it.
+    log.warn("auth", "Stored password hash could not be verified", { userId: row?.id });
+    await Bun.password.verify(password, await dummyHash);
+  }
   return valid && row && !row.disabled ? userView(row) : null;
 }
 export function revokeUserSessions(id: number): void {

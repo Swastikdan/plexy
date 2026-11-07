@@ -1,0 +1,43 @@
+import type { ExpoConfig } from "expo/config";
+const config: ExpoConfig = {
+  name: "Plexy TV",
+  slug: "plexy-tv",
+  version: "1.0.2",
+  platforms: ["android"],
+  scheme: "plexy-tv",
+  userInterfaceStyle: "dark",
+  icon: "../../apps/web/public/icons/pwa-512.png",
+  backgroundColor: "#080808",
+  orientation: "landscape",
+  android: {
+    package: "app.plexy.tv",
+    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 3,
+    allowBackup: false,
+    blockedPermissions: [
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.SYSTEM_ALERT_WINDOW",
+    ],
+  },
+  plugins: [
+    [
+      "expo-video",
+      { supportsPictureInPicture: false, supportsBackgroundPlayback: false },
+    ],
+    "expo-secure-store",
+    "expo-font",
+    "../../scripts/native/with-network-security.cjs",
+    "../../scripts/native/with-lan-networking.cjs",
+    "../../scripts/native/with-shared-build-inputs.cjs",
+    [
+      "@react-native-tvos/config-tv",
+      {
+        isTV: true,
+        androidTVRequired: true,
+        androidTVBanner: "./assets/tv-banner.png",
+        androidTVIcon: "../../apps/web/public/icons/pwa-512.png",
+      },
+    ],
+  ],
+};
+export default config;

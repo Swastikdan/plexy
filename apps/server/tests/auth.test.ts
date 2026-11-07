@@ -4,7 +4,7 @@ import { runMigrations, q, run, type Row } from "../src/db";
 import { initConfig } from "../src/config";
 import { createDevice, peekToken, redeemPairingCode } from "../src/auth";
 import { createUser, getUser, setupState } from "../src/accounts";
-import { canAccessItem, certificationAge } from "../src/access";
+import { accessGuard, canAccessItem, certificationAge } from "../src/access";
 
 describe("accounts and scoped pairing", () => {
   let app: ReturnType<typeof buildApp>;
@@ -203,6 +203,7 @@ describe("accounts and scoped pairing", () => {
       "/items/8002",
       "/stream/8002",
       "/download/8002",
+      "/download/8002/info",
       "/subtitles/8002",
       "/trickplay/8002/track.vtt",
       "/items/8003",
@@ -222,6 +223,24 @@ describe("accounts and scoped pairing", () => {
     );
     expect((await request("/items/8001", userToken)).status).toBe(404);
     run("DELETE FROM access_rules WHERE user_id=? AND scope='item'", userId);
+  });
+  test("remote administrators can manage settings while viewers cannot", async () => {
+    const remote = (token: string, method = "GET", body?: unknown) => app.handle(
+      new Request("https://plexy.example/api/settings", {
+        method,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Forwarded-For": "192.168.1.50" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+    expect((await remote(owner)).status).toBe(200);
+    expect((await remote(owner, "PUT", { note: "Managed from mobile" })).status).toBe(200);
+    expect((await (await remote(owner)).json()).settings.note).toBe("Managed from mobile");
+    expect((await remote(userToken)).status).toBe(403);
+    expect((await remote(userToken, "PUT", { note: "Forbidden" })).status).toBe(403);
+    const guard = (path: string, method: string) => accessGuard({ request: new Request(`https://plexy.example/api${path}`, { method, headers: { Authorization: `Bearer ${userToken}` } }) });
+    expect(guard("/download/8001/info", "GET")).toBeUndefined();
+    expect((await request("/download/8002", userToken, undefined, "HEAD")).status).toBe(404);
+    expect(guard("/download/8001", "HEAD")).toBeUndefined();
   });
   test("watch progress and device revocation are scoped to one user", async () => {
     expect(

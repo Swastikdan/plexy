@@ -1,6 +1,6 @@
 name: Build & Release
 
-# Runs on every push to `main`: builds the web client and macOS app, then
+# Runs on every push to `main`: tests clients and server, builds all artifacts, then
 # publishes a GitHub release. Static hosting is configured separately.
 # Manual runs must target `main`.
 on:
@@ -138,25 +138,108 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  checks:
+    name: Tests and type checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+        env:
+          SKIP_FFMPEG: "true"
+      - run: bun run typecheck
+      - run: bun run typecheck:native
+      - run: bun run test:server
+      - run: bun run test:native
+
+  android:
+    name: Android ${{ matrix.target }} APK
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [mobile, tv]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: bun install --frozen-lockfile
+        env:
+          SKIP_FFMPEG: "true"
+      - name: Build standalone preview APK
+        run: bun scripts/native/build-preview.ts ${{ matrix.target }}
+        env:
+          PLEXY_ANDROID_ARCHITECTURES: arm64-v8a,armeabi-v7a,x86_64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plexy-android-${{ matrix.target }}
+          path: .build/native/plexy-${{ matrix.target }}-preview.apk
+          if-no-files-found: error
+
+  server:
+    name: Backend (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - if: runner.os == 'macOS'
+        run: node scripts/install-macos-ffmpeg.mjs
+      - run: bun run build:server
+      - name: Smoke test backend
+        run: ./dist/server/plexy-server --version
+      - run: tar -czf dist/plexy-server-${{ matrix.platform }}.tar.gz -C dist/server .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plexy-server-${{ matrix.platform }}
+          path: dist/plexy-server-*.tar.gz
+          if-no-files-found: error
+
   release:
     name: Publish GitHub release
     runs-on: ubuntu-24.04
     needs:
       - web
       - mac
+      - checks
+      - android
+      - server
     if: github.ref == 'refs/heads/main' && contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     steps:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Download macOS artifacts
+      - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          name: plexy-macos
+          pattern: plexy-*
+          merge-multiple: true
           path: release
 
       - name: Create update checksums
-        run: cd release && shasum -a 256 "Plexy Beta-"*-arm64.zip > SHA256SUMS
+        run: cd release && sha256sum *.dmg *.zip *.apk *.tar.gz > SHA256SUMS
 
       - name: Create or update release
         env:
@@ -183,6 +266,10 @@ jobs:
           **Web app:** ${SITE_URL}
 
           **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy Beta** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy Beta.app** into **Applications**.
+
+          **Android phone/tablet:** install \`plexy-mobile-preview.apk\`. **Android TV:** sideload \`plexy-tv-preview.apk\`. These standalone preview APKs use the template test signing identity and are not store releases.
+
+          **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg and migrations beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. Backend archives do not include the web app; connect a Plexy client.
 
           This release is ad-hoc signed, but it is not Developer ID signed or notarized. On first launch, macOS may say it cannot verify Plexy and block it. After trying to open Plexy from Applications:
 

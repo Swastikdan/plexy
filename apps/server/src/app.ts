@@ -93,7 +93,7 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
         // Range/If-Range matter for cross-origin HLS and seeking; the rest are
         // the request headers used by the typed client.
         allowedHeaders: ["Content-Type", "Authorization", "Range", "If-Range"],
-        exposeHeaders: ["Accept-Ranges", "Content-Range", "Content-Length", "X-Request-Id"],
+        exposeHeaders: ["Accept-Ranges", "Content-Range", "Content-Length", "ETag", "X-Request-Id"],
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
       }),
     )
@@ -119,6 +119,20 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
     .onRequest((ctx) => authGuard(ctx, options.requireAuth))
     .onRequest(ctx => {
       if (Bun.env.NODE_ENV !== "test" || options.requireAuth) return accessGuard(ctx);
+    })
+    .onError({ as: "global" }, ({ error, code, request }) => {
+      // Validation errors are client bugs; everything else we log loudly.
+      if (code === "VALIDATION") {
+        log.debug("http", "validation failed", { message: String(error) });
+        return Response.json({ error: "Invalid request." }, { status: 422 });
+      }
+      log.error("http", "request failed", {
+        requestId: (request as Request & { __plexyRequestId?: string }).__plexyRequestId,
+        method: request.method,
+        path: new URL(request.url).pathname,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return Response.json({ error: "Something went wrong on the server." }, { status: 500 });
     })
     .use(authRoutes)
     .use(adminRoutes)
@@ -149,20 +163,7 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
         ms: Math.round(ms),
       });
     })
-    .onError({ as: "global" }, ({ error, code, request }) => {
-      // Validation errors are client bugs; everything else we log loudly.
-      if (code === "VALIDATION") {
-        log.debug("http", "validation failed", { message: String(error) });
-        return Response.json({ error: "Invalid request." }, { status: 422 });
-      }
-      log.error("http", "request failed", {
-        requestId: (request as Request & { __plexyRequestId?: string }).__plexyRequestId,
-        method: request.method,
-        path: new URL(request.url).pathname,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return Response.json({ error: "Something went wrong on the server." }, { status: 500 });
-    })
+
     .all("/*", staticFallback);
 
   return app;

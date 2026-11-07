@@ -235,7 +235,7 @@ export async function extractAllEmbeddedVtt(path: string): Promise<Array<string 
 /** Extract one embedded subtitle track from a video file as WebVTT. */
 export async function extractEmbeddedVtt(path: string, trackIndex: number): Promise<string | null> {
   const all = await extractAllEmbeddedVtt(path);
-  if (all) return all[trackIndex] ?? null;
+  if (all && all[trackIndex] && all[trackIndex]!.trim().startsWith("WEBVTT")) return all[trackIndex];
 
   // Extract directly using ffmpeg
   const ffmpeg = resolveFfmpeg();

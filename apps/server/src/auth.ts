@@ -2,9 +2,8 @@
 ///
 /// The server stores only token hashes; the raw token exists in the client's
 /// storage (an owner-only file for the desktop app) or in an HttpOnly cookie.
-/// Loopback remains the trust boundary for owner-only admin
-/// routes (`essentials.denyIfNotLocal`), while every `/api/*` endpoint now
-/// requires a valid device token — including on LAN.
+/// Administration requires an active administrator account on every client.
+/// Remote API requests use HTTPS, and device tokens remain scoped to accounts.
 import { getUser, type User } from "./accounts";
 import { q, run, type Row } from "./db";
 import { log } from "./logger";

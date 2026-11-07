@@ -37,19 +37,18 @@ export function isLoopbackContext(ctx: LoopbackContext): boolean {
 
 /**
  * Owner surface: the signed-out in-process test harness, or a signed-in admin
- * whose request arrived directly on the host.
+ * on any authenticated client.
  */
 export function isAdminContext(ctx: LoopbackContext): boolean {
   if (isInProcessTestRequest(ctx)) return true;
   return (
-    isDirectLoopbackContext(ctx) &&
     requestUser(ctx.request)?.role === "admin"
   );
 }
 
 /**
- * Owner-only operations must not treat a reverse proxy's local connection as
- * the owner. Proxies add at least one forwarding header; clients cannot use
+ * Local bootstrap operations must not treat a reverse proxy's connection as
+ * the local host. Proxies add at least one forwarding header; clients cannot use
  * those headers to gain access because their presence makes this check fail.
  */
 export function isDirectLoopbackContext(ctx: LoopbackContext): boolean {
@@ -68,13 +67,13 @@ export function isDirectLoopbackContext(ctx: LoopbackContext): boolean {
 }
 
 /**
- * Return a 403 Response unless the caller is the owner on the host, else null.
+ * Return a 403 Response unless the caller is an administrator, else null.
  * Handlers: `const denied = denyIfNotLocal(ctx); if (denied) return denied;`
  */
 export function denyIfNotLocal(ctx: LoopbackContext): Response | null {
   if (isAdminContext(ctx)) return null;
   return Response.json(
-    { error: "This area is only available on the computer running Plexy." },
+    { error: "Administrator access required." },
     { status: 403 },
   );
 }
