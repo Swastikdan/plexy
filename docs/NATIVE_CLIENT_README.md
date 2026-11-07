@@ -56,7 +56,7 @@ Deploy the server from this same source revision for safe resumable downloads. T
 | Offline | Persistent queue/index in app-private storage, source range resume with source-change protection, explicit generated-quality consent, generated restart behavior, pause/retry/cancel/delete, storage limits, Wi-Fi/Ethernet preference, local playback and progress reconciliation |
 | Catalog cache | Up to 30 scoped catalog responses for connectivity failures, an offline-catalog notice and Settings cache clearing; authorization failures are not served from cache |
 
-The server still owns scanning, matching, administration, media conversion, metadata, permissions and watch state. Native clients deliberately do not expose server filesystem/admin operations. No collections/watchlists were identified in the current reference routes, so there are no invented collections/watchlist endpoints.
+The server still owns scanning, matching, administration, media conversion, metadata, permissions and watch state. Administrators can manage server preferences, browse server folders, create/edit/remove libraries, scan media, manage users and content rules, revoke devices across accounts, correct matches, prepare media, inspect logs/crashes, and reset indexed library data from native Settings. These controls use the same authenticated HTTPS API as the desktop client; ordinary accounts retain only their personal account/device controls. Desktop-only operating-system actions, such as restarting the host or installing a desktop update, remain on that computer. No collections/watchlists were identified in the current reference routes, so there are no invented collections/watchlist endpoints.
 
 ## Casting
 

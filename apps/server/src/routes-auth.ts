@@ -16,6 +16,8 @@ import {
   createDevice,
   createPairingCode,
   listDevices,
+  revokeDevice,
+  removeRevokedDevice,
   pairingAllowed,
   peekToken,
   redeemPairingCode,
@@ -200,6 +202,28 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       { ok: true },
       { headers: { "Set-Cookie": clearSessionCookie(request) } },
     );
+  })
+  .get("/admin/devices", ({ request }) => {
+    if (!admin(request)) return error("Administrator access required.", 403);
+    const users = new Map(listUsers().map((user) => [user.id, user.username]));
+    return {
+      devices: listDevices().map((device) => ({
+        ...device,
+        username: users.get(device.userId) ?? "Deleted account",
+      })),
+    };
+  })
+  .post("/admin/devices/:id/revoke", ({ request, params }) => {
+    if (!admin(request)) return error("Administrator access required.", 403);
+    if (!revokeDevice(Number(params.id)))
+      return error("Unrevoked device not found.", 404);
+    return { ok: true };
+  })
+  .delete("/admin/devices/:id", ({ request, params }) => {
+    if (!admin(request)) return error("Administrator access required.", 403);
+    if (!removeRevokedDevice(Number(params.id)))
+      return error("Revoke the device before deleting its record.", 409);
+    return { ok: true };
   })
   .get("/devices", ({ request }) => {
     const user = signedIn(request);

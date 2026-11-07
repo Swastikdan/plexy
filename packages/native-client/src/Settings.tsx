@@ -1,5 +1,4 @@
-import { AdminManagement } from "./AdminManagement";
-import { AdminSettings } from "./AdminSettings";
+import { AdminPanel } from "./admin/Panel";
 import React, { useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -129,7 +128,11 @@ export function SettingsScreen({
         )}
       </SettingsCard>
 
-      {status.value?.adminAvailable && <SettingsCard title="Administrator"><AdminSettings /><AdminManagement /></SettingsCard>}
+      {status.value?.adminAvailable && (
+        <SettingsCard title="Administrator">
+          <AdminPanel />
+        </SettingsCard>
+      )}
 
       {/* ── 2. Playback Preferences Card ── */}
       <SettingsCard

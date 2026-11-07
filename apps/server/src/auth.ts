@@ -173,7 +173,9 @@ export function createDevice(
 
 export function revokeDevice(id: number): boolean {
   const row = q<Row, [number]>(
-    "SELECT id FROM auth_devices WHERE id = ? AND revoked = 0 AND user_id IS NOT NULL AND expires_at > datetime('now') AND EXISTS(SELECT 1 FROM users WHERE users.id=auth_devices.user_id AND disabled=0)",
+    // Administrators must also be able to retire expired credentials and
+    // records belonging to disabled accounts. Revocation never grants access.
+    "SELECT id FROM auth_devices WHERE id = ? AND revoked = 0",
   ).get(id);
   if (!row) return false;
   run("UPDATE auth_devices SET revoked = 1 WHERE id = ?", id);
