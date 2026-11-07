@@ -14,7 +14,7 @@ const config: ExpoConfig = {
   orientation: "default",
   android: {
     package: "app.plexy.mobile",
-    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 2000,
+    versionCode: 50000 + Number(process.env.GITHUB_RUN_NUMBER || 1),
     allowBackup: false,
     adaptiveIcon: {
       foregroundImage: "../../build/icon.png",

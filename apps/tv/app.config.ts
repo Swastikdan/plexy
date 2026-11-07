@@ -11,7 +11,7 @@ const config: ExpoConfig = {
   orientation: "landscape",
   android: {
     package: "app.plexy.tv",
-    versionCode: process.env.GITHUB_RUN_NUMBER ? 1000 + Number(process.env.GITHUB_RUN_NUMBER) : 2000,
+    versionCode: 50000 + Number(process.env.GITHUB_RUN_NUMBER || 1),
     allowBackup: false,
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",

@@ -114,10 +114,10 @@ export async function downloadAndInstallUpdate(
   const contentUri = await FileSystem.getContentUriAsync(localUri);
 
   // Launch Android package installer intent
-  // 1 = FLAG_GRANT_READ_URI_PERMISSION, 268435456 (0x10000000) = FLAG_ACTIVITY_NEW_TASK
+  // 1 = FLAG_GRANT_READ_URI_PERMISSION, 268435456 = FLAG_ACTIVITY_NEW_TASK, 67108864 = FLAG_ACTIVITY_CLEAR_TOP
   await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
     data: contentUri,
-    flags: 1 | 268435456,
+    flags: 1 | 268435456 | 67108864,
     type: "application/vnd.android.package-archive",
   });
 }

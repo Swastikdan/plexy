@@ -54,6 +54,18 @@ module.exports = function withLanNetworking(config) {
       await fs.writeFile(stylesPath, styles);
     } catch {}
 
+    const appBuildGradlePath = path.join(mod.modRequest.platformProjectRoot, 'app/build.gradle');
+    try {
+      let buildGradle = await fs.readFile(appBuildGradlePath, 'utf8');
+      if (!buildGradle.includes('v1SigningEnabled true')) {
+        buildGradle = buildGradle.replace(
+          "keyPassword 'android'",
+          "keyPassword 'android'\n            v1SigningEnabled true\n            v2SigningEnabled true"
+        );
+        await fs.writeFile(appBuildGradlePath, buildGradle);
+      }
+    } catch {}
+
     return mod;
   }]);
 };
