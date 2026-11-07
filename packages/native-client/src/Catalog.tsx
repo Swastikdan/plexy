@@ -405,7 +405,7 @@ function CatalogRow({
 }) {
   const { api, platform } = useClient();
   const ref = useRef<FlatList<ItemCard>>(null);
-  const cardWidth = isContinueWatching ? (platform.tv ? 280 : 220) : (platform.tv ? 172 : 140);
+  const cardWidth = isContinueWatching ? 220 : (platform.tv ? 200 : 150);
 
   return (
     <View style={styles.rowContainer}>
@@ -419,6 +419,11 @@ function CatalogRow({
         ref={ref}
         horizontal
         data={items}
+        getItemLayout={(_, index) => ({
+          length: cardWidth + 12,
+          offset: 16 + (cardWidth + 12) * index,
+          index,
+        })}
         keyExtractor={(item) => String(item.id)}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowList}
@@ -448,6 +453,7 @@ function CatalogRow({
             />
           ) : (
             <Card
+              width={cardWidth}
               item={item}
               api={api}
               preferred={platform.tv && focusId === item.id}
@@ -784,7 +790,8 @@ export function LibraryScreen({
                 setFocusedId(item.id);
                 if (platform.tv)
                   ref.current?.scrollToIndex({
-                    index,
+                    // FlatList indexes rows when numColumns is set.
+                    index: Math.floor(index / columns),
                     viewPosition: 0.5,
                     animated: false,
                   });
