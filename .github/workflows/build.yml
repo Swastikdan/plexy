@@ -149,6 +149,8 @@ jobs:
       - run: bun install --frozen-lockfile
         env:
           SKIP_FFMPEG: "true"
+      - name: Generate web routes for a clean checkout
+        run: bun run build:web
       - run: bun run typecheck
       - run: bun run typecheck:native
       - run: bun run test:server
