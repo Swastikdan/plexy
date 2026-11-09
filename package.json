@@ -33,7 +33,7 @@
     "android:mobile": "bun run --filter @plexy/mobile android",
     "android:tv": "bun run --filter @plexy/tv android",
     "typecheck:native": "bun run --filter @plexy/mobile typecheck && bun run --filter @plexy/tv typecheck",
-    "test:native": "bun test packages/native-client/tests",
+    "test:native": "bun test packages/native-client/tests packages/local-library/tests",
     "bundle:native": "bun run --filter @plexy/mobile bundle && bun run --filter @plexy/tv bundle",
     "build:native:preview": "bun scripts/native/build-preview.ts",
     "test:native:tls": "bun scripts/native/test-lan-tls.ts"

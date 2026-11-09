@@ -233,5 +233,50 @@ class PlexyLanModule(private val app: ReactApplicationContext) : ReactContextBas
     try { manager.discoverServices("_plexy._tcp.", NsdManager.PROTOCOL_DNS_SD, listener); handler.postDelayed({ finish() }, 8000) }
     catch (_: Exception) { finish("Network discovery is unavailable. Enter your server address manually.") }
   } }
+
+  @ReactMethod
+  fun getAppInfo(promise: Promise) {
+    try {
+      val pInfo = app.packageManager.getPackageInfo(app.packageName, 0)
+      val vCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode else pInfo.versionCode.toLong()
+      val buildNum = if (vCode >= 50000) (vCode - 50000).toInt() else vCode.toInt()
+      val map = Arguments.createMap().apply {
+        putString("versionName", pInfo.versionName ?: "1.0.2")
+        putDouble("versionCode", vCode.toDouble())
+        putInt("buildNumber", buildNum)
+      }
+      promise.resolve(map)
+    } catch (e: Exception) {
+      promise.reject("APP_INFO_ERROR", e.message)
+    }
+  }
+
+  @ReactMethod
+  fun installApk(filePath: String, promise: Promise) {
+    try {
+      val cleanPath = if (filePath.startsWith("file://")) filePath.substring(7) else filePath
+      val file = java.io.File(cleanPath)
+      if (!file.exists()) {
+        promise.reject("INSTALL_ERROR", "APK file does not exist at $cleanPath")
+        return
+      }
+      val uri = androidx.core.content.FileProvider.getUriForFile(
+        app,
+        "${app.packageName}.FileSystemFileProvider",
+        file
+      )
+      val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/vnd.android.package-archive")
+        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      }
+      app.startActivity(intent)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("INSTALL_ERROR", e.message)
+    }
+  }
+
   override fun invalidate() { handler.post { stopDiscovery?.invoke() }; worker.shutdownNow(); super.invalidate() }
 }

@@ -9,6 +9,14 @@ const config: ExpoConfig = {
   icon: "../../build/icon.png",
   backgroundColor: "#080808",
   orientation: "landscape",
+  splash: {
+    image: "./assets/splashscreen.png",
+    resizeMode: "contain",
+    backgroundColor: "#080808",
+  },
+  extra: {
+    buildNumber: Number(process.env.GITHUB_RUN_NUMBER || 1),
+  },
   android: {
     package: "app.plexy.tv",
     versionCode: 50000 + Number(process.env.GITHUB_RUN_NUMBER || 1),

@@ -415,9 +415,11 @@ function Playback({
   const [nativeAudio, setNativeAudio] = useState<
     typeof player.availableAudioTracks
   >([]);
+  const [nativeSubtitles, setNativeSubtitles] = useState<typeof player.availableSubtitleTracks>([]);
   const [volume, setVolume] = useState(1);
   const expectedUri = useRef("");
   const audioRequest = useRef(0);
+  const LocalThumbnail = platform.local?.Thumbnail;
   const video = useRef<VideoView>(null);
   const offset = useRef(0);
   const currentPosition = useRef(0);
@@ -518,7 +520,7 @@ function Playback({
         setStatus(e.status);
         if (e.status === "error") {
           setError(
-            "Playback stopped. Retry, or use server conversion for an unsupported format.",
+            platform.local ? "This device could not play the original file. Its video, audio or container format may be unsupported." : "Playback stopped. Retry, or use server conversion for an unsupported format.",
           );
           setVisible(true);
         }
@@ -532,6 +534,11 @@ function Playback({
           return;
         player.subtitleTrack = null;
         setNativeAudio(e.availableAudioTracks);
+        setNativeSubtitles(e.availableSubtitleTracks);
+        if (platform.local && preferencesRef.current.autoSubtitles && !initial.tracks?.length) {
+          const track = e.availableSubtitleTracks.find(t => t.language === preferencesRef.current.subtitleLanguage);
+          if (track) { player.subtitleTrack = track; setSubtitle(`native:${track.id}`); }
+        }
         const value = Math.max(0, chosenStart.current - offset.current);
         player.currentTime = value;
         currentPosition.current = chosenStart.current;
@@ -606,6 +613,11 @@ function Playback({
   useEffect(() => {
     const controller = new AbortController();
     setCues([]);
+    if (platform.local) {
+      player.subtitleTrack = subtitle?.startsWith("native:")
+        ? nativeSubtitles.find(t => `native:${t.id}` === subtitle) || null : null;
+      if (subtitle?.startsWith("native:")) return;
+    }
     if (!subtitle) return;
     if (offline) {
       const match =
@@ -639,7 +651,7 @@ function Playback({
           });
       });
     return () => controller.abort();
-  }, [api, manifest.fileId, offline, offline?.subtitles, subtitle]);
+  }, [api, manifest.fileId, offline, offline?.subtitles, subtitle, nativeSubtitles]);
   useEffect(() => {
     if (offline) return;
     const controller = new AbortController();
@@ -1547,6 +1559,7 @@ function Playback({
                   zIndex: 20,
                 }}
               >
+                {LocalThumbnail && <LocalThumbnail key={manifest.fileId} player={player} time={scrub} />}
                 {preview && (
                   <View
                     style={{
@@ -2059,7 +2072,7 @@ function Playback({
                       }}
                     />
                   )}
-                  {!offline && (
+                  {!offline && !platform.local && (
                     <SheetItem
                       label="Retry with server conversion"
                       onPress={() => {
@@ -2079,7 +2092,7 @@ function Playback({
 
               {/* Audio tracks */}
               {menu === "audio" &&
-                (offline ? (
+                (offline || platform.local ? (
                   nativeAudio.length ? (
                     nativeAudio.map((track) => (
                       <SheetItem
@@ -2094,7 +2107,7 @@ function Playback({
                     ))
                   ) : (
                     <Text style={styles.sheetEmpty}>
-                      No alternate audio tracks are available in this download.
+                      No alternate audio tracks are available in this file.
                     </Text>
                   )
                 ) : (
@@ -2136,6 +2149,12 @@ function Playback({
                     />
                   ))}
 
+                  {platform.local && nativeSubtitles.map(track => (
+                    <SheetItem key={`native:${track.id}`} label={track.label || track.language || "Embedded subtitles"}
+                      selected={subtitle === `native:${track.id}`} onPress={() => {
+                        setSubtitle(`native:${track.id}`); updatePreferences({ autoSubtitles: true });
+                      }} />
+                  ))}
                   <View style={styles.sheetSectionLabel}>
                     <Text style={styles.sheetSectionLabelText}>
                       Timing offset: {preferences.subtitleOffset.toFixed(1)}s
@@ -2189,7 +2208,7 @@ function Playback({
 
               {/* Quality */}
               {menu === "quality" &&
-                (offline ? (
+                (platform.local ? <Text style={styles.sheetEmpty}>Original file quality. No video conversion.</Text> : offline ? (
                   <Text style={styles.sheetEmpty}>
                     This is the saved {offline.label} file. Choose another
                     download for a different quality.

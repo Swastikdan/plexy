@@ -273,7 +273,7 @@ function WatchRoute() {
   const effectivePath = useMemo(() => {
     if (!play.data || play.data.path === "unsupported") return null;
     // If original direct play, but user selected an alternate audio track, remux to preserve choice
-    if (play.data.path === "direct" && selectedAudioIndex > 0) return "remux";
+    if (!play.data.directPlayOnly && play.data.path === "direct" && selectedAudioIndex > 0) return "remux";
     // Prepared HLS bundles contain the preferred language selected at prepare
     // time. Use the normal conversion path if the viewer chooses another track.
     if (play.data.path === "hls" && selectedAudioIndex !== (play.data.selectedAudioIndex ?? 0)) return "transcode";

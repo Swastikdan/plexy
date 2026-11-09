@@ -22,6 +22,14 @@ import { DownloadManager } from "./downloads";
 import { ProgressQueue, type Progress } from "./progress";
 export interface NativePlatform {
   tv: boolean;
+  local?: {
+    api: PlexyApi;
+    restore(): Promise<void>;
+    refresh(): Promise<void>;
+    needsSetup(): boolean;
+    Settings: React.ComponentType<{ back?: () => void }>;
+    Thumbnail?: React.ComponentType<{ player: import("expo-video").VideoPlayer; time: number }>;
+  };
   CastControl?: React.ComponentType<import("./cast-types").CastControlProps>;
   RemoteEvents: React.ComponentType<{ onEvent: (event: string) => void }>;
   FocusGroup: React.ComponentType<
@@ -61,7 +69,7 @@ export function ClientProvider({
   preferencesRef.current = preferences;
   const api = useMemo(
     () =>
-      new PlexyApi(session.profile.url, session.token, {
+      platform.local?.api || new PlexyApi(session.profile.url, session.token, {
         cache: catalogCache(session.profile.id),
         detailCache,
         scope: session.profile.id,
@@ -73,7 +81,7 @@ export function ClientProvider({
         onOffline: () => setIsOnline(false),
         onOnline: () => setIsOnline(true),
       }),
-    [session],
+    [session, platform],
   );
   const downloads = useMemo(
     () =>
@@ -140,6 +148,7 @@ export function ClientProvider({
     );
   };
   const checkConnection = React.useCallback(async () => {
+    if (platform.local) return true;
     try {
       const net = await NetInfo.fetch();
       if (!net.isConnected) {
@@ -153,9 +162,10 @@ export function ClientProvider({
       setIsOnline(false);
       return false;
     }
-  }, [api]);
+  }, [api, platform]);
 
   useEffect(() => {
+    if (platform.local) { setIsOnline(true); return; }
     void NetInfo.fetch().then((s) => {
       if (!s.isConnected) setIsOnline(false);
       else void checkConnection();

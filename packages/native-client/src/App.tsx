@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  AppState,
   BackHandler,
   Easing,
   Platform,
@@ -40,6 +41,7 @@ import { PlayerScreen } from "./Player";
 import { triggerHaptic } from "./haptics";
 import type { DownloadEntry } from "./downloads";
 import { colors } from "./theme";
+import { localSession } from "./local-api";
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -223,6 +225,11 @@ export function NativeApp({ platform }: { platform: NativePlatform }) {
   });
 
   useEffect(() => {
+    if (platform.local) {
+      void platform.local.restore().then(() => setSession(localSession))
+        .catch((e) => setBootError(String(e))).finally(() => setBooted(true));
+      return;
+    }
     void sessionStore
       .load()
       .then(setSession)
@@ -232,7 +239,16 @@ export function NativeApp({ platform }: { platform: NativePlatform }) {
         ),
       )
       .finally(() => setBooted(true));
-  }, []);
+  }, [platform]);
+
+  useEffect(() => {
+    if (!platform.local || !session) return;
+    const refresh = () => { if (AppState.currentState !== "background" && AppState.currentState !== "inactive") void platform.local!.refresh().catch(() => {}); };
+    refresh();
+    const timer = setInterval(refresh, 5 * 60_000);
+    const state = AppState.addEventListener("change", s => { if (s === "active") refresh(); });
+    return () => { clearInterval(timer); state.remove(); };
+  }, [platform, session]);
 
   return (
     <SafeAreaProvider>
@@ -240,6 +256,8 @@ export function NativeApp({ platform }: { platform: NativePlatform }) {
       <View style={{ flex: 1, backgroundColor: colors.canvas }}>
         {!booted || (!fontsLoaded && !fontError) ? (
           <Loading />
+        ) : platform.local && !session ? (
+          <Notice message={bootError || "The local library could not be opened. Restart the app to retry."} />
         ) : !session || connecting ? (
           <SafeAreaView style={{ flex: 1 }}>
             {!!bootError && <Notice message={bootError} />}
@@ -297,7 +315,7 @@ function Shell({
 
   const isTv = platform.tv;
   const insets = useSafeAreaInsets();
-  const defaultTab: Tab = "home";
+  const defaultTab: Tab = platform.local?.needsSetup() ? "settings" : "home";
 
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [visited, setVisited] = useState<Set<Tab>>(new Set([defaultTab]));
@@ -453,6 +471,10 @@ function Shell({
       return <SearchScreen open={open} play={play} />;
     }
     if (screen === "settings") {
+      if (platform.local) {
+        const LocalSettings = platform.local.Settings;
+        return <LocalSettings back={() => switchTab("home")} />;
+      }
       return (
         <SettingsScreen
           connect={connect}

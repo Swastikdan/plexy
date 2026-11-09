@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   const app = buildApp();
   // Bind follows the config: loopback unless LAN viewing was explicitly
   // enabled (PRD 5.10). `0.0.0.0` still accepts loopback traffic.
-  const hostname = cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
+  const hostname = !process.env.PLEXY_LOCAL_ONLY && cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   // Cleartext is confined to this machine. Other devices use a separate HTTPS listener.
   app.listen({ port, hostname: "127.0.0.1" });
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
     try {
       const { q } = await import("./db");
       const unprobed = q<{ c: number }>("SELECT COUNT(*) as c FROM media_files WHERE analysis_status != 'probed' OR video_codec IS NULL").get()?.c ?? 0;
-      if (unprobed > 0) {
+      if (unprobed > 0 || process.env.PLEXY_LOCAL_ONLY) {
         log.info("scanner", `found ${unprobed} unprobed media files, triggering background scan`);
         const { startScan } = await import("./scan");
         startScan();

@@ -3,6 +3,7 @@ import { buildTargets } from "./build-targets";
 const selected = (files: string[], target = "") => Object.entries(buildTargets(files, target)).filter(([, value]) => value).map(([key]) => key);
 test("isolates native targets and follows embedded dependencies", () => {
   expect(selected(["apps/mobile/src/App.tsx"])).toEqual(["mobile"]);
+  expect(selected(["packages/local-library/src/library.ts"])).toEqual(["mobile"]);
   expect(selected(["apps/tv/app.config.ts"])).toEqual(["tv"]);
   expect(selected(["packages/native-client/src/Connect.tsx"])).toEqual(["mobile", "tv"]);
   expect(selected(["apps/server/src/auth.ts"])).toEqual(["desktop", "server"]);

@@ -12,6 +12,11 @@ const config: ExpoConfig = {
   icon: "../../build/icon.png",
   backgroundColor: "#080808",
   orientation: "default",
+  splash: {
+    image: "./assets/splashscreen.png",
+    resizeMode: "contain",
+    backgroundColor: "#080808",
+  },
   android: {
     package: "app.plexy.mobile",
     versionCode: 50000 + Number(process.env.GITHUB_RUN_NUMBER || 1),
@@ -27,7 +32,10 @@ const config: ExpoConfig = {
       "android.permission.SYSTEM_ALERT_WINDOW",
     ],
   },
-  extra: { castReceiverEnabled },
+  extra: {
+    castReceiverEnabled,
+    buildNumber: Number(process.env.GITHUB_RUN_NUMBER || 1),
+  },
   plugins: [
     [
       "react-native-google-cast",

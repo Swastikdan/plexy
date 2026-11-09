@@ -824,7 +824,7 @@ export function HomeScreen({
 
       {!data.value?.rows.length && (
         <View style={{ padding: platform.tv ? 36 : 20 }}>
-          <Notice message="Your library is empty. Add media to Plexy Server, then pull to refresh." />
+          <Notice message={platform.local ? "Your library is empty. Add a movie or series folder in Settings." : "Your library is empty. Add media to Plexy Server, then pull to refresh."} />
         </View>
       )}
     </ScrollView>
@@ -1840,7 +1840,7 @@ export function DetailScreen({
                 }
                 onToggleWatched={() => void watched()}
                 isWatched={isSeriesWatched}
-                onDownload={detail.file ? () => download(item, detail.file!.fileId) : undefined}
+                onDownload={!platform.local && detail.file ? () => download(item, detail.file!.fileId) : undefined}
                 downloadState={movieDl}
               />
 
@@ -1917,7 +1917,7 @@ export function DetailScreen({
                         )}
 
                         {/* Download whole season button */}
-                        {seasonEpisodes.length > 0 && !platform.tv && (
+                        {seasonEpisodes.length > 0 && !platform.tv && !platform.local && (
                           <View style={styles.seasonDownloadBar}>
                             <Pressable
                               onPress={() => void downloadWholeSeason()}
@@ -2207,7 +2207,7 @@ function EpisodeCard({
           {/* Action buttons: Download state */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
 
-            {ep.fileId && !platform.tv && (
+            {ep.fileId && !platform.tv && !platform.local && (
               dl ? (
                 dl.state === "downloading" ? (
                   <View style={styles.epDlBadgeActive}>

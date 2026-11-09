@@ -177,14 +177,14 @@ export function TopNav() {
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             className="flex items-center gap-1 justify-self-end"
           >
-            <Link
+            {!window.electronAPI?.localOnly && <Link
               to="/connect"
               aria-label="Server connection"
               title="Server connection"
               className="inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2 [&.active]:text-ink"
             >
               <Server size={17} />
-            </Link>
+            </Link>}
 
             <Link
               to="/search"

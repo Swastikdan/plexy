@@ -979,6 +979,7 @@ function Settings() {
         </div>
       </details>
 
+      {!s.localOnly && (
       <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
         <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
@@ -1187,12 +1188,13 @@ function Settings() {
 
         </div>
       </details>
+      )}
 
       <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
         <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
             <span className="block text-sm font-semibold text-ink">Playback</span>
-            <span className="mt-1 block text-xs text-ink-muted">Audio preferences, quality streams, and preparation cache</span>
+            <span className="mt-1 block text-xs text-ink-muted">{s.directPlayOnly ? "Original-file playback and subtitle preferences" : "Audio preferences, quality streams, and preparation cache"}</span>
           </span>
           <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
         </summary>
@@ -1274,6 +1276,7 @@ function Settings() {
               </Select.Positioner>
             </Select.Root>
           </label>
+          {!s.directPlayOnly && (
           <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-3">
             <div>
               <span className="block text-xs font-semibold text-ink">Generate quality streams</span>
@@ -1361,9 +1364,10 @@ function Settings() {
             {generateStreamVariants.isError && <p role="alert" className="text-xs text-red-400">{generateStreamVariants.error.message}</p>}
             {cancelStreamVariants.isError && <p role="alert" className="text-xs text-red-400">{cancelStreamVariants.error.message}</p>}
           </div>
+          )}
         </div>
-        <h3 className="mb-3 text-sm font-semibold text-ink">Preparation cache</h3>
-        <OptimizerSettings />
+        {!s.directPlayOnly && <><h3 className="mb-3 text-sm font-semibold text-ink">Preparation cache</h3>
+        <OptimizerSettings /></>}
       </div>
 
         </div>

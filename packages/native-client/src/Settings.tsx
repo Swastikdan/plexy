@@ -9,7 +9,14 @@ import { Button, Field, Heading, Label, Notice, UserAvatar } from "./ui";
 import { colors, fonts } from "./theme";
 import { sessionStore } from "./storage";
 import type { AuthResult, Session } from "./api";
-import { checkForUpdate, downloadAndInstallUpdate, type UpdateInfo } from "./updater";
+import {
+  checkForUpdate,
+  downloadAndInstallUpdate,
+  getInstalledAppInfo,
+  openUnknownAppsSettings,
+  type AppInfo,
+  type UpdateInfo,
+} from "./updater";
 import { triggerHaptic } from "./haptics";
 
 type SettingsTab = "account" | "playback" | "updates" | "admin";
@@ -63,17 +70,28 @@ export function SettingsScreen({
   const [busy, setBusy] = useState(false);
 
   // App updater state
+  const [appInfo, setAppInfo] = useState<AppInfo>({
+    versionName: "1.0.2",
+    versionCode: 50028,
+    buildNumber: 28,
+  });
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
   const [updateChecked, setUpdateChecked] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
+  React.useEffect(() => {
+    void getInstalledAppInfo().then(setAppInfo);
+  }, []);
+
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
     setUpdateError("");
     try {
-      const update = await checkForUpdate(platform.tv);
+      const current = await getInstalledAppInfo();
+      setAppInfo(current);
+      const update = await checkForUpdate(platform.tv, current.buildNumber);
       setAvailableUpdate(update);
       setUpdateChecked(true);
     } catch (e) {
@@ -94,7 +112,7 @@ export function SettingsScreen({
         {
           text: "Download & Install",
           onPress: async () => {
-            setDownloadProgress(0);
+            setDownloadProgress(1);
             setUpdateError("");
             try {
               await downloadAndInstallUpdate(availableUpdate, (pct) => {
@@ -614,7 +632,7 @@ export function SettingsScreen({
                   Installed Version
                 </Text>
                 <Text style={{ fontFamily: fonts.regular, fontSize: 13, color: colors.muted, marginTop: 2 }}>
-                  v1.0.2 · {platform.tv ? "Android TV" : "Android Mobile"}
+                  v{appInfo.versionName} (build {appInfo.buildNumber}) · {platform.tv ? "Android TV" : "Android Mobile"}
                 </Text>
               </View>
               <Button
@@ -624,13 +642,21 @@ export function SettingsScreen({
               />
             </View>
 
-            {updateError ? <Notice message={updateError} /> : null}
+            {updateError ? (
+              <View style={{ gap: 8 }}>
+                <Notice message={updateError} kind="error" />
+                <Button
+                  label="Open Android App Install Settings"
+                  onPress={() => void openUnknownAppsSettings()}
+                />
+              </View>
+            ) : null}
 
             {updateChecked && !availableUpdate && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 }}>
                 <CheckCircle2 size={18} color="#22c55e" />
                 <Text style={{ fontFamily: fonts.medium, fontSize: 14, color: "#22c55e" }}>
-                  Plexy is up to date. You are running the latest release.
+                  Plexy is up to date (build {appInfo.buildNumber}). You are running the latest release.
                 </Text>
               </View>
             )}

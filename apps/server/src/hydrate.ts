@@ -352,3 +352,33 @@ export function personNameById(id: number): string | null {
   const row = q<{ name: string }, [number]>("SELECT name FROM people WHERE id = ?").get(id);
   return row?.name ?? null;
 }
+
+let refreshingLocalMetadata = false;
+/** Refresh known IDs only, keeping manual matches and cached offline metadata intact. */
+export async function refreshStaleLocalMetadata(): Promise<void> {
+  if (!process.env.PLEXY_LOCAL_ONLY || refreshingLocalMetadata) return;
+  refreshingLocalMetadata = true;
+  try {
+    const { getConfig } = await import("./config");
+    const cfg = await getConfig();
+    if (!cfg.tmdbToken) return;
+    const cutoff = new Date(Date.now() - 7 * 86400_000).toISOString();
+    const items = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv" }>(
+      `SELECT id, tmdb_id, tmdb_type FROM items
+       WHERE kind IN ('movie','series') AND tmdb_id IS NOT NULL
+         AND (refreshed_at IS NULL OR refreshed_at < ?) ORDER BY refreshed_at LIMIT 25`,
+    ).all(cutoff);
+    if (!items.length) return;
+    // Confirm connectivity before hydration: a stale-cache fallback must not mark
+    // offline data as freshly downloaded and postpone the next online retry.
+    const check = await fetch("https://api.themoviedb.org/3/configuration", {
+      headers: { Authorization: `Bearer ${cfg.tmdbToken}` }, signal: AbortSignal.timeout(3500),
+    });
+    if (!check.ok) return;
+    for (const item of items) {
+      try { await hydrateItemMetadata(item.id, item.tmdb_type, item.tmdb_id); }
+      catch { break; }
+    }
+  } catch { /* Offline operation uses the existing local metadata and artwork. */ }
+  finally { refreshingLocalMetadata = false; }
+}

@@ -183,14 +183,46 @@ export async function generateIcons() {
     execSync(`sips -z 512 512 "${masterPng}" --out "${pwa512}" >/dev/null 2>&1`);
   }
 
+  // Generate Plexy Brand Logo SVG for dark splash screens
+  const splashSvgPath = join(tempDir, "splash_logo.svg");
+  const splashSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360">
+  <defs>
+    <linearGradient id="plexy-blue" x1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6C9FFF" />
+      <stop offset="50%" stop-color="#3B7DF9" />
+      <stop offset="100%" stop-color="#1F4FCB" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(180, 50)">
+    <path
+      fill="url(#plexy-blue)"
+      transform="scale(0.95)"
+      d="M223.517 44.823 161.174 8.85a65.565 65.565 0 0 0-65.792 0l-62.63 35.973C12.642 56.623 0 78.495 0 101.806v72.235c0 23.6 12.641 45.183 32.752 56.982l62.343 36.263a65.565 65.565 0 0 0 65.791 0l62.343-36.263c20.399-11.799 32.752-33.383 32.752-56.982v-72.235c.575-23.311-12.066-45.183-32.464-56.983Zm-95.383 157.422c-35.337 0-64.067-28.78-64.067-64.177 0-35.399 28.73-64.178 64.067-64.178 35.338 0 64.355 28.779 64.355 64.178 0 35.398-28.73 64.177-64.355 64.177Z"
+    />
+    <text x="280" y="170" font-family="system-ui, -apple-system, sans-serif" font-size="120" font-weight="900" fill="#ffffff" letter-spacing="-2.5">Plexy</text>
+  </g>
+</svg>`;
+  await writeFile(splashSvgPath, splashSvg);
+  const masterSplashPng = join(tempDir, "master-splash-960.png");
+  execSync(`sips -s format png "${splashSvgPath}" --out "${masterSplashPng}" >/dev/null 2>&1`);
+
+  // Write high-res splashscreen image to assets for Expo prebuild
+  const tvAssets = join(root, "apps/tv/assets");
+  const mobileAssets = join(root, "apps/mobile/assets");
+  await mkdir(tvAssets, { recursive: true });
+  await mkdir(mobileAssets, { recursive: true });
+  await copyFile(masterSplashPng, join(tvAssets, "splashscreen.png"));
+  await copyFile(masterSplashPng, join(mobileAssets, "splashscreen.png"));
+  await copyFile(masterBannerPng, join(tvAssets, "tv-banner.png"));
+
   // 6. Generate matching Dark Splash Screen logos and drawables for Mobile & TV
   console.log("Generating matching Android Mobile & TV dark splash screens...");
   const splashDensities = [
-    { dir: "drawable-mdpi", size: 140 },
-    { dir: "drawable-hdpi", size: 210 },
-    { dir: "drawable-xhdpi", size: 280 },
-    { dir: "drawable-xxhdpi", size: 420 },
-    { dir: "drawable-xxxhdpi", size: 560 },
+    { dir: "drawable-mdpi", w: 240, h: 90 },
+    { dir: "drawable-hdpi", w: 360, h: 135 },
+    { dir: "drawable-xhdpi", w: 480, h: 180 },
+    { dir: "drawable-xxhdpi", w: 720, h: 270 },
+    { dir: "drawable-xxxhdpi", w: 960, h: 360 },
   ];
 
   // Universal bitmap gravity center splashscreen layer-list that works on all Android versions
@@ -209,12 +241,14 @@ export async function generateIcons() {
     for (const s of splashDensities) {
       const targetDir = join(resRoot, s.dir);
       await mkdir(targetDir, { recursive: true });
-      execSync(`sips -z ${s.size} ${s.size} "${masterPng}" --out "${join(targetDir, "splashscreen_logo.png")}" >/dev/null 2>&1`);
+      execSync(`sips -z ${s.h} ${s.w} "${masterSplashPng}" --out "${join(targetDir, "splashscreen_logo.png")}" >/dev/null 2>&1`);
     }
 
     const drawableDir = join(resRoot, "drawable");
     await mkdir(drawableDir, { recursive: true });
     await writeFile(join(drawableDir, "splashscreen.xml"), splashXml);
+    // Also place default splashscreen_logo in drawable root as fallback
+    execSync(`sips -z 180 480 "${masterSplashPng}" --out "${join(drawableDir, "splashscreen_logo.png")}" >/dev/null 2>&1`);
 
     const valuesDir = join(resRoot, "values");
     const colorsPath = join(valuesDir, "colors.xml");

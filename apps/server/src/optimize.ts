@@ -1,3 +1,4 @@
+import { directPlayOnly } from "./runtime";
 /// Prepared-playback queue.
 ///
 /// The scanner records probe facts; this module decides whether a file needs
@@ -245,6 +246,7 @@ function markStatus(fileId: number, status: string, patch: Record<string, unknow
 
 /** Add one file to the queue (no-op when it is already queued/running). */
 export function enqueueOptimization(fileId: number): void {
+  if (directPlayOnly()) return;
   if (queuedIds.has(fileId) || current?.fileId === fileId) return;
   const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
   if (!row || Number(row.unavailable ?? 0) !== 0) return;
@@ -462,6 +464,7 @@ async function optimizeOne(fileId: number): Promise<void> {
 
 /** Remove the oldest prepared copies when the configured cache cap is hit. */
 export async function pruneOptimizerCache(): Promise<number> {
+  if (directPlayOnly()) return 0;
   const cfg = await getConfig();
   const cap = cfg.optimizeMaxCacheGb * 1024 * 1024 * 1024;
   if (!cap) return 0;
@@ -522,6 +525,7 @@ export async function enqueueMissingOptimizations(
 
 /** Reset interrupted jobs and start working through the queue. */
 export async function startOptimizer(): Promise<void> {
+  if (directPlayOnly()) return;
   run("UPDATE media_files SET optimized_status = 'none', optimized_progress = NULL WHERE optimized_status IN ('running', 'queued')");
   const cfg = await getConfig();
   if (!cfg.autoOptimize) return;

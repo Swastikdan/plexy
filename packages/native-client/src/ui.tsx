@@ -421,15 +421,16 @@ export function Notice({
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
-export function Loading({ showLogo = true }: { showLogo?: boolean } = {}) {
+export function Loading({ showLogo }: { showLogo?: boolean } = {}) {
+  const shouldShowLogo = showLogo !== undefined ? showLogo : !Platform.isTV;
   return (
     <View style={styles.loadingWrap}>
-      {showLogo && <PlexyLogo size={36} showText={true} />}
+      {shouldShowLogo && <PlexyLogo size={36} showText={true} />}
       <ActivityIndicator
         size="small"
         color={colors.brand}
         accessibilityLabel="Loading"
-        style={showLogo ? { marginTop: 18 } : undefined}
+        style={shouldShowLogo ? { marginTop: 18 } : undefined}
       />
     </View>
   );

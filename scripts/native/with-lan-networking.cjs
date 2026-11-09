@@ -1,8 +1,19 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const { withMainApplication, withDangerousMod, withAndroidManifest } = require(require.resolve('expo/config-plugins', { paths: [path.join(__dirname, '../../apps/mobile')] }));
+const { withMainApplication, withDangerousMod, withAndroidManifest, withAppBuildGradle } = require(require.resolve('expo/config-plugins', { paths: [path.join(__dirname, '../../apps/mobile')] }));
 module.exports = function withLanNetworking(config) {
   const applicationId = config.android.package;
+  config = withAppBuildGradle(config, mod => {
+    let source = mod.modResults.contents;
+    if (!source.includes('v1SigningEnabled true')) {
+      source = source.replace(
+        /keyPassword\s+['"]android['"]/,
+        "keyPassword 'android'\n            v1SigningEnabled true\n            v2SigningEnabled true"
+      );
+      mod.modResults.contents = source;
+    }
+    return mod;
+  });
   config = withAndroidManifest(config, mod => {
     const manifest = mod.modResults.manifest;
     manifest['uses-permission'] ||= [];

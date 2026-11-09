@@ -3,6 +3,7 @@ import type { ElectronAPI } from "../types";
 
 const api: ElectronAPI = {
   isElectron: true,
+  localOnly: true,
   discoverServers: () => ipcRenderer.invoke("app:discover-servers"),
   platform: process.platform,
   selectFolder: () => ipcRenderer.invoke("dialog:select-folder"),

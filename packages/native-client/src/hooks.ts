@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 
 // In-memory cache for fast screen navigation (stale-while-revalidate)
 const resourceCache = new Map<string, any>();
+const invalidations = new Set<() => void>();
+export function invalidateLocalResources() {
+  resourceCache.clear();
+  for (const invalidate of invalidations) invalidate();
+}
 
 export function useResource<T>(
   load: (signal: AbortSignal) => Promise<T>,
@@ -16,6 +21,11 @@ export function useResource<T>(
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(cached === undefined);
   const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const invalidate = () => setRevision(n => n + 1);
+    invalidations.add(invalidate);
+    return () => { invalidations.delete(invalidate); };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

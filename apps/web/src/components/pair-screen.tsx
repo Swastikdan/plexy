@@ -124,9 +124,9 @@ export function PairScreen({
           {busy ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-      <a href="/connect" className="text-sm underline text-ink-muted">
+      {!window.electronAPI?.localOnly && <a href="/connect" className="text-sm underline text-ink-muted">
         Choose a different server
-      </a>
+      </a>}
     </main>
   );
 }

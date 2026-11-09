@@ -1,3 +1,4 @@
+import { directPlayOnly } from "./runtime";
 import { isDirectLoopbackContext } from "./essentials";
 /// The Elysia application (PRD 4, 9).
 ///
@@ -114,6 +115,14 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
       const path = new URL(ctx.request.url).pathname;
       if (path.startsWith("/api/") && path !== "/api/server/status" && path !== "/api/auth/setup" && ctx.request.method !== "OPTIONS" && new URL(ctx.request.url).protocol !== "https:" && !isDirectLoopbackContext(ctx)) {
         return Response.json({ error: "Use the server’s HTTPS address to sign in or access media.", code: "HTTPS_REQUIRED" }, { status: 426 });
+      }
+    })
+    .onRequest(({ request }) => {
+      if (!directPlayOnly()) return;
+      const url = new URL(request.url);
+      if (/^\/api\/stream\/[^/]+\/(remux|transcode|hls)(?:\/|$)/.test(url.pathname)
+        || (/^\/api\/download\/[^/]+$/.test(url.pathname) && url.searchParams.has("maxHeight"))) {
+        return Response.json({ error: "This app plays original files only. Video conversion is disabled." }, { status: 409 });
       }
     })
     .onRequest((ctx) => authGuard(ctx, options.requireAuth))

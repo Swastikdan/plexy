@@ -1,3 +1,4 @@
+import { directPlayOnly } from "./runtime";
 /// Adaptive HLS preparation. Variants are encoded before playback.
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { availableParallelism } from "node:os";
@@ -150,6 +151,7 @@ export async function readPreparedPlaylist(row: Row, asset: string, origin: stri
 }
 
 export async function setTitleStreamQualities(itemId: number, qualities: number[], force = false, bulkVersion?: number): Promise<number> {
+  if (directPlayOnly()) return 0;
   const normalized = [...new Set(qualities)].filter((height) => QUALITY_HEIGHTS.includes(height as typeof QUALITY_HEIGHTS[number])).sort((a, b) => a - b);
   if (!normalized.length) {
     run("DELETE FROM item_stream_settings WHERE item_id = ?", itemId);
@@ -376,6 +378,7 @@ async function pump(): Promise<void> {
 }
 
 export async function startStreamPreparation(): Promise<void> {
+  if (directPlayOnly()) return;
   run("UPDATE hls_preparations SET status='queued', progress=0 WHERE status='running'");
   const rows = q<{ file_id: number }>("SELECT file_id FROM hls_preparations WHERE status='queued' ORDER BY updated_at").all();
   for (const row of rows) {
@@ -389,6 +392,7 @@ export async function startStreamPreparation(): Promise<void> {
 }
 
 export async function enqueueConfiguredStreamPreparations(): Promise<void> {
+  if (directPlayOnly()) return;
   const settings = q<{ item_id: number; qualities: string }>("SELECT item_id, qualities FROM item_stream_settings").all();
   for (const setting of settings) {
     let qualities: number[];
@@ -398,6 +402,7 @@ export async function enqueueConfiguredStreamPreparations(): Promise<void> {
 }
 
 export async function enqueueStreamPreparationsForTitles(itemIds: number[]): Promise<number> {
+  if (directPlayOnly()) return 0;
   const version = ++bulkPreparationVersion;
   const ids = [...new Set(itemIds.map((id) => Math.trunc(id)).filter((id) => id > 0))];
   if (!ids.length) return 0;

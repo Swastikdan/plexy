@@ -1,5 +1,5 @@
 import { installCertificateTrust } from "./certificate-trust";
-import { discoverServers } from "./discovery";
+
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -217,7 +217,7 @@ function createWindow(serverUrl: string): BrowserWindow {
 }
 
 function setupIpcHandlers() {
-  ipcMain.handle("app:discover-servers", () => discoverServers());
+  ipcMain.handle("app:discover-servers", () => []);
   ipcMain.handle("dialog:select-folder", async () => {
     if (!mainWindow) return null;
     const result = await dialog.showOpenDialog(mainWindow, {

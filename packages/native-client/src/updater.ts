@@ -1,6 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 
 export interface GitHubAsset {
   name: string;
@@ -26,15 +26,47 @@ export interface UpdateInfo {
   apkUrl: string;
   apkName: string;
   apkSize: number;
+  buildNumber?: number;
+}
+
+export interface AppInfo {
+  versionName: string;
+  versionCode: number;
+  buildNumber: number;
 }
 
 const GITHUB_REPO = "Swastikdan/plexy";
 
 /**
- * Checks GitHub for the latest release containing the target APK.
+ * Gets currently installed version and build number from native PackageManager.
  */
-export async function checkForUpdate(isTv: boolean): Promise<UpdateInfo | null> {
+export async function getInstalledAppInfo(): Promise<AppInfo> {
+  if (Platform.OS === "android") {
+    try {
+      if (NativeModules.PlexyLanModule?.getAppInfo) {
+        const info = await NativeModules.PlexyLanModule.getAppInfo();
+        if (info && typeof info.buildNumber === "number") {
+          return {
+            versionName: String(info.versionName || "1.0.2"),
+            versionCode: Number(info.versionCode || 50028),
+            buildNumber: Number(info.buildNumber || 28),
+          };
+        }
+      }
+    } catch {}
+  }
+  return { versionName: "1.0.2", versionCode: 50028, buildNumber: 28 };
+}
+
+/**
+ * Checks GitHub for the latest release containing the target APK that is newer than current build.
+ */
+export async function checkForUpdate(
+  isTv: boolean,
+  currentBuild?: number,
+): Promise<UpdateInfo | null> {
   const targetApk = isTv ? "plexy-tv-preview.apk" : "plexy-mobile-preview.apk";
+  const appInfo = currentBuild ? { buildNumber: currentBuild } : await getInstalledAppInfo();
 
   const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`, {
     headers: {
@@ -52,10 +84,18 @@ export async function checkForUpdate(isTv: boolean): Promise<UpdateInfo | null> 
     return null;
   }
 
-  // Find the first release that has the required APK asset
+  // Find the first release that has the required APK asset and is newer
   for (const release of releases) {
     const asset = release.assets?.find((a) => a.name === targetApk);
     if (asset) {
+      const match = release.tag_name.match(/build\.(\d+)/i);
+      const releaseBuildNumber = match ? parseInt(match[1], 10) : 0;
+
+      // If installed build is already >= release build number, there is no newer update
+      if (appInfo.buildNumber && releaseBuildNumber > 0 && releaseBuildNumber <= appInfo.buildNumber) {
+        return null;
+      }
+
       return {
         tagName: release.tag_name,
         releaseName: release.name || release.tag_name,
@@ -64,11 +104,27 @@ export async function checkForUpdate(isTv: boolean): Promise<UpdateInfo | null> 
         apkUrl: asset.browser_download_url,
         apkName: asset.name,
         apkSize: asset.size,
+        buildNumber: releaseBuildNumber,
       };
     }
   }
 
   return null;
+}
+
+/**
+ * Opens Android system settings allowing Plexy to install APK updates.
+ */
+export async function openUnknownAppsSettings(): Promise<void> {
+  if (Platform.OS === "android") {
+    try {
+      await IntentLauncher.startActivityAsync("android.settings.MANAGE_UNKNOWN_APP_SOURCES", {
+        data: `package:${Platform.isTV ? "app.plexy.tv" : "app.plexy.mobile"}`,
+      });
+    } catch {
+      await IntentLauncher.startActivityAsync("android.settings.SECURITY_SETTINGS");
+    }
+  }
 }
 
 /**
@@ -86,18 +142,29 @@ export async function downloadAndInstallUpdate(
   const localFileName = `update_${sanitizedTag}_${update.apkName}`;
   const localUri = `${FileSystem.cacheDirectory}${localFileName}`;
 
+  // Notify starting
+  onProgress?.(1);
+
   // Check if already downloaded
   const info = await FileSystem.getInfoAsync(localUri);
   if (!info.exists || (info.size && info.size !== update.apkSize)) {
+    if (info.exists) {
+      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+    }
+
     // Download with progress callback
     const downloadResumable = FileSystem.createDownloadResumable(
       update.apkUrl,
       localUri,
       {},
       (progress) => {
-        if (progress.totalBytesExpectedToWrite > 0) {
-          const ratio = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
-          onProgress?.(Math.min(100, Math.round(ratio * 100)));
+        const total =
+          progress.totalBytesExpectedToWrite > 0
+            ? progress.totalBytesExpectedToWrite
+            : update.apkSize;
+        if (total > 0) {
+          const ratio = progress.totalBytesWritten / total;
+          onProgress?.(Math.min(99, Math.round(ratio * 100)));
         }
       },
     );
@@ -106,8 +173,18 @@ export async function downloadAndInstallUpdate(
     if (!result || !result.uri) {
       throw new Error("Failed to download APK package.");
     }
-  } else {
-    onProgress?.(100);
+  }
+
+  onProgress?.(100);
+
+  // Try native module installer first
+  if (NativeModules.PlexyLanModule?.installApk) {
+    try {
+      await NativeModules.PlexyLanModule.installApk(localUri);
+      return;
+    } catch (err) {
+      console.warn("PlexyLanModule.installApk fallback to IntentLauncher:", err);
+    }
   }
 
   // Convert file:// uri to content:// uri using FileProvider

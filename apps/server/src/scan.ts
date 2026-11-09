@@ -308,6 +308,7 @@ async function runScan(libraryIds: number[]): Promise<void> {
     emit(true);
     await shutdownWorker();
     scanning = false;
+    void import("./hydrate").then(({ refreshStaleLocalMetadata }) => refreshStaleLocalMetadata()).catch(() => {});
     // Start preparing everything the walk just discovered. Optimizer jobs run
     // one at a time in a child process, so this never blocks the event loop.
     resumeOptimizer("scan");

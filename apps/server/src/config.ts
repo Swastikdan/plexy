@@ -81,7 +81,7 @@ export async function initConfig(): Promise<Config> {
 }
 
 export async function getConfig(): Promise<Config> {
-  if (cache) return cache;
+  if (cache) return process.env.PLEXY_LOCAL_ONLY ? { ...cache, bindAddress: "127.0.0.1", autoOptimize: false } : cache;
   return initConfig();
 }
 
@@ -103,6 +103,8 @@ export function redactedView(cfg: Config) {
   const envToken = envTmdbToken();
   return {
     ...settings,
+    localOnly: process.env.PLEXY_LOCAL_ONLY === "1",
+    directPlayOnly: process.env.PLEXY_DIRECT_PLAY_ONLY === "1",
     version: cfg.version ?? APP_VERSION,
     hasTmdbToken: tmdbToken.length > 0,
     tokenSource: envToken && tmdbToken === envToken ? "env" : "settings",

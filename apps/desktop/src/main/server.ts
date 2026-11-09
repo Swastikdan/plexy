@@ -125,6 +125,8 @@ export async function startServer(): Promise<{ url: string; port: number }> {
     NODE_ENV: isDev ? "development" : "production",
     PORT: String(activePort),
     PLEXY_DESKTOP: "1",
+    PLEXY_LOCAL_ONLY: "1",
+    PLEXY_DIRECT_PLAY_ONLY: "1",
     PLEXY_DATA_DIR: dataDir,
     PLEXY_LOG_DIR: logDir,
     ...(app.isPackaged ? { PLEXY_RESOURCES_DIR: process.resourcesPath } : {}),

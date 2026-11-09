@@ -128,6 +128,7 @@ export interface NextEpisode {
 }
 
 export interface Playability {
+  directPlayOnly?: boolean;
   path: PlayPath;
   reason: string;
   fileId: number;
@@ -302,6 +303,8 @@ export interface LibraryItem {
 }
 
 export interface ServerSettings {
+  localOnly?: boolean;
+  directPlayOnly?: boolean;
   port: number;
   bindAddress: string;
   logLevel: string;

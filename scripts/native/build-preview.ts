@@ -3,6 +3,7 @@
  */
 import { mkdir, copyFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { generateIcons } from "../generate-icon";
 const root = resolve(import.meta.dir, "../..");
 const requested = process.argv[2] || "all";
 if (!["all", "mobile", "tv"].includes(requested))
@@ -20,6 +21,7 @@ async function run(command: string[], cwd: string) {
 for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
   const cwd = resolve(root, "apps", target);
   await run(["bun", "run", "prebuild"], cwd);
+  await generateIcons();
   await run(
     [
       Bun.env.PLEXY_GRADLE_BINARY || "./gradlew",

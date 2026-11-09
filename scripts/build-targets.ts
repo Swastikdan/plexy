@@ -11,6 +11,7 @@ export function buildTargets(files: string[], target = "", fullBuild = false) {
     if (/^(package\.json|bun\.lock|tsconfig[^/]*\.json|\.github\/workflows\/build\.yml|scripts\/build-targets)/.test(file)) all();
     else if (/^(apps\/web\/|packages\/api-client\/|scripts\/build-client\.ts|scripts\/generate-pwa-icons\.ts)/.test(file)) flags.web = true;
     else if (/^(apps\/desktop\/|build\/|scripts\/(build-desktop|build-executable|generate-icon|generate-dmg-background|install-macos-ffmpeg)\.)/.test(file)) flags.desktop = true;
+    else if (file.startsWith("packages/local-library/")) flags.mobile = true;
     else if (file.startsWith("apps/mobile/")) flags.mobile = true;
     else if (file.startsWith("apps/tv/")) flags.tv = true;
     else if (/^(packages\/native-client\/|scripts\/native\/)/.test(file)) flags.mobile = flags.tv = true;

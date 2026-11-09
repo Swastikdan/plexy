@@ -121,6 +121,7 @@ function writeLocalOverride(url: string): void {
 }
 
 function ensureOverrideLoaded(): string {
+  if (typeof window !== "undefined" && window.electronAPI?.localOnly) return "";
   if (override === undefined) {
     override = readLocalOverride();
   }
@@ -145,6 +146,7 @@ export function hasServerOverride(): boolean {
 
 /** The address every API, image, subtitle and stream URL should use. */
 export function getApiBase(): string {
+  if (typeof window !== "undefined" && window.electronAPI?.localOnly) return window.location.origin;
   const saved = ensureOverrideLoaded();
   if (saved) return saved;
   if (ENV_API_BASE) return ENV_API_BASE;
@@ -156,6 +158,9 @@ export function getApiBase(): string {
 
 /** Save a server address and make it effective immediately. */
 export function setServerUrl(raw: string): string {
+  if (typeof window !== "undefined" && window.electronAPI?.localOnly) {
+    override = ""; writeLocalOverride(""); return window.location.origin;
+  }
   const url = normalizeServerUrl(raw);
   override = url;
   writeLocalOverride(url);
@@ -182,6 +187,7 @@ export function clearServerUrl(): void {
  */
 export async function hydrateServerUrl(): Promise<void> {
   if (!isElectron()) return;
+  if (window.electronAPI?.localOnly) { clearServerUrl(); return; }
   try {
     const saved = await window.electronAPI?.getServerUrl();
     const url = normalizeServerUrl(saved ?? "");
@@ -211,6 +217,9 @@ export type ProbeResult =
  * not enough: the response must be Plexy's JSON status payload.
  */
 export async function probeServer(raw: string): Promise<ProbeResult> {
+  if (typeof window !== "undefined" && window.electronAPI?.localOnly && normalizeServerUrl(raw) !== window.location.origin) {
+    return { ok: false, error: "This app uses its own library on this device." };
+  }
   const base = normalizeServerUrl(raw);
   if (!base) {
     return {

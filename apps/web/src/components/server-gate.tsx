@@ -147,6 +147,10 @@ export function ServerGate({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("plexy:unauthorized", onUnauthorized);
   }, []);
 
+  if (window.electronAPI?.localOnly && window.location.pathname === "/connect") {
+    return <main className="space-y-4 p-8"><h1 className="text-xl font-semibold">Your library is on this device</h1>
+      <a className="underline" href="/">Open library</a></main>;
+  }
   // The dedicated connection page must stay reachable from the pairing screen.
   if (typeof window !== "undefined" && window.location.pathname === "/connect") {
     return <>{children}</>;
@@ -156,6 +160,13 @@ export function ServerGate({ children }: { children: ReactNode }) {
     return <ConnectionSplash />;
   }
 
+  if (state.phase === "down" && window.electronAPI?.localOnly) {
+    return <main className="mx-auto max-w-lg space-y-4 p-8">
+      <h1 className="text-xl font-semibold">Your local library could not be opened</h1>
+      <p>Your files are still on this device. Restart Plexy to retry.</p>
+      <button className="underline" onClick={() => window.location.reload()}>Retry</button>
+    </main>;
+  }
   if (state.phase === "down") {
     return (
       <ConnectScreen initialError={state.error} originUrl={state.originUrl} />
