@@ -1,0 +1,22 @@
+name: Exact port checks
+on:
+  push:
+    branches: [main, feat/exact-local-port]
+    paths: ['plexy-exact/**', '.github/workflows/exact.yml']
+  pull_request:
+    paths: ['plexy-exact/**', '.github/workflows/exact.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Verify catalog and conversion safety
+        run: bun test plexy-exact/tests
+# Native artifacts intentionally remain gated on Phase 0 real-device playback.
+# The existing build.yml continues producing existing Plexy release/update assets.

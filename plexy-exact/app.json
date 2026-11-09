@@ -1,0 +1,31 @@
+{
+  "$schema": "../.build/exact-runtime/scripts/app.schema.json",
+  "name": "Plexy",
+  "short_name": "Plexy",
+  "id": "com.plexy.local",
+  "start_url": "/",
+  "display": "standalone",
+  "app": {
+    "id": "com.plexy.local",
+    "name": "Plexy"
+  },
+  "host": {
+    "web": {},
+    "macos": {
+      "minimumOS": "14.0",
+      "window": {
+        "width": 900,
+        "height": 700
+      }
+    },
+    "android": {
+      "minimumOS": "12"
+    }
+  },
+  "deploy": {
+    "store": {
+      "web": "0",
+      "macos": "0"
+    }
+  }
+}

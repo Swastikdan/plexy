@@ -1,0 +1,10 @@
+{
+  "name": "plexy-exact",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "bun tools/setup.ts",
+    "test": "bun test tests",
+    "check": "bun exact.mjs contract build app.contract --json --errors-only"
+  }
+}

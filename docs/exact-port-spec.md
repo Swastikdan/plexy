@@ -1863,3 +1863,11 @@ Notes:
 - `processStatus().available` is a stand-in for "has child processes", which here means macOS. It is false on Windows/Linux too, but those are not targets. When the native package is in place, prefer a `capabilities` name implemented on both sides: Android answers `canUseMediaStore: true` and codec support from `MediaCodecList`; macOS answers `canSpawn: true`. That avoids inferring the platform from an unrelated capability.
 - The source's real signature is `(args, store, storage)` and its declared answer is a `Result<'capabilities'>`; the zero-argument form above is fine, and the generated `Sources` type checks it.
 - Do not branch on the platform inside Contract when a capability answers the same question. `caps.canPickFolder` and `caps.canUseMediaStore` are the two real forks.
+
+## Implementation status (2026-11-09)
+
+The initial foundation is in `plexy-exact/` (lowercase required by Exact's generator).
+See `plexy-exact/docs/spikes.md` for Phase 0 evidence and unresolved gates.
+The port is not complete and no native release is available. Per the implementation
+request, GitHub build update support is now a required release feature, superseding
+its exclusion from v1 above. Existing GitHub build/update behavior is preserved.

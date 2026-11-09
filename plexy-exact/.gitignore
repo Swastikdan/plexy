@@ -1,0 +1,10 @@
+/target/
+/dist/
+/.exact/
+/node_modules/
+/app.contract.d.ts
+/exact.mjs
+/AGENTS.md
+/CLAUDE.md
+/tools/fixtures/
+/tools/ffmpeg/bin/

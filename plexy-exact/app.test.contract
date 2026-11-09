@@ -1,0 +1,3 @@
+test "reports native verification status"
+  expect tree has "root"
+  expect text "status" == "Native playback verification is pending. Your existing Plexy apps remain available."
