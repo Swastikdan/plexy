@@ -1,0 +1,20 @@
+{
+  "kind": "implementation",
+  "implements": "@plexy/native@^1.0",
+  "platform": "web",
+  "targets": [
+    "web"
+  ],
+  "shapes": {},
+  "names": [],
+  "views": [
+    "plexy-player"
+  ],
+  "hatches": [],
+  "sources": {
+    "javascript": [
+      "index.js"
+    ]
+  },
+  "artifacts": []
+}

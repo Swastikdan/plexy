@@ -1,0 +1,3 @@
+Android conversion uses dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7 (Maven Central). Upstream source and build recipes: https://github.com/ffmpegkit-maintained/ffmpeg . This is the GPL variant with x264/x265 and zimg for the shared conversion plan, including HDR tone mapping. Native libraries are advertised by the supplier as 16 KB aligned; verify the packaged arm64 ELF alignment before release.
+
+The Media3 modules are AndroidX 1.9.0: https://github.com/androidx/media (Apache-2.0). FFmpegKit/FFmpeg and linked GPL codec notices must accompany redistributed builds. The GPL text is bundled under tools/ffmpeg/COPYING.GPLv3.

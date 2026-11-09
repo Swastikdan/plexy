@@ -1,0 +1,21 @@
+{
+  "kind": "implementation",
+  "implements": "@plexy/native@^1.0",
+  "platform": "apple",
+  "targets": [
+    "macos"
+  ],
+  "shapes": {},
+  "names": [],
+  "views": [
+    "plexy-player"
+  ],
+  "hatches": [],
+  "sources": {
+    "swift": [
+      "PlexyPlayer.swift"
+    ]
+  },
+  "artifacts": [],
+  "class": "PlexyNative"
+}

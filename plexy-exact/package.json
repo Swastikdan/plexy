@@ -6,5 +6,9 @@
     "setup": "bun tools/setup.ts",
     "test": "bun test tests",
     "check": "bun exact.mjs contract build app.contract --json --errors-only"
+  },
+  "dependencies": {
+    "@plexy/native": "file:./packages/plexy-native",
+    "@exact/child-process": "file:../.build/exact-runtime/packages/child-process"
   }
 }

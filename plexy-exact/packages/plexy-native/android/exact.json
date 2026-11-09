@@ -1,0 +1,35 @@
+{
+  "kind": "implementation",
+  "implements": "@plexy/native@^1.0",
+  "platform": "android",
+  "targets": [
+    "android"
+  ],
+  "shapes": {},
+  "names": [],
+  "views": [
+    "plexy-player"
+  ],
+  "hatches": [],
+  "sources": {
+    "kotlin": [
+      "."
+    ]
+  },
+  "artifacts": [],
+  "class": "com.plexy.local.PlexyNative",
+  "maven": [
+    "androidx.media3:media3-exoplayer:1.9.0",
+    "androidx.media3:media3-ui:1.9.0",
+    "dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7",
+    "com.arthenica:smart-exception-java:0.2.1"
+  ],
+  "manifest": {
+    "services": [
+      {
+        "name": "com.plexy.local.PlexyConvertService",
+        "foregroundServiceType": "dataSync|mediaProcessing"
+      }
+    ]
+  }
+}

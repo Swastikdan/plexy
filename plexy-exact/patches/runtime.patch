@@ -1,0 +1,91 @@
+diff --git a/host/android/app/build.gradle.kts b/host/android/app/build.gradle.kts
+index 17bc7db..bb609e7 100644
+--- a/host/android/app/build.gradle.kts
++++ b/host/android/app/build.gradle.kts
+@@ -47,21 +47,32 @@ android {
+         applicationId = (identity["id"] as String).replace('-', '_')
+         minSdk = minimumApi
+         targetSdk = 36
+-        versionCode = 1
++        versionCode = providers.environmentVariable("PLEXY_VERSION_CODE").orNull?.toInt() ?: 1
+         // -PidSuffix=.dev: a side-by-side build (another package) that leaves the installed one alone.
+         (project.findProperty("idSuffix") as String?)?.let { applicationIdSuffix = it }
+-        versionName = "1"
++        versionName = providers.environmentVariable("PLEXY_VERSION_NAME").orNull ?: "0.1.0"
+         ndk { abiFilters += "arm64-v8a" }
+         manifestPlaceholders["appName"] = identity["name"] as String
+         manifestPlaceholders["screenOrientation"] = screenOrientation
+         manifestPlaceholders["exactDevelopment"] = providers.gradleProperty("exactDevelopment").orNull == "1"
+     }
++    signingConfigs {
++        create("plexy") {
++            val keyPath = providers.environmentVariable("PLEXY_KEYSTORE").orNull
++            if (keyPath != null) {
++                storeFile = file(keyPath)
++                storePassword = providers.environmentVariable("PLEXY_KEYSTORE_PASSWORD").get()
++                keyAlias = "plexy"
++                keyPassword = providers.environmentVariable("PLEXY_KEYSTORE_PASSWORD").get()
++            }
++        }
++    }
+     buildTypes {
+         release {
+             isMinifyEnabled = true
+             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+             if (minimumApi < 31) proguardFiles("proguard-legacy.pro")
+-            signingConfig = signingConfigs.getByName("debug")
++            signingConfig = signingConfigs.getByName(if (providers.environmentVariable("PLEXY_KEYSTORE").isPresent) "plexy" else "debug")
+         }
+     }
+     // The app's Rust library (as libexactcanvas.so) and its assets (the reader copies `app/` out of the APK once).
+diff --git a/host/android/app/src/main/AndroidManifest.xml b/host/android/app/src/main/AndroidManifest.xml
+index 65f813d..2ab18f3 100644
+--- a/host/android/app/src/main/AndroidManifest.xml
++++ b/host/android/app/src/main/AndroidManifest.xml
+@@ -32,7 +32,7 @@
+              singleTop: a URL sent to the running app (a shortcut, a link) reaches this activity's onNewIntent rather
+              than stacking a second one over it. -->
+         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop"
+-            android:screenOrientation="${screenOrientation}"
++            android:screenOrientation="${screenOrientation}" android:supportsPictureInPicture="true"
+             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|fontScale|fontWeightAdjustment|locale|layoutDirection|density|keyboard|keyboardHidden|navigation">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+diff --git a/js/bake/src/android.rs b/js/bake/src/android.rs
+index c23d63d..e97ec92 100644
+--- a/js/bake/src/android.rs
++++ b/js/bake/src/android.rs
+@@ -13,6 +13,7 @@ pub fn build_android(app: &Path) -> Result<(), BakeError> {
+     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("android") {
+         return Ok(());
+     }
++    println!("cargo:rustc-link-arg=-Wl,-z,max-page-size=16384");
+     // `android_entry` writes paths that `include!` reads from OUT_DIR.
+     let app = app
+         .canonicalize()
+diff --git a/scripts/android-manifest.mjs b/scripts/android-manifest.mjs
+index 4480d39..1fd12f2 100644
+--- a/scripts/android-manifest.mjs
++++ b/scripts/android-manifest.mjs
+@@ -39,7 +39,7 @@ export const RECEIVER_ACTIONS = new Set([
+ ]);
+ 
+ /** The foreground service types a package's service may declare. */
+-export const SERVICE_TYPES = new Set(['systemExempted']);
++export const SERVICE_TYPES = new Set(['systemExempted', 'mediaProcessing', 'dataSync|mediaProcessing']);
+ 
+ /** The packages a fragment may make visible (`<queries>`): Health Connect's provider on Android 13 and earlier. */
+ export const QUERY_PACKAGES = new Set(['com.google.android.apps.healthdata']);
+diff --git a/vendor/ibex/crates/ibex2-sqlite/src/lib.rs b/vendor/ibex/crates/ibex2-sqlite/src/lib.rs
+index beb5f14..052ee7d 100644
+--- a/vendor/ibex/crates/ibex2-sqlite/src/lib.rs
++++ b/vendor/ibex/crates/ibex2-sqlite/src/lib.rs
+@@ -97,7 +97,7 @@ impl sqlite::Provider for SqliteProvider {
+             .set_db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false)
+             .map_err(error)?;
+         connection
+-            .execute_batch("PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;")
++            .execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;")
+             .map_err(error)?;
+         connection
+             .set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_RESULT_BYTES as i32)

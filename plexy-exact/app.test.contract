@@ -1,3 +1,12 @@
-test "reports native verification status"
-  expect tree has "root"
-  expect text "status" == "Native playback verification is pending. Your existing Plexy apps remain available."
+test "library renders with navigation"
+  expect tree has "app"
+  expect tree has "scan"
+
+test "settings exposes local library and metadata configuration"
+  tap "tab-settings"
+  expect tree has "token"
+
+test "search accepts local queries"
+  tap "tab-search"
+  type "search" "Matrix"
+  expect state query == "Matrix"

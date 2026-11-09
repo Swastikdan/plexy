@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "plexy-exact",
+      "dependencies": {
+        "@exact/child-process": "file:../.build/exact-runtime/packages/child-process",
+        "@plexy/native": "file:./packages/plexy-native",
+      },
+    },
+  },
+  "packages": {
+    "@exact/child-process": ["@exact/child-process@file:../.build/exact-runtime/packages/child-process", {}],
+
+    "@plexy/native": ["@plexy/native@file:packages/plexy-native", {}],
+  }
+}

@@ -1,14 +1,563 @@
-shape Readiness
-  title: string
+use listDeviceVideos, importVideo, DeviceVideo, ImportReply from "@plexy/native"
+
+shape Suggestion
+  id: string
+  name: string
+  overview: string
+  url: string
+
+shape Suggestions
+  items: Suggestion[]
   message: string
 
-routes nav
-  home "/"
+shape Home
+  genres: string[]
+  recent: Card[]
+  movies: Card[]
+  shows: Card[]
+  continuing: Card[]
 
-component PlexyExact
-  resource readiness = readiness() as shape Readiness
+shape Next
+  id: string
+
+shape CastMember
+  id: string
+  name: string
+  character: string
+  photo: string
+
+shape Card
+  addedAt: number
+  audioChoice: number
+  subtitleChoice: number
+  backdrop: string
+  rating: number
+  genres: string
+  cast: CastMember[]
+  titleId: string
+  id: string
+  name: string
+  kind: string
+  year: number
+  poster: string
+  overview: string
+  position: number
+  duration: number
+  status: string
+  path: string
+  playPath: string
+  season: number
+  episode: number
+
+shape Reply
+  ok: bool
+  message: string
+
+shape Update
+  tag: string
+  url: string
+  name: string
+  checksumUrl: string
+  message: string
+
+shape Job
+  progress: number
+  id: string
+  state: string
+  error: string
+
+shape Track
+  id: string
+  name: string
+  index: number
+
+shape Playback
+  position: number
+  duration: number
+  audio: Track[]
+  subtitles: Track[]
+  error: string
+
+shape Time
+  epochAtZero: number
+
+shape Folder
+  path: string
+  name: string
+
+shape Settings
+  usage: string
+  root: string
+  platform: string
+
+routes nav
+  tab home "/"
+    title "/title/:id"
+    watch "/watch/:id"
+  tab library "/library"
+  tab search "/search"
+    result "/result/:id"
+  tab activity "/activity"
+  tab settings "/settings"
+
+component App
+  mutation videos as shape DeviceVideo[]
+  mutation imported as shape ImportReply then scan
+  action listVideos
+    send videos = listDeviceVideos()
+  action importSelected(id: string)
+    send imported = importVideo(id=id)
+  mutation update as shape Update
+  mutation installed as shape Reply
+  action installUpdate
+    send installed = installUpdate()
+  mutation downloaded as shape Reply
+  action checkUpdate
+    send update = updates()
+  action downloadUpdate
+    send downloaded = downloadUpdate()
+  mutation next as shape Next then openNext
+  action playNext(id: string)
+    send next = nextEpisode(id)
+  action openNext
+    match next
+      case some(item)
+        if item.id != ""
+          nav = go(nav, path("watch", item.id))
+      case none
+        nav = nav
+  state audioLanguage = "en" persist
+  state subtitleLanguage = "en" persist
+  state autoSubtitles = false persist
+  action editAudioLanguage(value: string)
+    audioLanguage = value.trim().toLowerCase()
+  action editSubtitleLanguage(value: string)
+    subtitleLanguage = value.trim().toLowerCase()
+  action changeAutoSubtitles(value: bool)
+    autoSubtitles = value
+  state playbackFullScreen = false
+  action toggleFullScreen
+    playbackFullScreen = not playbackFullScreen
+  state matchId = ""
+  mutation matched as shape Reply refreshes lib, titles, homeData
+  action editMatch(value: string)
+    matchId = value
+  action fixMatch(id: string)
+    send matched = fixMatch(id, matchId)
+  state folder = ""
+  resource folders = folders() as shape Folder[] else empty()
+  mutation folderRemoved as shape Reply refreshes folders, lib, titles, homeData
+  action removeFolder(path: string)
+    send folderRemoved = removeFolder(path)
+  mutation folderAdded as shape Reply refreshes folders then scan
+  action chooseFolder
+    showDirectoryPicker("import-folder")
+  action folderChosen(value: string)
+    folder = value
+    send folderAdded = addFolder(value)
+  state allowBattery = false persist
+  state quality = "balanced" persist
+  action battery(value: bool)
+    allowBattery = value
+  action setQuality(value: string)
+    quality = value
+  state automaticConversion = false persist
+  action automatic(value: bool)
+    automaticConversion = value
+  state removeOriginal = true persist
+  resource jobs = jobs() as shape Job[] else empty()
+  mutation converted as shape Reply refreshes lib, jobs, titles, homeData
+  mutation worker as shape Reply refreshes lib, jobs, titles, homeData
+  mutation canceled as shape Reply refreshes jobs
+  action convert(id: string)
+    send converted = queueConversion(id, removeOriginal, allowBattery, quality, time.epochAtZero + performanceNow())
+  action cancel(id: string)
+    send canceled = cancel(id)
+  action toggleRemoval(value: bool)
+    removeOriginal = value
+  task poll when jobs.filter(job => job.state == "queued" or job.state == "running" or job.state == "verifying").length > 0
+    every(500, pollJobs)
+  action pollJobs
+    refresh jobs
+    if not pending(worker)
+      send worker = runNextJob(time.epochAtZero + performanceNow())
+  task launch mount
+    after(100, scan)
+  task scanProgress when pending(scanned)
+    every(1000, refreshLibrary)
+  action refreshLibrary
+    refresh configuration
+    refresh jobs
+    refresh lib
+    refresh titles
+    refresh homeData
+  state query = ""
+  state token = ""
+  resource time = exactTime() as shape Time
+  mutation saved as shape Playback
+  action progress(id: string, payload: string)
+    send saved = saveProgress(id, payload, time.epochAtZero + performanceNow())
+  state suggestedQuery = ""
+  resource suggestions = suggestions(suggestedQuery) as shape Suggestions else empty()
+  task suggest when query.trim().length >= 3 key=query
+    after(250, suggest)
+  action suggest
+    suggestedQuery = query
+  state genre = ""
+  action chooseGenre(value: string)
+    genre = value
+    nav = select(nav, "library")
+  state kind = "all" persist
+  state order = "name" persist
+  action filterKind(value: string)
+    kind = value
+  action sort(value: string)
+    order = value
+  resource homeData = home() as shape Home else empty()
+  resource titles = titles(order, kind, genre) as shape Card[] else empty()
+  resource lib = library() as shape Card[] else empty()
+  resource configuration = settings() as shape Settings
+  mutation scanned as shape Reply refreshes lib, titles, homeData, jobs
+  mutation tokenSaved as shape Reply then scan
+  action pick(name: string)
+    refresh configuration
+    refresh lib
+    refresh titles
+    refresh homeData
+    nav = select(nav, name)
+  action back
+    refresh lib
+    refresh titles
+    refresh homeData
+    nav = back(nav)
+  action follow(url: string)
+    refresh lib
+    refresh titles
+    refresh homeData
+    nav = go(nav, url)
+  action search(v: string)
+    query = v
+  action editToken(v: string)
+    token = v
+  action scan
+    send scanned = scan(time.epochAtZero + performanceNow(), automaticConversion, removeOriginal, allowBattery, quality)
+  action saveToken
+    send tokenSaved = saveToken(token)
+    token = ""
   view
-    main testId="root" width="100%" height="100%"
-      column padding=24 gap=16
-        text readiness.title role="heading" aria-level=1
-        text readiness.message testId="status"
+    main navigationKey=`${top(nav).id}` navigationBack="back" navigate=follow width="100%" height="100%" display="flex" flex-direction="column" testId="app"
+      column flex=1 min-height=0 position="relative"
+        for t in nav.tabs key=t.name
+          column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0
+            for e in t.stack key=e.id
+              column navigationKey=`${e.id}` navigationScroll=`content-${e.id}` position="absolute" inset=0 display="flex" flex-direction="column"
+                if not (playbackFullScreen and top(nav).name == "watch")
+                  header display="flex" flex-wrap="wrap" align-items="center" padding=16 gap=12 flex-shrink=0
+                    text "Plexy" role="heading" aria-level=1 flex=1
+                    button press=scan disabled=pending(scanned) testId="scan"
+                      text "Refresh"
+                if e.name == "settings"
+                  scroll id=`content-${e.id}` flex=1 min-height=0 padding=20 gap=16 display="flex" flex-direction="column"
+                    text (configuration.platform == "macos" ? "Your library: ~/Plexy" : "Videos are saved on this device.")
+                    text configuration.usage
+                    for folder in folders key=folder.path
+                      column gap=8
+                        text folder.name
+                        button press=removeFolder(folder.path)
+                          text "Remove folder"
+                    if configuration.platform == "macos"
+                      input id="import-folder" value=folder change=folderChosen aria-label="Imported folder" appearance="none"
+                      button press=chooseFolder
+                        text "Import Folder…"
+                    if configuration.platform == "macos"
+                      row gap=12
+                        text "Automatically convert new videos" flex=1
+                        input type="checkbox" switch width=52 height=32 flex-shrink=0 checked=automaticConversion change=automatic aria-label="Automatically convert new videos"
+                    if configuration.platform == "macos"
+                      row gap=12
+                        text "Convert on battery" flex=1
+                        input type="checkbox" switch width=52 height=32 flex-shrink=0 checked=allowBattery change=battery aria-label="Convert on battery"
+                    text "Preferred audio language (for example en, es, ja)"
+                    input value=audioLanguage input=editAudioLanguage aria-label="Preferred audio language" width="100%" box-sizing="border-box" min-width=0
+                    text "Preferred subtitle language"
+                    input value=subtitleLanguage input=editSubtitleLanguage aria-label="Preferred subtitle language" width="100%" box-sizing="border-box" min-width=0
+                    row gap=12
+                      text "Automatic subtitles" flex=1
+                      input type="checkbox" switch width=52 height=32 flex-shrink=0 checked=autoSubtitles change=changeAutoSubtitles aria-label="Automatic subtitles"
+                    text "Conversion quality"
+                    row gap=8 flex-wrap="wrap"
+                      for value in ["high", "balanced", "compact"] key=value
+                        button press=setQuality(value)
+                          text value
+                    row gap=12
+                      text "Delete originals after verified conversion" flex=1
+                      input type="checkbox" switch width=52 height=32 flex-shrink=0 checked=removeOriginal change=toggleRemoval aria-label="Delete originals after verified conversion"
+                    text "TMDB read access token"
+                    input type="password" value=token input=editToken aria-label="TMDB read access token" testId="token" width="100%" min-width=0 box-sizing="border-box"
+                    button press=saveToken disabled=(token.trim() == "")
+                      text "Save"
+                    text "This product uses the TMDB API but is not endorsed or certified by TMDB."
+                    text "Back up your library before uninstalling."
+                    button press=checkUpdate
+                      text "Check builds"
+                    match update
+                      case some(build)
+                        text build.message
+                        if build.url != ""
+                          button press=downloadUpdate disabled=pending(downloaded)
+                            text "Download"
+                          link href=build.url
+                            text "Open release download"
+                      case none
+                        text "Check GitHub for a newer build."
+                    button press=installUpdate
+                      text "Install"
+                    match installed
+                      case some(r)
+                        text r.message
+                      case none
+                        text ""
+                    match downloaded
+                      case some(r)
+                        text r.message
+                      case none
+                        text ""
+                    if configuration.platform == "android"
+                      button press=listVideos
+                        text "Import videos"
+                      match videos
+                        case some(items)
+                          for video in items key=video.id
+                            button press=importSelected(video.id)
+                              text video.name
+                        case none
+                          text ""
+                      match imported
+                        case some(r)
+                          text r.message
+                        case none
+                          text ""
+                    match tokenSaved
+                      case some(r)
+                        text r.message
+                      case none
+                        text ""
+                else if e.name == "home"
+                  scroll id=`content-${e.id}` flex=1 min-height=0
+                    if homeData.recent.length == 0
+                      column padding=24 gap=12
+                        text "Add media" role="heading" aria-level=2
+                        text "Import your videos in Settings. Your library stays on this device."
+                    for hero in homeData.recent.slice(0, 1) key=hero.id
+                      column padding=20 gap=12
+                        if hero.backdrop != ""
+                          image hero.backdrop width="100%" height=220 object-fit="cover"
+                        text hero.name role="heading" aria-level=2
+                        text hero.overview
+                        link href=path("title", hero.id)
+                          text "View title"
+                    Shelf(label="Continue Watching", cards=homeData.continuing)
+                    Shelf(label="Recently Added", cards=homeData.recent)
+                    Shelf(label="Movies", cards=homeData.movies)
+                    Shelf(label="Shows", cards=homeData.shows)
+                    row padding=20 gap=8 flex-wrap="wrap"
+                      for genre in homeData.genres key=genre
+                        button press=chooseGenre(genre)
+                          text genre
+                else if e.name == "activity"
+                  column padding=20 gap=12
+                    text "Library activity" role="heading" aria-level=2
+                    for job in jobs key=job.id
+                      column gap=8
+                        text `${job.id}: ${job.state} ${floor(job.progress * 100)}%`
+                        text job.error
+                        if job.state == "running" or job.state == "queued"
+                          button press=cancel(job.id)
+                            text "Cancel conversion"
+                        if job.state == "failed" or job.state == "interrupted" or job.state == "canceled"
+                          button press=convert(job.id)
+                            text "Retry"
+                    match converted
+                      case some(r)
+                        text r.message
+                      case none
+                        text ""
+                    match scanned
+                      case some(r)
+                        text r.message testId="scan-status"
+                      case none
+                        text "Refresh the library to check local files."
+                else if e.name == "title" or e.name == "result"
+                  scroll id=`content-${e.id}` flex=1
+                    for c in lib.filter(c => c.id == e.params.id) key=c.id
+                      column padding=20 gap=16
+                        if c.poster != ""
+                          image c.poster width=180 height=270 object-fit="cover"
+                        text c.name role="heading" aria-level=2
+                        if c.backdrop != ""
+                          image c.backdrop width="100%" height=200 object-fit="cover"
+                        text c.overview
+                        text `${c.genres} · ${c.rating}`
+                        for person in c.cast key=person.id
+                          row gap=12
+                            if person.photo != ""
+                              image person.photo width=48 height=64 object-fit="cover"
+                            text `${person.name} · ${person.character}`
+                        text c.status
+                        input value=matchId input=editMatch placeholder="TMDB title ID" aria-label="TMDB title ID"
+                        button press=fixMatch(c.titleId) disabled=(matchId.trim() == "")
+                          text "Fix match"
+                        match matched
+                          case some(r)
+                            text r.message
+                          case none
+                            text ""
+                        if not c.path.endsWith(".optimized.mp4")
+                          button press=convert(c.id) disabled=pending(converted)
+                            text "Convert to MP4"
+                        for episode in lib.filter(item => item.titleId == c.titleId) key=episode.id
+                          column gap=8
+                            text `${episode.season > 0 ? "Season" : ""} ${episode.season > 0 ? episode.season : 0} · ${episode.episode}`
+                            if episode.status == "ready"
+                              link href=path("watch", episode.id)
+                                text (episode.position > 0 ? "Resume" : "Play")
+                            else
+                              text episode.status
+                              if episode.status != "missing"
+                                button press=convert(episode.id)
+                                  text "Convert"
+                else if e.name == "watch"
+                  for c in lib.filter(c => c.id == e.params.id) key=c.id
+                    if c.playPath != ""
+                      Watch(source=c.playPath, resume=c.position, preferredAudio=c.audioChoice, preferredSubtitle=c.subtitleChoice, report=progress(c.id), playback=saved, next=playNext(c.id), fullScreen=playbackFullScreen, toggleFullScreen=toggleFullScreen, showPip=(configuration.platform == "android"), audioLanguage=audioLanguage, subtitleLanguage=subtitleLanguage, autoSubtitles=autoSubtitles)
+                    else
+                      text "This file is unavailable or needs conversion."
+                else
+                  if e.name == "library"
+                    row padding=12 gap=8 flex-wrap="wrap"
+                      button press=chooseGenre("")
+                        text "All genres"
+                      for value in ["all", "movie", "show"] key=value
+                        button press=filterKind(value)
+                          text value
+                      for value in ["name", "year", "recent"] key=value
+                        button press=sort(value)
+                          text value
+                  if e.name == "search"
+                    input type="search" value=query input=search aria-label="Search library" placeholder="Search" testId="search" padding=16
+                  list id=`content-${e.id}` flex=1 min-height=0 appearance="auto" listStyle="plain"
+                    section
+                      if e.name == "search" and suggestedQuery == query and query.trim().length >= 3
+                        text "TMDB suggestions" role="heading" aria-level=2
+                        text suggestions.message
+                        for suggestion in suggestions.items key=suggestion.id
+                          link href=suggestion.url
+                            column gap=4
+                              text suggestion.name
+                              text suggestion.overview
+                      if lib.length == 0
+                        row
+                          column padding=24 gap=12 flex=1 min-width=0
+                            text "Add media" role="heading" aria-level=2
+                            text "Import your videos in Settings, then refresh your library."
+                      for c in titles.filter(c => e.name != "search" or c.name.toLowerCase().includes(query.toLowerCase())) key=c.id
+                        link href=path("title", c.id)
+                          row gap=12
+                            if c.poster != ""
+                              image c.poster width=48 height=72 object-fit="cover"
+                            column flex=1 gap=4
+                              text c.name
+                              text `${c.year} ${c.kind} ${c.season}` color="-exact-secondary-label"
+      if not (playbackFullScreen and top(nav).name == "watch")
+        row role="tablist" flex-shrink=0
+          for tab in ["home", "library", "search", "activity", "settings"] key=tab
+            button role="tab" aria-controls=`panel-${tab}` aria-selected=(nav.tab == tab) press=pick(tab) flex=1 min-width=0 font-size="min(-exact-caption1, 16px)" testId=`tab-${tab}`
+              text tab font-size="min(-exact-caption1, 16px)"
+
+component Watch
+  props
+    audioLanguage: string
+    subtitleLanguage: string
+    autoSubtitles: bool
+    showPip: bool
+    fullScreen: bool
+    toggleFullScreen: action
+    next: action
+    preferredAudio: number
+    preferredSubtitle: number
+    playback: option<Playback>
+    report: action
+    source: string
+    resume: number
+  state pipRequest = 0
+  action pictureInPicture
+    pipRequest = pipRequest + 1
+  state paused = false
+  state seek = resume
+  state audio = preferredAudio
+  state subtitle = preferredSubtitle == -3 ? (autoSubtitles ? -2 : -1) : preferredSubtitle
+  action toggle
+    paused = not paused
+  action progress(payload: string)
+    report(payload)
+  derive position = match playback { case some(p) => p.position, case none => resume }
+  action rewind
+    seek = max(0, position - 10)
+  action forward
+    seek = position + 30
+  action chooseAudio(index: number)
+    audio = index
+  action chooseSubtitle(index: number)
+    subtitle = index
+  view
+    column flex=1 gap=12
+      plexy-player audioLanguage=audioLanguage subtitleLanguage=subtitleLanguage fullScreen=fullScreen pipRequest=pipRequest source=source isPaused=paused seek=seek audio=audio subtitle=subtitle message=progress flex=1 min-height=240
+      row gap=16 padding=16
+        button press=rewind aria-label="Back ten seconds"
+          text "−10"
+        button press=toggle
+          text (paused ? "Play" : "Pause")
+        button press=forward aria-label="Forward thirty seconds"
+          text "+30"
+      match playback
+        case some(p)
+          text p.error color="-exact-system-red"
+          row gap=8 flex-wrap="wrap"
+            button press=chooseAudio(-2)
+              text "Automatic audio"
+            for track in p.audio key=track.id
+              button press=chooseAudio(track.index)
+                text track.name
+          row gap=8
+            button press=chooseSubtitle(-1)
+              text "Subtitles off"
+            for track in p.subtitles key=track.id
+              button press=chooseSubtitle(track.index)
+                text track.name
+        case none
+          text "Loading tracks…"
+      row gap=12
+        button press=toggleFullScreen
+          text (fullScreen ? "Exit fullscreen" : "Fullscreen")
+        if showPip
+          button press=pictureInPicture
+            text "Picture in Picture"
+      button press=next
+        text "Next episode"
+
+component Shelf
+  props
+    label: string
+    cards: Card[]
+  view
+    if cards.length > 0
+      column padding=20 gap=12
+        text label role="heading" aria-level=2
+        scroll overflow-x="auto" overflow-y="hidden"
+          row gap=16
+            for card in cards key=card.id
+              link href=(label == "Continue Watching" ? path("watch", card.id) : path("title", card.id))
+                column width="8.75rem" gap=8
+                  if card.poster != ""
+                    image card.poster width="100%" height="13.125rem" object-fit="cover"
+                  text card.name

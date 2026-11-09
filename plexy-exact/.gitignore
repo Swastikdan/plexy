@@ -8,3 +8,5 @@
 /CLAUDE.md
 /tools/fixtures/
 /tools/ffmpeg/bin/
+/.env.local
+/.vscode/

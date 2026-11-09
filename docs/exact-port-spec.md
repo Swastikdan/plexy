@@ -1864,10 +1864,11 @@ Notes:
 - The source's real signature is `(args, store, storage)` and its declared answer is a `Result<'capabilities'>`; the zero-argument form above is fine, and the generated `Sources` type checks it.
 - Do not branch on the platform inside Contract when a capability answers the same question. `caps.canPickFolder` and `caps.canUseMediaStore` are the two real forks.
 
-## Implementation status (2026-11-09)
+## Implementation status (2026-11-10)
 
-The initial foundation is in `plexy-exact/` (lowercase required by Exact's generator).
-See `plexy-exact/docs/spikes.md` for Phase 0 evidence and unresolved gates.
-The port is not complete and no native release is available. Per the implementation
-request, GitHub build update support is now a required release feature, superseding
-its exclusion from v1 above. Existing GitHub build/update behavior is preserved.
+The native port lives in `plexy-exact/`. See its README for build commands and
+`plexy-exact/docs/spikes.md` for compiled/tested evidence and corrections to the
+illustrative sketches. Existing applications remain available as references.
+GitHub build updates are a required feature, superseding the original v1 exclusion.
+Physical-device/SD-card and optional TV acceptance remain distinct from emulator
+and compiler results; do not claim them without running them.

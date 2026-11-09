@@ -16,7 +16,13 @@
       "window": {
         "width": 900,
         "height": 700
-      }
+      },
+      "resources": [
+        {
+          "from": "tools/ffmpeg",
+          "to": "Resources/ffmpeg"
+        }
+      ]
     },
     "android": {
       "minimumOS": "12"
@@ -27,5 +33,13 @@
       "web": "0",
       "macos": "0"
     }
-  }
+  },
+  "audio_session": "playback",
+  "icons": [
+    {
+      "src": "assets/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
 }

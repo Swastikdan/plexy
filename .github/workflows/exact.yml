@@ -1,4 +1,4 @@
-name: Exact port checks
+name: Exact apps
 on:
   push:
     branches: [main, feat/exact-local-port]
@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: exact-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   core:
     runs-on: ubuntu-24.04
@@ -16,7 +19,101 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.2'
-      - name: Verify catalog and conversion safety
-        run: bun test plexy-exact/tests
-# Native artifacts intentionally remain gated on Phase 0 real-device playback.
-# The existing build.yml continues producing existing Plexy release/update assets.
+      - run: bun test plexy-exact/tests
+      - run: bun plexy-exact/tools/schema.ts --check
+  macos:
+    needs: core
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - run: bun plexy-exact/tools/setup.ts
+      - run: bun install --cwd plexy-exact --frozen-lockfile
+      - name: Install pinned Hermes host bundle
+        working-directory: .build/exact-runtime
+        run: cargo run --locked --manifest-path vendor/ibex/crates/hermes-lean-sys-installer/Cargo.toml --
+      - run: bun plexy-exact/tools/build.ts macos
+      - uses: actions/upload-artifact@v7
+        with:
+          name: exact-macos
+          path: plexy-exact/dist/plexy-exact-macos.zip
+          if-no-files-found: error
+  android:
+    needs: core
+    runs-on: macos-15
+    # Signing secrets never enter fork PR jobs.
+    if: github.event_name != 'pull_request'
+    env:
+      PLEXY_VERSION_CODE: ${{ github.run_number }}
+      PLEXY_VERSION_NAME: exact-build.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          targets: aarch64-linux-android
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-37.2' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+      - run: brew install cmake ninja
+      - run: bun plexy-exact/tools/setup.ts
+      - run: bun install --cwd plexy-exact --frozen-lockfile
+      - name: Prepare pinned Ibex Android builder
+        run: |
+          git clone https://github.com/expo/ibex.git .build/ibex-android
+          git -C .build/ibex-android checkout a0183568e8229b8243629cdb26cd4a88ac4e2abd
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/exact/hermes-android
+          key: hermes-android-d412d3bd8512-v5-macos-arm64
+      - name: Build Android Hermes if absent
+        working-directory: .build/exact-runtime
+        env:
+          IBEX_DIR: ${{ github.workspace }}/.build/ibex-android
+        run: |
+          bundle="$(bun scripts/hermes-android.mjs path)"
+          if [ -z "$bundle" ]; then bun scripts/hermes-android.mjs build; fi
+      - name: Restore dedicated update signing identity
+        env:
+          KEYSTORE: ${{ secrets.PLEXY_EXACT_KEYSTORE }}
+        run: |
+          test -n "$KEYSTORE"
+          python3 -c 'import os,base64; open(os.environ["RUNNER_TEMP"]+"/plexy.keystore","wb").write(base64.b64decode(os.environ["KEYSTORE"]))'
+      - name: Build signed Android update
+        env:
+          PLEXY_KEYSTORE: ${{ runner.temp }}/plexy.keystore
+          PLEXY_KEYSTORE_PASSWORD: ${{ secrets.PLEXY_EXACT_KEYSTORE_PASSWORD }}
+        run: bun plexy-exact/tools/build.ts android
+      - uses: actions/upload-artifact@v7
+        with:
+          name: exact-android
+          path: plexy-exact/dist/plexy-exact-android.apk
+          if-no-files-found: error
+  release:
+    needs: [macos, android]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: exact-*
+          merge-multiple: true
+          path: release
+      - name: Publish Exact update assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: release
+        run: |
+          sha256sum plexy-exact-macos.zip plexy-exact-android.apk > SHA256SUMS
+          gh release create "exact-build.${{ github.run_number }}" plexy-exact-macos.zip plexy-exact-android.apk SHA256SUMS --target '${{ github.sha }}' --prerelease --title 'Plexy Exact build ${{ github.run_number }}' --notes 'Standalone local-library apps. Download and install the build for your device. macOS preview is ad-hoc signed.'

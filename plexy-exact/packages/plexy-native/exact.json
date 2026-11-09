@@ -1,0 +1,168 @@
+{
+  "kind": "interface",
+  "name": "@plexy/native",
+  "version": "1.0.0",
+  "substitute": "implementation",
+  "shapes": {
+    "DeviceVideo": {
+      "id": "string",
+      "name": "string",
+      "size": "number"
+    },
+    "ImportReply": {
+      "ok": "bool",
+      "message": "string"
+    },
+    "DiskSpace": {
+      "bytes": "number",
+      "onBattery": "bool"
+    },
+    "ProbeReply": {
+      "json": "string"
+    },
+    "CodecSupport": {
+      "supported": "bool"
+    },
+    "LocalPath": {
+      "path": "string"
+    }
+  },
+  "views": {
+    "plexy-player": {
+      "props": {
+        "source": "string",
+        "isPaused": "bool",
+        "seek": "number",
+        "audio": "number",
+        "subtitle": "number",
+        "fullScreen": "bool",
+        "pipRequest": "number",
+        "audioLanguage": "string",
+        "subtitleLanguage": "string"
+      },
+      "events": [
+        "message"
+      ],
+      "displayed": true
+    }
+  },
+  "names": [
+    {
+      "send": "listDeviceVideos",
+      "origin": "app",
+      "foreground": true,
+      "derives": {
+        "android": [
+          "android.permission.READ_MEDIA_VIDEO",
+          "android.permission.READ_EXTERNAL_STORAGE"
+        ]
+      },
+      "answers": "DeviceVideo[]"
+    },
+    {
+      "send": "importVideo",
+      "origin": "app",
+      "foreground": true,
+      "options": {
+        "id": "string"
+      },
+      "answers": "ImportReply"
+    },
+    {
+      "send": "freeSpace",
+      "origin": "app",
+      "options": {
+        "path": "string"
+      },
+      "answers": "DiskSpace"
+    },
+    {
+      "send": "publishMedia",
+      "origin": "app",
+      "options": {
+        "partial": "string",
+        "destination": "string"
+      },
+      "answers": "ImportReply"
+    },
+    {
+      "send": "openUpdate",
+      "origin": "app",
+      "foreground": true,
+      "derives": {
+        "android": [
+          "android.permission.REQUEST_INSTALL_PACKAGES"
+        ]
+      },
+      "options": {
+        "path": "string"
+      },
+      "answers": "ImportReply"
+    },
+    {
+      "send": "probeMedia",
+      "origin": "app",
+      "options": {
+        "path": "string"
+      },
+      "answers": "ProbeReply"
+    },
+    {
+      "send": "executeConversion",
+      "origin": "app",
+      "foreground": true,
+      "derives": {
+        "android": [
+          "android.permission.FOREGROUND_SERVICE",
+          "android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING",
+          "android.permission.POST_NOTIFICATIONS",
+          "android.permission.WAKE_LOCK",
+          "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+        ]
+      },
+      "options": {
+        "arguments": "string"
+      },
+      "answers": "ImportReply"
+    },
+    {
+      "send": "cancelNativeConversion",
+      "origin": "app",
+      "answers": "ImportReply"
+    },
+    {
+      "send": "verifyPlayback",
+      "origin": "app",
+      "options": {
+        "path": "string"
+      },
+      "answers": "ImportReply"
+    },
+    {
+      "send": "codecSupport",
+      "origin": "app",
+      "options": {
+        "codec": "string",
+        "width": "number",
+        "height": "number"
+      },
+      "answers": "CodecSupport"
+    },
+    {
+      "send": "reservePartial",
+      "origin": "app",
+      "options": {
+        "path": "string"
+      },
+      "answers": "ImportReply"
+    },
+    {
+      "send": "resolveLocalPath",
+      "origin": "app",
+      "options": {
+        "path": "string"
+      },
+      "answers": "LocalPath"
+    }
+  ]
+}
