@@ -183,7 +183,7 @@ export function Icon({
 export function PlexyMark({ size = 22 }: { size?: number }) {
   const height = (size * 277) / 256;
   return (
-    <Svg width={size} height={height} viewBox="0 0 256 277">
+    <Svg width={size} height={height} viewBox="0 0 256 277" style={{ overflow: "visible" }}>
       <Defs>
         <SvgGradient id="plexy__blue" x1="0%" y1="0%" x2="100%" y2="100%">
           <Stop offset="0%" stopColor="#6C9FFF" />
@@ -593,7 +593,7 @@ export function Loading({ showLogo }: { showLogo?: boolean } = {}) {
                 {
                   translateX: slide.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 78],
+                    outputRange: [0, 92],
                   }),
                 },
               ],
@@ -930,16 +930,16 @@ const styles = StyleSheet.create({
     gap: 26,
   },
   loadingTrack: {
-    width: 120,
-    height: 2,
-    borderRadius: 1,
+    width: 140,
+    height: 3,
+    borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.14)",
     overflow: "hidden",
   },
   loadingBar: {
-    width: 42,
-    height: 2,
-    borderRadius: 1,
+    width: 48,
+    height: 3,
+    borderRadius: 2,
     backgroundColor: "#ffffff",
   },
 

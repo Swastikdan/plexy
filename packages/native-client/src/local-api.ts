@@ -84,7 +84,7 @@ export class LocalApi extends PlexyApi {
       result = { ok: true };
     } else if (/^\/api\/watch\/\d+/.test(route)) {
       const id = Number(route.split("/")[3]);
-      if (init.method === "DELETE") await this.library.clearWatch(id);
+      if (init.method === "DELETE" || !body?.played) await this.library.clearWatch(id);
       else await this.library.progress(id, 0, null, !!body.played);
       result = { ok: true };
     } else if (route.startsWith("/api/skip-segments/")) result = await this.library.getMarkers(Number(route.split("/").at(-1)));

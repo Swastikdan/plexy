@@ -49,11 +49,10 @@ function MobileTabBar({ state, navigation, attention }: TabBarProps & { attentio
           <Pressable
             key={tab.name}
             onPress={onPress}
-            android_ripple={{ borderless: true, color: "rgba(255, 255, 255, 0.15)" }}
-            hitSlop={{ top: 14, bottom: 10, left: 12, right: 12 }}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
             style={({ pressed }) => [
               styles.tabItem,
-              pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] },
+              pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
             ]}
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
@@ -137,24 +136,29 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    minWidth: 64,
+    minWidth: 68,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 4,
+    borderRadius: 24,
+    overflow: "hidden",
     gap: 4,
   },
   tabIconWrap: {
-    minWidth: 64,
-    height: 38,
+    minWidth: 68,
+    height: 40,
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 19,
+    borderRadius: 9999,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
   tabIconWrapActive: {
     backgroundColor: "#ffffff",
+    borderRadius: 9999,
+    overflow: "hidden",
   },
   tabBadgeDot: {
     position: "absolute",

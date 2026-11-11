@@ -386,6 +386,9 @@ export class LocalLibrary {
       tmdbType: record.card.kind === "episode" ? "tv" : "movie", unmatched: card.matchStatus !== "matched", matchReason: record.metadataError || null };
   }
   async progress(id: number, position: number, duration: number | null, played = false) {
+    if (!played && position === 0) {
+      return this.clearWatch(id);
+    }
     for (const r of this.state.records.filter(r => r.id === id || r.card.parentId === id)) {
       const total = duration || r.card.watch?.duration || null;
       const watch: Watch = { position, duration: total, played: played || !!(total && position / total >= .95),

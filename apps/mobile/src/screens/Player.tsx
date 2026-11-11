@@ -216,7 +216,7 @@ const PlayerFocusCtx = React.createContext<(id: string | null) => void>(() => {}
 
 function CircleBtn({
   onPress,
-  size = 44,
+  size = 46,
   bg = "rgba(0,0,0,0.3)",
   children,
   disabled = false,
@@ -267,7 +267,7 @@ function CircleBtn({
         setFocused(false);
         report(null);
       }}
-      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
       style={({ pressed }) => [
         {
           width: size,
@@ -322,7 +322,13 @@ export function PlayerScreen({
         }
       : manifest;
   }, [api, fileId, offline]);
-  if (resource.loading) return <Loading />;
+  if (resource.loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#000000", justifyContent: "center", alignItems: "center" }}>
+        <Loading />
+      </View>
+    );
+  }
   if (resource.error)
     return (
       <View style={{ padding: 24 }}>
@@ -591,6 +597,29 @@ function Playback({
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [autoNextCancelled, setAutoNextCancelled] = useState(false);
+  const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<Record<number, boolean>>({});
+
+  const toggleDrawerEpWatched = useCallback(async (ep: any) => {
+    const isPlayed = drawerWatchedOverride[ep.id] ?? (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+    const nextPlayed = !isPlayed;
+    setDrawerWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
+    try {
+      if (nextPlayed) {
+        const dur = ep.runtime ? ep.runtime * 60 : (ep.watch?.duration || 3600);
+        await progress.record({
+          itemId: ep.id,
+          position: dur,
+          duration: dur,
+          played: true,
+          updatedAt: Date.now(),
+        });
+      } else {
+        await progress.forget(ep.id);
+      }
+      await api.watched(ep.id, nextPlayed);
+    } catch {}
+  }, [api, progress, drawerWatchedOverride]);
+
   const [nativeAudio, setNativeAudio] = useState<
     typeof player.availableAudioTracks
   >([]);
@@ -747,10 +776,12 @@ function Playback({
         setPosition(chosenStart.current);
         if (!durationRef.current && e.duration > 0) setDuration(e.duration);
         initialized.current = true;
+        setEnded(false);
         player.playbackRate = preferencesRef.current.playbackRate;
         player.play();
       }),
       player.addListener("playToEnd", () => {
+        if (!initialized.current || currentPosition.current <= 10) return;
         save(true);
         setEnded(true);
         setVisible(true);
@@ -1677,29 +1708,16 @@ function Playback({
               {isTvShow && sortedEpisodes.length > 0 && (
                 <CircleBtn
                   onPress={() => setMenu("episodes")}
-                  size={platform.tv ? 36 : 44}
+                  size={platform.tv ? 36 : 46}
                   active={menu === "episodes"}
                   bg="rgba(0,0,0,0.45)"
                   focusId="episodes"
                 >
                   {({ focused }) => (
-                    <View style={{ alignItems: "center", justifyContent: "center" }}>
-                      <ListVideo
-                        size={platform.tv ? 18 : 20}
-                        color={menu === "episodes" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                      />
-                      <Text
-                        style={{
-                          position: "absolute",
-                          bottom: -2,
-                          fontSize: 8,
-                          fontFamily: fonts.bold,
-                          color: menu === "episodes" ? "#000000" : "#ffffff",
-                        }}
-                      >
-                        {sortedEpisodes.length}
-                      </Text>
-                    </View>
+                    <ListVideo
+                      size={platform.tv ? 18 : 22}
+                      color={menu === "episodes" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                    />
                   )}
                 </CircleBtn>
               )}
@@ -2223,7 +2241,7 @@ function Playback({
                 setStarted(true);
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Resume from ${timeLabel(initialResume)}`}
+              accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
               hasTVPreferredFocus={true}
               style={(s: any) => [
                 {
@@ -2239,12 +2257,13 @@ function Playback({
               ]}
             >
               <Text style={{ color: "#000000", fontFamily: fonts.bold, fontSize: 15 }}>
-                Resume ({timeLabel(initialResume)})
+                Continue watching ({timeLabel(initialResume)})
               </Text>
             </Pressable>
 
             <Pressable
               onPress={() => {
+                setChoice((old) => ({ ...old, start: 0 }));
                 setResume(false);
                 setStarted(true);
               }}
@@ -2254,7 +2273,7 @@ function Playback({
                 {
                   width: "100%",
                   paddingVertical: 14,
-                  backgroundColor: "rgba(255,255,255,0.1)",
+                  backgroundColor: "rgba(255,255,255,0.12)",
                   borderRadius: 12,
                   alignItems: "center",
                   justifyContent: "center",
@@ -2263,8 +2282,33 @@ function Playback({
                 s.pressed && { opacity: 0.85 },
               ]}
             >
-              <Text style={{ color: "rgba(255,255,255,0.85)", fontFamily: fonts.medium, fontSize: 14 }}>
+              <Text style={{ color: "rgba(255,255,255,0.9)", fontFamily: fonts.medium, fontSize: 14 }}>
                 Start from beginning
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setResume(false);
+                back();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel playback"
+              style={(s: any) => [
+                {
+                  width: "100%",
+                  paddingVertical: 12,
+                  backgroundColor: "transparent",
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+                s.focused && Platform.isTV && styles.resumeBtnFocusedTv,
+                s.pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={{ color: "rgba(255,255,255,0.6)", fontFamily: fonts.medium, fontSize: 14 }}>
+                Cancel
               </Text>
             </Pressable>
           </View>
@@ -2323,6 +2367,9 @@ function Playback({
                       ep.id === manifest.itemId ||
                       (ep.seasonNumber === manifest.seasonNumber &&
                         ep.episodeNumber === manifest.episodeNumber);
+                    const isEpWatched =
+                      drawerWatchedOverride[ep.id] ??
+                      (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
                     const epLabel =
                       ep.seasonNumber != null && ep.episodeNumber != null
                         ? `S${ep.seasonNumber} · E${ep.episodeNumber}`
@@ -2392,6 +2439,22 @@ function Playback({
                             </Text>
                           ) : null}
                         </View>
+                        <Pressable
+                          onPress={() => void toggleDrawerEpWatched(ep)}
+                          hitSlop={10}
+                          style={({ pressed }) => [
+                            styles.drawerEpWatchedBtn,
+                            isEpWatched && styles.drawerEpWatchedBtnActive,
+                            pressed && { opacity: 0.6 },
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel={isEpWatched ? "Mark unwatched" : "Mark watched"}
+                        >
+                          <IconCheck
+                            size={16}
+                            color={isEpWatched ? "#22c55e" : "rgba(255,255,255,0.4)"}
+                          />
+                        </Pressable>
                       </Pressable>
                     );
                   })}
@@ -3197,8 +3260,20 @@ const styles = StyleSheet.create({
   nowPlayingText: {
     color: "#000000",
     fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.8,
+    fontFamily: fonts.bold,
+    letterSpacing: 0.5,
+  },
+  drawerEpWatchedBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  drawerEpWatchedBtnActive: {
+    backgroundColor: "rgba(34, 197, 94, 0.18)",
   },
   episodeItemTitle: {
     color: "rgba(255,255,255,0.9)",

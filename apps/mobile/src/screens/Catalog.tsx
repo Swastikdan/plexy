@@ -104,27 +104,27 @@ export function Hero({
     <View
       style={[
         styles.heroContainer,
-        { height: platform.tv ? 280 : 470 },
+        { height: platform.tv ? 280 : 540 },
         width ? { width } : null,
       ]}
     >
-      {item.backdrop ? (
-        <PosterImage source={api.image(item.backdrop)} style={StyleSheet.absoluteFill as never} />
-      ) : item.poster ? (
-        <PosterImage source={api.image(item.poster)} style={StyleSheet.absoluteFill as never} />
+      {item.poster ? (
+        <PosterImage source={api.image(item.poster)} style={StyleSheet.absoluteFill as never} resizeMode="cover" />
+      ) : item.backdrop ? (
+        <PosterImage source={api.image(item.backdrop)} style={StyleSheet.absoluteFill as never} resizeMode="cover" />
       ) : null}
 
-      {/* Top tint */}
+      {/* Top tint for transparent header and logo readability */}
       <LinearGradient
-        colors={["rgba(0,0,0,0.65)", "transparent"]}
-        style={[StyleSheet.absoluteFill, { height: "35%" }]}
-        locations={[0, 1]}
+        colors={["rgba(0,0,0,0.75)", "rgba(0,0,0,0.35)", "transparent"]}
+        style={[StyleSheet.absoluteFill, { height: 130 }]}
+        locations={[0, 0.5, 1]}
       />
 
       {/* Bottom fade to canvas */}
       <LinearGradient
         colors={["transparent", "rgba(0,0,0,0.72)", colors.canvas]}
-        locations={[0.25, 0.68, 1]}
+        locations={[0.25, 0.72, 1]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -819,20 +819,21 @@ export function HomeScreen({
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      contentContainerStyle={styles.homeContainer}
-      showsVerticalScrollIndicator={false}
-      removeClippedSubviews={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={data.loading}
-          onRefresh={data.retry}
-          tintColor="#ffffff"
-        />
-      }
-    >
-      <PageHeader logo />
+    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+      <PageHeader logo style={styles.transparentHomeHeader} />
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.homeContainer}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={data.loading}
+            onRefresh={data.retry}
+            tintColor="#ffffff"
+          />
+        }
+      >
 
       {/* Hero Carousel */}
       {carouselItems.length > 0 && (
@@ -886,7 +887,8 @@ export function HomeScreen({
           <Notice message={platform.local ? "Your library is empty. Add a movie or series folder in Settings." : "Your library is empty. Add media to Plexy Server, then pull to refresh."} />
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -1881,12 +1883,16 @@ export function DetailScreen({
         if (detail?.episodes) {
           for (const ep of detail.episodes) {
             await progress.forget(ep.id);
+            await api.watched(ep.id, false).catch(() => {});
           }
         }
         await progress.forget(item.id);
+        await api.watched(item.id, false).catch(() => {});
       }
 
-      await api.watched(item.id, nextPlayed);
+      if (nextPlayed) {
+        await api.watched(item.id, true);
+      }
       data.retry();
     } catch (e) {
       if (!synthesizedDetail) {
@@ -1909,10 +1915,12 @@ export function DetailScreen({
           played: true,
           updatedAt: Date.now(),
         });
+        await api.watched(ep.id, true);
       } else {
         await progress.forget(ep.id);
+        await api.watched(ep.id, false);
       }
-      await api.watched(ep.id, nextPlayed);
+      data.retry();
     } catch {}
   }
 
@@ -2421,8 +2429,27 @@ function EpisodeCard({
             {epDisplayTitle}
           </Text>
 
-          {/* Action buttons: Download state */}
+          {/* Action buttons: Watched state and Download state */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {onToggleWatched && (
+              <Pressable
+                onPress={() => onToggleWatched(ep)}
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.epWatchedBtn,
+                  watched && styles.epWatchedBtnActive,
+                  pressed && { opacity: 0.6 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={watched ? "Mark episode as unwatched" : "Mark episode as watched"}
+              >
+                <Check
+                  size={14}
+                  color={watched ? "#22c55e" : colors.muted}
+                  strokeWidth={watched ? 2.6 : 2}
+                />
+              </Pressable>
+            )}
 
             {ep.fileId && !platform.tv && !platform.local && (
               dl ? (
@@ -2582,14 +2609,14 @@ const styles = StyleSheet.create({
   heroPlayBtn: {
     flex: 1,
     backgroundColor: "#ffffff",
-    borderRadius: 24,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    minHeight: 48,
+    borderRadius: 26,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
   },
   heroPlayBtnTV: {
     flex: 0,
@@ -2600,7 +2627,7 @@ const styles = StyleSheet.create({
   },
   heroPlayBtnText: {
     fontFamily: fonts.bold,
-    fontSize: 15,
+    fontSize: 16,
     color: "#000000",
     letterSpacing: 0.2,
   },
@@ -2608,12 +2635,12 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   heroIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.45)",
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2867,6 +2894,15 @@ const styles = StyleSheet.create({
   // --- Home ---
   homeContainer: {
     paddingBottom: 28,
+  },
+  transparentHomeHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    backgroundColor: "transparent",
+    elevation: 20,
   },
   homeRefresh: {
     paddingHorizontal: 20,
@@ -3509,6 +3545,19 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     alignItems: "center",
     justifyContent: "center",
+  },
+  epWatchedBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  epWatchedBtnActive: {
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    borderColor: "rgba(34, 197, 94, 0.4)",
   },
   epDownloadBtn: {
     padding: 6,
