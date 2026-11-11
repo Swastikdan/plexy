@@ -23,7 +23,9 @@ async function resolveBuildNumber() {
   const fromEnv = Number(
     Bun.env.PLEXY_BUILD_NUMBER || Bun.env.GITHUB_RUN_NUMBER || 0,
   );
-  if (Number.isSafeInteger(fromEnv) && fromEnv > 0) return fromEnv;
+  if (Number.isSafeInteger(fromEnv) && fromEnv > 0) {
+    return fromEnv < 2000 ? 2000 + fromEnv : fromEnv;
+  }
 
   const stateDir = resolve(root, ".build/native");
   const stateFile = resolve(stateDir, "build-number");
@@ -33,7 +35,7 @@ async function resolveBuildNumber() {
   } catch {
     // First local build.
   }
-  const next = Math.max(previous + 1, 1000);
+  const next = Math.max(previous + 1, 2000);
   await mkdir(stateDir, { recursive: true });
   await writeFile(stateFile, `${next}\n`);
   return next;

@@ -58,7 +58,7 @@ export async function checkForUpdate(
   currentBuild?: number,
 ): Promise<UpdateInfo | null> {
   const targetApk: UpdateTarget = isTv ? "tv" : "mobile";
-  const appInfo = currentBuild !== undefined ? { buildNumber: currentBuild } : await getInstalledAppInfo();
+  const appInfo = currentBuild !== undefined ? { buildNumber: currentBuild, versionName: "" } : await getInstalledAppInfo();
 
   const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`, {
     headers: {
@@ -76,7 +76,7 @@ export async function checkForUpdate(
     return null;
   }
 
-  return selectUpdate(releases, targetApk, appInfo.buildNumber);
+  return selectUpdate(releases, targetApk, appInfo.buildNumber, appInfo.versionName);
 }
 
 /**

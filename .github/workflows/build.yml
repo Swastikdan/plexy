@@ -353,7 +353,10 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           # Give every successful run its own release, including beta builds.
           # Re-running a workflow intentionally updates that run's release.
-          tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+          # Base offset of 2000 ensures build numbers exceed any legacy preview builds (1000+)
+          # and keeps Android versionCode strictly increasing to allow in-place updates.
+          build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
+          tag="v${version}-build.${build_num}"
           if [[ "$version" == *-beta.* ]]; then
             prerelease_flag="--prerelease"
             latest_flag=""

@@ -47,3 +47,44 @@ test("still selects legacy-preview releases for users upgrading from old builds"
     selectUpdate([release("build.32", "plexy-mobile-preview.apk")], "mobile", 31)?.apkName,
   ).toBe("plexy-mobile-preview.apk");
 });
+
+test("detects 2000+ build number when upgrading from 1001 preview build", () => {
+  const update = selectUpdate(
+    [
+      {
+        id: 1,
+        tag_name: "v1.0.2-build.2032",
+        name: "Plexy v1.0.2-build.2032",
+        body: "",
+        published_at: "",
+        prerelease: false,
+        assets: [{ name: "Plexy-mobile-v1.0.2-Android.apk", size: 100, browser_download_url: "https://example.com/app.apk" }],
+      },
+    ],
+    "mobile",
+    1001,
+  );
+  expect(update).not.toBeNull();
+  expect(update?.buildNumber).toBe(2032);
+});
+
+test("detects newer version when installed version is older semver", () => {
+  const update = selectUpdate(
+    [
+      {
+        id: 1,
+        tag_name: "v1.0.2-build.31",
+        name: "Plexy v1.0.2-build.31",
+        body: "",
+        published_at: "",
+        prerelease: false,
+        assets: [{ name: "Plexy-mobile-v1.0.2-Android.apk", size: 100, browser_download_url: "https://example.com/app.apk" }],
+      },
+    ],
+    "mobile",
+    1001,
+    "1.0.1-beta.4",
+  );
+  expect(update).not.toBeNull();
+  expect(update?.tagName).toBe("v1.0.2-build.31");
+});

@@ -1,7 +1,8 @@
 import type { ExpoConfig } from "expo/config";
-const buildNumber = Number(
+const rawBuild = Number(
   process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
 );
+const buildNumber = rawBuild < 2000 ? 2000 + rawBuild : rawBuild;
 const config: ExpoConfig = {
   name: "Plexy TV",
   slug: "plexy-tv",

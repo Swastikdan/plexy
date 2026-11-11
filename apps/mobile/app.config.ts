@@ -3,9 +3,10 @@ import packageInfo from "./package.json";
 const receiverAppId = process.env.PLEXY_CAST_RECEIVER_ID || "";
 const castReceiverEnabled =
   /^[A-Fa-f0-9]{8}$/.test(receiverAppId) && receiverAppId !== "CC1AD845";
-const buildNumber = Number(
+const rawBuild = Number(
   process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
 );
+const buildNumber = rawBuild < 2000 ? 2000 + rawBuild : rawBuild;
 const config: ExpoConfig = {
   name: "Plexy",
   slug: "plexy-mobile",
