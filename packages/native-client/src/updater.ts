@@ -94,6 +94,20 @@ export async function openUnknownAppsSettings(): Promise<void> {
   }
 }
 
+async function resolveDirectDownloadUrl(url: string): Promise<string> {
+  try {
+    const head = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      headers: { "User-Agent": "Plexy-App", Accept: "application/octet-stream" },
+    });
+    if (head.url && head.url.startsWith("http")) {
+      return head.url;
+    }
+  } catch {}
+  return url;
+}
+
 /**
  * Downloads the APK file to cache and triggers Android package installer.
  */
@@ -119,26 +133,62 @@ export async function downloadAndInstallUpdate(
       await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
     }
 
-    // Download with progress callback
-    const downloadResumable = FileSystem.createDownloadResumable(
-      update.apkUrl,
-      localUri,
-      {},
-      (progress) => {
-        const total =
-          progress.totalBytesExpectedToWrite > 0
-            ? progress.totalBytesExpectedToWrite
-            : update.apkSize;
-        if (total > 0) {
-          const ratio = progress.totalBytesWritten / total;
-          onProgress?.(Math.min(99, Math.round(ratio * 100)));
-        }
-      },
-    );
+    const directUrl = await resolveDirectDownloadUrl(update.apkUrl);
 
-    const result = await downloadResumable.downloadAsync();
-    if (!result || !result.uri) {
-      throw new Error("Failed to download APK package.");
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    try {
+      // Safety poller checks actual bytes written to disk to guarantee progress updates
+      pollInterval = setInterval(async () => {
+        try {
+          const currentInfo = await FileSystem.getInfoAsync(localUri);
+          if (currentInfo.exists && currentInfo.size && update.apkSize > 0) {
+            const pct = Math.min(99, Math.max(1, Math.round((currentInfo.size / update.apkSize) * 100)));
+            onProgress?.(pct);
+          }
+        } catch {}
+      }, 500);
+
+      // Download with progress callback
+      const downloadResumable = FileSystem.createDownloadResumable(
+        directUrl,
+        localUri,
+        {
+          headers: {
+            "User-Agent": "Plexy-App",
+            Accept: "application/octet-stream",
+          },
+        },
+        (progress) => {
+          const total =
+            progress.totalBytesExpectedToWrite > 0
+              ? progress.totalBytesExpectedToWrite
+              : update.apkSize;
+          if (total > 0) {
+            const ratio = progress.totalBytesWritten / total;
+            onProgress?.(Math.min(99, Math.max(1, Math.round(ratio * 100))));
+          }
+        },
+      );
+
+      let result = await downloadResumable.downloadAsync().catch((err) => {
+        console.warn("createDownloadResumable failed, falling back to downloadAsync:", err);
+        return null;
+      });
+
+      if (!result || !result.uri) {
+        result = await FileSystem.downloadAsync(directUrl, localUri, {
+          headers: {
+            "User-Agent": "Plexy-App",
+            Accept: "application/octet-stream",
+          },
+        });
+      }
+
+      if (!result || !result.uri) {
+        throw new Error("Failed to download APK package.");
+      }
+    } finally {
+      if (pollInterval) clearInterval(pollInterval);
     }
   }
 

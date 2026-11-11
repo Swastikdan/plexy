@@ -13,7 +13,7 @@ on:
       target:
         description: "Target component to build and release"
         required: true
-        default: "all"
+        default: "mobile"
         type: choice
         options:
           - all
@@ -59,7 +59,7 @@ jobs:
       - name: Detect targets
         id: targets
         env:
-          BUILD_TARGET: ${{ inputs.target || '' }}
+          BUILD_TARGET: ${{ inputs.target || 'mobile' }}
           BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: bun scripts/build-targets.ts
