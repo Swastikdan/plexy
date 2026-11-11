@@ -1,8 +1,8 @@
 {
   "name": "@plexy/mobile",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
-  "main": "index.js",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
@@ -40,7 +40,10 @@
     "react-native": "0.86.3",
     "react-native-google-cast": "4.9.1",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-svg": "15.15.4"
+    "react-native-svg": "15.15.4",
+    "expo-router": "~57.0.30",
+    "expo-linking": "~57.0.13",
+    "react-native-screens": "~4.26.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

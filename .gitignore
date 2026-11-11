@@ -22,6 +22,7 @@ apps/mobile/android/
 apps/tv/android/
 *.jks
 *.keystore
+!scripts/native/debug.keystore
 plexy-exact/
 
 # Local agent instructions, design references, and debugging captures

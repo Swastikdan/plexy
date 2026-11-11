@@ -28,6 +28,8 @@ export interface ItemCard {
   matchStatus: string;
   watch: Watch | null;
   isAnime?: boolean;
+  logo?: string | null;
+  still?: string | null;
 }
 
 export interface HomeRow {

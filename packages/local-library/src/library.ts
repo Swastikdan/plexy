@@ -331,16 +331,35 @@ export class LocalLibrary {
     } finally { this.scanning = false; this.changed(); }
   }
   cards(): ItemCard[] {
-    const movies = this.state.records.filter(r => r.card.kind === "movie").map(r => ({ ...r.card, isAnime: r.isAnime || r.card.isAnime }));
+    const movies = this.state.records.filter(r => r.card.kind === "movie").map(r => ({
+      ...r.card,
+      logo: r.logo || r.card.logo || null,
+      isAnime: r.isAnime || r.card.isAnime,
+    }));
     const groups = new Map<number, LocalRecord[]>();
     for (const r of this.state.records.filter(r => r.card.parentId)) {
       const id = r.card.parentId!;
       groups.set(id, [...(groups.get(id) || []), r]);
     }
-    const series = [...groups].map(([id, records]) => ({ ...records[0]!.card, ...records[0]!.seriesMetadata, id, publicId: `local-${id}`,
-      kind: "series", name: records[0]!.seriesMetadata?.name || records[0]!.card.parentTitle!, fileId: null, parentId: null, parentPublicId: null, parentTitle: null, seasonNumber: null, episodeNumber: null,
+    const series = [...groups].map(([id, records]) => ({
+      ...records[0]!.card,
+      ...records[0]!.seriesMetadata,
+      id,
+      publicId: `local-${id}`,
+      kind: "series" as const,
+      name: records[0]!.seriesMetadata?.name || records[0]!.card.parentTitle!,
+      fileId: null,
+      parentId: null,
+      parentPublicId: null,
+      parentTitle: null,
+      seasonNumber: null,
+      episodeNumber: null,
+      logo: records[0]!.logo || records[0]!.card.logo || null,
       isAnime: records.some(r => r.isAnime || r.card.isAnime),
-      watch: records.every(r => r.card.watch?.played) ? { position: 0, duration: null, played: true, percent: 100 } : null }));
+      watch: records.every(r => r.card.watch?.played)
+        ? { position: 0, duration: null, played: true, percent: 100 }
+        : null,
+    }));
     return [...movies, ...series];
   }
   record(id: number) {

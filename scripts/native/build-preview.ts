@@ -69,6 +69,12 @@ for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
     ? JSON.parse(await readFile(resolve(cwd, "package.json"), "utf8")).version as string
     : version;
   await run(["bun", "run", "prebuild"], cwd);
+  const fixedKeystore = resolve(root, "scripts/native/debug.keystore");
+  try {
+    await copyFile(fixedKeystore, resolve(cwd, "android/app/debug.keystore"));
+  } catch (err) {
+    console.warn("Could not copy fixed debug.keystore", err);
+  }
   if (process.platform === "darwin") {
     await generateIcons();
   }
@@ -84,11 +90,11 @@ for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
   );
   const out = resolve(root, ".build/native");
   await mkdir(out, { recursive: true });
+  const releaseApk = resolve(cwd, "android/app/build/outputs/apk/release/app-release.apk");
   const artifact = resolve(out, artifactName(target, targetVersion));
-  await copyFile(
-    resolve(cwd, "android/app/build/outputs/apk/release/app-release.apk"),
-    artifact,
-  );
+  await copyFile(releaseApk, artifact);
+  const legacyArtifact = resolve(out, `plexy-${target}-preview.apk`);
+  await copyFile(releaseApk, legacyArtifact);
   console.log(
     `Internal preview APK: ${artifact} (Plexy ${targetVersion}, internal build ${buildNumber})`,
   );

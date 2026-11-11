@@ -56,7 +56,7 @@ Potential extension: accept IMDb IDs through TMDB `/find`; do not confuse extern
 
 ## Current findings: mobile resource use
 
-- `LocalLibrary.persist()` clones the entire state. `apps/mobile/database.ts` deletes and reinserts all media rows on every save. Playback progress saves approximately every ten seconds, plus lifecycle events; hydration and marker saves amplify this work.
+- `LocalLibrary.persist()` clones the entire state. `apps/mobile/src/lib/database.ts` deletes and reinserts all media rows on every save. Playback progress saves approximately every ten seconds, plus lifecycle events; hydration and marker saves amplify this work.
 - Scan lookup repeatedly searches the complete record array. Grouping series repeatedly copies arrays.
 - Every library notification clears all resource caches and wakes mounted consumers.
 - Metadata hydration operates sequentially per record, repeats shared series fields across episodes, and waits for optional artwork. Network requests are deduplicated in memory, but that does not remove per-record processing and persistence.
@@ -158,4 +158,4 @@ Existing verification during research: 29 tests passed across server matcher and
 - [Android supported media formats](https://developer.android.com/media/platform/supported-formats)
 - [Media3/ExoPlayer supported devices](https://developer.android.com/media/media3/exoplayer/supported-devices)
 
-Local source entry points: `apps/mobile/local.tsx`, `database.ts`, `LocalThumbnail.tsx`, `LibraryReport.tsx`; `packages/local-library/src/library.ts`, `metadata.ts`; `packages/native-client/src/Player.tsx`, `haptics.ts`, `hooks.ts`, `Catalog.tsx`, `local-api.ts`, `image-cache.ts`; server matching files listed above. Existing operational notes: `docs/MOBILE_LOCAL_LIBRARY.md`.
+Local source entry points: `apps/mobile/src/lib/local.tsx`, `src/lib/database.ts`, `src/components/LocalThumbnail.tsx`, `src/screens/LibraryReport.tsx`; `packages/local-library/src/library.ts`, `metadata.ts`; `apps/mobile/src/screens/Player.tsx`, `apps/mobile/src/screens/Catalog.tsx`; `packages/native-client/src/haptics.ts`, `hooks.ts`, `local-api.ts`, `image-cache.ts`; server matching files listed above. Existing operational notes: `docs/MOBILE_LOCAL_LIBRARY.md`.

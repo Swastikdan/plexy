@@ -38,6 +38,7 @@ const config: ExpoConfig = {
     buildNumber,
   },
   plugins: [
+    "expo-router",
     "expo-sqlite",
     ["expo-splash-screen", { image: "./assets/splash-icon.png", backgroundColor: "#000000", imageWidth: 132 }],
     [

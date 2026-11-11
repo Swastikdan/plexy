@@ -246,7 +246,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: plexy-android-${{ matrix.target }}
-          path: .build/native/Plexy-*.apk
+          path: |
+            .build/native/Plexy-*.apk
+            .build/native/plexy-*.apk
           if-no-files-found: error
 
   server:

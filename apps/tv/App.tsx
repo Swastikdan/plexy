@@ -1,6 +1,7 @@
 import React from "react";
 import { TVFocusGuideView, useTVEventHandler } from "react-native";
-import { NativeApp, type NativePlatform } from "@plexy/native-client";
+import { NativeApp } from "./src/screens/App";
+import type { NativePlatform } from "@plexy/native-client";
 function RemoteEvents({ onEvent }: { onEvent: (event: string) => void }) {
   useTVEventHandler((event) => {
     if (event.eventKeyAction === 1) return;
