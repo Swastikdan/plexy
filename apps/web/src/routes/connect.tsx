@@ -2,13 +2,15 @@
 /// user can point the client at a different Plexy server.
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { ConnectScreen } from "../components/connect-screen";
-import { getApiBase } from "../server-config";
+import { getApiBase, getServerOverride } from "../server-config";
 
 function ConnectRoute() {
   const router = useRouter();
   return (
     <ConnectScreen
-      initialValue={getApiBase()}
+      initialValue={
+        getServerOverride() || (window.electronAPI ? "" : getApiBase())
+      }
       onCancel={() => {
         // Match the app header: return to the previous screen when there is
         // one, otherwise fall back to Home (direct links, fresh tabs).

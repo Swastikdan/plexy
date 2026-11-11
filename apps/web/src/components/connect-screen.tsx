@@ -1,6 +1,7 @@
 /// Connection screen for hosted web builds and for a desktop app whose bundled
 /// backend could not start. The address is verified before it is saved, then
 /// the page reloads so every query and media URL uses the new server.
+import { DesktopServerSettings } from "./desktop-server-settings";
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
@@ -44,44 +45,56 @@ export function ConnectScreen({
   onConnected,
   onCancel,
 }: ConnectScreenProps) {
-  const [value, setValue] = useState(
-    () => initialValue ?? getServerOverride(),
-  );
+  const [value, setValue] = useState(() => initialValue ?? getServerOverride());
   const [busy, setBusy] = useState(false);
-  const [discovered, setDiscovered] = useState<Array<{ id: string; name: string; url: string }>>([]);
+  const [discovered, setDiscovered] = useState<
+    Array<{ id: string; name: string; url: string }>
+  >([]);
   const [discovering, setDiscovering] = useState(false);
   const discover = async () => {
     if (!window.electronAPI?.discoverServers) return;
     setDiscovering(true);
-    try { setDiscovered(await window.electronAPI.discoverServers()); }
-    catch { /* manual address remains available */ }
-    finally { setDiscovering(false); }
+    try {
+      setDiscovered(await window.electronAPI.discoverServers());
+    } catch {
+      /* manual address remains available */
+    } finally {
+      setDiscovering(false);
+    }
   };
-  useEffect(() => { void discover(); }, []);
+  useEffect(() => {
+    void discover();
+  }, []);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [connectedVersion, setConnectedVersion] = useState<string | null>(null);
 
   const secure = isSecurePage();
   const normalized = normalizeServerUrl(value);
   const mixedContentRisk =
-    secure && normalized.startsWith("http://") && !isLoopbackServerUrl(normalized);
+    secure &&
+    normalized.startsWith("http://") &&
+    !isLoopbackServerUrl(normalized);
   const attempted = safeBase();
   const attemptedIsPageOrigin =
     Boolean(attempted) &&
     attempted === normalizeServerUrl(window.location.origin);
   const showAttempted =
-    Boolean(attempted) && (Boolean(getServerOverride()) || !attemptedIsPageOrigin);
+    Boolean(attempted) &&
+    (Boolean(getServerOverride()) || !attemptedIsPageOrigin);
 
   function finish() {
     if (onConnected) onConnected();
-    else if (window.location.pathname === "/connect") window.location.assign("/");
+    else if (window.location.pathname === "/connect")
+      window.location.assign("/");
     else window.location.reload();
   }
 
   async function connect(url = value) {
     const target = normalizeServerUrl(url);
     if (!target) {
-      setError("Enter a valid server address, for example http://192.168.1.20:8765.");
+      setError(
+        "Enter a valid server address, for example http://192.168.1.20:8765.",
+      );
       return;
     }
 
@@ -97,6 +110,14 @@ export function ConnectScreen({
     }
 
     setServerUrl(target);
+    if (
+      window.electronAPI &&
+      (await window.electronAPI.getLocalServerEnabled())
+    ) {
+      await window.electronAPI.setServerUrl(target);
+      await window.electronAPI.setLocalServerEnabled(false);
+      return;
+    }
     setConnectedVersion(result.status.version);
     // Reload so the API client, image URLs and stream URLs are rebuilt against
     // the chosen server. A tiny delay lets the success state register.
@@ -129,10 +150,12 @@ export function ConnectScreen({
             Choose a server
           </h1>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">
-            Point this client at the Mac or home server that holds your film and TV library.
+            Point this client at the Mac or home server that holds your film and
+            TV library.
           </p>
         </div>
 
+        <DesktopServerSettings />
         <div className="border border-line bg-surface p-5 sm:p-7">
           <form
             onSubmit={(event) => {
@@ -142,9 +165,37 @@ export function ConnectScreen({
             className="space-y-3"
           >
             <div className="space-y-2">
-              {window.electronAPI?.discoverServers && <button type="button" disabled={discovering} onClick={() => void discover()} className="text-sm underline">{discovering ? "Looking for servers on your network…" : "Find servers on this network"}</button>}
-              {discovered.map(server => <button type="button" key={server.id} onClick={() => setValue(server.url)} className="block w-full rounded-lg border border-line p-3 text-left"><span className="block text-sm font-semibold">{server.name}</span><span className="text-xs text-ink-muted">{server.url}</span></button>)}
-              {!window.electronAPI?.discoverServers && <p className="text-xs text-ink-muted">Open your server’s client link or enter its address. Automatic network discovery is available in the desktop app.</p>}
+              {window.electronAPI?.discoverServers && (
+                <button
+                  type="button"
+                  disabled={discovering}
+                  onClick={() => void discover()}
+                  className="text-sm underline"
+                >
+                  {discovering
+                    ? "Looking for servers on your network…"
+                    : "Find servers on this network"}
+                </button>
+              )}
+              {discovered.map((server) => (
+                <button
+                  type="button"
+                  key={server.id}
+                  onClick={() => setValue(server.url)}
+                  className="block w-full rounded-lg border border-line p-3 text-left"
+                >
+                  <span className="block text-sm font-semibold">
+                    {server.name}
+                  </span>
+                  <span className="text-xs text-ink-muted">{server.url}</span>
+                </button>
+              ))}
+              {!window.electronAPI?.discoverServers && (
+                <p className="text-xs text-ink-muted">
+                  Open your server’s client link or enter its address. Automatic
+                  network discovery is available in the desktop app.
+                </p>
+              )}
             </div>
             <label htmlFor="plexy-server-url" className="block space-y-2">
               <span className="flex items-center gap-2 text-xs font-medium text-ink-muted">
@@ -255,24 +306,36 @@ export function ConnectScreen({
             {showAttempted && (
               <p>
                 Tried <span className="font-medium text-ink">{attempted}</span>
-                {getServerOverride() ? " from the address saved on this device." : "."}
+                {getServerOverride()
+                  ? " from the address saved on this device."
+                  : "."}
               </p>
             )}
             <p>
-              On your Mac, open <span className="font-medium text-ink">Plexy → Settings → Network &amp; Access</span> to
-              see the server address. On Wi-Fi it usually looks like{" "}
-              <span className="whitespace-nowrap font-medium text-ink">http://192.168.1.20:8765</span>.
+              On your Mac, open{" "}
+              <span className="font-medium text-ink">
+                Plexy → Settings → Network &amp; Access
+              </span>{" "}
+              to see the server address. On Wi-Fi it usually looks like{" "}
+              <span className="whitespace-nowrap font-medium text-ink">
+                http://192.168.1.20:8765
+              </span>
+              .
             </p>
             {error && (
               <p>
                 Check that Plexy is running, LAN access is enabled, both devices
                 are on the same Wi-Fi, and the computer firewall allows Plexy.
-                After connecting, sign in with your username and password or a pairing code from your account.
+                After connecting, sign in with your username and password or a
+                pairing code from your account.
               </p>
             )}
             {secure && (
               <p className="flex items-start gap-2">
-                <ShieldAlert size={13} className="mt-0.5 shrink-0 text-amber-400/80" />
+                <ShieldAlert
+                  size={13}
+                  className="mt-0.5 shrink-0 text-amber-400/80"
+                />
                 A hosted HTTPS page can only call an HTTPS server. Plain HTTP
                 works when you open Plexy directly on your own network.
               </p>

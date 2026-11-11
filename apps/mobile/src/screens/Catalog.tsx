@@ -1,3 +1,16 @@
+import { LinearGradient } from "expo-linear-gradient";
+import {
+  ArrowLeft,
+  ArrowUpDown,
+  Check,
+  ChevronDown,
+  Film,
+  Info,
+  Play,
+  Search as SearchIcon,
+  Trash2,
+  X,
+} from "lucide-react-native";
 import React, { useRef, useState } from "react";
 import {
   Alert,
@@ -5,7 +18,6 @@ import {
   Image,
   Linking,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,28 +27,23 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { Search as SearchIcon, Play, ArrowLeft, Download, Check, Tv as TvIcon, Info, Film, RefreshCw, ChevronDown, ArrowUpDown, X, Trash2 } from "lucide-react-native";
-import { useClient, useDownloads } from "../../../../packages/native-client/src/context";
-import { useResource } from "../../../../packages/native-client/src/hooks";
-import { Button, Card, Loading, Notice, PageHeader, PosterImage } from "../components/ui";
+import {
+  Button,
+  Card,
+  Loading,
+  Notice,
+  PageHeader,
+  PosterImage,
+} from "../components/ui";
+import type { ItemCard } from "../lib/client/api";
+import { useClient } from "../lib/client/context";
+import { triggerHaptic } from "../lib/client/haptics";
+import { useResource } from "../lib/client/hooks";
 import { colors, fonts, timeLabel } from "../ui/theme";
-import type { ItemCard } from "../../../../packages/native-client/src/api";
-import { triggerHaptic } from "../../../../packages/native-client/src/haptics";
-
 export type OpenTitle = (id: string | number) => void;
-
 // ---------------------------------------------------------------------------
 // Genre pill chip
 // ---------------------------------------------------------------------------
-function GenrePill({ label }: { label: string }) {
-  return (
-    <View style={styles.genrePill}>
-      <Text style={styles.genrePillText}>{label}</Text>
-    </View>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Hero Slide
 // ---------------------------------------------------------------------------
@@ -50,8 +57,6 @@ export function Hero({
   onTrailer,
   onToggleWatched,
   isWatched,
-  onDownload,
-  downloadState,
   onDelete,
   width,
   preferred,
@@ -66,28 +71,29 @@ export function Hero({
   onTrailer?: () => void;
   onToggleWatched?: () => void;
   isWatched?: boolean;
-  onDownload?: () => void;
-  downloadState?: { state: string; bytes: number; expected: number };
   onDelete?: () => void;
   width?: number;
   preferred?: boolean;
   onHeroFocus?: () => void;
 }) {
-  const { api, platform } = useClient();
-  const [playFocus, setPlayFocus] = useState(false);
-  const [detailFocus, setDetailFocus] = useState(false);
-  const [trailerFocus, setTrailerFocus] = useState(false);
-  const [watchedFocus, setWatchedFocus] = useState(false);
-  const [downloadFocus, setDownloadFocus] = useState(false);
-  const [deleteFocus, setDeleteFocus] = useState(false);
+  const { api } = useClient();
+  const [, setPlayFocus] = useState(false);
+  const [, setDetailFocus] = useState(false);
+  const [, setTrailerFocus] = useState(false);
+  const [, setWatchedFocus] = useState(false);
+  const [, setDeleteFocus] = useState(false);
   const playLabel = actionLabel ?? (item.watch?.position ? "Continue" : "Play");
-
   // Build metadata line: Year, runtime, rating, episode info, and genres all in the same row
   const metaParts: React.ReactNode[] = [];
   if (item.year) metaParts.push(String(item.year));
   if (item.runtime) metaParts.push(`${item.runtime}m`);
-  if ((item as any).seasonNumber != null && (item as any).episodeNumber != null) {
-    metaParts.push(`S${(item as any).seasonNumber} E${(item as any).episodeNumber}`);
+  if (
+    (item as any).seasonNumber != null &&
+    (item as any).episodeNumber != null
+  ) {
+    metaParts.push(
+      `S${(item as any).seasonNumber} E${(item as any).episodeNumber}`,
+    );
   }
   if (item.rating != null) {
     metaParts.push(
@@ -99,19 +105,22 @@ export function Hero({
   if (item.genres?.length > 0) {
     metaParts.push(item.genres.slice(0, 3).join(", "));
   }
-
   return (
     <View
-      style={[
-        styles.heroContainer,
-        { height: platform.tv ? 280 : 540 },
-        width ? { width } : null,
-      ]}
+      style={[styles.heroContainer, { height: 540 }, width ? { width } : null]}
     >
       {item.poster ? (
-        <PosterImage source={api.image(item.poster)} style={StyleSheet.absoluteFill as never} resizeMode="cover" />
+        <PosterImage
+          source={api.image(item.poster)}
+          style={StyleSheet.absoluteFill as never}
+          resizeMode="cover"
+        />
       ) : item.backdrop ? (
-        <PosterImage source={api.image(item.backdrop)} style={StyleSheet.absoluteFill as never} resizeMode="cover" />
+        <PosterImage
+          source={api.image(item.backdrop)}
+          style={StyleSheet.absoluteFill as never}
+          resizeMode="cover"
+        />
       ) : null}
 
       {/* Top tint for transparent header and logo readability */}
@@ -129,30 +138,18 @@ export function Hero({
       />
 
       {/* Content: Title full width, metadata with genres inline, Play button + Action icons */}
-      <View
-        style={[
-          styles.heroContent,
-          platform.tv && styles.heroContentTV,
-        ]}
-      >
+      <View style={[styles.heroContent]}>
         {/* Slide header: non-focusable, unselectable title, logo, metadata and overview */}
         <View style={styles.heroSlideHeader}>
           {logo ? (
             <Image
               source={api.image(logo)}
               accessibilityLabel={item.name}
-              style={[
-                styles.heroLogo,
-                platform.tv && styles.heroLogoTV,
-              ]}
+              style={[styles.heroLogo]}
               resizeMode="contain"
             />
           ) : (
-            <Text
-              style={[styles.heroTitle, platform.tv && styles.heroTitleTV]}
-              numberOfLines={2}
-              selectable={false}
-            >
+            <Text style={[styles.heroTitle]} numberOfLines={2} selectable>
               {item.name}
             </Text>
           )}
@@ -164,7 +161,9 @@ export function Hero({
                 <React.Fragment key={index}>
                   {index > 0 && <Text style={styles.heroMetaDot}>·</Text>}
                   {typeof part === "string" ? (
-                    <Text style={styles.heroMetaText} selectable={false}>{part}</Text>
+                    <Text style={styles.heroMetaText} selectable>
+                      {part}
+                    </Text>
                   ) : (
                     part
                   )}
@@ -175,11 +174,7 @@ export function Hero({
 
           {/* 2-line synopsis / overview */}
           {!!item.overview && (
-            <Text
-              style={styles.heroOverview}
-              numberOfLines={2}
-              selectable={false}
-            >
+            <Text style={styles.heroOverview} numberOfLines={2} selectable>
               {item.overview}
             </Text>
           )}
@@ -198,18 +193,14 @@ export function Hero({
               onHeroFocus?.();
             }}
             onBlur={() => setPlayFocus(false)}
-            hasTVPreferredFocus={platform.tv && preferred}
             style={({ pressed }) => [
               styles.heroPlayBtn,
-              platform.tv && styles.heroPlayBtnTV,
               disabled && styles.heroBtnDisabled,
-              platform.tv && playFocus && styles.heroFocusRing,
-              platform.tv && playFocus && styles.heroPlayBtnFocused,
               pressed && styles.heroBtnPressed,
             ]}
           >
-            <Play size={platform.tv ? 18 : 16} color={platform.tv ? "#fff" : "#000"} fill={platform.tv ? "#fff" : "#000"} />
-            <Text style={[styles.heroPlayBtnText, platform.tv && styles.heroPlayBtnTextTV]}>
+            <Play size={16} color={"#000"} fill={"#000"} />
+            <Text style={[styles.heroPlayBtnText]}>
               {playLabel.replace(/^([▶▸]\s*)+/, "")}
             </Text>
           </Pressable>
@@ -228,14 +219,12 @@ export function Hero({
               onBlur={() => setDetailFocus(false)}
               style={({ pressed }) => [
                 styles.heroIconBtn,
-                platform.tv && detailFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={10}
               accessibilityLabel="Details"
             >
-              <Info size={platform.tv ? 22 : 20} color="#fff" strokeWidth={2.2} />
-              {platform.tv && detailFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
+              <Info size={20} color="#fff" strokeWidth={2.2} />
             </Pressable>
           )}
 
@@ -253,14 +242,12 @@ export function Hero({
               onBlur={() => setTrailerFocus(false)}
               style={({ pressed }) => [
                 styles.heroIconBtn,
-                platform.tv && trailerFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={10}
               accessibilityLabel="Watch Trailer"
             >
-              <Film size={platform.tv ? 22 : 20} color="#fff" strokeWidth={2.2} />
-              {platform.tv && trailerFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
+              <Film size={20} color="#fff" strokeWidth={2.2} />
             </Pressable>
           )}
 
@@ -279,7 +266,6 @@ export function Hero({
               style={({ pressed }) => [
                 styles.heroIconBtn,
                 isWatched && styles.heroIconBtnWatched,
-                platform.tv && watchedFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={8}
@@ -290,47 +276,10 @@ export function Hero({
                 color={isWatched ? "#000000" : "#fff"}
                 strokeWidth={isWatched ? 2.6 : 2}
               />
-              {platform.tv && watchedFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
 
           {/* Download button for movies / single media */}
-          {onDownload && (
-            <Pressable
-              onPress={onDownload}
-              onFocus={() => {
-                setDownloadFocus(true);
-                onHeroFocus?.();
-              }}
-              onBlur={() => setDownloadFocus(false)}
-              style={({ pressed }) => [
-                styles.heroIconBtn,
-                downloadState?.state === "downloading" && { borderColor: colors.brand, width: "auto", minWidth: 48, paddingHorizontal: 12 },
-                downloadState?.state === "completed" && { borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.18)" },
-                platform.tv && downloadFocus && styles.heroIconBtnFocused,
-                pressed && styles.heroBtnPressed,
-              ]}
-              hitSlop={8}
-              accessibilityLabel="Download"
-            >
-              {downloadState?.state === "downloading" ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Download size={16} color={colors.brand} strokeWidth={2.4} />
-                  <Text style={{ color: colors.brand, fontSize: 12, fontFamily: fonts.bold }}>
-                    {downloadState.expected ? `${Math.min(100, Math.round((downloadState.bytes / downloadState.expected) * 100))}%` : "..."}
-                  </Text>
-                </View>
-              ) : downloadState?.state === "completed" ? (
-                <Check size={18} color="#22c55e" strokeWidth={2.6} />
-              ) : downloadState?.state === "queued" ? (
-                <Text style={{ color: colors.muted, fontSize: 11, fontFamily: fonts.medium }}>Queued</Text>
-              ) : (
-                <Download size={18} color="#fff" strokeWidth={2} />
-              )}
-              {platform.tv && downloadFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
-            </Pressable>
-          )}
-
           {/* Delete series / item button */}
           {onDelete && (
             <Pressable
@@ -346,14 +295,12 @@ export function Hero({
               style={({ pressed }) => [
                 styles.heroIconBtn,
                 styles.heroIconBtnDanger,
-                platform.tv && deleteFocus && styles.heroIconBtnFocused,
                 pressed && styles.heroBtnPressed,
               ]}
               hitSlop={8}
               accessibilityLabel="Delete"
             >
               <Trash2 size={18} color="#ef4444" strokeWidth={2.2} />
-              {platform.tv && deleteFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
         </View>
@@ -361,7 +308,6 @@ export function Hero({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // HeroCarousel
 // ---------------------------------------------------------------------------
@@ -377,22 +323,21 @@ export function HeroCarousel({
   onHeroFocus?: () => void;
 }) {
   const { width } = useWindowDimensions();
-  const { platform } = useClient();
+  useClient();
   const [activeIndex, setActiveIndex] = useState(0);
   const [focusedDot, setFocusedDot] = useState<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const carouselScrollRef = useRef<ScrollView>(null);
-
   if (!items.length) return null;
-
-  const slideWidth = containerWidth || (platform.tv ? width - 58 : width);
-
+  const slideWidth = containerWidth || width;
   const goToSlide = (idx: number) => {
     const clamped = Math.max(0, Math.min(items.length - 1, idx));
     setActiveIndex(clamped);
-    carouselScrollRef.current?.scrollTo({ x: clamped * slideWidth, animated: true });
+    carouselScrollRef.current?.scrollTo({
+      x: clamped * slideWidth,
+      animated: true,
+    });
   };
-
   return (
     <View
       style={{ width: "100%", position: "relative" }}
@@ -405,9 +350,11 @@ export function HeroCarousel({
         ref={carouselScrollRef}
         horizontal
         pagingEnabled
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator
         onMomentumScrollEnd={(e) => {
-          const index = Math.round(e.nativeEvent.contentOffset.x / (slideWidth || 1));
+          const index = Math.round(
+            e.nativeEvent.contentOffset.x / (slideWidth || 1),
+          );
           setActiveIndex(Math.max(0, Math.min(items.length - 1, index)));
         }}
         scrollEventThrottle={16}
@@ -418,7 +365,6 @@ export function HeroCarousel({
             item={it}
             logo={it.logo}
             width={slideWidth}
-            preferred={platform.tv && i === 0}
             onHeroFocus={onHeroFocus}
             onOpen={() => onPlay(it)}
             onDetails={() => open(it.publicId)}
@@ -426,13 +372,13 @@ export function HeroCarousel({
         ))}
       </ScrollView>
 
-      {/* Pagination dots / interactive on TV */}
+      {/* Pagination dots */}
       {items.length > 1 && (
-        <View style={[styles.carouselDots, platform.tv && styles.carouselDotsTV]} pointerEvents="box-none">
+        <View style={[styles.carouselDots]} pointerEvents="box-none">
           {items.map((_, i) => (
             <Pressable
               key={i}
-              focusable={platform.tv}
+              focusable
               onFocus={() => {
                 setFocusedDot(i);
                 goToSlide(i);
@@ -456,7 +402,6 @@ export function HeroCarousel({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // ContinueWatchingCard — wide 16:9 landscape format with instant play
 // ---------------------------------------------------------------------------
@@ -474,32 +419,42 @@ export function ContinueWatchingCard({
   onFocus?: () => void;
 }) {
   const position = item.watch?.position || 0;
-  const duration = item.watch?.duration || (item.runtime ? item.runtime * 60 : 0);
+  const duration =
+    item.watch?.duration || (item.runtime ? item.runtime * 60 : 0);
   const remaining = duration > position ? duration - position : 0;
-  const remainingLabel = remaining > 0 ? `${Math.ceil(remaining / 60)}m left` : (duration ? timeLabel(duration) : null);
-  const progressRatio = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0;
-
+  const remainingLabel =
+    remaining > 0
+      ? `${Math.ceil(remaining / 60)}m left`
+      : duration
+        ? timeLabel(duration)
+        : null;
+  const progressRatio =
+    duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0;
   const isSeries = item.kind === "series";
-  const epNumber = isSeries ? null : ((item as any).episodeNumber ?? item.episodeNumber);
+  const epNumber = isSeries
+    ? null
+    : ((item as any).episodeNumber ?? item.episodeNumber);
   const epLabel = epNumber != null ? `E${epNumber}` : null;
   const rawName = String(item.name || "").trim();
   const cleanedName = rawName
-    .replace(/^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i, "")
+    .replace(
+      /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
+      "",
+    )
     .trim();
-
   const [focus, setFocus] = useState(false);
-
-  const title = item.parentTitle || (cleanedName || rawName);
+  const title = item.parentTitle || cleanedName || rawName;
   let subtitle = isSeries
     ? "TV Series"
     : epNumber != null
       ? `Episode ${epNumber}${cleanedName && item.parentTitle ? ` · ${cleanedName}` : ""}`
-      : item.year ? `${item.year}` : "Resume playing";
+      : item.year
+        ? `${item.year}`
+        : "Resume playing";
   // Never repeat the title as its own subtitle
   if (subtitle === title) {
     subtitle = isSeries ? "TV Series" : "";
   }
-
   return (
     <Pressable
       onPress={onPress}
@@ -508,12 +463,7 @@ export function ContinueWatchingCard({
         onFocus?.();
       }}
       onBlur={() => setFocus(false)}
-      style={({ pressed }) => [
-        styles.cwCard,
-        Platform.isTV && focus && styles.cwCardFocused,
-        preferred && Platform.isTV && styles.cwPreferred,
-        pressed && { opacity: 0.8 },
-      ]}
+      style={({ pressed }) => [styles.cwCard, pressed && { opacity: 0.8 }]}
     >
       {/* 16:9 Thumbnail container */}
       <View style={styles.cwThumbWrap}>
@@ -547,22 +497,30 @@ export function ContinueWatchingCard({
         {/* Linear progress bar at the bottom */}
         {progressRatio > 0 && (
           <View style={styles.cwProgressBar}>
-            <View style={[styles.cwProgressFill, { width: `${Math.round(progressRatio * 100)}%` }]} />
+            <View
+              style={[
+                styles.cwProgressFill,
+                { width: `${Math.round(progressRatio * 100)}%` },
+              ]}
+            />
           </View>
         )}
       </View>
 
       {/* Info below thumbnail */}
       <View style={styles.cwInfo}>
-        <Text style={styles.cwTitle} numberOfLines={1}>{title}</Text>
+        <Text style={styles.cwTitle} numberOfLines={1}>
+          {title}
+        </Text>
         {!!subtitle && (
-          <Text style={styles.cwSubtitle} numberOfLines={1}>{subtitle}</Text>
+          <Text style={styles.cwSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
         )}
       </View>
     </Pressable>
   );
 }
-
 // ---------------------------------------------------------------------------
 // CatalogRow — horizontal scrolling section
 // ---------------------------------------------------------------------------
@@ -581,16 +539,13 @@ function CatalogRow({
   open: OpenTitle;
   onPlay?: (item: ItemCard) => void;
   isContinueWatching?: boolean;
-  focusId: number | null;
+  focusId?: number | null;
   focused: (id: number) => void;
   onRowFocus?: () => void;
 }) {
-  const { api, platform } = useClient();
+  const { api } = useClient();
   const ref = useRef<FlatList<ItemCard>>(null);
-  const cardWidth = isContinueWatching
-    ? (platform.tv ? 168 : 220)
-    : (platform.tv ? 124 : 150);
-
+  const cardWidth = isContinueWatching ? 220 : 150;
   return (
     <View style={styles.rowContainer}>
       {/* Section header */}
@@ -608,7 +563,7 @@ function CatalogRow({
           index,
         })}
         keyExtractor={(item) => String(item.id)}
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator
         contentContainerStyle={styles.rowList}
         renderItem={({ item, index }) =>
           isContinueWatching ? (
@@ -617,12 +572,6 @@ function CatalogRow({
               api={api}
               onFocus={() => {
                 onRowFocus?.();
-                if (platform.tv)
-                  ref.current?.scrollToIndex({
-                    index,
-                    viewPosition: 0.5,
-                    animated: false,
-                  });
               }}
               onPress={() => {
                 if (onPlay) {
@@ -639,12 +588,6 @@ function CatalogRow({
               api={api}
               onFocus={() => {
                 onRowFocus?.();
-                if (platform.tv)
-                  ref.current?.scrollToIndex({
-                    index,
-                    viewPosition: 0.5,
-                    animated: false,
-                  });
               }}
               onPress={() => {
                 open(item.publicId);
@@ -656,7 +599,6 @@ function CatalogRow({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // HomeScreen
 // ---------------------------------------------------------------------------
@@ -669,14 +611,13 @@ export function HomeScreen({
 }: {
   open: OpenTitle;
   play?: (fileId: number) => void;
-  focusId: number | null;
+  focusId?: number | null;
   focused: (id: number) => void;
   active: boolean;
 }) {
-  const { api, platform, progress } = useClient();
+  const { api, progress } = useClient();
   const data = useResource((signal) => api.home(signal), [api]);
   const previousActive = useRef(active);
-
   React.useEffect(() => {
     if (active && !previousActive.current)
       void progress
@@ -685,27 +626,31 @@ export function HomeScreen({
         .finally(data.retry);
     previousActive.current = active;
   }, [active, api, progress]);
-
   // Handler for instant playback
-  const handlePlay = React.useCallback((item: ItemCard) => {
-    if (item.fileId && play) {
-      play(item.fileId);
-      return;
-    }
-    // Fetch detail to get first playable fileId
-    void api.detail(item.publicId).then((d) => {
-      const fid =
-        d.file?.fileId ||
-        d.episodes?.find((e) => e.fileId && !e.watch?.played)?.fileId ||
-        d.episodes?.find((e) => e.fileId)?.fileId;
-      if (fid && play) {
-        play(fid);
-      } else {
-        open(item.publicId);
+  const handlePlay = React.useCallback(
+    (item: ItemCard) => {
+      if (item.fileId && play) {
+        play(item.fileId);
+        return;
       }
-    }).catch(() => open(item.publicId));
-  }, [api, play, open]);
-
+      // Fetch detail to get first playable fileId
+      void api
+        .detail(item.publicId)
+        .then((d) => {
+          const fid =
+            d.file?.fileId ||
+            d.episodes?.find((e) => e.fileId && !e.watch?.played)?.fileId ||
+            d.episodes?.find((e) => e.fileId)?.fileId;
+          if (fid && play) {
+            play(fid);
+          } else {
+            open(item.publicId);
+          }
+        })
+        .catch(() => open(item.publicId));
+    },
+    [api, play, open],
+  );
   // Normalize any item: if it is an episode, convert to full TV series card
   const toFullSeriesOrMovie = React.useCallback((it: ItemCard): ItemCard => {
     if (it.kind === "episode") {
@@ -730,12 +675,11 @@ export function HomeScreen({
     }
     return it;
   }, []);
-
   // Carousel items: up to 5 items (featured + items from rows) — movies and TV series only (NO episodes)
   const carouselItems = React.useMemo(() => {
     const list: ItemCard[] = [];
-    const isShowOrMovie = (it: ItemCard) => it.kind === "movie" || it.kind === "series";
-
+    const isShowOrMovie = (it: ItemCard) =>
+      it.kind === "movie" || it.kind === "series";
     if (data.value?.featured && isShowOrMovie(data.value.featured)) {
       list.push(data.value.featured);
     }
@@ -754,30 +698,11 @@ export function HomeScreen({
     }
     return list;
   }, [data.value]);
-
-  // TV row-snap scrolling: rows record their vertical position so focus
-  // entering a row snaps the page so the row header sits near the top,
-  // instead of the page drifting "half way" through content.
   const scrollRef = useRef<ScrollView>(null);
-  const rowYs = useRef<Record<string, number>>({});
-  const snapToRow = React.useCallback((key: string) => {
-    if (!Platform.isTV) return;
-    const y = rowYs.current[key];
-    if (y != null) scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
-  }, []);
-
-  const recordRowY =
-    (key: string) =>
-    (e: { nativeEvent: { layout: { y: number } } }) => {
-      rowYs.current[key] = e.nativeEvent.layout.y;
-    };
-
   // Continue watching: only full series or movies with progress, deduplicated
   const continueItems = React.useMemo(() => {
     if (!data.value?.rows) return [];
-    const continueRow = data.value.rows.find(
-      (r) => r.key === "continue",
-    );
+    const continueRow = data.value.rows.find((r) => r.key === "continue");
     if (!continueRow) return [];
     const seen = new Set<string>();
     const list: ItemCard[] = [];
@@ -791,7 +716,6 @@ export function HomeScreen({
     }
     return list;
   }, [data.value, toFullSeriesOrMovie]);
-
   // Other rows: filter out "next" (next up episodes) and continue watching, normalize to full titles
   const otherRows = React.useMemo(() => {
     if (!data.value?.rows) return [];
@@ -814,18 +738,16 @@ export function HomeScreen({
       })
       .filter((r) => r.items.length > 0);
   }, [data.value, toFullSeriesOrMovie]);
-
   if (data.loading) return <Loading />;
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <PageHeader logo style={styles.transparentHomeHeader} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.homeContainer}
-        showsVerticalScrollIndicator={false}
-        removeClippedSubviews={false}
+        showsVerticalScrollIndicator
+        removeClippedSubviews
         refreshControl={
           <RefreshControl
             refreshing={data.loading}
@@ -834,123 +756,81 @@ export function HomeScreen({
           />
         }
       >
+        {/* Hero Carousel */}
+        {carouselItems.length > 0 && (
+          <View>
+            <HeroCarousel
+              items={carouselItems}
+              onPlay={handlePlay}
+              open={open}
+              onHeroFocus={() => {
+                if (focusId != null) focused(null as any);
+                scrollRef.current?.scrollTo({ y: 0, animated: true });
+              }}
+            />
+          </View>
+        )}
 
-      {/* Hero Carousel */}
-      {carouselItems.length > 0 && (
-        <View onLayout={recordRowY("hero")}>
-          <HeroCarousel
-            items={carouselItems}
-            onPlay={handlePlay}
-            open={open}
-            onHeroFocus={() => {
-              if (focusId != null) focused(null as any);
-              scrollRef.current?.scrollTo({ y: 0, animated: true });
-            }}
-          />
-        </View>
-      )}
+        {/* Continue watching row with full series or movie cards */}
+        {continueItems.length > 0 && (
+          <View>
+            <CatalogRow
+              key="continue-watching"
+              title="Continue Watching"
+              items={continueItems}
+              open={open}
+              onPlay={handlePlay}
+              isContinueWatching={true}
+              focused={focused}
+            />
+          </View>
+        )}
 
-      {/* Continue watching row with full series or movie cards */}
-      {continueItems.length > 0 && (
-        <View onLayout={recordRowY("cw")}>
-          <CatalogRow
-            key="continue-watching"
-            title="Continue Watching"
-            items={continueItems}
-            open={open}
-            onPlay={handlePlay}
-            isContinueWatching={true}
-            focusId={active ? focusId : null}
-            focused={focused}
-            onRowFocus={() => snapToRow("cw")}
-          />
-        </View>
-      )}
+        {/* Rest of the rows (full movies and series only) */}
+        {otherRows.map((row) => (
+          <View key={row.key}>
+            <CatalogRow
+              key={row.key}
+              title={row.title}
+              items={row.items}
+              open={open}
+              focused={focused}
+            />
+          </View>
+        ))}
 
-      {/* Rest of the rows (full movies and series only) */}
-      {otherRows.map((row) => (
-        <View key={row.key} onLayout={recordRowY(row.key)}>
-          <CatalogRow
-            key={row.key}
-            title={row.title}
-            items={row.items}
-            open={open}
-            focusId={active ? focusId : null}
-            focused={focused}
-            onRowFocus={() => snapToRow(row.key)}
-          />
-        </View>
-      ))}
-
-      {!data.value?.rows.length && (
-        <View style={{ padding: platform.tv ? 36 : 20 }}>
-          <Notice message={platform.local ? "Your library is empty. Add a movie or series folder in Settings." : "Your library is empty. Add media to Plexy Server, then pull to refresh."} />
-        </View>
-      )}
+        {!data.value?.rows.length && (
+          <View style={{ padding: 20 }}>
+            <Notice
+              message={
+                "Your library is empty. Add a movie or series folder in Settings."
+              }
+            />
+          </View>
+        )}
       </ScrollView>
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
-// FilterChip — pill with a visible TV focus state
+// FilterChip
 // ---------------------------------------------------------------------------
-function FilterChip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const [focus, setFocus] = useState(false);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onFocus={() => setFocus(true)}
-      onBlur={() => setFocus(false)}
-      onPress={onPress}
-      style={[
-        styles.filterChip,
-        active && styles.filterChipActive,
-        focus && styles.filterChipFocusedTv,
-      ]}
-    >
-      <Text
-        style={[
-          styles.filterChipText,
-          active && styles.filterChipTextActive,
-          focus && styles.filterChipTextFocusedTv,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // LibraryScreen
 // ---------------------------------------------------------------------------
 export function LibraryScreen({
   kind,
   open,
-  openDownloads,
   defaultSubTab,
 }: {
   kind: "movie" | "series" | "anime";
   open: OpenTitle;
-  openDownloads?: () => void;
-  defaultSubTab?: "movie" | "series" | "anime" | "downloads";
+  defaultSubTab?: "movie" | "series" | "anime";
 }) {
-  const { api, platform, progress } = useClient();
-  const downloadEntries = useDownloads();
+  const { api, platform } = useClient();
   const { width } = useWindowDimensions();
-  type LibraryTab = "movie" | "series" | "anime" | "downloads";
+  type LibraryTab = "movie" | "series" | "anime";
   const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || kind);
-  const [dlFilter, setDlFilter] = useState<"all" | "movie" | "series">("all");
   const [sort, setSort] = useState("added");
   const [unwatched, setUnwatched] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -958,34 +838,31 @@ export function LibraryScreen({
   const [more, setMore] = useState(false);
   const [moreError, setMoreError] = useState("");
   const [end, setEnd] = useState(false);
-  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const [, setFocusedId] = useState<number | null>(null);
   const ref = useRef<FlatList<ItemCard>>(null);
-
   // Probe movies, series, and anime to auto-hide empty tabs and set priority
   const movieProbe = useResource(
-    (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("movie", 0, "name", signal)),
+    (signal) => api.items("movie", 0, "name", signal),
     [api, defaultSubTab, "movie-probe"],
   );
   const seriesProbe = useResource(
-    (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("series", 0, "name", signal)),
+    (signal) => api.items("series", 0, "name", signal),
     [api, defaultSubTab, "series-probe"],
   );
   const animeProbe = useResource(
-    (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("anime", 0, "name", signal)),
+    (signal) => api.items("anime", 0, "name", signal),
     [api, defaultSubTab, "anime-probe"],
   );
-
   const hasMovies = (movieProbe.value?.items?.length ?? 0) > 0;
   const hasSeries = (seriesProbe.value?.items?.length ?? 0) > 0;
   const hasAnime = (animeProbe.value?.items?.length ?? 0) > 0;
   const probesDone = movieProbe.value != null && seriesProbe.value != null;
-
   React.useEffect(() => {
-    if (defaultSubTab === "downloads") return;
     if (probesDone) {
       // Priority when multiple exist: Movies -> TV Shows -> Anime
       if (hasMovies) {
-        if (!hasSeries && !hasAnime && activeTab !== "movie") setActiveTab("movie");
+        if (!hasSeries && !hasAnime && activeTab !== "movie")
+          setActiveTab("movie");
       } else if (hasSeries) {
         if (activeTab === "movie" || (activeTab === "anime" && !hasAnime)) {
           setActiveTab("series");
@@ -997,117 +874,35 @@ export function LibraryScreen({
       }
     }
   }, [hasMovies, hasSeries, hasAnime, probesDone, defaultSubTab]);
-
   const libraryTabs = React.useMemo(() => {
-    if (defaultSubTab === "downloads") return ["downloads"] as const;
     const base: LibraryTab[] = [];
     if (!probesDone) {
       base.push("movie", "series");
-      if (!platform.tv) base.push("anime");
+      base.push("anime");
     } else {
       if (hasMovies) base.push("movie");
       if (hasSeries) base.push("series");
-      if (hasAnime && !platform.tv) base.push("anime");
+      if (hasAnime) base.push("anime");
       if (base.length === 0) base.push("movie", "series");
     }
-    if (!platform.tv && !platform.local) {
-      base.push("downloads");
-    }
     return base;
-  }, [defaultSubTab, probesDone, hasMovies, hasSeries, hasAnime, platform.tv, platform.local]);
-
+  }, [
+    defaultSubTab,
+    probesDone,
+    hasMovies,
+    hasSeries,
+    hasAnime,
+    platform.local,
+  ]);
   const showLibTabs = libraryTabs.length > 1;
-
   const data = useResource(
-    (signal) => (activeTab === "downloads" ? Promise.resolve({ items: [] }) : api.items(activeTab, 0, sort, signal, unwatched)),
+    (signal) => api.items(activeTab, 0, sort, signal, unwatched),
     [api, activeTab, sort, unwatched],
   );
-
-  // Construct offline downloaded media items
-  const downloadedCards = React.useMemo(() => {
-    const list: Array<ItemCard & { downloadCount?: number }> = [];
-    const seriesMap = new Map<string, typeof downloadEntries>();
-
-    downloadEntries.forEach((entry) => {
-      const isEpisode =
-        entry.item.kind === "episode" ||
-        entry.seriesName != null ||
-        entry.seasonNumber != null;
-      if (isEpisode) {
-        const name =
-          entry.seriesName ||
-          (entry.item as any).parentName ||
-          entry.item.name.split(" - ")[0] ||
-          "TV Show";
-        if (!seriesMap.has(name)) seriesMap.set(name, []);
-        seriesMap.get(name)!.push(entry);
-      } else {
-        const item = entry.item;
-        const watch = progress.latest(item.id);
-        list.push({
-          ...item,
-          poster: entry.localPosterUri || (item.poster?.startsWith("file://") ? item.poster : entry.localPosterUri) || item.poster,
-          watch: watch
-            ? {
-                position: watch.position,
-                duration: watch.duration || null,
-                played: watch.played,
-                percent: watch.played ? 100 : watch.duration ? Math.min(100, Math.round((watch.position / watch.duration) * 100)) : 0,
-              }
-            : item.watch,
-        });
-      }
-    });
-
-    seriesMap.forEach((eps, seriesName) => {
-      const first = eps[0]!;
-      const parentId =
-        (first.manifest as any).parentItemId ||
-        first.item.id;
-      const publicId =
-        first.manifest.parentPublicId ||
-        (first.item as any).parentPublicId ||
-        String(parentId);
-      const poster = eps.find((e) => e.localPosterUri)?.localPosterUri || first.item.poster;
-      const watchedCount = eps.filter(
-        (e) => progress.latest(e.item.id)?.played || e.item.watch?.played,
-      ).length;
-      const allWatched = watchedCount === eps.length;
-
-      list.push({
-        id: parentId,
-        publicId,
-        name: seriesName,
-        kind: "series",
-        poster,
-        overview: `${eps.length} downloaded episode${eps.length === 1 ? "" : "s"}`,
-        downloadCount: eps.length,
-        genres: [],
-        year: first.item.year,
-        runtime: null,
-        watch: {
-          position: watchedCount,
-          duration: eps.length,
-          played: allWatched,
-          percent: eps.length > 0 ? Math.round((watchedCount / eps.length) * 100) : 0,
-        },
-      } as any);
-    });
-
-    return list;
-  }, [downloadEntries, progress]);
-
-  const filteredDownloadedItems = React.useMemo(() => {
-    if (dlFilter === "movie") return downloadedCards.filter((i) => i.kind === "movie");
-    if (dlFilter === "series") return downloadedCards.filter((i) => i.kind === "series");
-    return downloadedCards;
-  }, [downloadedCards, dlFilter]);
-
-  const items = activeTab === "downloads" ? filteredDownloadedItems : [...(data.value?.items || []), ...extra];
-  const available = width - (platform.tv ? 58 : 0) - 40;
-  const columns = Math.max(2, Math.floor(available / (platform.tv ? 126 : 150)));
+  const items = [...(data.value?.items || []), ...extra];
+  const available = width - 0 - 40;
+  const columns = Math.max(2, Math.floor(available / 150));
   const cardWidth = Math.floor(available / columns) - 10;
-
   function reset(nextSort: string, nextUnwatched: boolean) {
     setExtra([]);
     setEnd(false);
@@ -1115,25 +910,38 @@ export function LibraryScreen({
     setSort(nextSort);
     setUnwatched(nextUnwatched);
   }
-
   async function loadMore() {
-    if (activeTab === "downloads" || more || end || data.loading || !data.value || data.value.items.length < 60) return;
+    if (
+      more ||
+      end ||
+      data.loading ||
+      !data.value ||
+      data.value.items.length < 60
+    )
+      return;
     setMore(true);
     setMoreError("");
     try {
-      const result = await api.items(activeTab, items.length, sort, undefined, unwatched);
+      const result = await api.items(
+        activeTab,
+        items.length,
+        sort,
+        undefined,
+        unwatched,
+      );
       setExtra((prev) => [
         ...prev,
         ...result.items.filter((item) => !items.some((i) => i.id === item.id)),
       ]);
       setEnd(result.items.length < 60);
     } catch (e) {
-      setMoreError(e instanceof Error ? e.message : "Could not load more titles.");
+      setMoreError(
+        e instanceof Error ? e.message : "Could not load more titles.",
+      );
     } finally {
       setMore(false);
     }
   }
-
   const FILTERS: [string, string][] = [
     ["added", "Recently added"],
     ["name", "Name"],
@@ -1141,38 +949,35 @@ export function LibraryScreen({
     ["rating", "Rating"],
   ];
   const sortLabel = FILTERS.find(([key]) => key === sort)?.[1] || "Name";
-
   return (
     <View style={styles.libraryRoot}>
       <PageHeader
         title="Libraries"
         right={
-          activeTab !== "downloads" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}`}
-              onPress={() => {
-                triggerHaptic("light");
-                setSortOpen(true);
-              }}
-              style={({ pressed }) => [
-                styles.sortButton,
-                sortOpen && styles.sortButtonOpen,
-                pressed && { opacity: 0.72 },
-              ]}
-            >
-              <ArrowUpDown size={14} color="#ffffff" strokeWidth={2} />
-              <Text style={styles.sortButtonText} numberOfLines={1}>
-                {sortLabel}
-              </Text>
-              <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
-            </Pressable>
-          ) : null
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}`}
+            onPress={() => {
+              triggerHaptic("light");
+              setSortOpen(true);
+            }}
+            style={({ pressed }) => [
+              styles.sortButton,
+              sortOpen && styles.sortButtonOpen,
+              pressed && { opacity: 0.72 },
+            ]}
+          >
+            <ArrowUpDown size={14} color="#ffffff" strokeWidth={2} />
+            <Text style={styles.sortButtonText} numberOfLines={1}>
+              {sortLabel}
+            </Text>
+            <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
+          </Pressable>
         }
       />
 
       {/* Movies | TV Shows | Anime — full-width segmented control with real touch targets */}
-      {showLibTabs && defaultSubTab !== "downloads" && (
+      {showLibTabs && (
         <View style={styles.libSegmentWrap}>
           <View style={styles.libSegment} accessibilityRole="tablist">
             {libraryTabs.map((tab) => {
@@ -1184,7 +989,7 @@ export function LibraryScreen({
                     ? "TV Shows"
                     : tab === "anime"
                       ? "Anime"
-                      : "Downloads";
+                      : "Anime";
               return (
                 <Pressable
                   key={tab}
@@ -1219,31 +1024,9 @@ export function LibraryScreen({
         </View>
       )}
 
-      {/* Downloads filters */}
-      {activeTab === "downloads" && (
-        <View style={styles.dlFilterRow}>
-          <FilterChip
-            label={`All (${downloadedCards.length})`}
-            active={dlFilter === "all"}
-            onPress={() => setDlFilter("all")}
-          />
-          <FilterChip
-            label={`Movies (${downloadedCards.filter((i) => i.kind === "movie").length})`}
-            active={dlFilter === "movie"}
-            onPress={() => setDlFilter("movie")}
-          />
-          <FilterChip
-            label={`TV Shows (${downloadedCards.filter((i) => i.kind === "series").length})`}
-            active={dlFilter === "series"}
-            onPress={() => setDlFilter("series")}
-          />
-        </View>
-      )}
-
-      {/* Grid */}
-      {activeTab !== "downloads" && data.loading ? (
+      {data.loading ? (
         <Loading />
-      ) : activeTab !== "downloads" && data.error ? (
+      ) : data.error ? (
         <Notice message={data.error} retry={data.retry} />
       ) : (
         <FlatList
@@ -1259,23 +1042,8 @@ export function LibraryScreen({
               width={cardWidth}
               item={item}
               api={api}
-              preferred={platform.tv && item.id === focusedId}
               onFocus={() => {
                 setFocusedId(item.id);
-                if (platform.tv) {
-                  // numColumns FlatList renders rows, so convert the flat
-                  // index to a row and keep it near the top of the viewport
-                  // with a plain offset scroll (scrollToIndex would target
-                  // the wrong item and land the grid badly out of position).
-                  const rowIndex = Math.floor(index / columns);
-                  const cardHeight = Math.round(cardWidth * 1.5 + 30);
-                  const rowStep = cardHeight + 16;
-                  const target = rowIndex >= 3 ? (rowIndex - 2) * rowStep + 4 : 0;
-                  ref.current?.scrollToOffset({
-                    offset: Math.max(0, target),
-                    animated: true,
-                  });
-                }
               }}
               onPress={() => {
                 setFocusedId(item.id);
@@ -1285,27 +1053,19 @@ export function LibraryScreen({
           )}
           onScrollToIndexFailed={() => {}}
           ListEmptyComponent={
-            <Notice
-              message={
-                activeTab === "downloads"
-                  ? "No downloaded media on this device."
-                  : "No titles match this filter."
-              }
-            />
+            <Notice message={"No titles match this filter."} />
           }
           ListFooterComponent={
-            activeTab !== "downloads" ? (
-              <View style={{ gap: 12, paddingTop: 8 }}>
-                {!!moreError && <Notice message={moreError} />}
-                {!end && data.value?.items?.length === 60 && (
-                  <Button
-                    label={more ? "Loading…" : "Load more"}
-                    disabled={more}
-                    onPress={() => void loadMore()}
-                  />
-                )}
-              </View>
-            ) : null
+            <View style={{ gap: 12, paddingTop: 8 }}>
+              {!!moreError && <Notice message={moreError} />}
+              {!end && data.value?.items?.length === 60 && (
+                <Button
+                  label={more ? "Loading…" : "Load more"}
+                  disabled={more}
+                  onPress={() => void loadMore()}
+                />
+              )}
+            </View>
           }
           onEndReached={() => void loadMore()}
           onEndReachedThreshold={0.4}
@@ -1353,7 +1113,9 @@ export function LibraryScreen({
                   >
                     {label}
                   </Text>
-                  {active && <Check size={18} color="#000000" strokeWidth={2.6} />}
+                  {active && (
+                    <Check size={18} color="#000000" strokeWidth={2.6} />
+                  )}
                 </Pressable>
               );
             })}
@@ -1378,7 +1140,9 @@ export function LibraryScreen({
               >
                 Unwatched only
               </Text>
-              {unwatched && <Check size={18} color="#000000" strokeWidth={2.6} />}
+              {unwatched && (
+                <Check size={18} color="#000000" strokeWidth={2.6} />
+              )}
             </Pressable>
             <View style={{ height: 16 }} />
           </Pressable>
@@ -1387,7 +1151,6 @@ export function LibraryScreen({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // SearchScreen
 // ---------------------------------------------------------------------------
@@ -1402,19 +1165,16 @@ export function SearchScreen({
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [focusId, focused] = useState<number | null>(null);
+  const [, focused] = useState<number | null>(null);
   const [inputFocus, setInputFocus] = useState(false);
-
   React.useEffect(() => {
     const timer = setTimeout(() => setDebounced(query.trim()), 300);
     return () => clearTimeout(timer);
   }, [query]);
-
   const homeData = useResource(
     (signal) => (!debounced ? api.home(signal) : Promise.resolve(null)),
     [api, debounced],
   );
-
   const data = useResource(
     (signal) =>
       debounced
@@ -1422,7 +1182,6 @@ export function SearchScreen({
         : Promise.resolve({ titles: [], episodes: [] }),
     [api, debounced],
   );
-
   const handlePlay = React.useCallback(
     (item: ItemCard) => {
       if (item.fileId && play) {
@@ -1446,18 +1205,15 @@ export function SearchScreen({
     },
     [api, play, open],
   );
-
   // Grid config (responsive cols for search results)
-  const isTv = Platform.isTV;
-  const available = width - (isTv ? 58 : 0) - 40;
-  const columns = isTv ? Math.max(3, Math.floor(available / 126)) : 2;
+  const available = width - 0 - 40;
+  const columns = 2;
   const cardWidth = Math.floor(available / columns) - 10;
-
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.searchContainer}
-      showsVerticalScrollIndicator={false}
+      showsVerticalScrollIndicator
     >
       <PageHeader title="Search" />
 
@@ -1465,22 +1221,22 @@ export function SearchScreen({
       <View
         style={[
           styles.searchInputWrap,
-          Platform.isTV && styles.searchInputWrapTv,
           inputFocus && styles.searchInputWrapFocused,
         ]}
       >
-        <SearchIcon size={18} color={inputFocus ? "#ffffff" : colors.muted} strokeWidth={2.1} />
+        <SearchIcon
+          size={18}
+          color={inputFocus ? "#ffffff" : colors.muted}
+          strokeWidth={2.1}
+        />
         <TextInput
-          style={[
-            styles.searchInput,
-            Platform.isTV && styles.searchInputTv,
-          ]}
+          style={[styles.searchInput]}
           value={query}
           onChangeText={setQuery}
           placeholder="Movies, shows and episodes"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
-          autoCorrect={false}
+          autoCorrect
           onFocus={() => setInputFocus(true)}
           onBlur={() => setInputFocus(false)}
         />
@@ -1490,7 +1246,10 @@ export function SearchScreen({
             accessibilityRole="button"
             accessibilityLabel="Clear search"
             hitSlop={10}
-            style={({ pressed }) => [styles.searchClear, pressed && { opacity: 0.6 }]}
+            style={({ pressed }) => [
+              styles.searchClear,
+              pressed && { opacity: 0.6 },
+            ]}
           >
             <X size={15} color={colors.muted} strokeWidth={2.4} />
           </Pressable>
@@ -1514,11 +1273,12 @@ export function SearchScreen({
                   <CatalogRow
                     key={row.key}
                     title={row.title}
-                    items={row.items.filter((i) => i.watch?.position && !i.watch?.played)}
+                    items={row.items.filter(
+                      (i) => i.watch?.position && !i.watch?.played,
+                    )}
                     open={open}
                     onPlay={handlePlay}
                     isContinueWatching={true}
-                    focusId={focusId}
                     focused={focused}
                   />
                 );
@@ -1529,7 +1289,6 @@ export function SearchScreen({
                   title={row.title}
                   items={row.items}
                   open={open}
-                  focusId={focusId}
                   focused={focused}
                   cardWidth={cardWidth}
                   columns={columns}
@@ -1537,7 +1296,9 @@ export function SearchScreen({
               );
             })}
             {!homeData.value?.rows.length && (
-              <Text style={styles.searchHint}>Find a title or an episode in your library.</Text>
+              <Text style={styles.searchHint}>
+                Find a title or an episode in your library.
+              </Text>
             )}
           </>
         )
@@ -1550,7 +1311,6 @@ export function SearchScreen({
               title="Movies & Shows"
               items={data.value.titles}
               open={open}
-              focusId={focusId}
               focused={focused}
               cardWidth={cardWidth}
               columns={columns}
@@ -1561,7 +1321,6 @@ export function SearchScreen({
               title="Episodes"
               items={data.value.episodes}
               open={open}
-              focusId={focusId}
               focused={focused}
               cardWidth={cardWidth}
               columns={columns}
@@ -1572,7 +1331,6 @@ export function SearchScreen({
     </ScrollView>
   );
 }
-
 function SearchGrid({
   title,
   items,
@@ -1585,7 +1343,7 @@ function SearchGrid({
   title: string;
   items: ItemCard[];
   open: OpenTitle;
-  focusId: number | null;
+  focusId?: number | null;
   focused: (id: number) => void;
   cardWidth: number;
   columns: number;
@@ -1601,7 +1359,6 @@ function SearchGrid({
             width={cardWidth}
             item={item}
             api={api}
-            preferred={focusId === item.id}
             onFocus={() => focused(item.id)}
             onPress={() => {
               focused(item.id);
@@ -1613,7 +1370,6 @@ function SearchGrid({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // DetailScreen
 // ---------------------------------------------------------------------------
@@ -1621,233 +1377,31 @@ export function DetailScreen({
   id,
   back,
   play,
-  download,
 }: {
   id: string | number;
   back: () => void;
   play: (fileId: number) => void;
-  download: (item: ItemCard, fileId: number) => void;
 }) {
-  const { api, platform, progress, downloads, preferences } = useClient();
-  const downloadEntries = useDownloads();
+  const { api, platform, progress } = useClient();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
   const [season, setSeason] = useState<number | null>(null);
-  const [detailTab, setDetailTab] = useState<"episodes" | "details">("episodes");
+  const [detailTab, setDetailTab] = useState<"episodes" | "details">(
+    "episodes",
+  );
   const [tabFocus, setTabFocus] = useState<string | null>(null);
   const [seasonFocus, setSeasonFocus] = useState<number | null>(null);
   const [actionError, setActionError] = useState("");
-  const [downloadingSeason, setDownloadingSeason] = useState(false);
   const [overrideWatched, setOverrideWatched] = useState<boolean | null>(null);
-  const [episodesWatchedOverride, setEpisodesWatchedOverride] = useState<Record<number, boolean>>({});
-
-  // Check for offline download entries matching this id
-  const offlineMatches = React.useMemo(() => {
-    return downloadEntries.filter((e) => {
-      if (String(e.fileId) === String(id)) return true;
-      if (String(e.item.id) === String(id)) return true;
-      if (e.item.publicId === String(id)) return true;
-      if ((e.item as any).parentPublicId === String(id)) return true;
-      if (String((e.item as any).parentItemId) === String(id)) return true;
-      if (e.manifest?.parentPublicId === String(id)) return true;
-      if (String((e.manifest as any)?.parentItemId) === String(id)) return true;
-      if (e.seriesName && (e.seriesName === String(id) || e.item.name === String(id))) return true;
-      return false;
-    });
-  }, [downloadEntries, id]);
-
-  const synthesizedDetail = React.useMemo(() => {
-    if (!offlineMatches.length) return null;
-    const first = offlineMatches[0]!;
-    const isEpisode =
-      first.item.kind === "episode" ||
-      first.seriesName != null ||
-      first.seasonNumber != null;
-
-    if (!isEpisode) {
-      const watch = progress.latest(first.item.id);
-      const isPlayed = watch?.played ?? Boolean(first.item.watch?.played);
-      const pos = watch?.position ?? first.item.watch?.position ?? 0;
-      const dur = watch?.duration ?? first.item.watch?.duration ?? null;
-      const pct = isPlayed ? 100 : dur ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
-      return {
-        item: {
-          ...first.item,
-          poster: first.localPosterUri || first.item.poster,
-          watch: {
-            position: pos,
-            duration: dur,
-            played: isPlayed,
-            percent: pct,
-          },
-        },
-        file: {
-          fileId: first.fileId,
-          height: first.maxHeight,
-          videoCodec: null as string | null,
-          hdr: null as string | null,
-          container: null as string | null,
-        },
-        trailer: null as { provider: string; key: string } | null,
-        metadata: {
-          overview: first.item.overview,
-        },
-        cast: [],
-        seasons: [],
-        episodes: [],
-      };
-    }
-
-    // Series: group episodes by season
-    const seasonMap = new Map<number, typeof offlineMatches>();
-    offlineMatches.forEach((e) => {
-      const sNum = e.seasonNumber ?? (e.manifest.seasonNumber ?? 1);
-      if (!seasonMap.has(sNum)) seasonMap.set(sNum, []);
-      seasonMap.get(sNum)!.push(e);
-    });
-
-    const seasons = Array.from(seasonMap.keys())
-      .sort((a, b) => a - b)
-      .map((sNum) => ({
-        number: sNum,
-        name: `Season ${sNum}`,
-      }));
-
-    const episodes = offlineMatches
-      .sort((a, b) => {
-        const sDiff = (a.seasonNumber ?? 1) - (b.seasonNumber ?? 1);
-        if (sDiff !== 0) return sDiff;
-        return (a.episodeNumber ?? 1) - (b.episodeNumber ?? 1);
-      })
-      .map((e) => {
-        const epWatch = progress.latest(e.item.id);
-        const epPlayed = epWatch?.played ?? Boolean(e.item.watch?.played);
-        const epPos = epWatch?.position ?? e.item.watch?.position ?? 0;
-        const epDur = epWatch?.duration ?? e.item.watch?.duration ?? null;
-        const epPct = epPlayed ? 100 : epDur ? Math.min(100, Math.round((epPos / epDur) * 100)) : 0;
-        return {
-          id: e.item.id,
-          name: e.item.name,
-          overview: e.item.overview,
-          seasonNumber: e.seasonNumber ?? (e.manifest.seasonNumber ?? 1),
-          episodeNumber: e.episodeNumber ?? (e.manifest.episodeNumber ?? 1),
-          runtime: e.item.runtime,
-          poster: e.localPosterUri || e.item.poster,
-          fileId: e.fileId,
-          watch: {
-            position: epPos,
-            duration: epDur,
-            played: epPlayed,
-            percent: epPct,
-          },
-        };
-      });
-
-    const parentId =
-      (first.manifest as any).parentItemId ||
-      (first.item as any).parentItemId ||
-      first.item.id;
-    const publicId =
-      first.manifest.parentPublicId ||
-      (first.item as any).parentPublicId ||
-      String(parentId);
-    const seriesTitle =
-      first.seriesName ||
-      (first.item as any).parentName ||
-      first.item.name;
-
-    const allWatched = episodes.length > 0 && episodes.every((ep) => ep.watch?.played);
-    const watchedCount = episodes.filter((ep) => ep.watch?.played).length;
-
-    return {
-      item: {
-        ...first.item,
-        id: parentId,
-        publicId,
-        name: seriesTitle,
-        kind: "series" as const,
-        poster: first.localPosterUri || first.item.poster,
-        overview: `${episodes.length} downloaded episode${episodes.length === 1 ? "" : "s"} available offline.`,
-        genres: first.item.genres || [],
-        year: first.item.year,
-        runtime: null,
-        watch: {
-          position: watchedCount,
-          duration: episodes.length,
-          played: allWatched,
-          percent: episodes.length > 0 ? Math.round((watchedCount / episodes.length) * 100) : 0,
-        },
-      },
-      file: undefined,
-      trailer: null as { provider: string; key: string } | null,
-      metadata: {
-        overview: `${episodes.length} downloaded episode${episodes.length === 1 ? "" : "s"} available offline.`,
-      },
-      seasons,
-      episodes,
-      cast: [],
-    };
-  }, [offlineMatches, progress]);
-
-  // Merge server detail or fallback to offline synthesized detail
-  const detail = React.useMemo(() => {
-    const raw = data.value || synthesizedDetail;
-    if (!raw) return null;
-    const itemPoster =
-      offlineMatches.find((e) => e.localPosterUri)?.localPosterUri ||
-      raw.item.poster;
-    const itemWatch = progress.latest(raw.item.id);
-    const rawItemWatch = raw.item.watch;
-    const played = itemWatch ? itemWatch.played : Boolean(rawItemWatch?.played);
-    const pos = itemWatch ? itemWatch.position : (rawItemWatch?.position ?? 0);
-    const dur = itemWatch ? (itemWatch.duration || null) : (rawItemWatch?.duration ?? null);
-    const pct = played ? 100 : dur ? Math.min(100, Math.round((pos / dur) * 100)) : (rawItemWatch?.percent ?? 0);
-
-    const mergedWatch = {
-      position: pos,
-      duration: dur,
-      played,
-      percent: pct,
-    };
-
-    const enrichedEpisodes = raw.episodes?.map((ep: any) => {
-      const match = downloadEntries.find((d) => d.fileId === ep.fileId);
-      const epPoster = match?.localPosterUri || ep.poster;
-      const epWatch = progress.latest(ep.id);
-      const epPlayed = epWatch ? epWatch.played : Boolean(ep.watch?.played);
-      const epPos = epWatch ? epWatch.position : (ep.watch?.position ?? 0);
-      const epDur = epWatch ? epWatch.duration : (ep.watch?.duration ?? null);
-      const epPct = epPlayed ? 100 : epDur ? Math.min(100, Math.round((epPos / epDur) * 100)) : (ep.watch?.percent ?? 0);
-      return {
-        ...ep,
-        poster: epPoster,
-        watch: {
-          position: epPos,
-          duration: epDur,
-          played: epPlayed,
-          percent: epPct,
-        },
-      };
-    });
-
-    return {
-      ...raw,
-      item: {
-        ...raw.item,
-        poster: itemPoster,
-        watch: mergedWatch,
-      },
-      episodes: enrichedEpisodes || raw.episodes,
-    };
-  }, [data.value, synthesizedDetail, offlineMatches, downloadEntries, progress]);
-
+  const [episodesWatchedOverride, setEpisodesWatchedOverride] = useState<
+    Record<number, boolean>
+  >({});
+  const detail = data.value;
   const item = detail?.item;
   const isSeriesWatched = overrideWatched ?? Boolean(item?.watch?.played);
-
   async function watched() {
     if (!item) return;
     const nextPlayed = !isSeriesWatched;
     setOverrideWatched(nextPlayed);
-
     // Optimistically update all episodes to completed (or unwatched)
     const newOverrides: Record<number, boolean> = {};
     if (detail?.episodes) {
@@ -1856,7 +1410,6 @@ export function DetailScreen({
       });
       setEpisodesWatchedOverride((prev) => ({ ...prev, ...newOverrides }));
     }
-
     try {
       await progress.flush(api);
       if (nextPlayed) {
@@ -1889,20 +1442,22 @@ export function DetailScreen({
         await progress.forget(item.id);
         await api.watched(item.id, false).catch(() => {});
       }
-
       if (nextPlayed) {
         await api.watched(item.id, true);
       }
       data.retry();
     } catch (e) {
-      if (!synthesizedDetail) {
-        setActionError(e instanceof Error ? e.message : "Could not update watched state.");
+      {
+        setActionError(
+          e instanceof Error ? e.message : "Could not update watched state.",
+        );
       }
     }
   }
-
   async function toggleEpisodeWatched(ep: any) {
-    const currentEpPlayed = episodesWatchedOverride[ep.id] ?? (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+    const currentEpPlayed =
+      episodesWatchedOverride[ep.id] ??
+      (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
     const nextPlayed = !currentEpPlayed;
     setEpisodesWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
     try {
@@ -1923,7 +1478,6 @@ export function DetailScreen({
       data.retry();
     } catch {}
   }
-
   // Find first playable episode
   function getFirstPlayableFileId() {
     if (detail?.file?.fileId) return detail.file.fileId;
@@ -1932,68 +1486,17 @@ export function DetailScreen({
       detail?.episodes?.find((e: any) => e.fileId);
     return ep?.fileId ?? null;
   }
-
   const selectedSeason = season ?? detail?.seasons?.[0]?.number;
-  const seasonEpisodes = (detail?.episodes || []).filter(
-    (e: any) => (selectedSeason == null || e.seasonNumber === selectedSeason) && e.fileId,
-  );
-  const completedSeasonEpisodes = seasonEpisodes.filter((e: any) =>
-    downloadEntries.some((d) => d.fileId === e.fileId && d.state === "completed"),
-  );
-  const activeSeasonEpisodes = seasonEpisodes.filter((e: any) =>
-    downloadEntries.some((d) => d.fileId === e.fileId && (d.state === "downloading" || d.state === "queued")),
-  );
-  const isSeasonDownloaded = seasonEpisodes.length > 0 && completedSeasonEpisodes.length === seasonEpisodes.length;
-  const isSeasonDownloading = activeSeasonEpisodes.length > 0;
-
-  async function downloadWholeSeason() {
-    if (!seasonEpisodes.length || isSeasonDownloaded || !item) return;
-    setDownloadingSeason(true);
-    try {
-      for (const ep of seasonEpisodes) {
-        const alreadyQueued = downloadEntries.some(
-          (d) => d.fileId === ep.fileId && (d.state === "completed" || d.state === "downloading" || d.state === "queued"),
-        );
-        if (alreadyQueued) continue;
-
-        try {
-          const manifest = await api.play(ep.fileId);
-          const maxHeight = preferences.defaultDownloadHeight;
-          const epItem: ItemCard = {
-            ...item,
-            id: ep.id,
-            name: ep.name || `Episode ${ep.episodeNumber}`,
-            poster: ep.poster || item.poster,
-            kind: "episode",
-            seasonNumber: ep.seasonNumber,
-            episodeNumber: ep.episodeNumber,
-          };
-          (epItem as any).seriesName = item.name;
-          await downloads.enqueue(
-            epItem,
-            manifest,
-            ep.fileId,
-            `${item.name} S${ep.seasonNumber}E${ep.episodeNumber}`,
-            maxHeight,
-          );
-        } catch (err) {
-          console.warn("Failed to enqueue episode", ep.id, err);
-        }
-      }
-    } finally {
-      setDownloadingSeason(false);
-    }
-  }
-
   const hasEpisodes = Boolean(detail?.episodes?.length);
-  const movieDl = detail?.file ? downloadEntries.find((d) => d.fileId === detail.file!.fileId) : undefined;
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       {/* Floating Back button pinned at top-left */}
       <Pressable
         onPress={back}
-        style={({ pressed }) => [styles.detailBack, pressed && { opacity: 0.6 }]}
+        style={({ pressed }) => [
+          styles.detailBack,
+          pressed && { opacity: 0.6 },
+        ]}
         hitSlop={14}
       >
         <ArrowLeft size={22} color="#fff" strokeWidth={2} />
@@ -2001,7 +1504,7 @@ export function DetailScreen({
 
       <ScrollView
         contentContainerStyle={styles.detailContainer}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
       >
         {data.loading && !detail ? (
           <View style={{ padding: 32 }}>
@@ -2018,8 +1521,11 @@ export function DetailScreen({
               {/* Hero section */}
               <Hero
                 item={item}
-                logo={"logo" in detail && (detail as any).logo ? (detail as any).logo : item.logo}
-                preferred={true}
+                logo={
+                  "logo" in detail && (detail as any).logo
+                    ? (detail as any).logo
+                    : item.logo
+                }
                 actionLabel={
                   item.watch?.position && !isSeriesWatched ? "Resume" : "Play"
                 }
@@ -2033,14 +1539,16 @@ export function DetailScreen({
                     ? () => {
                         void Linking.openURL(
                           `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
-                        ).catch(() => setActionError("No app is available to open this trailer."));
+                        ).catch(() =>
+                          setActionError(
+                            "No app is available to open this trailer.",
+                          ),
+                        );
                       }
                     : undefined
                 }
                 onToggleWatched={() => void watched()}
                 isWatched={isSeriesWatched}
-                onDownload={!platform.local && detail.file ? () => download(item, detail.file!.fileId) : undefined}
-                downloadState={movieDl}
                 onDelete={() => {
                   const isSeries = hasEpisodes || item.kind === "series";
                   Alert.alert(
@@ -2058,16 +1566,18 @@ export function DetailScreen({
                             await api.deleteItem(item.id);
                             back();
                           } catch (err) {
-                            setActionError(err instanceof Error ? err.message : String(err));
+                            setActionError(
+                              err instanceof Error ? err.message : String(err),
+                            );
                           }
                         },
                       },
-                    ]
+                    ],
                   );
                 }}
               />
 
-              <View style={[styles.detailBody, platform.tv && styles.detailBodyTV]}>
+              <View style={[styles.detailBody]}>
                 {!!actionError && <Notice message={actionError} />}
 
                 {/* If TV show with episodes, display Tab Selector: Episodes | Cast & Details */}
@@ -2080,11 +1590,19 @@ export function DetailScreen({
                         onBlur={() => setTabFocus(null)}
                         style={[
                           styles.detailTabItem,
-                          detailTab === "episodes" && styles.detailTabItemActive,
-                          tabFocus === "episodes" && styles.detailTabItemFocusedTv,
+                          detailTab === "episodes" &&
+                            styles.detailTabItemActive,
+                          tabFocus === "episodes" &&
+                            styles.detailTabItemFocusedTv,
                         ]}
                       >
-                        <Text style={[styles.detailTabItemText, detailTab === "episodes" && styles.detailTabItemTextActive]}>
+                        <Text
+                          style={[
+                            styles.detailTabItemText,
+                            detailTab === "episodes" &&
+                              styles.detailTabItemTextActive,
+                          ]}
+                        >
                           Episodes
                         </Text>
                       </Pressable>
@@ -2095,10 +1613,17 @@ export function DetailScreen({
                         style={[
                           styles.detailTabItem,
                           detailTab === "details" && styles.detailTabItemActive,
-                          tabFocus === "details" && styles.detailTabItemFocusedTv,
+                          tabFocus === "details" &&
+                            styles.detailTabItemFocusedTv,
                         ]}
                       >
-                        <Text style={[styles.detailTabItemText, detailTab === "details" && styles.detailTabItemTextActive]}>
+                        <Text
+                          style={[
+                            styles.detailTabItemText,
+                            detailTab === "details" &&
+                              styles.detailTabItemTextActive,
+                          ]}
+                        >
                           Cast & Details
                         </Text>
                       </Pressable>
@@ -2107,84 +1632,77 @@ export function DetailScreen({
                     {detailTab === "episodes" ? (
                       <>
                         {/* Multiple seasons: prominent Choose Season option */}
-                        {!!detail.seasons?.length && detail.seasons.length > 1 && (
-                          <View style={{ gap: 8 }}>
-                            <Text style={styles.detailSectionLabel}>Choose Season</Text>
-                            <ScrollView
-                              horizontal
-                              showsHorizontalScrollIndicator={false}
-                              contentContainerStyle={{ gap: 8 }}
-                            >
-                              {detail.seasons.map((s: any) => {
-                                const active = selectedSeason === s.number;
-                                return (
-                                  <Pressable
-                                    key={s.number}
-                                    onPress={() => setSeason(s.number)}
-                                    onFocus={() => setSeasonFocus(s.number)}
-                                    onBlur={() => setSeasonFocus(null)}
-                                    style={[
-                                      styles.seasonPill,
-                                      { flexDirection: "row", alignItems: "center" },
-                                      active && styles.seasonPillActive,
-                                      seasonFocus === s.number && styles.seasonPillFocusedTv,
-                                    ]}
-                                  >
-                                    {!!s.poster && <Image source={api.image(s.poster)} style={{width:28,height:42,borderRadius:3,marginRight:8}} resizeMode="cover" />}
-                                    <Text style={[styles.seasonPillText, active && styles.seasonPillTextActive]}>
-                                      {s.name || `Season ${s.number}`}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
-                            </ScrollView>
-                          </View>
-                        )}
+                        {!!detail.seasons?.length &&
+                          detail.seasons.length > 1 && (
+                            <View style={{ gap: 8 }}>
+                              <Text style={styles.detailSectionLabel}>
+                                Choose Season
+                              </Text>
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator
+                                contentContainerStyle={{ gap: 8 }}
+                              >
+                                {detail.seasons.map((s: any) => {
+                                  const active = selectedSeason === s.number;
+                                  return (
+                                    <Pressable
+                                      key={s.number}
+                                      onPress={() => setSeason(s.number)}
+                                      onFocus={() => setSeasonFocus(s.number)}
+                                      onBlur={() => setSeasonFocus(null)}
+                                      style={[
+                                        styles.seasonPill,
+                                        {
+                                          flexDirection: "row",
+                                          alignItems: "center",
+                                        },
+                                        active && styles.seasonPillActive,
+                                        seasonFocus === s.number &&
+                                          styles.seasonPillFocusedTv,
+                                      ]}
+                                    >
+                                      {!!s.poster && (
+                                        <Image
+                                          source={api.image(s.poster)}
+                                          style={{
+                                            width: 28,
+                                            height: 42,
+                                            borderRadius: 3,
+                                            marginRight: 8,
+                                          }}
+                                          resizeMode="cover"
+                                        />
+                                      )}
+                                      <Text
+                                        style={[
+                                          styles.seasonPillText,
+                                          active && styles.seasonPillTextActive,
+                                        ]}
+                                      >
+                                        {s.name || `Season ${s.number}`}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </ScrollView>
+                            </View>
+                          )}
 
                         {/* Download whole season button */}
-                        {seasonEpisodes.length > 0 && !platform.tv && !platform.local && (
-                          <View style={styles.seasonDownloadBar}>
-                            <Pressable
-                              onPress={() => void downloadWholeSeason()}
-                              disabled={isSeasonDownloaded || isSeasonDownloading || downloadingSeason}
-                              style={({ pressed }) => [
-                                styles.downloadSeasonBtn,
-                                isSeasonDownloaded && styles.downloadSeasonBtnCompleted,
-                                (isSeasonDownloading || downloadingSeason) && styles.downloadSeasonBtnActive,
-                                pressed && { opacity: 0.8 },
-                              ]}
-                            >
-                              {isSeasonDownloaded ? (
-                                <>
-                                  <Check size={16} color="#22c55e" strokeWidth={2.5} />
-                                  <Text style={styles.downloadSeasonBtnTextCompleted}>
-                                    Season {selectedSeason ?? 1} Downloaded
-                                  </Text>
-                                </>
-                              ) : isSeasonDownloading || downloadingSeason ? (
-                                <>
-                                  <Download size={16} color={colors.brand} strokeWidth={2.2} />
-                                  <Text style={styles.downloadSeasonBtnTextActive}>
-                                    Downloading Season {selectedSeason ?? 1} ({activeSeasonEpisodes.length || seasonEpisodes.length} remaining)
-                                  </Text>
-                                </>
-                              ) : (
-                                <>
-                                  <Download size={16} color="#ffffff" strokeWidth={2} />
-                                  <Text style={styles.downloadSeasonBtnText}>
-                                    Download Season {selectedSeason ?? 1} ({seasonEpisodes.length} {seasonEpisodes.length === 1 ? "Episode" : "Episodes"})
-                                  </Text>
-                                </>
-                              )}
-                            </Pressable>
-                          </View>
-                        )}
 
                         {/* Episodes list */}
                         {detail.episodes
-                          ?.filter((e: any) => selectedSeason == null || e.seasonNumber === selectedSeason)
+                          ?.filter(
+                            (e: any) =>
+                              selectedSeason == null ||
+                              e.seasonNumber === selectedSeason,
+                          )
                           .map((ep: any) => {
-                            const isEpWatched = episodesWatchedOverride[ep.id] ?? (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+                            const isEpWatched =
+                              episodesWatchedOverride[ep.id] ??
+                              (progress.latest(ep.id)?.played ||
+                                Boolean(ep.watch?.played));
                             return (
                               <EpisodeCard
                                 key={ep.id}
@@ -2193,13 +1711,15 @@ export function DetailScreen({
                                   watch: {
                                     ...ep.watch,
                                     played: isEpWatched,
-                                    position: isEpWatched ? (ep.watch?.duration || (ep.runtime ? ep.runtime * 60 : 3600)) : (ep.watch?.position || 0),
+                                    position: isEpWatched
+                                      ? ep.watch?.duration ||
+                                        (ep.runtime ? ep.runtime * 60 : 3600)
+                                      : ep.watch?.position || 0,
                                   },
                                 }}
                                 api={api}
                                 platform={platform}
                                 play={play}
-                                download={download}
                                 item={item}
                                 onToggleWatched={toggleEpisodeWatched}
                               />
@@ -2210,14 +1730,18 @@ export function DetailScreen({
                       <>
                         {/* Overview */}
                         <Text style={styles.detailOverview}>
-                          {detail.metadata?.overview || item.overview || "No synopsis is available."}
+                          {detail.metadata?.overview ||
+                            item.overview ||
+                            "No synopsis is available."}
                         </Text>
 
                         {/* File quality info */}
                         {detail.file && (
                           <Text style={styles.detailQuality}>
                             {[
-                              detail.file.height ? `${detail.file.height}p` : null,
+                              detail.file.height
+                                ? `${detail.file.height}p`
+                                : null,
                               (detail.file as any).videoCodec?.toUpperCase(),
                               (detail.file as any).hdr,
                               (detail.file as any).container?.toUpperCase(),
@@ -2230,24 +1754,48 @@ export function DetailScreen({
                         {/* Cast */}
                         {!!detail.cast?.length && (
                           <View style={{ gap: 12 }}>
-                            <Text style={styles.detailSectionLabel}>Cast & Crew</Text>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
+                            <Text style={styles.detailSectionLabel}>
+                              Cast & Crew
+                            </Text>
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator
+                              contentContainerStyle={{ gap: 14 }}
+                            >
                               {detail.cast.map((person: any, i: number) => (
-                                <View key={`${person.name}-${i}`} style={styles.castCard}>
+                                <View
+                                  key={`${person.name}-${i}`}
+                                  style={styles.castCard}
+                                >
                                   {person.photo ? (
                                     <Image
                                       source={api.image(person.photo)}
                                       style={styles.castPhoto}
                                     />
                                   ) : (
-                                    <View style={[styles.castPhoto, styles.castPhotoPlaceholder]}>
+                                    <View
+                                      style={[
+                                        styles.castPhoto,
+                                        styles.castPhotoPlaceholder,
+                                      ]}
+                                    >
                                       <Text style={styles.castInitial}>
                                         {person.name?.[0]?.toUpperCase()}
                                       </Text>
                                     </View>
                                   )}
-                                  <Text style={styles.castName} numberOfLines={2}>{person.name}</Text>
-                                  <Text style={styles.castCharacter} numberOfLines={1}>{person.character}</Text>
+                                  <Text
+                                    style={styles.castName}
+                                    numberOfLines={2}
+                                  >
+                                    {person.name}
+                                  </Text>
+                                  <Text
+                                    style={styles.castCharacter}
+                                    numberOfLines={1}
+                                  >
+                                    {person.character}
+                                  </Text>
                                 </View>
                               ))}
                             </ScrollView>
@@ -2260,7 +1808,9 @@ export function DetailScreen({
                   <>
                     {/* Movie overview */}
                     <Text style={styles.detailOverview}>
-                      {detail.metadata?.overview || item.overview || "No synopsis is available."}
+                      {detail.metadata?.overview ||
+                        item.overview ||
+                        "No synopsis is available."}
                     </Text>
 
                     {/* File quality info */}
@@ -2280,24 +1830,45 @@ export function DetailScreen({
                     {/* Movie Cast */}
                     {!!detail.cast?.length && (
                       <View style={{ gap: 12 }}>
-                        <Text style={styles.detailSectionLabel}>Cast & Crew</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
+                        <Text style={styles.detailSectionLabel}>
+                          Cast & Crew
+                        </Text>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator
+                          contentContainerStyle={{ gap: 14 }}
+                        >
                           {detail.cast.map((person: any, i: number) => (
-                            <View key={`${person.name}-${i}`} style={styles.castCard}>
+                            <View
+                              key={`${person.name}-${i}`}
+                              style={styles.castCard}
+                            >
                               {person.photo ? (
                                 <Image
                                   source={api.image(person.photo)}
                                   style={styles.castPhoto}
                                 />
                               ) : (
-                                <View style={[styles.castPhoto, styles.castPhotoPlaceholder]}>
+                                <View
+                                  style={[
+                                    styles.castPhoto,
+                                    styles.castPhotoPlaceholder,
+                                  ]}
+                                >
                                   <Text style={styles.castInitial}>
                                     {person.name?.[0]?.toUpperCase()}
                                   </Text>
                                 </View>
                               )}
-                              <Text style={styles.castName} numberOfLines={2}>{person.name}</Text>
-                              <Text style={styles.castCharacter} numberOfLines={1}>{person.character}</Text>
+                              <Text style={styles.castName} numberOfLines={2}>
+                                {person.name}
+                              </Text>
+                              <Text
+                                style={styles.castCharacter}
+                                numberOfLines={1}
+                              >
+                                {person.character}
+                              </Text>
                             </View>
                           ))}
                         </ScrollView>
@@ -2313,16 +1884,14 @@ export function DetailScreen({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
-// EpisodeCard (thumbnail with centered play button, title, overview & download)
+// EpisodeCard
 // ---------------------------------------------------------------------------
 function EpisodeCard({
   ep,
   api,
   platform,
   play,
-  download,
   item,
   onToggleWatched,
 }: {
@@ -2330,13 +1899,10 @@ function EpisodeCard({
   api: any;
   platform: any;
   play: (fileId: number) => void;
-  download: (item: ItemCard, fileId: number) => void;
   item: ItemCard;
   onToggleWatched?: (ep: any) => void;
 }) {
-  const { downloads } = useClient();
-  const downloadEntries = useDownloads();
-  const [focused, setFocused] = useState(false);
+  const [, setFocused] = useState(false);
   const watched = Boolean(ep.watch?.played);
   const hasProgress = Boolean(ep.watch?.position && !watched);
   const duration = ep.runtime ? `${ep.runtime}:00` : null;
@@ -2344,19 +1910,18 @@ function EpisodeCard({
     hasProgress && ep.watch?.duration
       ? Math.min(1, ep.watch.position / ep.watch.duration)
       : null;
-
-  const dl = ep.fileId ? downloadEntries.find((d) => d.fileId === ep.fileId) : undefined;
-  const dlPercent = dl && dl.expected ? Math.min(100, Math.round((dl.bytes / dl.expected) * 100)) : 0;
-
   // Clean redundant S01E01 / Season 1 Episode 1 prefixes
   const rawName = String(ep.name || "").trim();
   const cleanedTitle = rawName
-    .replace(/^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i, "")
+    .replace(
+      /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
+      "",
+    )
     .trim();
-
   // Show only the episode title; falls back to Episode {number} if name was empty
-  const epDisplayTitle = cleanedTitle || (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName);
-
+  const epDisplayTitle =
+    cleanedTitle ||
+    (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName);
   const epItem: ItemCard = {
     ...item,
     id: ep.id,
@@ -2367,34 +1932,29 @@ function EpisodeCard({
     episodeNumber: ep.episodeNumber,
   };
   (epItem as any).seriesName = item.name;
-
   return (
     <Pressable
       onPress={() => ep.fileId && play(ep.fileId)}
       disabled={!ep.fileId}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={({ pressed }) => [
-        styles.epCard,
-        platform.tv && focused && styles.epCardFocused,
-        pressed && { opacity: 0.8 },
-      ]}
+      style={({ pressed }) => [styles.epCard, pressed && { opacity: 0.8 }]}
     >
       {/* Thumbnail with centered play button */}
       <View style={styles.epThumbWrap}>
         {ep.poster ? (
-          <Image source={api.image(ep.poster)} style={styles.epThumb} resizeMode="cover" />
+          <Image
+            source={api.image(ep.poster)}
+            style={styles.epThumb}
+            resizeMode="cover"
+          />
         ) : (
           <View style={[styles.epThumb, styles.epThumbPlaceholder]} />
         )}
 
         {/* Center play icon button */}
-        <View style={[styles.epPlayOverlay, platform.tv && focused && styles.epPlayOverlayFocused]}>
-          <Play
-            size={18}
-            color={platform.tv && focused ? "#000" : "#fff"}
-            fill={platform.tv && focused ? "#000" : "#fff"}
-          />
+        <View style={[styles.epPlayOverlay]}>
+          <Play size={18} color={"#fff"} fill={"#fff"} />
         </View>
 
         {/* Duration badge */}
@@ -2421,15 +1981,19 @@ function EpisodeCard({
 
       {/* Info: Title, 2-line description, and small Episode {number} at the bottom */}
       <View style={styles.epInfo}>
-        <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-          <Text
-            style={[styles.epTitle, { flex: 1 }, platform.tv && focused && { color: "#ffffff" }]}
-            numberOfLines={1}
-          >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <Text style={[styles.epTitle, { flex: 1 }]} numberOfLines={1}>
             {epDisplayTitle}
           </Text>
 
-          {/* Action buttons: Watched state and Download state */}
+          {/* Watched state */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             {onToggleWatched && (
               <Pressable
@@ -2441,7 +2005,11 @@ function EpisodeCard({
                   pressed && { opacity: 0.6 },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={watched ? "Mark episode as unwatched" : "Mark episode as watched"}
+                accessibilityLabel={
+                  watched
+                    ? "Mark episode as unwatched"
+                    : "Mark episode as watched"
+                }
               >
                 <Check
                   size={14}
@@ -2450,52 +2018,8 @@ function EpisodeCard({
                 />
               </Pressable>
             )}
-
-            {ep.fileId && !platform.tv && !platform.local && (
-              dl ? (
-                dl.state === "downloading" ? (
-                  <View style={styles.epDlBadgeActive}>
-                    <Download size={12} color={colors.brand} strokeWidth={2.4} />
-                    <Text style={styles.epDlBadgeTextActive}>{dlPercent}%</Text>
-                  </View>
-                ) : dl.state === "queued" ? (
-                  <View style={styles.epDlBadgeQueued}>
-                    <Text style={styles.epDlBadgeTextQueued}>Queued</Text>
-                  </View>
-                ) : dl.state === "completed" ? (
-                  <View style={styles.epDlBadgeCompleted}>
-                    <Check size={13} color="#22c55e" strokeWidth={2.6} />
-                  </View>
-                ) : dl.state === "failed" ? (
-                  <Pressable
-                    onPress={() => downloads.retry(dl.id)}
-                    style={styles.epDlBadgeFailed}
-                    hitSlop={6}
-                  >
-                    <RefreshCw size={12} color="#ef4444" strokeWidth={2} />
-                    <Text style={styles.epDlBadgeTextFailed}>Retry</Text>
-                  </Pressable>
-                ) : null
-              ) : (
-                <Pressable
-                  onPress={() => download(epItem, ep.fileId!)}
-                  style={({ pressed }) => [styles.epDownloadIconBtn, pressed && { opacity: 0.6 }]}
-                  hitSlop={8}
-                  accessibilityLabel="Download episode"
-                >
-                  <Download size={15} color={colors.muted} strokeWidth={1.8} />
-                </Pressable>
-              )
-            )}
           </View>
         </View>
-
-        {/* Live download bar under title if downloading */}
-        {dl?.state === "downloading" && (
-          <View style={{ height: 2, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 1, overflow: "hidden", marginTop: 2 }}>
-            <View style={{ width: `${dlPercent}%`, height: "100%", backgroundColor: colors.brand }} />
-          </View>
-        )}
 
         <Text style={styles.epOverview} numberOfLines={2}>
           {ep.overview || "No description available."}
@@ -2509,7 +2033,6 @@ function EpisodeCard({
     </Pressable>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
@@ -2527,7 +2050,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     letterSpacing: 0.2,
   },
-
   // --- Hero ---
   heroContainer: {
     width: "100%",
@@ -2540,33 +2062,12 @@ const styles = StyleSheet.create({
     gap: 10,
     maxWidth: "100%",
   },
-  heroContentTV: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-    maxWidth: 500,
-    gap: 6,
-  },
-  heroPillRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 5,
-  },
   heroTitle: {
     fontFamily: fonts.black,
     fontSize: 36,
     color: "#fff",
     lineHeight: 42,
     letterSpacing: -0.5,
-  },
-  heroTitleTV: {
-    fontSize: 20,
-    lineHeight: 24,
-  },
-  heroSubtitle: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: "rgba(255,255,255,0.65)",
-    letterSpacing: 0.1,
   },
   heroMetaRow: {
     flexDirection: "row",
@@ -2587,11 +2088,6 @@ const styles = StyleSheet.create({
     width: 240,
     height: 70,
     marginBottom: 8,
-  },
-  heroLogoTV: {
-    width: 300,
-    height: 90,
-    marginBottom: 10,
   },
   heroOverview: {
     fontFamily: fonts.regular,
@@ -2618,21 +2114,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
   },
-  heroPlayBtnTV: {
-    flex: 0,
-    alignSelf: "flex-start",
-    backgroundColor: colors.brand,
-    minHeight: 44,
-    paddingVertical: 10,
-  },
   heroPlayBtnText: {
     fontFamily: fonts.bold,
     fontSize: 16,
     color: "#000000",
     letterSpacing: 0.2,
-  },
-  heroPlayBtnTextTV: {
-    color: "#ffffff",
   },
   heroIconBtn: {
     width: 52,
@@ -2652,23 +2138,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(239, 68, 68, 0.15)",
     borderColor: "rgba(239, 68, 68, 0.5)",
   },
-  heroDetailsBtn: {
-    flex: 0,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.6)",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    minHeight: 32,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heroDetailsBtnText: {
-    fontFamily: fonts.bold,
-    fontSize: 12.5,
-    color: "#fff",
-  },
   heroBtnDisabled: {
     opacity: 0.4,
   },
@@ -2680,47 +2149,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 2,
   },
-  heroSlideHeaderFocused: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.45)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginHorizontal: -8,
-    marginVertical: -4,
-  },
   heroMetaRating: {
     fontFamily: fonts.bold,
     fontSize: 11,
     color: "rgba(255,255,255,0.85)",
   },
-  heroFocusRing: {
-    borderWidth: 2,
-    borderColor: "#ffffff",
-  },
-  heroPlayBtnFocused: {
-    borderColor: "#ffffff",
-    borderWidth: 2,
-    zIndex: 3,
-    elevation: 8,
-  },
-  heroIconBtnFocused: {
-    borderColor: "#ffffff",
-    backgroundColor: "rgba(255,255,255,0.28)",
-    zIndex: 3,
-    elevation: 8,
-  },
-  iconBtnFocusRing: {
-    position: "absolute" as const,
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderWidth: 2,
-    borderColor: "#ffffff",
-    borderRadius: 16,
-  },
-
   // --- Hero Carousel ---
   carouselDots: {
     position: "absolute",
@@ -2732,13 +2165,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     zIndex: 10,
-  },
-  carouselDotsTV: {
-    top: 18,
-    bottom: undefined,
-    right: 28,
-    left: undefined,
-    justifyContent: "flex-end",
   },
   carouselDot: {
     flex: 1,
@@ -2755,19 +2181,10 @@ const styles = StyleSheet.create({
     borderColor: "#ffffff",
     transform: [{ scale: 1.2 }],
   },
-
   // --- Continue Watching Card ---
   cwCard: {
     width: 168,
     gap: 6,
-  },
-  cwCardFocused: {
-    zIndex: 3,
-    elevation: 8,
-  },
-  cwPreferred: {
-    zIndex: 3,
-    elevation: 8,
   },
   cwFocusRing: {
     position: "absolute" as const,
@@ -2862,7 +2279,6 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: colors.muted,
   },
-
   // --- Catalog row ---
   rowContainer: {
     marginBottom: 20,
@@ -2881,16 +2297,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
     letterSpacing: -0.3,
   },
-  rowSeeAll: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    color: colors.muted,
-  },
   rowList: {
     paddingHorizontal: 20,
     gap: 10,
   },
-
   // --- Home ---
   homeContainer: {
     paddingBottom: 28,
@@ -2904,12 +2314,6 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     elevation: 20,
   },
-  homeRefresh: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    alignSelf: "flex-start",
-  },
-
   // --- Library ---
   libraryRoot: {
     flex: 1,
@@ -2970,13 +2374,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     color: "#000000",
   },
-  dlFilterRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
   sortBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
@@ -3027,11 +2424,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     color: "#000000",
   },
-  filterRow: {
-    gap: 6,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-  },
   filterChip: {
     paddingHorizontal: 14,
     minHeight: 38,
@@ -3067,7 +2459,6 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     paddingTop: 4,
   },
-
   // --- Search ---
   searchContainer: {
     paddingBottom: 32,
@@ -3089,29 +2480,12 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.36)",
     backgroundColor: colors.elevated,
   },
-  searchInputWrapTv: {
-    maxWidth: "100%",
-    width: "100%",
-    height: 38,
-    alignSelf: "stretch",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    borderWidth: 2,
-    borderColor: colors.line,
-  },
-  searchInputWrapTvFocused: {
-    borderColor: "#ffffff",
-  },
   searchInput: {
     flex: 1,
     fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.ink,
     paddingVertical: 10,
-  },
-  searchInputTv: {
-    fontSize: 13,
-    paddingVertical: 0,
   },
   searchClear: {
     width: 24,
@@ -3136,7 +2510,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 12,
   },
-
   // --- Detail ---
   detailContainer: {
     paddingBottom: 48,
@@ -3159,65 +2532,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     gap: 18,
-  },
-  detailBodyTV: {
-    paddingHorizontal: 36,
-  },
-  detailMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  detailMetaText: {
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    color: colors.muted,
-  },
-  detailMetaDot: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  detailRating: {
-    fontFamily: fonts.bold,
-    fontSize: 13,
-    color: colors.amber,
-  },
-  detailPlayBtn: {
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    paddingVertical: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  detailPlayBtnText: {
-    fontFamily: fonts.bold,
-    fontSize: 16,
-    color: "#fff",
-    letterSpacing: 0.2,
-  },
-  detailActions: {
-    flexDirection: "row",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-  detailActionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  detailActionText: {
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    color: colors.ink,
   },
   detailOverview: {
     fontFamily: fonts.regular,
@@ -3266,7 +2580,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: "#ffffff",
   },
-
   // Season pills
   seasonPill: {
     paddingHorizontal: 16,
@@ -3293,7 +2606,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#ffffff",
   },
-
   // Episode card
   epCard: {
     flexDirection: "row",
@@ -3301,11 +2613,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 10,
-  },
-  epCardFocused: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.65)",
   },
   epThumbWrap: {
     width: 148,
@@ -3321,20 +2628,6 @@ const styles = StyleSheet.create({
   },
   epThumbPlaceholder: {
     backgroundColor: colors.elevated,
-  },
-  epBadge: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderRadius: 5,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  epBadgeText: {
-    fontFamily: fonts.bold,
-    fontSize: 11,
-    color: "#fff",
   },
   epDuration: {
     position: "absolute",
@@ -3367,111 +2660,6 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: colors.brand,
   },
-  epDlBadgeActive: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: "rgba(0,102,204,0.15)",
-    borderWidth: 1,
-    borderColor: colors.brand,
-  },
-  epDlBadgeTextActive: {
-    fontFamily: fonts.bold,
-    fontSize: 11,
-    color: colors.brand,
-  },
-  epDlBadgeQueued: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  epDlBadgeTextQueued: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    color: colors.muted,
-  },
-  epDlBadgeCompleted: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: "rgba(34,197,94,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(34,197,94,0.4)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  epDlBadgeFailed: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: "rgba(239,68,68,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.4)",
-  },
-  epDlBadgeTextFailed: {
-    fontFamily: fonts.bold,
-    fontSize: 11,
-    color: "#ef4444",
-  },
-  epWatchedToggleBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  epWatchedToggleBtnActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  seasonDownloadBar: {
-    paddingVertical: 6,
-  },
-  downloadSeasonBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  downloadSeasonBtnActive: {
-    borderColor: colors.brand,
-    backgroundColor: "rgba(0,102,204,0.12)",
-  },
-  downloadSeasonBtnCompleted: {
-    borderColor: "#22c55e",
-    backgroundColor: "rgba(34,197,94,0.12)",
-  },
-  downloadSeasonBtnText: {
-    fontFamily: fonts.bold,
-    fontSize: 13,
-    color: "#ffffff",
-  },
-  downloadSeasonBtnTextActive: {
-    fontFamily: fonts.bold,
-    fontSize: 13,
-    color: colors.brand,
-  },
-  downloadSeasonBtnTextCompleted: {
-    fontFamily: fonts.bold,
-    fontSize: 13,
-    color: "#22c55e",
-  },
   epInfo: {
     flex: 1,
     gap: 6,
@@ -3487,29 +2675,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
     lineHeight: 18,
-  },
-  epActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
-    alignItems: "center",
-  },
-  epPlayBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: colors.brand,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  epPlayBtnDisabled: {
-    opacity: 0.4,
-  },
-  epPlayBtnText: {
-    fontFamily: fonts.bold,
-    fontSize: 12,
-    color: "#fff",
   },
   epPlayOverlay: {
     position: "absolute",
@@ -3527,24 +2692,11 @@ const styles = StyleSheet.create({
     marginTop: -19,
     marginLeft: -19,
   },
-  epPlayOverlayFocused: {
-    backgroundColor: "#ffffff",
-    borderColor: "#ffffff",
-  },
   epNumberBottom: {
     fontFamily: fonts.medium,
     fontSize: 11,
     color: colors.muted,
     marginTop: 4,
-  },
-  epDownloadIconBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    alignItems: "center",
-    justifyContent: "center",
   },
   epWatchedBtn: {
     padding: 6,
@@ -3559,14 +2711,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(34, 197, 94, 0.15)",
     borderColor: "rgba(34, 197, 94, 0.4)",
   },
-  epDownloadBtn: {
-    padding: 6,
-    backgroundColor: colors.surface,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-
   // Cast
   castCard: {
     width: 96,
@@ -3597,16 +2741,5 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.muted,
-  },
-
-  // theme re-exports for inline use
-  amber: {
-    color: "#e8a33d",
-  },
-  elevated: {
-    backgroundColor: "#1a1a1a",
-  },
-  quiet: {
-    color: "#666666",
   },
 });

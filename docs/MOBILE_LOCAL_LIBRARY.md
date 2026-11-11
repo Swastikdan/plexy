@@ -72,7 +72,7 @@ Unvisited timestamps are not generated ahead of time.
 The player has no loading spinner over the video. Central playback/skip controls
 are hidden while loading, scrubbing or showing the end screen. Back and settings
 remain accessible. The mobile splash uses Expo's square icon and preserves its
-aspect ratio; the TV-only legacy wide bitmap override is not applied on mobile.
+aspect ratio.
 
 ## Updates and builds
 
@@ -89,7 +89,7 @@ GITHUB_RUN_NUMBER=31 PLEXY_ANDROID_ARCHITECTURES=arm64-v8a bun run build:mobile
 ```
 
 CI builds must supply the token through the same environment configuration.
-Native Gradle bundle inputs include both shared native-client and local-library
+Native Gradle bundle inputs include local-library and shared media-contract
 source so incremental builds pick up library changes.
 
 ## Verification

@@ -11,6 +11,9 @@ export interface ElectronAPI {
   installUpdate: () => Promise<void>;
   onUpdateProgress: (callback: (progress: DesktopUpdateProgress) => void) => () => void;
   getSystemUsage: () => Promise<DesktopSystemUsage>;
+  getLocalServerEnabled: () => Promise<boolean>;
+  setLocalServerEnabled: (enabled: boolean) => Promise<void>;
+  probeServer: (url: string) => Promise<{ version: string; setupComplete: boolean }>;
   getServerUrl: () => Promise<string>;
   setServerUrl: (url: string) => Promise<void>;
   onNavigate: (callback: (route: string) => void) => () => void;

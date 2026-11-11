@@ -58,16 +58,24 @@ function localHostnames(): Set<string> {
   return hosts;
 }
 
-export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: string[] } = {}) {
+export function buildApp(
+  options: {
+    requireAuth?: boolean;
+    allowedOrigins?: string[];
+    ui?: boolean;
+  } = {},
+) {
   const allowedOrigins = new Set(
-    (options.allowedOrigins ?? [...configuredCorsOrigins()]).flatMap((value) => {
-      try {
-        const url = new URL(value);
-        return url.origin === "null" ? [] : [url.origin];
-      } catch {
-        return [];
-      }
-    }),
+    (options.allowedOrigins ?? [...configuredCorsOrigins()]).flatMap(
+      (value) => {
+        try {
+          const url = new URL(value);
+          return url.origin === "null" ? [] : [url.origin];
+        } catch {
+          return [];
+        }
+      },
+    ),
   );
   const trustDevOrigins = devOriginTrusted();
   const localHosts = trustDevOrigins ? localHostnames() : new Set<string>();
@@ -94,7 +102,13 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
         // Range/If-Range matter for cross-origin HLS and seeking; the rest are
         // the request headers used by the typed client.
         allowedHeaders: ["Content-Type", "Authorization", "Range", "If-Range"],
-        exposeHeaders: ["Accept-Ranges", "Content-Range", "Content-Length", "ETag", "X-Request-Id"],
+        exposeHeaders: [
+          "Accept-Ranges",
+          "Content-Range",
+          "Content-Length",
+          "ETag",
+          "X-Request-Id",
+        ],
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
       }),
     )
@@ -102,32 +116,62 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
     // headers a hosted client needs to read them.
     .onRequest(({ request, set }) => {
       const requestId = crypto.randomUUID();
-      (request as Request & { __plexyRequestId?: string }).__plexyRequestId = requestId;
+      (request as Request & { __plexyRequestId?: string }).__plexyRequestId =
+        requestId;
       set.headers["x-request-id"] = requestId;
       set.headers["x-content-type-options"] = "nosniff";
       set.headers["referrer-policy"] = "no-referrer";
-      if (new URL(request.url).pathname.startsWith("/api/")) set.headers["cache-control"] = "private, no-store";
+      if (new URL(request.url).pathname.startsWith("/api/"))
+        set.headers["cache-control"] = "private, no-store";
       if (request.headers.has("origin") && !originAllowed(request)) {
-        return Response.json({ error: "This browser origin is not allowed." }, { status: 403 });
+        return Response.json(
+          { error: "This browser origin is not allowed." },
+          { status: 403 },
+        );
       }
     })
-    .onRequest(ctx => {
+    .onRequest((ctx) => {
       const path = new URL(ctx.request.url).pathname;
-      if (path.startsWith("/api/") && path !== "/api/server/status" && path !== "/api/auth/setup" && ctx.request.method !== "OPTIONS" && new URL(ctx.request.url).protocol !== "https:" && !isDirectLoopbackContext(ctx)) {
-        return Response.json({ error: "Use the server’s HTTPS address to sign in or access media.", code: "HTTPS_REQUIRED" }, { status: 426 });
+      if (
+        path.startsWith("/api/") &&
+        path !== "/api/server/status" &&
+        path !== "/api/auth/setup" &&
+        ctx.request.method !== "OPTIONS" &&
+        new URL(ctx.request.url).protocol !== "https:" &&
+        !isDirectLoopbackContext(ctx)
+      ) {
+        return Response.json(
+          {
+            error: "Use the server’s HTTPS address to sign in or access media.",
+            code: "HTTPS_REQUIRED",
+          },
+          { status: 426 },
+        );
       }
     })
     .onRequest(({ request }) => {
       if (!directPlayOnly()) return;
       const url = new URL(request.url);
-      if (/^\/api\/stream\/[^/]+\/(remux|transcode|hls)(?:\/|$)/.test(url.pathname)
-        || (/^\/api\/download\/[^/]+$/.test(url.pathname) && url.searchParams.has("maxHeight"))) {
-        return Response.json({ error: "This app plays original files only. Video conversion is disabled." }, { status: 409 });
+      if (
+        /^\/api\/stream\/[^/]+\/(remux|transcode|hls)(?:\/|$)/.test(
+          url.pathname,
+        ) ||
+        (/^\/api\/download\/[^/]+$/.test(url.pathname) &&
+          url.searchParams.has("maxHeight"))
+      ) {
+        return Response.json(
+          {
+            error:
+              "This app plays original files only. Video conversion is disabled.",
+          },
+          { status: 409 },
+        );
       }
     })
     .onRequest((ctx) => authGuard(ctx, options.requireAuth))
-    .onRequest(ctx => {
-      if (Bun.env.NODE_ENV !== "test" || options.requireAuth) return accessGuard(ctx);
+    .onRequest((ctx) => {
+      if (Bun.env.NODE_ENV !== "test" || options.requireAuth)
+        return accessGuard(ctx);
     })
     .onError({ as: "global" }, ({ error, code, request }) => {
       // Validation errors are client bugs; everything else we log loudly.
@@ -136,12 +180,16 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
         return Response.json({ error: "Invalid request." }, { status: 422 });
       }
       log.error("http", "request failed", {
-        requestId: (request as Request & { __plexyRequestId?: string }).__plexyRequestId,
+        requestId: (request as Request & { __plexyRequestId?: string })
+          .__plexyRequestId,
         method: request.method,
         path: new URL(request.url).pathname,
         message: error instanceof Error ? error.message : String(error),
       });
-      return Response.json({ error: "Something went wrong on the server." }, { status: 500 });
+      return Response.json(
+        { error: "Something went wrong on the server." },
+        { status: 500 },
+      );
     })
     .use(authRoutes)
     .use(adminRoutes)
@@ -153,10 +201,12 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
     .onRequest(({ request }) => {
       // Cheap start marker for the slow-request log below. Kept on the Request
       // object so concurrent requests cannot race on a shared variable.
-      (request as Request & { __plexyStartedAt?: number }).__plexyStartedAt = performance.now();
+      (request as Request & { __plexyStartedAt?: number }).__plexyStartedAt =
+        performance.now();
     })
     .onAfterResponse({ as: "global" }, ({ request, set }) => {
-      const started = (request as Request & { __plexyStartedAt?: number }).__plexyStartedAt;
+      const started = (request as Request & { __plexyStartedAt?: number })
+        .__plexyStartedAt;
       if (started == null) return;
       const ms = performance.now() - started;
       if (ms < 500) return;
@@ -165,7 +215,8 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
       // slow API metadata calls, which is where lag actually shows up.
       if (url.pathname.startsWith("/api/stream/")) return;
       log.warn("http", "slow request", {
-        requestId: (request as Request & { __plexyRequestId?: string }).__plexyRequestId,
+        requestId: (request as Request & { __plexyRequestId?: string })
+          .__plexyRequestId,
         method: request.method,
         path: url.pathname,
         status: set.status ?? 200,
@@ -173,9 +224,26 @@ export function buildApp(options: { requireAuth?: boolean; allowedOrigins?: stri
       });
     })
 
-    .all("/*", staticFallback);
+    .all(
+      "/*",
+      options.ui === false || !browserUiEnabled()
+        ? () =>
+            Response.json({ error: "Browser UI is disabled." }, { status: 404 })
+        : staticFallback,
+    );
 
   return app;
+}
+
+export function browserUiEnabled(
+  argv = process.argv,
+  env = process.env,
+): boolean {
+  return (
+    !argv.includes("--no-ui") &&
+    env.PLEXY_NO_UI !== "1" &&
+    env.PLEXY_NO_UI !== "true"
+  );
 }
 
 export type App = ReturnType<typeof buildApp>;
@@ -183,7 +251,9 @@ export type App = ReturnType<typeof buildApp>;
 function resolveDistDir(): string {
   const exeDir = process.argv[1] ? dirname(process.argv[1]) : "";
   const candidates = [
-    process.env.PLEXY_RESOURCES_DIR ? join(process.env.PLEXY_RESOURCES_DIR, "web") : "",
+    process.env.PLEXY_RESOURCES_DIR
+      ? join(process.env.PLEXY_RESOURCES_DIR, "web")
+      : "",
     process.env.PLEXY_WEB_DIR || "",
     join(exeDir, "web"),
     join(exeDir, "..", "Resources", "web"),
@@ -203,7 +273,11 @@ function resolveDistDir(): string {
  * client-side routing. Dev runs Vite itself; a missing dist answers with a
  * one-line pointer so the API is still testable with curl.
  */
-async function staticFallback({ request }: { request: Request }): Promise<Response> {
+async function staticFallback({
+  request,
+}: {
+  request: Request;
+}): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/")) {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -220,7 +294,10 @@ async function staticFallback({ request }: { request: Request }): Promise<Respon
     if (existsSync(indexPath)) {
       const index = await readFile(indexPath);
       return new Response(index, {
-        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
       });
     }
   }

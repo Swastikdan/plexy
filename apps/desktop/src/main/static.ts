@@ -3,11 +3,16 @@
 /// The normal desktop app loads the UI from its own backend. If that backend
 /// fails, this keeps the window alive so the shared connection screen can ask
 /// for a different Plexy server instead of quitting with a native error box.
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { app } from "electron";
+import { proxyApi } from "./remote-api";
+import { app, net } from "electron";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -47,7 +52,9 @@ function resolveWebDir(): string | null {
   return null;
 }
 
-export async function startStaticUi(): Promise<{
+export async function startStaticUi(
+  serverUrl: () => string = () => "",
+): Promise<{
   url: string;
   close: () => Promise<void>;
 }> {
@@ -60,10 +67,40 @@ export async function startStaticUi(): Promise<{
   const indexHtml = await readFile(indexPath);
 
   const server = createServer((request, response) => {
+    const address = server.address();
+    const expectedHost =
+      address && typeof address !== "string" ? `127.0.0.1:${address.port}` : "";
+    if (!expectedHost || request.headers.host !== expectedHost) {
+      response.writeHead(403);
+      response.end("Host is not allowed");
+      return;
+    }
+    const origin = request.headers.origin;
+    if (origin && origin !== `http://${request.headers.host}`) {
+      response.writeHead(403);
+      response.end("Origin is not allowed");
+      return;
+    }
+    if (request.url?.startsWith("/api/")) {
+      void proxyApi(request, response, serverUrl(), net.fetch.bind(net)).catch(
+        () => {
+          if (response.destroyed) return;
+          if (!response.headersSent) {
+            response.writeHead(502, { "Content-Type": "application/json" });
+            response.end(
+              JSON.stringify({ error: "Could not reach the selected server." }),
+            );
+          } else response.destroy();
+        },
+      );
+      return;
+    }
     void handleRequest(request, response, webDir, indexHtml).catch((error) => {
       console.error("[Plexy Desktop] Static UI request failed:", error);
       if (!response.headersSent) {
-        response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        response.writeHead(500, {
+          "Content-Type": "text/plain; charset=utf-8",
+        });
       }
       response.end("Could not load the Plexy UI.");
     });

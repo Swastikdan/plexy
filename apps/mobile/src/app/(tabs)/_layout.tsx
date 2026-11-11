@@ -1,25 +1,36 @@
+import { Tabs } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { LibraryAttention } from "../../components/LibraryAttention";
-import { Tabs } from "expo-router";
 import { Icon, type IconName } from "../../components/ui";
 import { localRuntime } from "../../lib/local";
 import { fonts } from "../../ui/theme";
-
-const tabs: { name: string; title: string; icon: IconName }[] = [
+const tabs: {
+  name: string;
+  title: string;
+  icon: IconName;
+}[] = [
   { name: "index", title: "Home", icon: "home" },
   { name: "libraries", title: "Libraries", icon: "library" },
   { name: "search", title: "Search", icon: "search" },
   { name: "settings", title: "Settings", icon: "settings" },
 ];
-
-type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>>[0];
-
-function MobileTabBar({ state, navigation, attention }: TabBarProps & { attention: number }) {
+type TabBarProps = Parameters<
+  NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
+>[0];
+function MobileTabBar({
+  state,
+  navigation,
+  attention,
+}: TabBarProps & {
+  attention: number;
+}) {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, 10);
-
   return (
     <View
       style={[
@@ -33,7 +44,6 @@ function MobileTabBar({ state, navigation, attention }: TabBarProps & { attentio
       {tabs.map((tab, index) => {
         const isFocused = state.index === index;
         const route = state.routes[index];
-
         const onPress = () => {
           const event = navigation.emit({
             type: "tabPress",
@@ -44,7 +54,6 @@ function MobileTabBar({ state, navigation, attention }: TabBarProps & { attentio
             navigation.navigate(route.name);
           }
         };
-
         return (
           <Pressable
             key={tab.name}
@@ -90,18 +99,18 @@ function MobileTabBar({ state, navigation, attention }: TabBarProps & { attentio
     </View>
   );
 }
-
 export default function TabLayout() {
   const [attention, setAttention] = useState(0);
-
   useEffect(() => {
     const update = () => setAttention(localRuntime.getAttentionCount?.() ?? 0);
     update();
     return localRuntime.subscribe?.(update);
   }, []);
-
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "#000000" }}>
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={{ flex: 1, backgroundColor: "#000000" }}
+    >
       <LibraryAttention />
       <Tabs
         backBehavior="initialRoute"
@@ -122,7 +131,6 @@ export default function TabLayout() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",

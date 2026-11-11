@@ -5,15 +5,6 @@ import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { generateIcons } from "../generate-icon";
 const root = resolve(import.meta.dir, "../..");
-const requested = process.argv[2] || "all";
-if (!["all", "mobile", "tv"].includes(requested))
-  throw new Error("Use mobile, tv, or all.");
-
-const repoPackage = JSON.parse(
-  await readFile(resolve(root, "package.json"), "utf8"),
-) as { version: string };
-const version = repoPackage.version;
-
 /**
  * CI uses the workflow run number so version codes match the release tag.
  * Local builds reserve 1000+ and increment, which keeps them installable on
@@ -48,11 +39,6 @@ const env = {
   PLEXY_BUILD_NUMBER: String(buildNumber),
 };
 
-function artifactName(target: string, targetVersion: string) {
-  const platform = target === "tv" ? "TV" : "mobile";
-  return `Plexy-${platform}-v${targetVersion}-Android.apk`;
-}
-
 async function run(command: string[], cwd: string) {
   const process = Bun.spawn(command, {
     cwd,
@@ -63,11 +49,12 @@ async function run(command: string[], cwd: string) {
   if ((await process.exited) !== 0)
     throw new Error(`Native build failed: ${command[0]}`);
 }
-for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
-  const cwd = resolve(root, "apps", target);
-  const targetVersion = target === "mobile"
-    ? JSON.parse(await readFile(resolve(cwd, "package.json"), "utf8")).version as string
-    : version;
+{
+  const target = "mobile";
+  const cwd = resolve(root, "apps/mobile");
+  const targetVersion = JSON.parse(
+    await readFile(resolve(cwd, "package.json"), "utf8"),
+  ).version as string;
   await run(["bun", "run", "prebuild"], cwd);
   const fixedKeystore = resolve(root, "scripts/native/debug.keystore");
   try {
@@ -82,19 +69,21 @@ for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
     [
       Bun.env.PLEXY_GRADLE_BINARY || "./gradlew",
       ":app:assembleRelease",
-      `-PreactNativeArchitectures=${Bun.env.PLEXY_ANDROID_ARCHITECTURES || "armeabi-v7a,arm64-v8a"}`,
-      "--max-workers=2",
-      "--no-daemon",
+      `-PreactNativeArchitectures=${Bun.env.PLEXY_ANDROID_ARCHITECTURES || "arm64-v8a"}`,
+      `--max-workers=${Bun.env.PLEXY_GRADLE_WORKERS || "2"}`,
+      "--build-cache",
+      "--parallel",
     ],
     resolve(cwd, "android"),
   );
   const out = resolve(root, ".build/native");
   await mkdir(out, { recursive: true });
-  const releaseApk = resolve(cwd, "android/app/build/outputs/apk/release/app-release.apk");
-  const artifact = resolve(out, artifactName(target, targetVersion));
+  const releaseApk = resolve(
+    cwd,
+    "android/app/build/outputs/apk/release/app-release.apk",
+  );
+  const artifact = resolve(out, `Plexy-mobile-v${targetVersion}-Android.apk`);
   await copyFile(releaseApk, artifact);
-  const legacyArtifact = resolve(out, `plexy-${target}-preview.apk`);
-  await copyFile(releaseApk, legacyArtifact);
   console.log(
     `Internal preview APK: ${artifact} (Plexy ${targetVersion}, internal build ${buildNumber})`,
   );

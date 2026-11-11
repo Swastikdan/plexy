@@ -1,21 +1,4 @@
-import React, { forwardRef, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Animated,
-  Easing,
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-  type StyleProp,
-  type ViewStyle,
-  type ImageStyle,
-  type TextInputProps,
-} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   ArrowLeft,
   AudioLines,
@@ -46,11 +29,28 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop } from "react-native-svg";
+import React, { forwardRef, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ImageStyle,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
+import Svg, {
+  Defs,
+  Path,
+  Stop,
+  LinearGradient as SvgGradient,
+} from "react-native-svg";
+import type { ItemCard, LocalCatalog } from "../lib/client/api";
 import { colors, fonts } from "../ui/theme";
-import type { ItemCard, PlexyApi } from "../../../../packages/native-client/src/api";
-
 // ---------------------------------------------------------------------------
 // Icon registry
 // ---------------------------------------------------------------------------
@@ -83,21 +83,25 @@ export const icons = {
   mute: VolumeX,
   close: X,
 } satisfies Record<string, LucideIcon>;
-
 export type IconName = keyof typeof icons;
-
 // ---------------------------------------------------------------------------
 // PosterImage
 // ---------------------------------------------------------------------------
-
-import { getCachedImageSync, resolveCachedImage } from "../../../../packages/native-client/src/image-cache";
-
+import {
+  getCachedImageSync,
+  resolveCachedImage,
+} from "../lib/client/image-cache";
 export function PosterImage({
   source,
   style,
   resizeMode = "cover",
 }: {
-  source: { uri: string; headers?: Record<string, string> } | undefined;
+  source:
+    | {
+        uri: string;
+        headers?: Record<string, string>;
+      }
+    | undefined;
   style?: StyleProp<ImageStyle>;
   resizeMode?: "cover" | "contain";
 }) {
@@ -110,7 +114,6 @@ export function PosterImage({
   const [attempt, setAttempt] = useState(0);
   const lastUri = useRef("");
   const uri = source?.uri || "";
-
   if (lastUri.current !== uri) {
     lastUri.current = uri;
     if (failed || attempt) {
@@ -118,7 +121,6 @@ export function PosterImage({
       setAttempt(0);
     }
   }
-
   useEffect(() => {
     if (!source?.uri) return;
     if (source.uri.startsWith("file://")) {
@@ -140,13 +142,8 @@ export function PosterImage({
       active = false;
     };
   }, [source?.uri]);
-
   if (!source || failed) return null;
-
-  const imageSource = resolvedUri
-    ? { uri: resolvedUri }
-    : source;
-
+  const imageSource = resolvedUri ? { uri: resolvedUri } : source;
   return (
     <Image
       key={resolvedUri || String(attempt)}
@@ -160,7 +157,6 @@ export function PosterImage({
     />
   );
 }
-
 // ---------------------------------------------------------------------------
 // Icon
 // ---------------------------------------------------------------------------
@@ -176,14 +172,18 @@ export function Icon({
   const Component = icons[name];
   return <Component size={size} color={color} strokeWidth={1.7} />;
 }
-
 // ---------------------------------------------------------------------------
 // PlexyMark / PlexyLogo
 // ---------------------------------------------------------------------------
 export function PlexyMark({ size = 22 }: { size?: number }) {
   const height = (size * 277) / 256;
   return (
-    <Svg width={size} height={height} viewBox="0 0 256 277" style={{ overflow: "visible" }}>
+    <Svg
+      width={size}
+      height={height}
+      viewBox="0 0 256 277"
+      style={{ overflow: "visible" }}
+    >
       <Defs>
         <SvgGradient id="plexy__blue" x1="0%" y1="0%" x2="100%" y2="100%">
           <Stop offset="0%" stopColor="#6C9FFF" />
@@ -198,7 +198,6 @@ export function PlexyMark({ size = 22 }: { size?: number }) {
     </Svg>
   );
 }
-
 export function PlexyLogo({
   size = 22,
   showText = true,
@@ -224,7 +223,6 @@ export function PlexyLogo({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // PageHeader — the one title treatment shared by every root screen.
 // Titles only: no eyebrow labels, no subtitles, no decorative rules.
@@ -260,7 +258,6 @@ export function PageHeader({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Label
 // ---------------------------------------------------------------------------
@@ -280,35 +277,27 @@ export function Label({
     <Text
       selectable={selectable}
       numberOfLines={numberOfLines}
-      style={[
-        styles.text,
-        Platform.isTV && styles.tvText,
-        muted && { color: colors.muted },
-        style,
-      ]}
+      style={[styles.text, muted && { color: colors.muted }, style]}
     >
       {children}
     </Text>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Heading
 // ---------------------------------------------------------------------------
 export function Heading({
   children,
   large = false,
-}: React.PropsWithChildren<{ large?: boolean }>) {
+}: React.PropsWithChildren<{
+  large?: boolean;
+}>) {
   return (
     <Label
       style={{
         fontFamily: fonts.black,
-        fontSize: large
-          ? Platform.isTV ? 20 : 34
-          : Platform.isTV ? 15 : 24,
-        lineHeight: large
-          ? Platform.isTV ? 24 : 42
-          : Platform.isTV ? 19 : 32,
+        fontSize: large ? 34 : 24,
+        lineHeight: large ? 42 : 32,
         letterSpacing: -0.5,
       }}
     >
@@ -316,7 +305,6 @@ export function Heading({
     </Label>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Button
 // ---------------------------------------------------------------------------
@@ -353,7 +341,6 @@ export const Button = forwardRef<
 ) {
   const [focused, setFocused] = useState(false);
   const isFilled = primary || selected;
-
   return (
     <Pressable
       ref={ref}
@@ -362,7 +349,6 @@ export const Button = forwardRef<
       accessibilityLabel={label}
       accessibilityState={{ disabled, selected }}
       disabled={disabled}
-      hasTVPreferredFocus={preferred}
       onPress={onPress}
       onFocus={() => {
         setFocused(true);
@@ -373,27 +359,19 @@ export const Button = forwardRef<
         styles.button,
         isFilled ? styles.buttonPrimary : styles.buttonSecondary,
         compact && styles.buttonCompact,
-        Platform.isTV && styles.buttonTV,
-        focused && Platform.isTV && styles.buttonFocusedTV,
-        focused && !Platform.isTV && styles.buttonFocused,
+        focused && styles.buttonFocused,
         pressed && { opacity: 0.75 },
         disabled && { opacity: 0.4 },
         style,
       ]}
     >
-      {icon && (
-        <Icon
-          name={icon}
-          size={Platform.isTV ? 16 : compact ? 18 : 20}
-          color="#fff"
-        />
-      )}
+      {icon && <Icon name={icon} size={compact ? 18 : 20} color="#fff" />}
       {!compact && (
         <Label
           style={{
             color: "#fff",
-            fontFamily: focused && Platform.isTV ? fonts.bold : fonts.medium,
-            fontSize: Platform.isTV ? 13 : 15,
+            fontFamily: fonts.medium,
+            fontSize: 15,
           }}
         >
           {label}
@@ -402,43 +380,8 @@ export const Button = forwardRef<
     </Pressable>
   );
 });
-
 // ---------------------------------------------------------------------------
 // Field
-// ---------------------------------------------------------------------------
-export function Field(props: TextInputProps & { label: string }) {
-  const [focus, setFocus] = useState(false);
-  return (
-    <View style={{ gap: 8 }}>
-      <Label muted style={{ fontFamily: fonts.medium, fontSize: 13 }}>
-        {props.label}
-      </Label>
-      <TextInput
-        {...props}
-        accessibilityLabel={props.label}
-        placeholderTextColor={colors.quiet}
-        selectionColor={colors.brand}
-        onFocus={(e) => {
-          setFocus(true);
-          props.onFocus?.(e);
-        }}
-        onBlur={(e) => {
-          setFocus(false);
-          props.onBlur?.(e);
-        }}
-        style={[
-          styles.field,
-          Platform.isTV && { fontSize: 20, minHeight: 56 },
-          focus && { borderColor: colors.brandLight },
-          props.style,
-        ]}
-      />
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Notice
 // ---------------------------------------------------------------------------
 export function Notice({
   message,
@@ -449,12 +392,8 @@ export function Notice({
   retry?: () => void;
   kind?: "info" | "error";
 }) {
-  const accent = kind === "error" ? colors.danger : colors.brandLight;
   return (
-    <View
-      accessibilityLiveRegion="polite"
-      style={styles.notice}
-    >
+    <View accessibilityLiveRegion="polite" style={styles.notice}>
       <Label style={{ color: kind === "error" ? colors.danger : colors.ink }}>
         {message}
       </Label>
@@ -462,7 +401,6 @@ export function Notice({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // ToggleSwitch — one consistent switch for the whole app
 // ---------------------------------------------------------------------------
@@ -478,7 +416,6 @@ export function ToggleSwitch({
   accessibilityLabel?: string;
 }) {
   const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-
   useEffect(() => {
     Animated.timing(anim, {
       toValue: value ? 1 : 0,
@@ -486,22 +423,18 @@ export function ToggleSwitch({
       useNativeDriver: false,
     }).start();
   }, [value, anim]);
-
   const translateX = anim.interpolate({
     inputRange: [0, 1],
     outputRange: [2, 20],
   });
-
   const backgroundColor = anim.interpolate({
     inputRange: [0, 1],
     outputRange: ["rgba(255, 255, 255, 0.16)", "#ffffff"],
   });
-
   const thumbColor = anim.interpolate({
     inputRange: [0, 1],
     outputRange: ["#a1a1aa", "#000000"],
   });
-
   return (
     <Pressable
       accessibilityRole="switch"
@@ -523,7 +456,9 @@ export function ToggleSwitch({
           backgroundColor,
           justifyContent: "center",
           borderWidth: 1,
-          borderColor: value ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.12)",
+          borderColor: value
+            ? "rgba(255, 255, 255, 0.8)"
+            : "rgba(255, 255, 255, 0.12)",
         }}
       >
         <Animated.View
@@ -544,14 +479,16 @@ export function ToggleSwitch({
     </Pressable>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Loading — quiet logo lockup with an indeterminate hairline.
 // ---------------------------------------------------------------------------
-export function Loading({ showLogo }: { showLogo?: boolean } = {}) {
-  const shouldShowLogo = showLogo !== undefined ? showLogo : !Platform.isTV;
+export function Loading({
+  showLogo,
+}: {
+  showLogo?: boolean;
+} = {}) {
+  const shouldShowLogo = showLogo !== undefined ? showLogo : true;
   const slide = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     if (!shouldShowLogo) return;
     const loop = Animated.loop(
@@ -572,15 +509,17 @@ export function Loading({ showLogo }: { showLogo?: boolean } = {}) {
     loop.start();
     return () => loop.stop();
   }, [shouldShowLogo, slide]);
-
   if (!shouldShowLogo) {
     return (
       <View style={styles.loadingWrap}>
-        <ActivityIndicator size="small" color="#ffffff" accessibilityLabel="Loading" />
+        <ActivityIndicator
+          size="small"
+          color="#ffffff"
+          accessibilityLabel="Loading"
+        />
       </View>
     );
   }
-
   return (
     <View style={styles.loadingWrap}>
       <PlexyLogo size={34} showText={true} />
@@ -604,7 +543,6 @@ export function Loading({ showLogo }: { showLogo?: boolean } = {}) {
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Card
 // ---------------------------------------------------------------------------
@@ -617,7 +555,7 @@ export function Card({
   width,
 }: {
   item: ItemCard;
-  api: PlexyApi;
+  api: LocalCatalog;
   onPress: () => void;
   preferred?: boolean;
   onFocus?: () => void;
@@ -626,16 +564,13 @@ export function Card({
   const [focus, setFocus] = useState(false);
   const isEpisode = item.kind === "episode";
   const aspectRatio = isEpisode ? 16 / 9 : 2 / 3;
-  const isTv = Platform.isTV;
-  const cardWidth = width || (isTv ? (isEpisode ? 168 : 124) : 150);
+  const cardWidth = width || 150;
   const hasProgress = !!item.watch && !item.watch.played;
   const isWatched = item.watch?.played;
-
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.parentTitle ? item.parentTitle + ", " : ""}${item.name}${isWatched ? ", watched" : ""}`}
-      hasTVPreferredFocus={preferred}
       onFocus={() => {
         setFocus(true);
         onFocus?.();
@@ -648,7 +583,6 @@ export function Card({
           gap: 8,
           opacity: pressed ? 0.85 : 1,
         },
-        isTv && focus && styles.cardFocused,
       ]}
     >
       {/* Image container */}
@@ -670,7 +604,6 @@ export function Card({
         {/* Poster / thumbnail */}
         <PosterImage source={api.image(item.poster)} />
         {/* White focus ring when selected */}
-        {isTv && focus && <View style={styles.cardFocusRing} pointerEvents="none" />}
 
         {/* Bottom gradient overlay */}
         <LinearGradient
@@ -695,13 +628,9 @@ export function Card({
           </View>
         )}
 
-
         {/* Title overlay at bottom */}
         <View style={styles.cardTitleOverlay} pointerEvents="none">
-          <Text
-            numberOfLines={2}
-            style={styles.cardOverlayTitle}
-          >
+          <Text numberOfLines={2} style={styles.cardOverlayTitle}>
             {item.parentTitle ? `${item.parentTitle}: ${item.name}` : item.name}
           </Text>
         </View>
@@ -737,7 +666,7 @@ export function Card({
       <Label
         muted
         numberOfLines={1}
-        style={{ fontSize: Platform.isTV ? 13 : 11, fontFamily: fonts.medium }}
+        style={{ fontSize: 11, fontFamily: fonts.medium }}
       >
         {isEpisode
           ? `Episode ${item.episodeNumber || 1}`
@@ -746,7 +675,6 @@ export function Card({
     </Pressable>
   );
 }
-
 // ---------------------------------------------------------------------------
 // TabBar
 // ---------------------------------------------------------------------------
@@ -755,58 +683,6 @@ export type TabDef = {
   label: string;
   icon: IconName;
 };
-
-export function TabBar({
-  tabs,
-  active,
-  onSelect,
-}: {
-  tabs: TabDef[];
-  active: string;
-  onSelect: (key: string) => void;
-}) {
-  return (
-    <View style={styles.tabBar}>
-      {tabs.map((tab) => {
-        const isActive = tab.key === active;
-        return (
-          <Pressable
-            key={tab.key}
-            accessibilityRole="tab"
-            accessibilityLabel={tab.label}
-            accessibilityState={{ selected: isActive }}
-            onPress={() => onSelect(tab.key)}
-            style={({ pressed }) => [
-              styles.tabItem,
-              pressed && { opacity: 0.65 },
-            ]}
-          >
-            <Icon
-              name={tab.icon}
-              size={22}
-              color={isActive ? colors.brand : colors.quiet}
-            />
-            <Text
-              style={[
-                styles.tabLabel,
-                { color: isActive ? colors.ink : colors.quiet },
-                isActive && { fontFamily: fonts.medium },
-              ]}
-            >
-              {tab.label}
-            </Text>
-            {/* Active indicator pip */}
-            {isActive && <View style={styles.tabPip} />}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   // --- Logo ---
   logoRow: {
@@ -814,7 +690,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-
   // --- Page header ---
   pageHeader: {
     flexDirection: "row",
@@ -843,12 +718,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  logoMark: {
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   // --- Text ---
   text: {
     fontFamily: fonts.regular,
@@ -856,8 +725,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  tvText: { fontSize: 13, lineHeight: 18 },
-
   // --- Button ---
   button: {
     flexDirection: "row",
@@ -882,34 +749,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minHeight: 36,
   },
-  buttonTV: {
-    minHeight: 34,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
   buttonFocused: {
     borderWidth: 2,
     borderColor: "#fff",
   },
-  buttonFocusedTV: {
-    borderWidth: 2,
-    borderColor: "#ffffff",
-  },
-
-  // --- Field ---
-  field: {
-    minHeight: 48,
-    color: colors.ink,
-    backgroundColor: "rgba(255,255,255,0.07)",
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 10,
-    padding: 14,
-    fontFamily: fonts.regular,
-    fontSize: 16,
-  },
-
   // --- Notice ---
   notice: {
     padding: 16,
@@ -920,7 +763,6 @@ const styles = StyleSheet.create({
     gap: 14,
     marginVertical: 12,
   },
-
   // --- Loading ---
   loadingWrap: {
     flex: 1,
@@ -942,7 +784,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: "#ffffff",
   },
-
   // --- Card ---
   cardImageWrap: {
     backgroundColor: colors.elevated,
@@ -951,27 +792,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  cardFocused: {
-    transform: [{ scale: 1.015 }],
-    zIndex: 3,
-    elevation: 8,
-  },
   cardImageFocusedTv: {
     shadowColor: "#000",
     shadowOpacity: 0.5,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-  },
-  cardFocusRing: {
-    position: "absolute" as const,
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderWidth: 3.5,
-    borderColor: "#ffffff",
-    borderRadius: 8,
-    zIndex: 5,
   },
   cardPlaceholder: {
     ...StyleSheet.absoluteFill,
@@ -1034,24 +859,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: fonts.bold,
   },
-  cardBrandBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
-  },
-  cardBrandBadgeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: fonts.black,
-    lineHeight: 14,
-  },
   cardProgressRing: {
     position: "absolute",
     right: 8,
@@ -1084,44 +891,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // --- TabBar ---
-  tabBar: {
-    flexDirection: "row",
-    backgroundColor: "rgba(10,10,10,0.92)",
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-    paddingBottom: 20, // safe-area padding — wrap in SafeAreaView in screen
-    paddingTop: 10,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    paddingVertical: 2,
-    position: "relative",
-  },
-  tabLabel: {
-    fontFamily: fonts.regular,
-    fontSize: 10,
-    letterSpacing: 0.2,
-  },
-  tabPip: {
-    position: "absolute",
-    bottom: -6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.brand,
-  },
 });
-
 export function dicebearAvatarUrl(seed: string): string {
   const clean = encodeURIComponent((seed || "user").trim());
   return `https://api.dicebear.com/9.x/bottts-neutral/png?seed=${clean}&size=128`;
 }
-
 export function UserAvatar({
   name,
   size = 32,
@@ -1134,7 +908,6 @@ export function UserAvatar({
   const [loadError, setLoadError] = useState(false);
   const initial = (name || "U").charAt(0).toUpperCase();
   const avatarUrl = dicebearAvatarUrl(name);
-
   return (
     <View
       style={[
@@ -1174,4 +947,3 @@ export function UserAvatar({
     </View>
   );
 }
-

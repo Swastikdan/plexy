@@ -1,8 +1,5 @@
 import type { ExpoConfig } from "expo/config";
 import packageInfo from "./package.json";
-const receiverAppId = process.env.PLEXY_CAST_RECEIVER_ID || "";
-const castReceiverEnabled =
-  /^[A-Fa-f0-9]{8}$/.test(receiverAppId) && receiverAppId !== "CC1AD845";
 const rawBuild = Number(
   process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
 );
@@ -33,30 +30,20 @@ const config: ExpoConfig = {
     ],
   },
   extra: {
-    castReceiverEnabled,
     tmdbToken: process.env.EXPO_PUBLIC_TMDB_TOKEN || process.env.TMDB_TOKEN || process.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || "",
     buildNumber,
   },
   plugins: [
     "expo-router",
+    "../../scripts/native/with-shared-build-inputs.cjs",
     "expo-sqlite",
     ["expo-splash-screen", { image: "./assets/splash-icon.png", backgroundColor: "#000000", imageWidth: 132 }],
-    [
-      "react-native-google-cast",
-      {
-        receiverAppId: castReceiverEnabled ? receiverAppId : "CC1AD845",
-        androidPlayServicesCastFrameworkVersion: "22.3.1",
-      },
-    ],
     [
       "expo-video",
       { supportsPictureInPicture: true, supportsBackgroundPlayback: false },
     ],
     "expo-secure-store",
     "expo-font",
-    "../../scripts/native/with-network-security.cjs",
-    "../../scripts/native/with-lan-networking.cjs",
-    "../../scripts/native/with-shared-build-inputs.cjs",
     "expo-screen-orientation",
   ],
 };

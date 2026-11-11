@@ -29,7 +29,9 @@ const ENV_API_BASE = normalizeServerUrl(envApiBase());
 let override: string | null | undefined;
 
 export function isElectron(): boolean {
-  return typeof window !== "undefined" && Boolean(window.electronAPI?.isElectron);
+  return (
+    typeof window !== "undefined" && Boolean(window.electronAPI?.isElectron)
+  );
 }
 
 /** Normalise user input into a usable base URL, or return "" when invalid. */
@@ -41,7 +43,9 @@ export function normalizeServerUrl(raw: string): string {
     return "";
   }
 
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+    ? value
+    : `http://${value}`;
 
   try {
     const url = new URL(withScheme);
@@ -78,29 +82,7 @@ export function isLoopbackServerUrl(raw: string): boolean {
 }
 
 export function isSecurePage(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.location.protocol === "https:"
-  );
-}
-
-/**
- * A packaged Electron app starts its bundled backend on a fresh port every
- * launch. A loopback override from a previous launch is therefore stale and
- * must not mask the server that is actually serving this window.
- */
-function isStaleElectronLoopback(url: string): boolean {
-  if (!isElectron() || !url) return false;
-  try {
-    const parsed = new URL(url);
-    if (!isLoopbackHostname(parsed.hostname)) return false;
-    return (
-      parsed.protocol !== window.location.protocol ||
-      parsed.port !== window.location.port
-    );
-  } catch {
-    return true;
-  }
+  return typeof window !== "undefined" && window.location.protocol === "https:";
 }
 
 function readLocalOverride(): string {
@@ -126,11 +108,6 @@ function ensureOverrideLoaded(): string {
     override = readLocalOverride();
   }
   const value = override ?? "";
-  if (value && isStaleElectronLoopback(value)) {
-    override = "";
-    writeLocalOverride("");
-    return "";
-  }
   return value;
 }
 
@@ -146,7 +123,10 @@ export function hasServerOverride(): boolean {
 
 /** The address every API, image, subtitle and stream URL should use. */
 export function getApiBase(): string {
-  if (typeof window !== "undefined" && window.electronAPI?.localOnly) return window.location.origin;
+  if (typeof window !== "undefined" && window.electronAPI)
+    return window.location.origin;
+  if (typeof window !== "undefined" && window.electronAPI?.localOnly)
+    return window.location.origin;
   const saved = ensureOverrideLoaded();
   if (saved) return saved;
   if (ENV_API_BASE) return ENV_API_BASE;
@@ -159,7 +139,9 @@ export function getApiBase(): string {
 /** Save a server address and make it effective immediately. */
 export function setServerUrl(raw: string): string {
   if (typeof window !== "undefined" && window.electronAPI?.localOnly) {
-    override = ""; writeLocalOverride(""); return window.location.origin;
+    override = "";
+    writeLocalOverride("");
+    return window.location.origin;
   }
   const url = normalizeServerUrl(raw);
   override = url;
@@ -187,17 +169,14 @@ export function clearServerUrl(): void {
  */
 export async function hydrateServerUrl(): Promise<void> {
   if (!isElectron()) return;
-  if (window.electronAPI?.localOnly) { clearServerUrl(); return; }
+  if (await window.electronAPI?.getLocalServerEnabled()) {
+    override = "";
+    writeLocalOverride("");
+    return;
+  }
   try {
     const saved = await window.electronAPI?.getServerUrl();
     const url = normalizeServerUrl(saved ?? "");
-    if (url && isStaleElectronLoopback(url)) {
-      // The bundled backend picked a new port since this was saved.
-      override = "";
-      writeLocalOverride("");
-      void window.electronAPI?.setServerUrl("").catch(() => {});
-      return;
-    }
     if (url) {
       override = url;
       writeLocalOverride(url);
@@ -217,14 +196,22 @@ export type ProbeResult =
  * not enough: the response must be Plexy's JSON status payload.
  */
 export async function probeServer(raw: string): Promise<ProbeResult> {
-  if (typeof window !== "undefined" && window.electronAPI?.localOnly && normalizeServerUrl(raw) !== window.location.origin) {
-    return { ok: false, error: "This app uses its own library on this device." };
+  if (
+    typeof window !== "undefined" &&
+    window.electronAPI?.localOnly &&
+    normalizeServerUrl(raw) !== window.location.origin
+  ) {
+    return {
+      ok: false,
+      error: "This app uses its own library on this device.",
+    };
   }
   const base = normalizeServerUrl(raw);
   if (!base) {
     return {
       ok: false,
-      error: "Enter a valid server address, for example http://192.168.1.20:8765.",
+      error:
+        "Enter a valid server address, for example http://192.168.1.20:8765.",
     };
   }
 
@@ -244,6 +231,15 @@ export async function probeServer(raw: string): Promise<ProbeResult> {
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
 
   try {
+    if (window.electronAPI?.probeServer) {
+      const status = await window.electronAPI.probeServer(base);
+      if (
+        typeof status.version !== "string" ||
+        typeof status.setupComplete !== "boolean"
+      )
+        throw new Error("Invalid server response");
+      return { ok: true, url: base, status: status as ServerStatus };
+    }
     const response = await fetch(`${base}/api/server/status`, {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -286,7 +282,8 @@ export async function probeServer(raw: string): Promise<ProbeResult> {
     ) {
       return {
         ok: false,
-        error: "That address is not a Plexy server. Check the address and port.",
+        error:
+          "That address is not a Plexy server. Check the address and port.",
       };
     }
 

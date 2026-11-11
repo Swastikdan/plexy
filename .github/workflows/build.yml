@@ -1,7 +1,7 @@
 name: Build & Release
 
 # Runs on push to `main` (with automatic target detection) or manual dispatch
-# targeting specific components (mobile, tv, desktop, backend, web, or all).
+# targeting specific components (mobile, desktop, backend, or all).
 on:
   push:
     branches:
@@ -18,10 +18,8 @@ on:
         options:
           - all
           - mobile
-          - tv
           - desktop
           - backend
-          - web
 
 concurrency:
   group: plexy-${{ github.workflow }}-${{ github.ref }}
@@ -39,12 +37,9 @@ jobs:
     name: Determine build targets
     runs-on: ubuntu-24.04
     outputs:
-      build_web: ${{ steps.targets.outputs.build_web }}
       build_desktop: ${{ steps.targets.outputs.build_desktop }}
       build_mobile: ${{ steps.targets.outputs.build_mobile }}
-      build_tv: ${{ steps.targets.outputs.build_tv }}
       build_server: ${{ steps.targets.outputs.build_server }}
-      android_targets: ${{ steps.targets.outputs.android_targets }}
       any_build: ${{ steps.targets.outputs.any_build }}
     steps:
       - name: Check out
@@ -59,7 +54,7 @@ jobs:
       - name: Detect targets
         id: targets
         env:
-          BUILD_TARGET: ${{ inputs.target || 'mobile' }}
+          BUILD_TARGET: ${{ inputs.target || '' }}
           BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: bun scripts/build-targets.ts
@@ -74,54 +69,35 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
       - run: bun install --frozen-lockfile
         env:
           SKIP_FFMPEG: "true"
       - name: Verify target selection
         run: bun test scripts/build-targets.test.ts
       - name: Build and verify embedded website
-        if: needs.plan.outputs.build_web == 'true' || needs.plan.outputs.build_desktop == 'true'
+        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         run: bun run build:web && bun run --filter @plexy/web typecheck
-        env:
-          VITE_API_URL: ${{ vars.PLEXY_DEFAULT_SERVER_URL }}
       - name: Verify backend
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         run: bun run --filter @plexy/server typecheck && bun run test:server
       - name: Verify desktop
         if: needs.plan.outputs.build_desktop == 'true'
-        run: bun x tsc --noEmit -p apps/desktop/tsconfig.json
+        run: bun x tsc --noEmit -p apps/desktop/tsconfig.json && bun run test:desktop
       - name: Verify Android clients
-        if: needs.plan.outputs.build_mobile == 'true' || needs.plan.outputs.build_tv == 'true'
+        if: needs.plan.outputs.build_mobile == 'true'
         run: bun run typecheck:native && bun run test:native
       - name: Save verified website
-        if: needs.plan.outputs.build_web == 'true' || needs.plan.outputs.build_desktop == 'true'
+        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: verified-web
           path: dist/web
-          if-no-files-found: error
-
-  web:
-    name: Web app build
-    needs: [plan, checks]
-    runs-on: ubuntu-24.04
-    if: |
-      github.ref == 'refs/heads/main' &&
-      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.build_web == 'true'
-    outputs:
-      site_url: ${{ vars.PLEXY_SITE_URL }}
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: verified-web
-          path: dist/web
-      - name: Package website
-        run: tar -czf plexy-web.tar.gz -C dist/web .
-      - uses: actions/upload-artifact@v7
-        with:
-          name: plexy-web
-          path: plexy-web.tar.gz
           if-no-files-found: error
 
   mac:
@@ -209,17 +185,13 @@ jobs:
           retention-days: 14
 
   android:
-    name: Android ${{ matrix.target }} APK
+    name: Android mobile APK
     needs: [plan, checks]
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        target: ${{ fromJSON(needs.plan.outputs.android_targets) }}
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      (needs.plan.outputs.build_mobile == 'true' || needs.plan.outputs.build_tv == 'true')
+      (needs.plan.outputs.build_mobile == 'true')
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -236,19 +208,37 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
       - run: bun install --frozen-lockfile
         env:
           SKIP_FFMPEG: "true"
+      - name: Cache Gradle dependencies and task outputs
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Cache Android native compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/mobile/android/.gradle
+            apps/mobile/android/app/.cxx
+            apps/mobile/android/app/build/intermediates/cxx
+          key: android-arm64-${{ runner.os }}-${{ hashFiles('bun.lock', 'apps/mobile/app.config.ts', 'scripts/native/*.cjs') }}-${{ github.sha }}
+          restore-keys: android-arm64-${{ runner.os }}-${{ hashFiles('bun.lock', 'apps/mobile/app.config.ts', 'scripts/native/*.cjs') }}-
       - name: Build standalone preview APK
-        run: bun scripts/native/build-preview.ts ${{ matrix.target }}
+        run: bun scripts/native/build-preview.ts
         env:
-          PLEXY_ANDROID_ARCHITECTURES: arm64-v8a,armeabi-v7a,x86_64
+          PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
       - uses: actions/upload-artifact@v7
         with:
-          name: plexy-android-${{ matrix.target }}
+          name: plexy-android-mobile
           path: |
             .build/native/Plexy-*.apk
-            .build/native/plexy-*.apk
           if-no-files-found: error
 
   server:
@@ -272,10 +262,22 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
       - run: bun install --frozen-lockfile
       - if: runner.os == 'macOS'
         run: node scripts/install-macos-ffmpeg.mjs
+      - uses: actions/download-artifact@v8
+        with:
+          name: verified-web
+          path: dist/web
       - run: bun run build:server
+        env:
+          PLEXY_REUSE_WEB_BUILD: "true"
       - name: Smoke test backend
         run: ./dist/server/plexy-server --version
       - run: tar -czf dist/plexy-server-${{ matrix.platform }}.tar.gz -C dist/server .
@@ -290,7 +292,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - plan
-      - web
       - mac
       - checks
       - android
@@ -315,19 +316,15 @@ jobs:
 
       - name: Verify selected release artifacts
         env:
-          BUILD_WEB: ${{ needs.plan.outputs.build_web }}
           BUILD_DESKTOP: ${{ needs.plan.outputs.build_desktop }}
           BUILD_MOBILE: ${{ needs.plan.outputs.build_mobile }}
-          BUILD_TV: ${{ needs.plan.outputs.build_tv }}
           BUILD_SERVER: ${{ needs.plan.outputs.build_server }}
         shell: bash
         run: |
           set -euo pipefail
           require_asset() { compgen -G "release/$1" >/dev/null || { echo "Missing release asset: $1"; exit 1; }; }
-          if [ "$BUILD_WEB" = true ]; then require_asset 'plexy-web.tar.gz'; fi
           if [ "$BUILD_DESKTOP" = true ]; then require_asset '*.dmg'; require_asset '*.zip'; fi
           if [ "$BUILD_MOBILE" = true ]; then require_asset 'Plexy-mobile-*.apk'; fi
-          if [ "$BUILD_TV" = true ]; then require_asset 'Plexy-TV-*.apk'; fi
           if [ "$BUILD_SERVER" = true ]; then
             require_asset 'plexy-server-linux-x64.tar.gz'
             require_asset 'plexy-server-macos-arm64.tar.gz'
@@ -348,7 +345,6 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          SITE_URL: ${{ needs.web.outputs.site_url || vars.PLEXY_SITE_URL }}
         run: |
           set -euo pipefail
 
@@ -372,15 +368,13 @@ jobs:
           cat > release-notes.md <<EOF
           ## ${release_title}
 
-          **Web app:** ${SITE_URL} (when configured). Download \`plexy-web.tar.gz\` to host the built website.
-
           Only components affected by this change are attached to this release.
 
           **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**.
 
-          **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. **Android TV:** sideload **Plexy-TV-…apk**. File names include the app version and this build's number so preview builds stay distinguishable. These standalone preview APKs use the template test signing identity and are not store releases.
+          **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. Phone APKs target ARM64. These standalone preview APKs use the template test signing identity and are not store releases.
 
-          **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg and migrations beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. Backend archives do not include the web app; connect a Plexy client.
+          **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg, migrations, and the web folder beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. The browser UI is included: open the server address, or pass \`--no-ui\` for API-only operation.
 
           This release is ad-hoc signed, but it is not Developer ID signed or notarized. On first launch, macOS may say it cannot verify Plexy and block it. After trying to open Plexy from Applications:
 
@@ -394,7 +388,7 @@ jobs:
 
               xattr -dr com.apple.quarantine "/Applications/Plexy.app"
 
-          The web app asks for your Plexy server address on first launch and remembers it on that device. The Mac app includes its own server.
+          The web app asks for your Plexy server address on first launch and remembers it on that device. The Mac app includes its own server, which can be disabled in client settings.
 
           Built from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
           EOF

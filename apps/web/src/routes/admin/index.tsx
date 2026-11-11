@@ -3,6 +3,7 @@
 /// toggle) and the live log tail. Everything here is reachable only when the
 /// browser is the host machine; the server enforces this and reports
 /// `adminAvailable: false` otherwise.
+import { DesktopServerSettings } from "../../components/desktop-server-settings";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -762,6 +763,7 @@ function Settings() {
   return (
     <div className="space-y-3">
       <UserManagement />
+      <DesktopServerSettings />
       <DesktopUpdateSettings />
       <SystemUsage />
       <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">

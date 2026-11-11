@@ -37,13 +37,21 @@ function printServerCli(argv: string[]): boolean {
   console.log("");
   console.log("Options:");
   console.log("  -v, --version   Print the Plexy Server version and exit");
+  console.log(
+    "      --no-ui     Serve the API only; disable browser UI and static assets",
+  );
   console.log("  -h, --help      Print this help and exit");
   console.log("");
   console.log("Environment:");
+  console.log(
+    "  PLEXY_NO_UI             1 disables browser UI (same as --no-ui)",
+  );
   console.log("  PORT                    Listen port (default 8765)");
   console.log("  PLEXY_DATA_DIR          Data and database directory");
   console.log("  PLEXY_LOG_LEVEL         debug | info | warn | error");
-  console.log("  PLEXY_ALLOWED_ORIGINS   Exact HTTPS client origins allowed to call the API");
+  console.log(
+    "  PLEXY_ALLOWED_ORIGINS   Exact HTTPS client origins allowed to call the API",
+  );
   return true;
 }
 
@@ -51,8 +59,16 @@ async function bootstrap(): Promise<void> {
   if (printServerCli(process.argv.slice(2))) {
     process.exit(0);
   }
-  const isMediaWorker = process.argv.includes("--worker=media") || process.argv.some(a => a.endsWith("media-worker.ts") || a.endsWith("media-worker"));
-  const isOptimizeWorker = process.argv.includes("--worker=optimize") || process.argv.some(a => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"));
+  const isMediaWorker =
+    process.argv.includes("--worker=media") ||
+    process.argv.some(
+      (a) => a.endsWith("media-worker.ts") || a.endsWith("media-worker"),
+    );
+  const isOptimizeWorker =
+    process.argv.includes("--worker=optimize") ||
+    process.argv.some(
+      (a) => a.endsWith("optimize-worker.ts") || a.endsWith("optimize-worker"),
+    );
 
   if (isMediaWorker) {
     await import("./media-worker");
@@ -66,7 +82,9 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err) => {
-  log.error("server", "failed to start", { message: err instanceof Error ? err.message : String(err) });
+  log.error("server", "failed to start", {
+    message: err instanceof Error ? err.message : String(err),
+  });
   console.error(err);
   process.exit(1);
 });
@@ -81,24 +99,40 @@ async function main(): Promise<void> {
   // Maintenance: upgrade artwork URLs, link matched series episodes, clear stale image config
   try {
     const { run, q } = await import("./db");
-    run(`UPDATE artwork SET url = replace(url, '/t/p/w300/', '/t/p/w1280/') WHERE kind = 'backdrop' AND url LIKE '%/t/p/w300/%'`);
-    run(`UPDATE artwork SET url = replace(url, '/t/p/w342/', '/t/p/w780/') WHERE kind = 'poster' AND url LIKE '%/t/p/w342/%'`);
-    run(`UPDATE artwork SET url = replace(url, '/t/p/w185/', '/t/p/w780/') WHERE kind = 'poster' AND url LIKE '%/t/p/w185/%'`);
-    run(`UPDATE artwork SET url = replace(url, '/t/p/w92/', '/t/p/w300/') WHERE kind = 'thumb' AND url LIKE '%/t/p/w92/%'`);
-    run(`UPDATE artwork SET url = replace(url, '/t/p/w185/', '/t/p/w300/') WHERE kind = 'thumb' AND url LIKE '%/t/p/w185/%'`);
+    run(
+      `UPDATE artwork SET url = replace(url, '/t/p/w300/', '/t/p/w1280/') WHERE kind = 'backdrop' AND url LIKE '%/t/p/w300/%'`,
+    );
+    run(
+      `UPDATE artwork SET url = replace(url, '/t/p/w342/', '/t/p/w780/') WHERE kind = 'poster' AND url LIKE '%/t/p/w342/%'`,
+    );
+    run(
+      `UPDATE artwork SET url = replace(url, '/t/p/w185/', '/t/p/w780/') WHERE kind = 'poster' AND url LIKE '%/t/p/w185/%'`,
+    );
+    run(
+      `UPDATE artwork SET url = replace(url, '/t/p/w92/', '/t/p/w300/') WHERE kind = 'thumb' AND url LIKE '%/t/p/w92/%'`,
+    );
+    run(
+      `UPDATE artwork SET url = replace(url, '/t/p/w185/', '/t/p/w300/') WHERE kind = 'thumb' AND url LIKE '%/t/p/w185/%'`,
+    );
     run(`UPDATE items SET match_status = 'matched', matched_by = 'series', tmdb_type = 'tv', score = 1
          WHERE kind = 'episode' AND match_status != 'matched'
            AND parent_id IN (SELECT id FROM items WHERE kind = 'series' AND match_status = 'matched')`);
     run(`DELETE FROM tmdb_cache WHERE key = 'tmdb/images/config'`);
     // Self-healing: reset any failed analysis files where video_codec is missing
-    run(`UPDATE media_files SET analysis_status = 'pending', analysis_error = NULL WHERE (analysis_status = 'analysis_failed' OR analysis_status = 'pending') AND video_codec IS NULL`);
-
-  } catch { /* non-fatal */ }
+    run(
+      `UPDATE media_files SET analysis_status = 'pending', analysis_error = NULL WHERE (analysis_status = 'analysis_failed' OR analysis_status = 'pending') AND video_codec IS NULL`,
+    );
+  } catch {
+    /* non-fatal */
+  }
 
   const app = buildApp();
   // Bind follows the config: loopback unless LAN viewing was explicitly
   // enabled (PRD 5.10). `0.0.0.0` still accepts loopback traffic.
-  const hostname = !process.env.PLEXY_LOCAL_ONLY && cfg.bindAddress === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1";
+  const hostname =
+    !process.env.PLEXY_LOCAL_ONLY && cfg.bindAddress === "0.0.0.0"
+      ? "0.0.0.0"
+      : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   // Cleartext is confined to this machine. Other devices use a separate HTTPS listener.
   app.listen({ port, hostname: "127.0.0.1" });
@@ -108,7 +142,11 @@ async function main(): Promise<void> {
   if (hostname === "0.0.0.0") {
     const certificate = await lanCertificate();
     lanApp = buildApp({ requireAuth: true });
-    lanApp.listen({ port: lanPort, hostname, tls: { cert: certificate.cert, key: certificate.key } });
+    lanApp.listen({
+      port: lanPort,
+      hostname,
+      tls: { cert: certificate.cert, key: certificate.key },
+    });
     stopDiscovery = advertiseServer(lanPort, true);
     console.log(`▸ LAN certificate SHA-256: ${certificate.fingerprint}`);
   }
@@ -116,7 +154,9 @@ async function main(): Promise<void> {
 
   // Offline resilience: ensure any previously uncached artwork is downloaded and derived locally
   setTimeout(() => {
-    void import("./artwork").then(({ cacheMissingArtwork }) => cacheMissingArtwork()).catch(() => {});
+    void import("./artwork")
+      .then(({ cacheMissingArtwork }) => cacheMissingArtwork())
+      .catch(() => {});
   }, 3_000);
 
   // Backfill community skip markers for libraries indexed before the cache
@@ -125,9 +165,11 @@ async function main(): Promise<void> {
     setTimeout(() => {
       void import("./skip-segments")
         .then(({ refreshMissingSkipSegments }) => refreshMissingSkipSegments())
-        .catch((err) => log.warn("player", "could not refresh skip markers at startup", {
-          message: err instanceof Error ? err.message : String(err),
-        }));
+        .catch((err) =>
+          log.warn("player", "could not refresh skip markers at startup", {
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
     }, 8_000);
   }
 
@@ -137,7 +179,9 @@ async function main(): Promise<void> {
     hostname === "0.0.0.0"
       ? Object.values(networkInterfaces())
           .flat()
-          .filter((entry) => entry && entry.family === "IPv4" && !entry.internal)
+          .filter(
+            (entry) => entry && entry.family === "IPv4" && !entry.internal,
+          )
           .map((entry) => `https://${entry!.address}:${lanPort}`)
       : [];
   setLiveBinding({ bind: hostname, port, lanUrls });
@@ -183,23 +227,31 @@ async function main(): Promise<void> {
     void startOptimizer().catch((err) =>
       log.warn("optimizer", "could not resume preparation queue", {
         message: err instanceof Error ? err.message : String(err),
-      }));
+      }),
+    );
   }, 3000);
 
   setTimeout(() => {
     void startStreamPreparation().catch((err) =>
       log.warn("media", "could not resume adaptive stream preparation", {
         message: err instanceof Error ? err.message : String(err),
-      }));
+      }),
+    );
   }, 3000);
 
   // Trigger library scan if any media files are unprobed
   setTimeout(async () => {
     try {
       const { q } = await import("./db");
-      const unprobed = q<{ c: number }>("SELECT COUNT(*) as c FROM media_files WHERE analysis_status != 'probed' OR video_codec IS NULL").get()?.c ?? 0;
+      const unprobed =
+        q<{ c: number }>(
+          "SELECT COUNT(*) as c FROM media_files WHERE analysis_status != 'probed' OR video_codec IS NULL",
+        ).get()?.c ?? 0;
       if (unprobed > 0 || process.env.PLEXY_LOCAL_ONLY) {
-        log.info("scanner", `found ${unprobed} unprobed media files, triggering background scan`);
+        log.info(
+          "scanner",
+          `found ${unprobed} unprobed media files, triggering background scan`,
+        );
         const { startScan } = await import("./scan");
         startScan();
       }

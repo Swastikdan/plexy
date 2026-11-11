@@ -7,7 +7,6 @@
   "scripts": {
     "dev": "bun --watch src/main.ts",
     "start": "bun src/main.ts",
-    "build:executable": "bun ../../scripts/build-executable.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

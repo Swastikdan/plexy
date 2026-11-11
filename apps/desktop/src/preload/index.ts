@@ -3,7 +3,7 @@ import type { ElectronAPI } from "../types";
 
 const api: ElectronAPI = {
   isElectron: true,
-  localOnly: true,
+  localOnly: false,
   discoverServers: () => ipcRenderer.invoke("app:discover-servers"),
   platform: process.platform,
   selectFolder: () => ipcRenderer.invoke("dialog:select-folder"),
@@ -13,16 +13,27 @@ const api: ElectronAPI = {
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("app:install-update"),
   onUpdateProgress: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof callback>[0]) => callback(progress);
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      progress: Parameters<typeof callback>[0],
+    ) => callback(progress);
     ipcRenderer.on("app:update-progress", handler);
     return () => ipcRenderer.removeListener("app:update-progress", handler);
   },
   getSystemUsage: () => ipcRenderer.invoke("app:get-system-usage"),
+  getLocalServerEnabled: () =>
+    ipcRenderer.invoke("app:get-local-server-enabled"),
+  setLocalServerEnabled: (enabled) =>
+    ipcRenderer.invoke("app:set-local-server-enabled", enabled),
+  probeServer: (url) => ipcRenderer.invoke("app:probe-server", url),
   getServerUrl: () => ipcRenderer.invoke("app:get-server-url"),
   setServerUrl: (url: string) => ipcRenderer.invoke("app:set-server-url", url),
   isFullScreen: () => ipcRenderer.invoke("app:is-fullscreen"),
   onFullScreenChange: (callback: (isFullScreen: boolean) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, isFullScreen: boolean) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      isFullScreen: boolean,
+    ) => {
       callback(isFullScreen);
     };
     ipcRenderer.on("fullscreen-change", handler);

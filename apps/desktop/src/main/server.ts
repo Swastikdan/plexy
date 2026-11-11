@@ -12,13 +12,20 @@ export function getActivePort(): number {
 }
 
 /** Poll /api/server/status until healthy or timeout */
-async function waitForServer(port: number, timeoutMs = 15000): Promise<boolean> {
+async function waitForServer(
+  port: number,
+  timeoutMs = 15000,
+): Promise<boolean> {
   const start = Date.now();
   const url = `http://127.0.0.1:${port}/api/server/status`;
 
   while (Date.now() - start < timeoutMs) {
     // If the server process died early, stop waiting
-    if (serverProcess && (serverProcess.killed || serverProcess.exitCode !== null)) {
+    if (
+      !serverProcess ||
+      serverProcess.killed ||
+      serverProcess.exitCode !== null
+    ) {
       return false;
     }
     try {
@@ -137,7 +144,9 @@ export async function startServer(): Promise<{ url: string; port: number }> {
     const repoRoot = findRepoRoot();
     const bunBin = resolveBunBinary();
 
-    console.log(`[Plexy Desktop] Spawning dev backend: ${bunBin} run ${serverEntry} on dynamic port ${activePort}`);
+    console.log(
+      `[Plexy Desktop] Spawning dev backend: ${bunBin} run ${serverEntry} on dynamic port ${activePort}`,
+    );
     serverProcess = spawn(bunBin, ["run", serverEntry], {
       cwd: repoRoot,
       env,
@@ -146,10 +155,14 @@ export async function startServer(): Promise<{ url: string; port: number }> {
   } else {
     const binary = resolveServerBinary();
     if (!binary) {
-      throw new Error(`Could not find plexy-server executable in resources (${process.resourcesPath})`);
+      throw new Error(
+        `Could not find plexy-server executable in resources (${process.resourcesPath})`,
+      );
     }
 
-    console.log(`[Plexy Desktop] Spawning backend executable: ${binary} on dynamic port ${activePort}`);
+    console.log(
+      `[Plexy Desktop] Spawning backend executable: ${binary} on dynamic port ${activePort}`,
+    );
     serverProcess = spawn(binary, [], {
       env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -171,24 +184,39 @@ export async function startServer(): Promise<{ url: string; port: number }> {
     }
   });
 
+  const spawnedProcess = serverProcess;
+  spawnedProcess.once("error", (error) => {
+    capturedStderr += `\n${error.message}`;
+    if (serverProcess === spawnedProcess) serverProcess = null;
+  });
   serverProcess.on("exit", (code, signal) => {
-    console.log(`[Server] Process terminated with code ${code}, signal ${signal}`);
-    serverProcess = null;
+    console.log(
+      `[Server] Process terminated with code ${code}, signal ${signal}`,
+    );
+    if (serverProcess === spawnedProcess) serverProcess = null;
   });
 
   const ready = await waitForServer(activePort, 15000);
   if (!ready) {
     const detail = capturedStderr ? `:\n${capturedStderr.trim()}` : "";
-    throw new Error(`Plexy backend failed to start on dynamic port ${activePort}${detail}`);
+    throw new Error(
+      `Plexy backend failed to start on dynamic port ${activePort}${detail}`,
+    );
   }
 
-  console.log(`[Plexy Desktop] Backend ready at http://127.0.0.1:${activePort}`);
+  console.log(
+    `[Plexy Desktop] Backend ready at http://127.0.0.1:${activePort}`,
+  );
   return { url: `http://127.0.0.1:${activePort}`, port: activePort };
 }
 
 export function stopServer(): Promise<void> {
   return new Promise((resolve) => {
-    if (!serverProcess || serverProcess.killed || serverProcess.exitCode !== null) {
+    if (
+      !serverProcess ||
+      serverProcess.killed ||
+      serverProcess.exitCode !== null
+    ) {
       serverProcess = null;
       return resolve();
     }
@@ -199,7 +227,7 @@ export function stopServer(): Promise<void> {
 
     const killTimer = setTimeout(() => {
       try {
-        if (!proc.killed) {
+        if (proc.exitCode === null) {
           proc.kill("SIGKILL");
         }
       } catch {}

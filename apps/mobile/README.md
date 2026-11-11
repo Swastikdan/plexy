@@ -1,32 +1,34 @@
-# Mobile structure
+# Mobile app
 
-Expo Router loads `src/app/_layout.tsx` through `expo-router/entry`.
+A standalone Android library and player. Files and watch progress stay on the device. No Plexy backend, accounts, server connection, remote downloads, or casting are needed or included. Optional metadata/artwork and skip-marker lookups use TMDB and IntroDB; app updates use GitHub releases.
 
-- `src/app`: route adapters and Stack/Tabs layouts only. Home, Libraries, Search,
-  and Settings live in `(tabs)`; item details, player, and downloads use the root stack.
-- `src/screens`: mobile screen implementations. Keep navigation callbacks explicit
-  so screens are independent of the router. Catalog contains the existing catalog
-  screens; player contains the native playback view.
-- `src/components`: reusable mobile UI, including primitives in `ui.tsx`, thumbnails,
-  update controls, library attention, and casting controls.
-- `src/ui`: mobile presentation tokens and formatting helpers.
-- `src/providers`: startup, fonts, local library restoration, and client lifecycle.
-- `src/navigation`: the mapping from media actions to serializable route params.
-- `src/lib`: device database and local-library runtime integration.
+## Source layout
 
-`packages/native-client/src` contains reusable API, context/state hooks, storage,
-networking, download, progress, update, subtitle, and image-cache logic. It exports
-no screens or visual components. Context platform slots accept app-owned settings,
-thumbnail, focus, and cast implementations; they do not import those implementations.
-`packages/api-client` owns API contracts; `packages/local-library` owns indexing and
-metadata logic. TV owns its presentation under `apps/tv/src`.
+- `src/app`: Expo Router route adapters. `(tabs)` contains Home, Libraries, Search, and Settings. Title details and playback use the root stack.
+- `src/screens`: mobile screen implementations.
+- `src/components`: reusable mobile UI, thumbnails, update controls, and library attention.
+- `src/ui`: presentation tokens and formatting helpers.
+- `src/providers`: fonts, library restoration, and state lifecycle.
+- `src/navigation`: stable media identifiers mapped to file routes.
+- `src/lib`: device database, local runtime, and mobile logic in `client/`. The catalog adapter calls the local library in process; `/api/...` strings here are dispatch keys, never network requests.
+- `tests`: mobile logic regression tests.
 
-Change shared behavior in those packages. Change mobile presentation here. Do not
-import TV screens or add app UI to shared packages. The architecture tests enforce
-these dependency boundaries. Downloads are resolved by ID from client state rather
-than serialized into navigation params; next-episode playback replaces the player
-route so Back returns to the title.
+`packages/local-library` owns reusable indexing, metadata, and library persistence contracts. `packages/api-client/src/types.ts` supplies shared media data types. No mobile UI is imported from another app or shared package.
 
-Verify with `bun run typecheck:native`, `bun run test:native`, and
-`bun run --filter @plexy/mobile bundle`. Native playback, Android Back, folder setup,
-and orientation still need device checks.
+## Build and verify
+
+From the repository root:
+
+```sh
+bun install
+bun run typecheck:native
+bun run test:native
+bun run bundle:native
+bun run build:mobile
+```
+
+APK builds use JDK 17 and Android SDK tooling. `expo prebuild` generates the ignored Android project. Keep native configuration in `app.config.ts` and config plugins. The shared-inputs plugin tracks local-library and media type changes for Gradle bundle caching.
+
+CI and local preview builds target `arm64-v8a`. Override `PLEXY_ANDROID_ARCHITECTURES` for other devices. APKs use the repository's preview signing key; production signing belongs to the EAS production profile. Build output is ignored under `.build/native`.
+
+Check folder/file access, manual identification, embedded/imported subtitles, watch progress after restart, next-episode playback, Android Back, fullscreen rotation, and PiP on a real device before release.

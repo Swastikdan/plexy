@@ -1,7 +1,9 @@
 export interface ElectronAPI {
   isElectron: boolean;
   localOnly?: boolean;
-  discoverServers: () => Promise<Array<{ id: string; name: string; url: string }>>;
+  discoverServers: () => Promise<
+    Array<{ id: string; name: string; url: string }>
+  >;
   platform: string;
   selectFolder: () => Promise<string | null>;
   openLogs: () => Promise<void>;
@@ -9,13 +11,22 @@ export interface ElectronAPI {
   getVersion: () => Promise<string>;
   checkForUpdates: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;
-  onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
+  onUpdateProgress: (
+    callback: (progress: UpdateProgress) => void,
+  ) => () => void;
   getSystemUsage: () => Promise<DesktopSystemUsage>;
+  getLocalServerEnabled: () => Promise<boolean>;
+  setLocalServerEnabled: (enabled: boolean) => Promise<void>;
+  probeServer: (
+    url: string,
+  ) => Promise<{ version: string; setupComplete: boolean }>;
   getServerUrl: () => Promise<string>;
   setServerUrl: (url: string) => Promise<void>;
   onNavigate: (callback: (route: string) => void) => () => void;
   isFullScreen?: () => Promise<boolean>;
-  onFullScreenChange?: (callback: (isFullScreen: boolean) => void) => () => void;
+  onFullScreenChange?: (
+    callback: (isFullScreen: boolean) => void,
+  ) => () => void;
 }
 
 export interface DesktopSystemUsage {

@@ -1,95 +1,108 @@
-import { localSegments } from "../../../../packages/local-library/src/library";
+import { LocalThumbnail } from "../components/LocalThumbnail";
+import { useKeepAwake } from "expo-keep-awake";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Orientation from "expo-screen-orientation";
+import {
+  isPictureInPictureSupported,
+  useVideoPlayer,
+  VideoView,
+} from "expo-video";
+import {
+  ArrowLeft as ArrowLeftIcon,
+  AudioLines,
+  Check as CheckIcon,
+  Crop,
+  Film,
+  ListVideo,
+  Lock,
+  Maximize,
+  Minus,
+  MoveHorizontal,
+  Pause as PauseIcon,
+  PictureInPicture,
+  Play as PlayIcon,
+  Plus,
+  RotateCcw,
+  RotateCw,
+  SkipForward,
+  SlidersHorizontal,
+  Subtitles as SubtitlesIcon,
+  Unlock,
+  X as XIcon,
+  ZoomIn,
+} from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   AppState,
   BackHandler,
-  findNodeHandle,
-  Image,
   Modal,
   PanResponder,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
-import {
-  VideoView,
-  isPictureInPictureSupported,
-  useVideoPlayer,
-} from "expo-video";
-import { useKeepAwake } from "expo-keep-awake";
-import { LinearGradient } from "expo-linear-gradient";
-import * as Orientation from "expo-screen-orientation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  RotateCcw,
-  RotateCw,
-  AudioLines,
-  Subtitles as SubtitlesIcon,
-  Cast as CastIcon,
-  SkipForward,
-  SlidersHorizontal,
-  Play as PlayIcon,
-  Pause as PauseIcon,
-  ArrowLeft as ArrowLeftIcon,
-  Maximize,
-  Minimize,
-  Check as CheckIcon,
-  X as XIcon,
-  PictureInPicture,
-  Volume2,
-  VolumeX,
-  Lock,
-  Unlock,
-  Minus,
-  Plus,
-  Crop,
-  ZoomIn,
-  MoveHorizontal,
-  ListVideo,
-  Film,
-} from "lucide-react-native";
-import { useClient } from "../../../../packages/native-client/src/context";
-import { usePlayerOrientation } from "../../../../packages/native-client/src/use-player-orientation";
-import { useResource } from "../../../../packages/native-client/src/hooks";
-import { Button, Heading, Label, Loading, Notice, PosterImage } from "../components/ui";
+import { localSegments } from "../../../../packages/local-library/src/library";
+import { Button, Label, Loading, Notice, PosterImage } from "../components/ui";
+import type { ItemCard, Playability, SkipSegments } from "../lib/client/api";
+import { useClient } from "../lib/client/context";
+import { useResource } from "../lib/client/hooks";
+import { usePlayerOrientation } from "../lib/client/use-player-orientation";
+import { parseVtt, subtitleText, type Cue } from "../lib/client/vtt";
 import { fonts, timeLabel } from "../ui/theme";
-import {
-  parseHlsVariants,
-  parsePreviews,
-  parseVtt,
-  subtitleText,
-  type Cue,
-  type Preview,
-} from "../../../../packages/native-client/src/vtt";
-import type { DownloadEntry } from "../../../../packages/native-client/src/downloads";
-import type { ItemCard, Playability, SkipSegments } from "../../../../packages/native-client/src/api";
-
 // ---------------------------------------------------------------------------
 // Player Icon components — high-contrast crisp Lucide icons
 // ---------------------------------------------------------------------------
-
-function IconBack({ size = 24, color = "#fff" }: { size?: number; color?: string }) {
+function IconBack({
+  size = 24,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <ArrowLeftIcon size={size} color={color} strokeWidth={2.2} />;
 }
-
-function IconPlay({ size = 32, color = "#fff" }: { size?: number; color?: string }) {
+function IconPlay({
+  size = 32,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <PlayIcon size={size} color={color} fill={color} />;
 }
-
-function IconPause({ size = 30, color = "#fff" }: { size?: number; color?: string }) {
+function IconPause({
+  size = 30,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <PauseIcon size={size} color={color} fill={color} />;
 }
-
-function IconRewind({ size = 30, color = "#fff", seconds = 10 }: { size?: number; color?: string; seconds?: number }) {
+function IconRewind({
+  size = 30,
+  color = "#fff",
+  seconds = 10,
+}: {
+  size?: number;
+  color?: string;
+  seconds?: number;
+}) {
   const containerSize = size + 16;
   return (
-    <View style={{ width: containerSize, height: containerSize, justifyContent: "center", alignItems: "center" }}>
+    <View
+      style={{
+        width: containerSize,
+        height: containerSize,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
       <RotateCcw size={size} color={color} strokeWidth={2.2} />
       <Text
         style={{
@@ -106,11 +119,25 @@ function IconRewind({ size = 30, color = "#fff", seconds = 10 }: { size?: number
     </View>
   );
 }
-
-function IconForward({ size = 30, color = "#fff", seconds = 10 }: { size?: number; color?: string; seconds?: number }) {
+function IconForward({
+  size = 30,
+  color = "#fff",
+  seconds = 10,
+}: {
+  size?: number;
+  color?: string;
+  seconds?: number;
+}) {
   const containerSize = size + 16;
   return (
-    <View style={{ width: containerSize, height: containerSize, justifyContent: "center", alignItems: "center" }}>
+    <View
+      style={{
+        width: containerSize,
+        height: containerSize,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
       <RotateCw size={size} color={color} strokeWidth={2.2} />
       <Text
         style={{
@@ -127,28 +154,64 @@ function IconForward({ size = 30, color = "#fff", seconds = 10 }: { size?: numbe
     </View>
   );
 }
-
-function IconPip({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
+function IconPip({
+  size = 22,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <PictureInPicture size={size} color={color} strokeWidth={1.9} />;
 }
-
-function IconAudio({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
+function IconAudio({
+  size = 22,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <AudioLines size={size} color={color} strokeWidth={2} />;
 }
-
-function IconSubtitles({ size = 22, color = "#fff", active = false }: { size?: number; color?: string; active?: boolean }) {
+function IconSubtitles({
+  size = 22,
+  color = "#fff",
+  active = false,
+}: {
+  size?: number;
+  color?: string;
+  active?: boolean;
+}) {
   return <SubtitlesIcon size={size} color={color} strokeWidth={2} />;
 }
-
-function IconSettings({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
+function IconSettings({
+  size = 22,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <SlidersHorizontal size={size} color={color} strokeWidth={2} />;
 }
-
-function IconFullscreen({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
+function IconFullscreen({
+  size = 22,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <Maximize size={size} color={color} strokeWidth={2} />;
 }
-
-function IconFitState({ mode, zoom, size = 20, color = "#fff" }: { mode: "contain" | "cover" | "fill"; zoom: number; size?: number; color?: string }) {
+function IconFitState({
+  mode,
+  zoom,
+  size = 20,
+  color = "#fff",
+}: {
+  mode: "contain" | "cover" | "fill";
+  zoom: number;
+  size?: number;
+  color?: string;
+}) {
   if (mode === "cover") {
     return <Crop size={size} color={color} strokeWidth={2.2} />;
   }
@@ -157,63 +220,94 @@ function IconFitState({ mode, zoom, size = 20, color = "#fff" }: { mode: "contai
   }
   if (zoom === 1.05) {
     return (
-      <View style={{ width: size + 6, height: size + 6, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          width: size + 6,
+          height: size + 6,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <ZoomIn size={size} color={color} strokeWidth={2} />
-        <View style={{ position: "absolute", bottom: -2, right: -4, backgroundColor: "#3b82f6", borderRadius: 4, paddingHorizontal: 2, paddingVertical: 0.5 }}>
-          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>105</Text>
+        <View
+          style={{
+            position: "absolute",
+            bottom: -2,
+            right: -4,
+            backgroundColor: "#3b82f6",
+            borderRadius: 4,
+            paddingHorizontal: 2,
+            paddingVertical: 0.5,
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>
+            105
+          </Text>
         </View>
       </View>
     );
   }
   if (zoom === 1.2 || zoom > 1) {
     return (
-      <View style={{ width: size + 6, height: size + 6, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          width: size + 6,
+          height: size + 6,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <ZoomIn size={size} color={color} strokeWidth={2} />
-        <View style={{ position: "absolute", bottom: -2, right: -4, backgroundColor: "#8b5cf6", borderRadius: 4, paddingHorizontal: 2, paddingVertical: 0.5 }}>
-          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>120</Text>
+        <View
+          style={{
+            position: "absolute",
+            bottom: -2,
+            right: -4,
+            backgroundColor: "#8b5cf6",
+            borderRadius: 4,
+            paddingHorizontal: 2,
+            paddingVertical: 0.5,
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>
+            120
+          </Text>
         </View>
       </View>
     );
   }
   return <Maximize size={size} color={color} strokeWidth={2.2} />;
 }
-
-function IconMinimize({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
-  return <Minimize size={size} color={color} strokeWidth={2} />;
-}
-
-function IconMoreVert({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
-  return <SlidersHorizontal size={size} color={color} strokeWidth={2} />;
-}
-
-function IconClose({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
+function IconClose({
+  size = 22,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <XIcon size={size} color={color} strokeWidth={2.2} />;
 }
-
-function IconNext({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
+function IconNext({
+  size = 22,
+  color = "#fff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <SkipForward size={size} color={color} strokeWidth={2} />;
 }
-
-function IconCheck({ size = 20, color = "#ffffff" }: { size?: number; color?: string }) {
+function IconCheck({
+  size = 20,
+  color = "#ffffff",
+}: {
+  size?: number;
+  color?: string;
+}) {
   return <CheckIcon size={size} color={color} strokeWidth={2.5} />;
 }
-
-function IconVolume({ size = 22, color = "#fff", muted = false }: { size?: number; color?: string; muted?: boolean }) {
-  return muted ? (
-    <VolumeX size={size} color={color} strokeWidth={2} />
-  ) : (
-    <Volume2 size={size} color={color} strokeWidth={2} />
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Circular control button
 // ---------------------------------------------------------------------------
-
-// CircleBtn reports its focus state up so the key-event handler can defer
-// dpad left/right/select to native focus while a control is focused.
-const PlayerFocusCtx = React.createContext<(id: string | null) => void>(() => {});
-
 function CircleBtn({
   onPress,
   size = 46,
@@ -222,96 +316,56 @@ function CircleBtn({
   disabled = false,
   active = false,
   activeBg = "#ffffff",
-  hasTVPreferredFocus = false,
-  focusId,
 }: {
   onPress: () => void;
   size?: number;
   bg?: string;
-  children: React.ReactNode | ((props: { focused: boolean }) => React.ReactNode);
+  children:
+    | React.ReactNode
+    | ((props: { focused: boolean }) => React.ReactNode);
   disabled?: boolean;
   active?: boolean;
   activeBg?: string;
-  hasTVPreferredFocus?: boolean;
   focusId?: string;
 }) {
-  const [focused, setFocused] = useState(false);
-  const report = React.useContext(PlayerFocusCtx);
-  const isTv = Platform.isTV;
-  const isPlayBtn = focusId === "play";
-
-  // Focus rings are a remote-control affordance. On touch screens a
-  // Pressable can take focus on tap, which used to leave a blue halo
-  // around the play button. Keep touch controls clean.
-  const ringWidth = isTv && focused ? 3.5 : 0;
-  const ringColor = focused ? "#ffffff" : "transparent";
-  const scale = isTv && focused ? 1.14 : 1;
-  const currentBg = (isTv && focused && isPlayBtn)
-    ? "#ffffff"
-    : active
-      ? activeBg
-      : focused && isTv
-        ? "rgba(255,255,255,0.36)"
-        : bg;
-
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      hasTVPreferredFocus={hasTVPreferredFocus}
-      onFocus={() => {
-        setFocused(true);
-        report(focusId ?? "control");
-      }}
-      onBlur={() => {
-        setFocused(false);
-        report(null);
-      }}
-      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      style={({ pressed }) => [
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: currentBg,
-          justifyContent: "center",
-          alignItems: "center",
-          opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
-          borderWidth: ringWidth,
-          borderColor: ringColor,
-          transform: [{ scale }],
-          zIndex: focused ? 5 : 0,
-          elevation: focused ? 8 : 0,
-        },
-      ]}
+      hitSlop={12}
+      style={({ pressed }) => ({
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: active ? activeBg : bg,
+        justifyContent: "center",
+        alignItems: "center",
+        opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
+      })}
     >
-      {typeof children === "function" ? children({ focused }) : children}
+      {typeof children === "function" ? children({ focused: false }) : children}
     </Pressable>
   );
 }
-
 // ---------------------------------------------------------------------------
 // PlayerScreen (data loading shell)
 // ---------------------------------------------------------------------------
-
 export function PlayerScreen({
   fileId,
-  offline,
   back,
   next,
 }: {
   fileId: number;
-  offline?: DownloadEntry;
   back: () => void;
   next: (id: number) => void;
 }) {
   const { api, progress } = useClient();
   const resource = useResource(async () => {
-    const manifest = offline ? offline.manifest : await api.play(fileId);
+    const manifest = await api.play(fileId);
     const pending = manifest.itemId
       ? progress.latest(manifest.itemId)
       : undefined;
-    return pending && (offline || !pending.synced)
+    return pending && !pending.synced
       ? {
           ...manifest,
           watch: {
@@ -321,10 +375,17 @@ export function PlayerScreen({
           },
         }
       : manifest;
-  }, [api, fileId, offline]);
+  }, [api, fileId]);
   if (resource.loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#000000", justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "#000000",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <Loading />
       </View>
     );
@@ -338,21 +399,13 @@ export function PlayerScreen({
     );
   return (
     resource.value && (
-      <Playback
-        key={`${fileId}-${offline?.id || "online"}`}
-        initial={resource.value}
-        offline={offline}
-        back={back}
-        next={next}
-      />
+      <Playback key={fileId} initial={resource.value} back={back} next={next} />
     )
   );
 }
-
 // ---------------------------------------------------------------------------
 // Interfaces
 // ---------------------------------------------------------------------------
-
 interface SourceChoice {
   path: string;
   audio: number;
@@ -361,24 +414,20 @@ interface SourceChoice {
   uri?: string;
   revision: number;
 }
-
 // ---------------------------------------------------------------------------
 // Playback (main player component)
 // ---------------------------------------------------------------------------
-
 function Playback({
   initial,
-  offline,
   back,
   next,
 }: {
   initial: Playability;
-  offline?: DownloadEntry;
   back: () => void;
   next: (id: number) => void;
 }) {
   useKeepAwake();
-  const { api, session, platform, preferences, updatePreferences, progress } =
+  const { api, platform, preferences, updatePreferences, progress } =
     useClient();
   const insets = useSafeAreaInsets();
   const [manifest, setManifest] = useState(initial);
@@ -423,14 +472,15 @@ function Playback({
       }).start();
     }
   }, [menu]);
-
   const isTvShow = Boolean(
     manifest.parentItemId ||
-    manifest.seasonNumber != null ||
-    manifest.episodeNumber != null ||
-    manifest.episodes?.length,
+      manifest.seasonNumber != null ||
+      manifest.episodeNumber != null ||
+      manifest.episodes?.length,
   );
-  const [episodesList, setEpisodesList] = useState<ItemCard[]>(manifest.episodes || []);
+  const [episodesList, setEpisodesList] = useState<ItemCard[]>(
+    manifest.episodes || [],
+  );
   useEffect(() => {
     if (manifest.episodes?.length) {
       setEpisodesList(manifest.episodes);
@@ -439,17 +489,19 @@ function Playback({
     const parentId = manifest.parentPublicId || manifest.parentItemId;
     if (parentId) {
       let live = true;
-      api.detail(parentId)
+      api
+        .detail(parentId)
         .then((detail) => {
           if (live && detail?.episodes?.length) {
             setEpisodesList(detail.episodes);
           }
         })
         .catch(() => {});
-      return () => { live = false; };
+      return () => {
+        live = false;
+      };
     }
   }, [api, manifest.episodes, manifest.parentPublicId, manifest.parentItemId]);
-
   const sortedEpisodes = React.useMemo(() => {
     return [...episodesList].sort((a, b) => {
       const sDiff = (a.seasonNumber ?? 1) - (b.seasonNumber ?? 1);
@@ -457,7 +509,6 @@ function Playback({
       return (a.episodeNumber ?? 1) - (b.episodeNumber ?? 1);
     });
   }, [episodesList]);
-
   const currentEpIndex = sortedEpisodes.findIndex(
     (ep) =>
       ep.fileId === manifest.fileId ||
@@ -465,7 +516,6 @@ function Playback({
       (ep.seasonNumber === manifest.seasonNumber &&
         ep.episodeNumber === manifest.episodeNumber),
   );
-
   const episodesScrollRef = useRef<ScrollView>(null);
   useEffect(() => {
     if (menu === "episodes" && currentEpIndex > 0) {
@@ -487,10 +537,6 @@ function Playback({
       : null,
   );
   const [cues, setCues] = useState<Cue[]>([]);
-  const [previews, setPreviews] = useState<Preview[]>([]);
-  const [variants, setVariants] = useState<
-    Array<{ label: string; uri: string }>
-  >([]);
   const [skips, setSkips] = useState<SkipSegments>({
     intro: null,
     recap: null,
@@ -498,28 +544,24 @@ function Playback({
   });
   const [scrub, setScrub] = useState<number | null>(null);
   const [timelineFocus, setTimelineFocus] = useState(false);
-  const [timelineHandle, setTimelineHandle] = useState<number | undefined>();
+  const [] = useState<number | undefined>();
   const timeline = useRef<View>(null);
-  const [casting, setCasting] = useState(false);
   type FitMode = "contain" | "cover" | "fill";
   const [fitMode, setFitMode] = useState<FitMode>("contain");
   const [zoom, setZoom] = useState(1);
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<any>(null);
-
   // Screen lock: controls ignore input until the viewer unlocks.
   const [locked, setLocked] = useState(false);
   const [unlockHint, setUnlockHint] = useState(false);
   const lockedRef = useRef(false);
   lockedRef.current = locked;
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const showFitToast = (label: string) => {
     setFitToast(label);
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
   };
-
   const applyFit = (mode: FitMode, scale: number) => {
     setFitMode(mode);
     setZoom(scale);
@@ -533,15 +575,17 @@ function Playback({
         : `${Math.round(scale * 100)}% zoom`,
     );
   };
-
-  const FIT_PRESETS: Array<{ mode: FitMode; zoom: number; label: string }> = [
+  const FIT_PRESETS: Array<{
+    mode: FitMode;
+    zoom: number;
+    label: string;
+  }> = [
     { mode: "contain", zoom: 1, label: "Best fit" },
     { mode: "contain", zoom: 1.05, label: "105% zoom" },
     { mode: "contain", zoom: 1.2, label: "120% zoom" },
     { mode: "cover", zoom: 1, label: "Crop to fill" },
     { mode: "fill", zoom: 1, label: "Stretch to fill" },
   ];
-
   const cycleFitMode = () => {
     const currentIndex = FIT_PRESETS.findIndex(
       (preset) => preset.mode === fitMode && preset.zoom === zoom,
@@ -549,14 +593,13 @@ function Playback({
     const next = FIT_PRESETS[(currentIndex + 1) % FIT_PRESETS.length]!;
     applyFit(next.mode, next.zoom);
   };
-
   const initialPinchDist = useRef<number | null>(null);
   const initialZoom = useRef(1);
   const lastTapTime = useRef(0);
-
   const pinchPanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
+      onStartShouldSetPanResponder: (evt) =>
+        evt.nativeEvent.touches.length >= 2,
       onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
@@ -571,14 +614,24 @@ function Playback({
       },
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
-        if (touches.length >= 2 && initialPinchDist.current && initialPinchDist.current > 0) {
+        if (
+          touches.length >= 2 &&
+          initialPinchDist.current &&
+          initialPinchDist.current > 0
+        ) {
           const t0 = touches[0]!;
           const t1 = touches[1]!;
           const dx = t0.pageX - t1.pageX;
           const dy = t0.pageY - t1.pageY;
           const currentDist = Math.hypot(dx, dy);
           const scaleFactor = currentDist / initialPinchDist.current;
-          const newZoom = Math.min(3.0, Math.max(0.75, Math.round(initialZoom.current * scaleFactor * 100) / 100));
+          const newZoom = Math.min(
+            3.0,
+            Math.max(
+              0.75,
+              Math.round(initialZoom.current * scaleFactor * 100) / 100,
+            ),
+          );
           setZoom(newZoom);
           showFitToast(`${Math.round(newZoom * 100)}% zoom`);
         }
@@ -589,48 +642,53 @@ function Playback({
       onPanResponderTerminate: () => {
         initialPinchDist.current = null;
       },
-    })
+    }),
   ).current;
-
-  const [muted, setMuted] = useState(false);
+  const [] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [autoNextCancelled, setAutoNextCancelled] = useState(false);
-  const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<Record<number, boolean>>({});
-
-  const toggleDrawerEpWatched = useCallback(async (ep: any) => {
-    const isPlayed = drawerWatchedOverride[ep.id] ?? (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
-    const nextPlayed = !isPlayed;
-    setDrawerWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
-    try {
-      if (nextPlayed) {
-        const dur = ep.runtime ? ep.runtime * 60 : (ep.watch?.duration || 3600);
-        await progress.record({
-          itemId: ep.id,
-          position: dur,
-          duration: dur,
-          played: true,
-          updatedAt: Date.now(),
-        });
-      } else {
-        await progress.forget(ep.id);
-      }
-      await api.watched(ep.id, nextPlayed);
-    } catch {}
-  }, [api, progress, drawerWatchedOverride]);
-
+  const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<
+    Record<number, boolean>
+  >({});
+  const toggleDrawerEpWatched = useCallback(
+    async (ep: any) => {
+      const isPlayed =
+        drawerWatchedOverride[ep.id] ??
+        (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+      const nextPlayed = !isPlayed;
+      setDrawerWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
+      try {
+        if (nextPlayed) {
+          const dur = ep.runtime ? ep.runtime * 60 : ep.watch?.duration || 3600;
+          await progress.record({
+            itemId: ep.id,
+            position: dur,
+            duration: dur,
+            played: true,
+            updatedAt: Date.now(),
+          });
+        } else {
+          await progress.forget(ep.id);
+        }
+        await api.watched(ep.id, nextPlayed);
+      } catch {}
+    },
+    [api, progress, drawerWatchedOverride],
+  );
   const [nativeAudio, setNativeAudio] = useState<
     typeof player.availableAudioTracks
   >([]);
-  const [nativeSubtitles, setNativeSubtitles] = useState<typeof player.availableSubtitleTracks>([]);
+  const [nativeSubtitles, setNativeSubtitles] = useState<
+    typeof player.availableSubtitleTracks
+  >([]);
   const [subVertical, setSubVertical] = useState<number>(
     preferences.subtitlePosition === "top" ? 12 : 88,
   );
-  const [volume, setVolume] = useState(1);
+  const [] = useState(1);
   const expectedUri = useRef("");
-  const audioRequest = useRef(0);
-  const LocalThumbnail = platform.local?.Thumbnail;
+
   const video = useRef<VideoView>(null);
   const offset = useRef(0);
   const currentPosition = useRef(0);
@@ -649,8 +707,6 @@ function Playback({
   const initialized = useRef(false);
   const scrubTargetRef = useRef<number | null>(null);
   const scrubCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastScrubTime = useRef<number>(0);
-  const scrubStepMultiplier = useRef<number>(1);
   const player = useVideoPlayer(null, (instance) => {
     instance.timeUpdateEventInterval = 0.5;
     instance.staysActiveInBackground = false;
@@ -698,7 +754,6 @@ function Playback({
     unlockTimer.current = setTimeout(() => setUnlockHint(false), 2600);
   };
   const seek = (seconds: number) => {
-    if (casting) return;
     if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
     scrubTargetRef.current = null;
     const target = Math.max(
@@ -710,17 +765,9 @@ function Playback({
     setCountdown(10);
     setAutoNextCancelled(false);
     reveal();
-    if (!offline && (choice.path === "remux" || choice.path === "transcode")) {
-      setChoice((old) => ({
-        ...old,
-        start: target,
-        revision: old.revision + 1,
-      }));
-    } else {
-      player.currentTime = target;
-      currentPosition.current = target;
-      setPosition(target);
-    }
+    player.currentTime = target;
+    currentPosition.current = target;
+    setPosition(target);
   };
   useEffect(() => {
     mounted.current = true;
@@ -751,7 +798,7 @@ function Playback({
         setStatus(e.status);
         if (e.status === "error") {
           setError(
-            platform.local ? "This device could not play the original file. Its video, audio or container format may be unsupported." : "Playback stopped. Retry, or use server conversion for an unsupported format.",
+            "This device could not play the original file. Its video, audio or container format may be unsupported.",
           );
           setVisible(true);
         }
@@ -766,9 +813,14 @@ function Playback({
         player.subtitleTrack = null;
         setNativeAudio(e.availableAudioTracks);
         setNativeSubtitles(e.availableSubtitleTracks);
-        if (platform.local && preferencesRef.current.autoSubtitles && !initial.tracks?.length) {
-          const track = e.availableSubtitleTracks.find(t => t.language === preferencesRef.current.subtitleLanguage);
-          if (track) { player.subtitleTrack = track; setSubtitle(`native:${track.id}`); }
+        if (preferencesRef.current.autoSubtitles && !initial.tracks?.length) {
+          const track = e.availableSubtitleTracks.find(
+            (t) => t.language === preferencesRef.current.subtitleLanguage,
+          );
+          if (track) {
+            player.subtitleTrack = track;
+            setSubtitle(`native:${track.id}`);
+          }
         }
         const value = Math.max(0, chosenStart.current - offset.current);
         player.currentTime = value;
@@ -793,31 +845,19 @@ function Playback({
     };
   }, [player, save]);
   useEffect(() => {
-    if (!started || (!offline && choice.path === "unsupported")) return;
+    if (!started || choice.path === "unsupported") return;
     let live = true;
     setError("");
     setStatus("loading");
     initialized.current = false;
-    const converted =
-      !offline && (choice.path === "remux" || choice.path === "transcode");
-    offset.current = converted ? Math.floor(choice.start) : 0;
+    offset.current = 0;
     chosenStart.current = choice.start;
-    const uri =
-      offline?.uri ||
-      choice.uri ||
-      api.stream(
-        manifest.fileId,
-        choice.path,
-        choice.start,
-        choice.audio,
-        choice.maxHeight,
-      );
+    const uri = api.stream(manifest.fileId);
     expectedUri.current = uri;
     void player
       .replaceAsync({
         uri,
-        headers: offline ? undefined : api.headers(),
-        contentType: !offline && choice.path === "hls" ? "hls" : "auto",
+        contentType: "auto",
         metadata: {
           title: manifest.title || "Plexy",
           artist: manifest.subtitle || undefined,
@@ -826,46 +866,37 @@ function Playback({
       .catch(() => {
         if (live)
           setError(
-            "Could not open this video. Check the connection, then retry.",
+            "Could not open this local video. Check file access, then retry.",
           );
       });
     return () => {
       live = false;
     };
-  }, [api, choice, manifest.fileId, offline, player, started]);
+  }, [api, choice, manifest.fileId, player, started]);
   useEffect(() => {
-    if (offline) {
-      setSkips(offline.skips || { intro: null, recap: null, outro: null });
-      return;
-    }
     let live = true;
     setSkips({ intro: null, recap: null, outro: null });
     autoSkipEnd.current = -1;
-    void api.skips(manifest.fileId).then(value => { if (live) setSkips(value); }).catch(() => {});
-    return () => { live = false; };
-  }, [api, manifest.fileId, offline]);
+    void api
+      .skips(manifest.fileId)
+      .then((value) => {
+        if (live) setSkips(value);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [api, manifest.fileId]);
   useEffect(() => {
     const controller = new AbortController();
     setCues([]);
-    if (platform.local) {
+    {
       player.subtitleTrack = subtitle?.startsWith("native:")
-        ? nativeSubtitles.find(t => `native:${t.id}` === subtitle) || null : null;
+        ? nativeSubtitles.find((t) => `native:${t.id}` === subtitle) || null
+        : null;
       if (subtitle?.startsWith("native:")) return;
     }
     if (!subtitle) return;
-    if (offline) {
-      const match =
-        offline.subtitles?.[subtitle] ||
-        Object.entries(offline.subtitles || {}).find(([k]) =>
-          k === subtitle || k.endsWith(subtitle) || subtitle.endsWith(k)
-        )?.[1];
-      if (match && match.length > 0) {
-        setCues(match);
-      } else {
-        setMessage("This subtitle track is not available offline.");
-      }
-      return;
-    }
     const encoded = encodeURIComponent(subtitle);
     api
       .text(`/api/subtitles/${manifest.fileId}/${encoded}`, controller.signal)
@@ -876,7 +907,10 @@ function Playback({
       .catch(() => {
         if (controller.signal.aborted) return;
         api
-          .text(`/api/subtitles/${manifest.fileId}/${subtitle}`, controller.signal)
+          .text(
+            `/api/subtitles/${manifest.fileId}/${subtitle}`,
+            controller.signal,
+          )
           .then((text) => setCues(parseVtt(text)))
           .catch(() => {
             if (!controller.signal.aborted) {
@@ -885,44 +919,21 @@ function Playback({
           });
       });
     return () => controller.abort();
-  }, [api, manifest.fileId, offline, offline?.subtitles, subtitle, nativeSubtitles]);
-  useEffect(() => {
-    if (offline) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = () => {
-      const url = `/api/trickplay/${manifest.fileId}/track.vtt`;
-      void api
-        .text(url, controller.signal)
-        .then((text) => setPreviews(parsePreviews(text, api.url(url))))
-        .catch(() => {
-          if (!controller.signal.aborted) timer = setTimeout(load, 30000);
-        });
-    };
-    load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [api, manifest.fileId, offline]);
-  useEffect(() => {
-    setVariants([]);
-    if (offline || manifest.path !== "hls") return;
-    const controller = new AbortController();
-    const url = api.stream(manifest.fileId, "hls", 0, choice.audio);
-    void api
-      .text(url, controller.signal)
-      .then((text) => setVariants(parseHlsVariants(text, url)))
-      .catch(() => {});
-    return () => controller.abort();
-  }, [api, manifest.fileId, manifest.path, choice.audio, offline]);
-  const validatedSkips = platform.local ? localSegments(skips, duration || null) : skips;
+  }, [api, manifest.fileId, subtitle, nativeSubtitles]);
+  const validatedSkips = localSegments(skips, duration || null);
   useEffect(() => {
     const active = Object.values(validatedSkips).find(
       (segment) =>
         segment && position >= segment.start && position < segment.end,
     );
-    if (scrub == null && status !== "loading" && !resume && preferences.autoSkip && active && active.end !== autoSkipEnd.current) {
+    if (
+      scrub == null &&
+      status !== "loading" &&
+      !resume &&
+      preferences.autoSkip &&
+      active &&
+      active.end !== autoSkipEnd.current
+    ) {
       autoSkipEnd.current = active.end;
       seek(active.end);
     }
@@ -932,8 +943,7 @@ function Playback({
       !ended ||
       !preferences.autoNext ||
       autoNextCancelled ||
-      !manifest.nextFileId ||
-      offline
+      !manifest.nextFileId
     )
       return;
     const timer = setTimeout(() => {
@@ -948,12 +958,10 @@ function Playback({
     manifest.nextFileId,
     next,
     countdown,
-    offline,
   ]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (
-        !platform.tv &&
         playingRef.current &&
         !menu &&
         scrub == null &&
@@ -963,7 +971,7 @@ function Playback({
         setVisible(false);
     }, 1000);
     return () => clearInterval(timer);
-  }, [menu, scrub, timelineFocus, platform.tv]);
+  }, [menu, scrub, timelineFocus]);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
@@ -973,17 +981,19 @@ function Playback({
     });
     return () => sub.remove();
   }, [player, save]);
-  usePlayerOrientation(fullscreen, platform.tv, () =>
+  usePlayerOrientation(fullscreen, () =>
     setMessage("The device could not change screen orientation."),
   );
   useEffect(() => {
-    if (error && fullscreen && !platform.tv) setFullscreen(false);
-  }, [error, fullscreen, platform.tv]);
+    if (error && fullscreen) setFullscreen(false);
+  }, [error, fullscreen]);
   const exit = () => {
     save();
     player.pause();
-    if (!platform.tv) {
-      void Orientation.lockAsync(Orientation.OrientationLock.PORTRAIT).catch(() => {});
+    {
+      void Orientation.lockAsync(Orientation.OrientationLock.PORTRAIT).catch(
+        () => {},
+      );
     }
     back();
   };
@@ -1001,112 +1011,11 @@ function Playback({
       return true;
     });
     return () => sub.remove();
-  }, [menu, fullscreen, platform.tv, back, save, player]);
-  const switchAudio = async (audio: number) => {
-    setMenu(null);
-    save();
-    const request = ++audioRequest.current;
-    try {
-      const updated = await api.play(manifest.fileId, audio);
-      if (!mounted.current || request !== audioRequest.current) return;
-      setManifest(updated);
-      setChoice((old) => ({
-        path: updated.path,
-        start: currentPosition.current,
-        audio: updated.selectedAudioIndex ?? audio,
-        revision: old.revision + 1,
-      }));
-    } catch {
-      if (!mounted.current || request !== audioRequest.current) return;
-      setMessage(
-        "Could not switch audio tracks. Check the connection and try again.",
-      );
-    }
-  };
+  }, [menu, fullscreen, back, save, player]);
   const togglePlay = () => {
-    if (casting) return;
     reveal();
     if (ended) seek(0);
     player.playing ? player.pause() : player.play();
-  };
-  // Which player control (if any) currently holds TV focus. Native focus is
-  // allowed to drive dpad movement while a control is focused; we only
-  // scrub/event-hijack when nothing is focused (or the timeline holds focus).
-  // Kept in a ref only: updating state on every focus move would re-render
-  // the whole player for no reason.
-  const tvFocusTargetRef = useRef<string | null>(null);
-  const reportControlFocus = useCallback((id: string | null) => {
-    tvFocusTargetRef.current = id;
-  }, []);
-  const remoteEvent = (event: string) => {
-    if (menu || resume) return;
-    if (event === "playPause" || event === "play" || event === "pause") {
-      togglePlay();
-      return;
-    }
-    if (event === "fastForward" || event === "rewind") {
-      seek(currentPosition.current + (event === "rewind" ? -10 : 10));
-      reveal();
-      return;
-    }
-    // Remote Left / Right navigation & continuous scrubbing
-    if (["left", "right", "longLeft", "longRight"].includes(event)) {
-      // A control has focus: let native focus move between buttons instead
-      // of interpreting the key as a scrub.
-      const focusTarget = visible ? tvFocusTargetRef.current : null;
-      if (focusTarget && focusTarget !== "timeline") return;
-
-      const now = Date.now();
-      const timeSinceLast = now - lastScrubTime.current;
-      lastScrubTime.current = now;
-
-      // Holding D-pad down continuously fires events within ~300ms: accelerate smoothly
-      if (timeSinceLast < 350) {
-        scrubStepMultiplier.current = Math.min(6, scrubStepMultiplier.current + 0.35);
-      } else {
-        scrubStepMultiplier.current = 1;
-      }
-
-      const isRewind = event.toLowerCase().includes("left");
-      const baseDelta = (event.startsWith("long") ? 30 : 10) * scrubStepMultiplier.current;
-      const delta = isRewind ? -baseDelta : baseDelta;
-
-      const currentBase = scrubTargetRef.current ?? scrub ?? currentPosition.current;
-      const target = Math.max(0, Math.min(duration || Number.MAX_SAFE_INTEGER, Math.round(currentBase + delta)));
-
-      scrubTargetRef.current = target;
-      setScrub(target);
-      reveal();
-
-      // Debounce the actual heavy player seek so playback doesn't freeze or drop while scrubbing
-      if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
-      scrubCommitTimer.current = setTimeout(() => {
-        if (scrubTargetRef.current != null) {
-          const finalTarget = scrubTargetRef.current;
-          scrubTargetRef.current = null;
-          seek(finalTarget);
-        }
-      }, 550);
-      return;
-    }
-    // Remote Select / Center
-    if (event === "select" || event === "center" || event === "dpadCenter") {
-      const focusTarget = visible ? tvFocusTargetRef.current : null;
-      if (focusTarget && focusTarget !== "timeline") return; // native press handles it
-      if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
-      const target = scrubTargetRef.current ?? scrub;
-      if (target != null) {
-        scrubTargetRef.current = null;
-        seek(target);
-        setScrub(null);
-      } else if (!visible) {
-        reveal();
-      } else {
-        togglePlay();
-      }
-      return;
-    }
-    reveal();
   };
   const activeSkip = Object.entries(validatedSkips).find(
     ([, segment]) =>
@@ -1114,29 +1023,16 @@ function Playback({
   );
   const skipLabel = activeSkip?.[0] === "outro" ? "credits" : activeSkip?.[0];
   const previewTime = scrub ?? position;
-  const preview = previews.find(
-    (p) => previewTime >= p.start && previewTime < p.end,
-  );
+
   const text = subtitleText(cues, position, preferences.subtitleOffset);
-  const show = casting || visible || !!menu || resume || ended || !!error;
-  const layoutFull = fullscreen || platform.tv;
-  const CastControl = platform.CastControl;
-  const RemoteEvents = platform.RemoteEvents;
-  const FocusGroup = platform.FocusGroup;
-
+  const show = visible || !!menu || resume || ended || !!error;
+  const layoutFull = fullscreen;
   // Progress ratio helpers
-  const progressRatio = duration ? Math.min(1, (previewTime / duration)) : 0;
-  const hasQualities = !offline && (
-    variants.length > 1 ||
-    Boolean(manifest.versions && manifest.versions.length > 1) ||
-    manifest.path === "hls"
-  );
-
+  const progressRatio = duration ? Math.min(1, previewTime / duration) : 0;
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
   return (
-    <PlayerFocusCtx.Provider value={reportControlFocus}>
     <View
       style={{
         flex: 1,
@@ -1145,7 +1041,6 @@ function Playback({
       }}
     >
       <StatusBar hidden={layoutFull} barStyle="light-content" />
-      <RemoteEvents onEvent={remoteEvent} />
 
       {/* ── Video container ── */}
       <View
@@ -1154,15 +1049,15 @@ function Playback({
             ? StyleSheet.absoluteFill
             : { width: "100%", aspectRatio: 16 / 9 }
         }
-        {...(!platform.tv && !locked ? pinchPanResponder.panHandlers : {})}
+        {...(!locked ? pinchPanResponder.panHandlers : {})}
       >
         <VideoView
           ref={video}
           player={player}
-          nativeControls={false}
+          nativeControls
           fullscreenOptions={{ enable: false }}
-          allowsPictureInPicture={!platform.tv}
-          startsPictureInPictureAutomatically={false}
+          allowsPictureInPicture={true}
+          startsPictureInPictureAutomatically
           onPictureInPictureStart={() => {
             pip.current = true;
           }}
@@ -1215,12 +1110,12 @@ function Playback({
         {/* Tap-to-toggle controls, pinch-to-zoom & double tap to toggle zoom */}
         <View
           style={StyleSheet.absoluteFill}
-          {...(!platform.tv && !locked ? pinchPanResponder.panHandlers : {})}
-          collapsable={false}
+          {...(!locked ? pinchPanResponder.panHandlers : {})}
+          collapsable
         >
           <Pressable
-            accessible={false}
-            focusable={false}
+            accessible
+            focusable
             onPress={() => {
               const now = Date.now();
               if (now - lastTapTime.current < 300) {
@@ -1255,7 +1150,6 @@ function Playback({
                   onPress={unlockScreen}
                   accessibilityRole="button"
                   accessibilityLabel="Unlock screen"
-                  hasTVPreferredFocus={platform.tv}
                   style={({ pressed }) => [
                     styles.unlockPill,
                     pressed && { opacity: 0.8 },
@@ -1299,15 +1193,22 @@ function Playback({
             </Label>
           </View>
         )}
-
-
       </View>
 
       {/* ── Inline (non-fullscreen) title + simple controls ── */}
       {!layoutFull && (
         <View style={{ flex: 1, backgroundColor: "#111" }}>
           {/* Title row */}
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, gap: 12 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingTop: 14,
+              paddingBottom: 6,
+              gap: 12,
+            }}
+          >
             <CircleBtn onPress={exit} size={36} bg="rgba(255,255,255,0.1)">
               <IconBack size={18} />
             </CircleBtn>
@@ -1316,11 +1217,15 @@ function Playback({
                 style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}
                 numberOfLines={1}
               >
-                {manifest.title || offline?.item.name || "Plexy"}
+                {manifest.title || undefined || "Plexy"}
               </Text>
               {!!manifest.subtitle && (
                 <Text
-                  style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, marginTop: 2 }}
+                  style={{
+                    color: "rgba(255,255,255,0.6)",
+                    fontSize: 13,
+                    marginTop: 2,
+                  }}
                   numberOfLines={1}
                 >
                   {manifest.subtitle}
@@ -1331,31 +1236,78 @@ function Playback({
 
           {/* Inline progress bar */}
           <Pressable
-            disabled={casting}
+            disabled
             ref={timeline}
             accessibilityLabel="Playback position"
             accessibilityRole="adjustable"
-            accessibilityValue={{ min: 0, max: duration, now: position, text: timeLabel(position) }}
-            accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+            accessibilityValue={{
+              min: 0,
+              max: duration,
+              now: position,
+              text: timeLabel(position),
+            }}
+            accessibilityActions={[
+              { name: "increment" },
+              { name: "decrement" },
+            ]}
             onAccessibilityAction={(e) =>
-              seek(position + (e.nativeEvent.actionName === "increment" ? 10 : -10))
+              seek(
+                position +
+                  (e.nativeEvent.actionName === "increment" ? 10 : -10),
+              )
             }
-            onLayout={(e) => { timelineWidth.current = e.nativeEvent.layout.width; }}
+            onLayout={(e) => {
+              timelineWidth.current = e.nativeEvent.layout.width;
+            }}
             onStartShouldSetResponder={() => true}
             onResponderGrant={(e) => {
               reveal();
-              setScrub(Math.max(0, Math.min(duration, (e.nativeEvent.locationX / timelineWidth.current) * duration)));
+              setScrub(
+                Math.max(
+                  0,
+                  Math.min(
+                    duration,
+                    (e.nativeEvent.locationX / timelineWidth.current) *
+                      duration,
+                  ),
+                ),
+              );
             }}
             onResponderMove={(e) => {
-              setScrub(Math.max(0, Math.min(duration, (e.nativeEvent.locationX / timelineWidth.current) * duration)));
+              setScrub(
+                Math.max(
+                  0,
+                  Math.min(
+                    duration,
+                    (e.nativeEvent.locationX / timelineWidth.current) *
+                      duration,
+                  ),
+                ),
+              );
             }}
             onResponderRelease={(e) => {
-              seek(Math.max(0, Math.min(duration, (e.nativeEvent.locationX / timelineWidth.current) * duration)));
+              seek(
+                Math.max(
+                  0,
+                  Math.min(
+                    duration,
+                    (e.nativeEvent.locationX / timelineWidth.current) *
+                      duration,
+                  ),
+                ),
+              );
             }}
             style={{ paddingHorizontal: 16, paddingVertical: 10 }}
           >
             {/* Track */}
-            <View style={{ height: scrub != null ? 5 : 3, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.2)", overflow: "visible" }}>
+            <View
+              style={{
+                height: scrub != null ? 5 : 3,
+                borderRadius: 3,
+                backgroundColor: "rgba(255,255,255,0.2)",
+                overflow: "visible",
+              }}
+            >
               {/* Fill */}
               <View
                 style={{
@@ -1386,9 +1338,19 @@ function Playback({
           </Pressable>
 
           {/* Time labels */}
-          <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16 }}>
-            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>{timeLabel(previewTime)}</Text>
-            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>{timeLabel(duration)}</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              paddingHorizontal: 16,
+            }}
+          >
+            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>
+              {timeLabel(previewTime)}
+            </Text>
+            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>
+              {timeLabel(duration)}
+            </Text>
           </View>
 
           {/* Inline control row */}
@@ -1401,30 +1363,30 @@ function Playback({
               gap: 4,
             }}
           >
-            <CircleBtn onPress={() => seek(position - 10)} disabled={casting}>
+            <CircleBtn onPress={() => seek(position - 10)} disabled>
               <IconRewind size={20} />
             </CircleBtn>
             <CircleBtn
               onPress={togglePlay}
               size={48}
               bg="rgba(0,0,0,0.5)"
-              disabled={casting}
+              disabled
             >
               {playing ? <IconPause size={20} /> : <IconPlay size={20} />}
             </CircleBtn>
-            <CircleBtn onPress={() => seek(position + 10)} disabled={casting}>
+            <CircleBtn onPress={() => seek(position + 10)} disabled>
               <IconForward size={20} />
             </CircleBtn>
             <View style={{ flex: 1 }} />
-            {!platform.tv && (
+            {
               <CircleBtn onPress={() => setFullscreen(true)}>
                 <IconFullscreen size={20} />
               </CircleBtn>
-            )}
+            }
           </View>
 
           {/* Error / message strip */}
-          {(!!error || (!offline && choice.path === "unsupported")) && (
+          {(!!error || choice.path === "unsupported") && (
             <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
               <Notice
                 message={error || manifest.reason}
@@ -1443,766 +1405,720 @@ function Playback({
 
       {/* ── Fullscreen overlay controls ── */}
       {show && layoutFull && !locked && (
-        <FocusGroup style={StyleSheet.absoluteFill}>
+        <View style={StyleSheet.absoluteFill}>
           <View
             style={StyleSheet.absoluteFill}
             pointerEvents={menu || resume ? "none" : "auto"}
-            importantForAccessibility={menu || resume ? "no-hide-descendants" : "auto"}
+            importantForAccessibility={
+              menu || resume ? "no-hide-descendants" : "auto"
+            }
             aria-hidden={!!(menu || resume)}
           >
-          {/* Gradient */}
-          <LinearGradient
-            pointerEvents="none"
-            colors={["rgba(0,0,0,0.85)", "transparent", "rgba(0,0,0,0.9)"]}
-            locations={[0, 0.4, 1]}
-            style={StyleSheet.absoluteFill}
-          />
+            {/* Gradient */}
+            <LinearGradient
+              pointerEvents="none"
+              colors={["rgba(0,0,0,0.85)", "transparent", "rgba(0,0,0,0.9)"]}
+              locations={[0, 0.4, 1]}
+              style={StyleSheet.absoluteFill}
+            />
 
-          {/* ── TOP BAR ── */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingLeft: platform.tv ? 26 : Math.max(insets.left + 10, 16),
-              paddingRight: platform.tv ? 26 : Math.max(insets.right + 10, 16),
-              paddingTop: Math.max(insets.top + 6, platform.tv ? 26 : 14),
-              paddingBottom: 10,
-            }}
-          >
-            {/* Left cluster: Back button + Title */}
-            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 12 }}>
-              <CircleBtn
-                onPress={exit}
-                size={platform.tv ? 36 : 44}
-                bg="rgba(0,0,0,0.45)"
-                focusId="back"
-              >
-                {({ focused }) => (
-                  <IconBack
-                    size={platform.tv ? 18 : 22}
-                    color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                  />
-                )}
-              </CircleBtn>
-
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text
-                  style={{
-                    color: "#ffffff",
-                    fontSize: platform.tv ? 14 : 15,
-                    fontFamily: fonts.bold,
-                    letterSpacing: -0.2,
-                  }}
-                  numberOfLines={1}
-                >
-                  {manifest.title || offline?.item.name || "Plexy"}
-                </Text>
-                {(() => {
-                  const raw = manifest.subtitle || "";
-                  const cleaned = raw
-                    .replace(/^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i, "")
-                    .trim();
-                  const isEp = manifest.episodeNumber != null || Boolean(raw);
-                  const subLabel = isEp
-                    ? (manifest.episodeNumber != null
-                        ? `Episode ${manifest.episodeNumber}${cleaned ? ` · ${cleaned}` : ""}`
-                        : raw)
-                    : "";
-                  return subLabel ? (
-                    <Text
-                      style={{
-                        color: "rgba(255,255,255,0.65)",
-                        fontSize: 11.5,
-                        fontFamily: fonts.regular,
-                        marginTop: 1,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {subLabel}
-                    </Text>
-                  ) : null;
-                })()}
-              </View>
-            </View>
-
-            {/* Lock button on top bar */}
-            {!platform.tv && (
-              <CircleBtn
-                onPress={lockScreen}
-                size={44}
-                bg="rgba(0,0,0,0.45)"
-                focusId="lock"
-              >
-                {({ focused }) => (
-                  <Lock
-                    size={20}
-                    color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                    strokeWidth={2}
-                  />
-                )}
-              </CircleBtn>
-            )}
-
-            {/* Top-Right cluster: Quality, Audio, Subtitles, Episodes, Settings */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 12 }}>
-              {hasQualities && (
-                <Pressable
-                  onPress={() => setMenu("quality")}
-                  disabled={casting}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onFocus={() => reportControlFocus("quality")}
-                  onBlur={() => reportControlFocus(null)}
-                  style={(state) => {
-                    const pressed = state.pressed;
-                    const focused = Boolean((state as any).focused);
-                    const isCustom = Boolean(choice.uri || choice.maxHeight);
-                    const isWhite = isCustom || (menu === "quality");
-                    return {
-                      paddingHorizontal: 12,
-                      paddingVertical: 7,
-                      borderRadius: 20,
-                      borderWidth: 1.2,
-                      borderColor: isWhite ? "#ffffff" : "rgba(255,255,255,0.4)",
-                      backgroundColor: isWhite ? "#ffffff" : focused ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.45)",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      opacity: casting ? 0.35 : pressed ? 0.75 : 1,
-                    };
-                  }}
-                >
-                  {() => {
-                    const isCustom = Boolean(choice.uri || choice.maxHeight);
-                    const isWhite = isCustom || (menu === "quality");
-                    return (
-                      <Text
-                        style={{
-                          color: isWhite ? "#000000" : "#ffffff",
-                          fontSize: 12,
-                          fontFamily: fonts.bold,
-                        }}
-                      >
-                        {choice.maxHeight ? `${choice.maxHeight}p` : "HD"}
-                      </Text>
-                    );
-                  }}
-                </Pressable>
-              )}
-
-              <CircleBtn
-                onPress={() => setMenu("audio")}
-                disabled={casting}
-                size={platform.tv ? 36 : 44}
-                active={menu === "audio"}
-                bg="rgba(0,0,0,0.45)"
-                focusId="audio"
-              >
-                {({ focused }) => (
-                  <IconAudio
-                    size={platform.tv ? 18 : 22}
-                    color={menu === "audio" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                  />
-                )}
-              </CircleBtn>
-
-              <CircleBtn
-                onPress={() => setMenu("captions")}
-                disabled={casting}
-                size={platform.tv ? 36 : 44}
-                active={Boolean(subtitle)}
-                bg="rgba(0,0,0,0.45)"
-                focusId="captions"
-              >
-                {({ focused }) => (
-                  <IconSubtitles
-                    size={platform.tv ? 18 : 22}
-                    color={subtitle ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                    active={!!subtitle}
-                  />
-                )}
-              </CircleBtn>
-
-              {!offline && !!manifest.nextFileId && (
-                <CircleBtn
-                  onPress={() => next(manifest.nextFileId!)}
-                  size={platform.tv ? 36 : 44}
-                  bg="rgba(0,0,0,0.45)"
-                  focusId="next"
-                >
-                  {({ focused }) => (
-                    <IconNext
-                      size={platform.tv ? 18 : 22}
-                      color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                    />
-                  )}
-                </CircleBtn>
-              )}
-
-              {CastControl && !offline && (
-                <CastControl
-                  media={{
-                    url:
-                      choice.uri ||
-                      api.stream(manifest.fileId, choice.path, 0, choice.audio),
-                    contentType:
-                      choice.path === "hls"
-                        ? "application/x-mpegURL"
-                        : "video/mp4",
-                    title: manifest.title || "Plexy",
-                    position,
-                    duration,
-                    fileId: manifest.fileId,
-                    itemId: manifest.itemId,
-                    path: choice.path,
-                  }}
-                  server={{ url: api.base, token: session.token }}
-                  onCasting={(value) => {
-                    setCasting(value);
-                    if (value) {
-                      player.pause();
-                      save();
-                    } else if (initialized.current) {
-                      player.currentTime = Math.max(
-                        0,
-                        currentPosition.current - offset.current,
-                      );
-                    }
-                  }}
-                  onPosition={(value) => {
-                    currentPosition.current = value;
-                    setPosition(value);
-                    if (Date.now() - lastSaved.current > 10000) {
-                      lastSaved.current = Date.now();
-                      save();
-                    }
-                  }}
-                />
-              )}
-
-              {!platform.tv && isPictureInPictureSupported() && (
-                <CircleBtn
-                  onPress={() => {
-                    pip.current = true;
-                    void video.current?.startPictureInPicture().catch(() => {
-                      pip.current = false;
-                      setMessage("Picture in picture is unavailable on this device.");
-                    });
-                  }}
-                  size={platform.tv ? 36 : 44}
-                  bg="rgba(0,0,0,0.45)"
-                >
-                  <IconPip size={22} />
-                </CircleBtn>
-              )}
-
-              {!platform.tv && (
-                <CircleBtn
-                  onPress={cycleFitMode}
-                  size={44}
-                  bg="rgba(0,0,0,0.45)"
-                >
-                  <IconFitState mode={fitMode} zoom={zoom} size={20} />
-                </CircleBtn>
-              )}
-
-              {isTvShow && sortedEpisodes.length > 0 && (
-                <CircleBtn
-                  onPress={() => setMenu("episodes")}
-                  size={platform.tv ? 36 : 46}
-                  active={menu === "episodes"}
-                  bg="rgba(0,0,0,0.45)"
-                  focusId="episodes"
-                >
-                  {({ focused }) => (
-                    <ListVideo
-                      size={platform.tv ? 18 : 22}
-                      color={menu === "episodes" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                    />
-                  )}
-                </CircleBtn>
-              )}
-
-              <CircleBtn
-                onPress={() => setMenu("settings")}
-                size={platform.tv ? 36 : 44}
-                active={menu === "settings"}
-                bg="rgba(0,0,0,0.45)"
-                focusId="settings"
-              >
-                {({ focused }) => (
-                  <IconSettings
-                    size={platform.tv ? 18 : 22}
-                    color={menu === "settings" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                  />
-                )}
-              </CircleBtn>
-            </View>
-          </View>
-
-          {/* ── MIDDLE PLAY CONTROLS ── */}
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-              flexDirection: "row",
-              gap: platform.tv ? 32 : 28,
-              opacity: status === "loading" || scrub != null || ended ? 0 : 1,
-            }}
-            pointerEvents={status === "loading" || scrub != null || ended ? "none" : "box-none"}
-            accessibilityElementsHidden={status === "loading" || scrub != null || ended}
-            importantForAccessibility={status === "loading" || scrub != null || ended ? "no-hide-descendants" : "auto"}
-          >
-            {/* Previous episode (if any) */}
-            {!!(manifest as any).previousFileId && (
-              <CircleBtn
-                onPress={() => next((manifest as any).previousFileId)}
-                size={48}
-                bg="rgba(0,0,0,0.4)"
-              >
-                <IconBack size={20} />
-              </CircleBtn>
-            )}
-
-            {/* Rewind 10s */}
-            <CircleBtn
-              onPress={() => seek(position - 10)}
-              size={platform.tv ? 44 : 54}
-              bg="rgba(0,0,0,0.45)"
-              disabled={casting}
-              focusId="rewind"
-            >
-              <IconRewind size={platform.tv ? 22 : 28} />
-            </CircleBtn>
-
-            {/* Big Center Play/Pause button: on TV turns solid white when focused, frosted when not */}
-            <CircleBtn
-              onPress={togglePlay}
-              size={platform.tv ? 56 : 72}
-              active={!platform.tv}
-              activeBg="#ffffff"
-              bg={platform.tv ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.45)"}
-              disabled={casting}
-              focusId="play"
-              hasTVPreferredFocus={true}
-            >
-              {({ focused }) => {
-                const darkIcon = (!platform.tv || focused);
-                return playing ? (
-                  <IconPause size={platform.tv ? 24 : 30} color={darkIcon ? "#000000" : "#ffffff"} />
-                ) : (
-                  <IconPlay size={platform.tv ? 26 : 32} color={darkIcon ? "#000000" : "#ffffff"} />
-                );
-              }}
-            </CircleBtn>
-
-            {/* Forward 10s */}
-            <CircleBtn
-              onPress={() => seek(position + 10)}
-              size={platform.tv ? 44 : 54}
-              bg="rgba(0,0,0,0.45)"
-              disabled={casting}
-              focusId="forward"
-            >
-              <IconForward size={platform.tv ? 22 : 28} />
-            </CircleBtn>
-          </View>
-
-          {/* ── BOTTOM SECTION ── */}
-          <View
-            style={{
-              paddingLeft: platform.tv ? 26 : Math.max(insets.left + 10, 16),
-              paddingRight: platform.tv ? 26 : Math.max(insets.right + 10, 16),
-              paddingBottom: Math.max(insets.bottom + 4, platform.tv ? 26 : 16),
-              gap: 6,
-            }}
-          >
-            {status === "loading" && scrub == null && <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Loading video…</Text>}
-            {/* Error / messages */}
-            {(!!error || (!offline && choice.path === "unsupported")) && (
-              <Notice
-                message={error || manifest.reason}
-                retry={() =>
-                  setChoice((old) => ({
-                    ...old,
-                    start: currentPosition.current,
-                    revision: old.revision + 1,
-                  }))
-                }
-              />
-            )}
-            {!!message && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 }}>
-                <Text style={{ flex: 1, color: "rgba(255,255,255,0.8)", fontSize: 13 }}>{message}</Text>
-                <CircleBtn onPress={() => setMessage("")} size={32} bg="rgba(255,255,255,0.15)">
-                  <IconClose size={14} />
-                </CircleBtn>
-              </View>
-            )}
-
-            {/* Ended card */}
-            {ended && !resume && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 10,
-                  alignSelf: "center",
-                  marginBottom: 8,
-                }}
-              >
-                <Pressable
-                  onPress={() => seek(0)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Play again"
-                  onFocus={() => reportControlFocus("end")}
-                  onBlur={() => reportControlFocus(null)}
-                  style={(s: any) => [
-                    styles.endBtn,
-                    s.focused && Platform.isTV && styles.endBtnFocusedTv,
-                    s.pressed && { opacity: 0.8 },
-                  ]}
-                >
-                  <Text style={styles.endBtnText}>Play again</Text>
-                </Pressable>
-                {!offline && manifest.nextFileId && (
-                  <Pressable
-                    onPress={() => next(manifest.nextFileId!)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Next episode"
-                    onFocus={() => reportControlFocus("end")}
-                    onBlur={() => reportControlFocus(null)}
-                    style={(s: any) => [
-                      styles.endBtn,
-                      styles.endBtnPrimary,
-                      s.focused && Platform.isTV && styles.endBtnFocusedTv,
-                      s.focused && Platform.isTV && styles.endBtnPrimaryFocusedTv,
-                      s.pressed && { opacity: 0.8 },
-                    ]}
-                  >
-                    <Text style={[styles.endBtnText, { color: "#000", fontWeight: "700" }]}>
-                      {preferences.autoNext && !autoNextCancelled
-                        ? `Next  · ${countdown}s`
-                        : "Next episode"}
-                    </Text>
-                  </Pressable>
-                )}
-                {preferences.autoNext && !autoNextCancelled && manifest.nextFileId && (
-                  <Pressable
-                    onPress={() => setAutoNextCancelled(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Cancel autoplay"
-                    onFocus={() => reportControlFocus("end")}
-                    onBlur={() => reportControlFocus(null)}
-                    style={(s: any) => [
-                      styles.endBtn,
-                      s.focused && Platform.isTV && styles.endBtnFocusedTv,
-                      s.pressed && { opacity: 0.8 },
-                    ]}
-                  >
-                    <Text style={styles.endBtnText}>Cancel</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-
-            {/* Scrub trickplay preview & floating time badge */}
-            {scrub != null && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  bottom: 78,
-                  left: `${Math.max(12, Math.min(88, progressRatio * 100))}%`,
-                  transform: [{ translateX: -60 }],
-                  alignItems: "center",
-                  width: 120,
-                  gap: 4,
-                  zIndex: 20,
-                }}
-              >
-                {LocalThumbnail && <LocalThumbnail key={manifest.fileId} player={player} time={scrub} fileId={manifest.fileId} />}
-                {preview && (
-                  <View
-                    style={{
-                      width: 120,
-                      height: 68,
-                      overflow: "hidden",
-                      backgroundColor: "#000",
-                      borderRadius: 8,
-                      borderWidth: 1.5,
-                      borderColor: "rgba(255,255,255,0.4)",
-                    }}
-                  >
-                    <Image
-                      source={api.image(preview.uri)}
-                      style={{
-                        position: "absolute",
-                        left: -preview.x,
-                        top: -preview.y,
-                        width: preview.width * 10,
-                        height: preview.height * 10,
-                      }}
-                      resizeMode="stretch"
-                    />
-                  </View>
-                )}
-                {/* Floating time bubble like in reference screenshots */}
-                <View
-                  style={{
-                    backgroundColor: "rgba(0,0,0,0.85)",
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.2)",
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontSize: 11, fontFamily: fonts.bold }}>
-                    {timeLabel(previewTime)}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {/* Time row above timeline */}
+            {/* ── TOP BAR ── */}
             <View
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                justifyContent: "flex-end",
-                marginBottom: 4,
-                paddingHorizontal: 2,
+                justifyContent: "space-between",
+                paddingLeft: Math.max(insets.left + 10, 16),
+                paddingRight: Math.max(insets.right + 10, 16),
+                paddingTop: Math.max(insets.top + 6, 14),
+                paddingBottom: 10,
               }}
             >
-              <Text
-                style={{
-                  color: "rgba(255,255,255,0.85)",
-                  fontSize: platform.tv ? 11.5 : 12,
-                  fontFamily: fonts.medium,
-                }}
-              >
-                {timeLabel(previewTime)} / {timeLabel(duration)}
-              </Text>
-            </View>
-
-            {/* Progress bar */}
-            <View
-              ref={timeline}
-              collapsable={false}
-              {...(platform.tv
-                ? {
-                    focusable: true,
-                    nextFocusLeft: timelineHandle,
-                    nextFocusRight: timelineHandle,
-                  }
-                : {})}
-              accessibilityLabel="Playback position"
-              accessibilityRole="adjustable"
-              accessibilityValue={{
-                min: 0,
-                max: duration,
-                now: position,
-                text: timeLabel(position),
-              }}
-              accessibilityActions={[
-                { name: "increment" },
-                { name: "decrement" },
-              ]}
-              onAccessibilityAction={(e) =>
-                seek(
-                  position +
-                    (e.nativeEvent.actionName === "increment" ? 10 : -10),
-                )
-              }
-              onFocus={() => {
-                reveal();
-                setTimelineFocus(true);
-                reportControlFocus("timeline");
-                if (platform.tv)
-                  setTimelineHandle(
-                    findNodeHandle(timeline.current) || undefined,
-                  );
-              }}
-              onBlur={() => {
-                setTimelineFocus(false);
-                reportControlFocus(null);
-                if (scrub != null) seek(scrub);
-              }}
-              onLayout={(e) => {
-                timelineWidth.current = Math.max(1, e.nativeEvent.layout.width);
-              }}
-              onStartShouldSetResponder={() => !platform.tv && !casting}
-              onMoveShouldSetResponder={() => !platform.tv && !casting}
-              onResponderTerminationRequest={() => false}
-              onResponderGrant={(e) => {
-                if (!platform.tv && !casting) {
-                  reveal();
-                  const x = Math.max(
-                    0,
-                    Math.min(timelineWidth.current, e.nativeEvent.locationX),
-                  );
-                  const target = (x / timelineWidth.current) * duration;
-                  setScrub(target);
-                }
-              }}
-              onResponderMove={(e) => {
-                if (!platform.tv && !casting) {
-                  const x = Math.max(
-                    0,
-                    Math.min(timelineWidth.current, e.nativeEvent.locationX),
-                  );
-                  const target = (x / timelineWidth.current) * duration;
-                  setScrub(target);
-                }
-              }}
-              onResponderRelease={(e) => {
-                if (!platform.tv && !casting) {
-                  const x = Math.max(
-                    0,
-                    Math.min(timelineWidth.current, e.nativeEvent.locationX),
-                  );
-                  const target = (x / timelineWidth.current) * duration;
-                  seek(target);
-                }
-              }}
-              style={{ paddingVertical: 12 }}
-            >
-              {/* Track */}
+              {/* Left cluster: Back button + Title */}
               <View
-                pointerEvents="none"
                 style={{
-                  height: scrub != null ? 6 : 4,
-                  borderRadius: 3,
-                  backgroundColor: "rgba(255,255,255,0.22)",
-                  overflow: "visible",
-                  borderColor: timelineFocus ? "#ffffff" : "transparent",
-                  borderWidth: timelineFocus ? 1.5 : 0,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  flex: 1,
+                  marginRight: 12,
                 }}
               >
-                {/* Buffered fill */}
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: `${duration ? Math.min(100, (player.bufferedPosition / duration) * 100) : 0}%`,
-                    backgroundColor: "rgba(255,255,255,0.2)",
-                    borderRadius: 3,
-                  }}
-                />
-                {/* Playhead fill */}
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: `${progressRatio * 100}%`,
-                    backgroundColor: "#ffffff",
-                    borderRadius: 3,
-                  }}
-                />
-                {/* Thumb */}
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: `${progressRatio * 100}%`,
-                    width: scrub != null ? 16 : 12,
-                    height: scrub != null ? 16 : 12,
-                    borderRadius: 8,
-                    backgroundColor: "#fff",
-                    marginTop: scrub != null ? -8 : -6,
-                    marginLeft: scrub != null ? -8 : -6,
-                    shadowColor: "#000",
-                    shadowOpacity: 0.6,
-                    shadowRadius: 3,
-                    elevation: 4,
-                  }}
-                />
+                <CircleBtn onPress={exit} size={44} bg="rgba(0,0,0,0.45)">
+                  {({ focused }) => (
+                    <IconBack
+                      size={22}
+                      color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                    />
+                  )}
+                </CircleBtn>
+
+                <View style={{ marginLeft: 12, flex: 1 }}>
+                  <Text
+                    style={{
+                      color: "#ffffff",
+                      fontSize: 15,
+                      fontFamily: fonts.bold,
+                      letterSpacing: -0.2,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {manifest.title || undefined || "Plexy"}
+                  </Text>
+                  {(() => {
+                    const raw = manifest.subtitle || "";
+                    const cleaned = raw
+                      .replace(
+                        /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
+                        "",
+                      )
+                      .trim();
+                    const isEp = manifest.episodeNumber != null || Boolean(raw);
+                    const subLabel = isEp
+                      ? manifest.episodeNumber != null
+                        ? `Episode ${manifest.episodeNumber}${cleaned ? ` · ${cleaned}` : ""}`
+                        : raw
+                      : "";
+                    return subLabel ? (
+                      <Text
+                        style={{
+                          color: "rgba(255,255,255,0.65)",
+                          fontSize: 11.5,
+                          fontFamily: fonts.regular,
+                          marginTop: 1,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {subLabel}
+                      </Text>
+                    ) : null;
+                  })()}
+                </View>
+              </View>
+
+              {/* Lock button on top bar */}
+              {
+                <CircleBtn onPress={lockScreen} size={44} bg="rgba(0,0,0,0.45)">
+                  {({ focused }) => (
+                    <Lock
+                      size={20}
+                      color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                      strokeWidth={2}
+                    />
+                  )}
+                </CircleBtn>
+              }
+
+              {/* Top-Right cluster: Quality, Audio, Subtitles, Episodes, Settings */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  marginLeft: 12,
+                }}
+              >
+                <CircleBtn
+                  onPress={() => setMenu("audio")}
+                  disabled
+                  size={44}
+                  active={menu === "audio"}
+                  bg="rgba(0,0,0,0.45)"
+                >
+                  {({ focused }) => (
+                    <IconAudio
+                      size={22}
+                      color={
+                        menu === "audio"
+                          ? "#000000"
+                          : focused
+                            ? "#ffffff"
+                            : "rgba(255,255,255,0.9)"
+                      }
+                    />
+                  )}
+                </CircleBtn>
+
+                <CircleBtn
+                  onPress={() => setMenu("captions")}
+                  disabled
+                  size={44}
+                  active={Boolean(subtitle)}
+                  bg="rgba(0,0,0,0.45)"
+                >
+                  {({ focused }) => (
+                    <IconSubtitles
+                      size={22}
+                      color={
+                        subtitle
+                          ? "#000000"
+                          : focused
+                            ? "#ffffff"
+                            : "rgba(255,255,255,0.9)"
+                      }
+                      active={!!subtitle}
+                    />
+                  )}
+                </CircleBtn>
+
+                {!!manifest.nextFileId && (
+                  <CircleBtn
+                    onPress={() => next(manifest.nextFileId!)}
+                    size={44}
+                    bg="rgba(0,0,0,0.45)"
+                  >
+                    {({ focused }) => (
+                      <IconNext
+                        size={22}
+                        color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                      />
+                    )}
+                  </CircleBtn>
+                )}
+
+                {isPictureInPictureSupported() && (
+                  <CircleBtn
+                    onPress={() => {
+                      pip.current = true;
+                      void video.current?.startPictureInPicture().catch(() => {
+                        pip.current = false;
+                        setMessage(
+                          "Picture in picture is unavailable on this device.",
+                        );
+                      });
+                    }}
+                    size={44}
+                    bg="rgba(0,0,0,0.45)"
+                  >
+                    <IconPip size={22} />
+                  </CircleBtn>
+                )}
+
+                {
+                  <CircleBtn
+                    onPress={cycleFitMode}
+                    size={44}
+                    bg="rgba(0,0,0,0.45)"
+                  >
+                    <IconFitState mode={fitMode} zoom={zoom} size={20} />
+                  </CircleBtn>
+                }
+
+                {isTvShow && sortedEpisodes.length > 0 && (
+                  <CircleBtn
+                    onPress={() => setMenu("episodes")}
+                    size={46}
+                    active={menu === "episodes"}
+                    bg="rgba(0,0,0,0.45)"
+                  >
+                    {({ focused }) => (
+                      <ListVideo
+                        size={22}
+                        color={
+                          menu === "episodes"
+                            ? "#000000"
+                            : focused
+                              ? "#ffffff"
+                              : "rgba(255,255,255,0.9)"
+                        }
+                      />
+                    )}
+                  </CircleBtn>
+                )}
+
+                <CircleBtn
+                  onPress={() => setMenu("settings")}
+                  size={44}
+                  active={menu === "settings"}
+                  bg="rgba(0,0,0,0.45)"
+                >
+                  {({ focused }) => (
+                    <IconSettings
+                      size={22}
+                      color={
+                        menu === "settings"
+                          ? "#000000"
+                          : focused
+                            ? "#ffffff"
+                            : "rgba(255,255,255,0.9)"
+                      }
+                    />
+                  )}
+                </CircleBtn>
               </View>
             </View>
 
-            {casting && (
-              <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, marginTop: 4 }}>
-                Playing on your TV. Use the TV playback controls above.
-              </Text>
-            )}
-            {diagnostics && (
-              <View style={styles.diagnosticsCard}>
-                <View style={styles.diagnosticsRow}>
-                  <Text style={styles.diagnosticsLabel}>SOURCE</Text>
-                  <Text style={styles.diagnosticsVal} numberOfLines={1}>
-                    {offline ? "Offline File" : choice.path.toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.diagnosticsRow}>
-                  <Text style={styles.diagnosticsLabel}>RESOLUTION</Text>
-                  <Text style={styles.diagnosticsVal}>
-                    {player.videoTrack?.size.height ? `${player.videoTrack.size.height}p` : "Auto"}
-                  </Text>
-                </View>
-                <View style={styles.diagnosticsRow}>
-                  <Text style={styles.diagnosticsLabel}>BUFFERED</Text>
-                  <Text style={styles.diagnosticsVal}>
-                    {timeLabel(player.bufferedPosition)}
-                  </Text>
-                </View>
-                <View style={styles.diagnosticsRow}>
-                  <Text style={styles.diagnosticsLabel}>AUDIO</Text>
-                  <Text style={styles.diagnosticsVal}>Track {choice.audio + 1}</Text>
-                </View>
-                <View style={styles.diagnosticsRow}>
-                  <Text style={styles.diagnosticsLabel}>STATUS</Text>
-                  <Text style={[styles.diagnosticsVal, { color: "#4ade80" }]}>
-                    {status.toUpperCase()}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </View>
-
-          {/* Skip segment pill (bottom-right) */}
-          {platform.tv && activeSkip && scrub == null && status !== "loading" && !resume && (
+            {/* ── MIDDLE PLAY CONTROLS ── */}
             <View
               style={{
-                position: "absolute",
-                right: 20,
-                bottom: Math.max(insets.bottom, 16) + 150,
+                flex: 1,
+                justifyContent: "center",
+                alignItems: "center",
+                flexDirection: "row",
+                gap: 28,
+                opacity: status === "loading" || scrub != null || ended ? 0 : 1,
+              }}
+              pointerEvents={
+                status === "loading" || scrub != null || ended
+                  ? "none"
+                  : "box-none"
+              }
+              accessibilityElementsHidden={
+                status === "loading" || scrub != null || ended
+              }
+              importantForAccessibility={
+                status === "loading" || scrub != null || ended
+                  ? "no-hide-descendants"
+                  : "auto"
+              }
+            >
+              {/* Previous episode (if any) */}
+              {!!(manifest as any).previousFileId && (
+                <CircleBtn
+                  onPress={() => next((manifest as any).previousFileId)}
+                  size={48}
+                  bg="rgba(0,0,0,0.4)"
+                >
+                  <IconBack size={20} />
+                </CircleBtn>
+              )}
+
+              {/* Rewind 10s */}
+              <CircleBtn
+                onPress={() => seek(position - 10)}
+                size={54}
+                bg="rgba(0,0,0,0.45)"
+                disabled
+              >
+                <IconRewind size={28} />
+              </CircleBtn>
+
+              {/* Play/Pause */}
+              <CircleBtn
+                onPress={togglePlay}
+                size={72}
+                active={true}
+                activeBg="#ffffff"
+                bg={"rgba(0,0,0,0.45)"}
+                disabled
+              >
+                {({ focused }) => {
+                  const darkIcon = true;
+                  return playing ? (
+                    <IconPause
+                      size={30}
+                      color={darkIcon ? "#000000" : "#ffffff"}
+                    />
+                  ) : (
+                    <IconPlay
+                      size={32}
+                      color={darkIcon ? "#000000" : "#ffffff"}
+                    />
+                  );
+                }}
+              </CircleBtn>
+
+              {/* Forward 10s */}
+              <CircleBtn
+                onPress={() => seek(position + 10)}
+                size={54}
+                bg="rgba(0,0,0,0.45)"
+                disabled
+              >
+                <IconForward size={28} />
+              </CircleBtn>
+            </View>
+
+            {/* ── BOTTOM SECTION ── */}
+            <View
+              style={{
+                paddingLeft: Math.max(insets.left + 10, 16),
+                paddingRight: Math.max(insets.right + 10, 16),
+                paddingBottom: Math.max(insets.bottom + 4, 16),
+                gap: 6,
               }}
             >
-              <Pressable
-                onPress={() => seek(activeSkip[1]!.end)}
-                accessibilityRole="button"
-                accessibilityLabel={`Skip ${skipLabel}`}
-                style={(s: any) => [
-                  styles.skipPill,
-                  s.focused && Platform.isTV && styles.skipPillFocusedTv,
-                  s.pressed && { opacity: 0.85 },
-                ]}
-              >
-                <Text style={styles.skipPillText}>
-                  Skip {skipLabel}
+              {status === "loading" && scrub == null && (
+                <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+                  Loading video…
                 </Text>
-              </Pressable>
-            </View>
-          )}
-          </View>
-        </FocusGroup>
-      )}
+              )}
+              {/* Error / messages */}
+              {(!!error || choice.path === "unsupported") && (
+                <Notice
+                  message={error || manifest.reason}
+                  retry={() =>
+                    setChoice((old) => ({
+                      ...old,
+                      start: currentPosition.current,
+                      revision: old.revision + 1,
+                    }))
+                  }
+                />
+              )}
+              {!!message && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 4,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: "rgba(255,255,255,0.8)",
+                      fontSize: 13,
+                    }}
+                  >
+                    {message}
+                  </Text>
+                  <CircleBtn
+                    onPress={() => setMessage("")}
+                    size={32}
+                    bg="rgba(255,255,255,0.15)"
+                  >
+                    <IconClose size={14} />
+                  </CircleBtn>
+                </View>
+              )}
 
-      {!platform.tv && !locked && activeSkip && scrub == null && status !== "loading" && !resume && !menu && !ended && (
-        <View style={{position:"absolute",right:20,bottom:layoutFull ? Math.max(insets.bottom,16) + (show ? 150 : 32) : 92}}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Skip ${skipLabel}`}
-            onPress={() => seek(activeSkip[1]!.end)} style={({pressed}) => [styles.skipPill,pressed && {opacity:.85}]}>
-            <Text style={styles.skipPillText}>Skip {skipLabel}</Text>
-          </Pressable>
+              {/* Ended card */}
+              {ended && !resume && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 10,
+                    alignSelf: "center",
+                    marginBottom: 8,
+                  }}
+                >
+                  <Pressable
+                    onPress={() => seek(0)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Play again"
+                    style={(s: any) => [
+                      styles.endBtn,
+                      s.pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    <Text style={styles.endBtnText}>Play again</Text>
+                  </Pressable>
+                  {manifest.nextFileId && (
+                    <Pressable
+                      onPress={() => next(manifest.nextFileId!)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Next episode"
+                      style={(s: any) => [
+                        styles.endBtn,
+                        styles.endBtnPrimary,
+                        s.pressed && { opacity: 0.8 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.endBtnText,
+                          { color: "#000", fontWeight: "700" },
+                        ]}
+                      >
+                        {preferences.autoNext && !autoNextCancelled
+                          ? `Next  · ${countdown}s`
+                          : "Next episode"}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {preferences.autoNext &&
+                    !autoNextCancelled &&
+                    manifest.nextFileId && (
+                      <Pressable
+                        onPress={() => setAutoNextCancelled(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Cancel autoplay"
+                        style={(s: any) => [
+                          styles.endBtn,
+                          s.pressed && { opacity: 0.8 },
+                        ]}
+                      >
+                        <Text style={styles.endBtnText}>Cancel</Text>
+                      </Pressable>
+                    )}
+                </View>
+              )}
+
+              {/* Scrub trickplay preview & floating time badge */}
+              {scrub != null && (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    bottom: 78,
+                    left: `${Math.max(12, Math.min(88, progressRatio * 100))}%`,
+                    transform: [{ translateX: -60 }],
+                    alignItems: "center",
+                    width: 120,
+                    gap: 4,
+                    zIndex: 20,
+                  }}
+                >
+                  {LocalThumbnail && (
+                    <LocalThumbnail
+                      key={manifest.fileId}
+                      player={player}
+                      time={scrub}
+                      fileId={manifest.fileId}
+                    />
+                  )}
+
+                  {/* Floating time bubble like in reference screenshots */}
+                  <View
+                    style={{
+                      backgroundColor: "rgba(0,0,0,0.85)",
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 6,
+                      borderWidth: 1,
+                      borderColor: "rgba(255,255,255,0.2)",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 11,
+                        fontFamily: fonts.bold,
+                      }}
+                    >
+                      {timeLabel(previewTime)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Time row above timeline */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  marginBottom: 4,
+                  paddingHorizontal: 2,
+                }}
+              >
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.85)",
+                    fontSize: 12,
+                    fontFamily: fonts.medium,
+                  }}
+                >
+                  {timeLabel(previewTime)} / {timeLabel(duration)}
+                </Text>
+              </View>
+
+              {/* Progress bar */}
+              <View
+                ref={timeline}
+                collapsable
+                {...{}}
+                accessibilityLabel="Playback position"
+                accessibilityRole="adjustable"
+                accessibilityValue={{
+                  min: 0,
+                  max: duration,
+                  now: position,
+                  text: timeLabel(position),
+                }}
+                accessibilityActions={[
+                  { name: "increment" },
+                  { name: "decrement" },
+                ]}
+                onAccessibilityAction={(e) =>
+                  seek(
+                    position +
+                      (e.nativeEvent.actionName === "increment" ? 10 : -10),
+                  )
+                }
+                onFocus={() => {
+                  reveal();
+                  setTimelineFocus(true);
+                }}
+                onBlur={() => {
+                  setTimelineFocus(false);
+                  if (scrub != null) seek(scrub);
+                }}
+                onLayout={(e) => {
+                  timelineWidth.current = Math.max(
+                    1,
+                    e.nativeEvent.layout.width,
+                  );
+                }}
+                onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => true}
+                onResponderTerminationRequest={() => false}
+                onResponderGrant={(e) => {
+                  {
+                    reveal();
+                    const x = Math.max(
+                      0,
+                      Math.min(timelineWidth.current, e.nativeEvent.locationX),
+                    );
+                    const target = (x / timelineWidth.current) * duration;
+                    setScrub(target);
+                  }
+                }}
+                onResponderMove={(e) => {
+                  {
+                    const x = Math.max(
+                      0,
+                      Math.min(timelineWidth.current, e.nativeEvent.locationX),
+                    );
+                    const target = (x / timelineWidth.current) * duration;
+                    setScrub(target);
+                  }
+                }}
+                onResponderRelease={(e) => {
+                  {
+                    const x = Math.max(
+                      0,
+                      Math.min(timelineWidth.current, e.nativeEvent.locationX),
+                    );
+                    const target = (x / timelineWidth.current) * duration;
+                    seek(target);
+                  }
+                }}
+                style={{ paddingVertical: 12 }}
+              >
+                {/* Track */}
+                <View
+                  pointerEvents="none"
+                  style={{
+                    height: scrub != null ? 6 : 4,
+                    borderRadius: 3,
+                    backgroundColor: "rgba(255,255,255,0.22)",
+                    overflow: "visible",
+                    borderColor: timelineFocus ? "#ffffff" : "transparent",
+                    borderWidth: timelineFocus ? 1.5 : 0,
+                  }}
+                >
+                  {/* Buffered fill */}
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${duration ? Math.min(100, (player.bufferedPosition / duration) * 100) : 0}%`,
+                      backgroundColor: "rgba(255,255,255,0.2)",
+                      borderRadius: 3,
+                    }}
+                  />
+                  {/* Playhead fill */}
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${progressRatio * 100}%`,
+                      backgroundColor: "#ffffff",
+                      borderRadius: 3,
+                    }}
+                  />
+                  {/* Thumb */}
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: `${progressRatio * 100}%`,
+                      width: scrub != null ? 16 : 12,
+                      height: scrub != null ? 16 : 12,
+                      borderRadius: 8,
+                      backgroundColor: "#fff",
+                      marginTop: scrub != null ? -8 : -6,
+                      marginLeft: scrub != null ? -8 : -6,
+                      shadowColor: "#000",
+                      shadowOpacity: 0.6,
+                      shadowRadius: 3,
+                      elevation: 4,
+                    }}
+                  />
+                </View>
+              </View>
+
+              {diagnostics && (
+                <View style={styles.diagnosticsCard}>
+                  <View style={styles.diagnosticsRow}>
+                    <Text style={styles.diagnosticsLabel}>SOURCE</Text>
+                    <Text style={styles.diagnosticsVal} numberOfLines={1}>
+                      {choice.path.toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.diagnosticsRow}>
+                    <Text style={styles.diagnosticsLabel}>RESOLUTION</Text>
+                    <Text style={styles.diagnosticsVal}>
+                      {player.videoTrack?.size.height
+                        ? `${player.videoTrack.size.height}p`
+                        : "Auto"}
+                    </Text>
+                  </View>
+                  <View style={styles.diagnosticsRow}>
+                    <Text style={styles.diagnosticsLabel}>BUFFERED</Text>
+                    <Text style={styles.diagnosticsVal}>
+                      {timeLabel(player.bufferedPosition)}
+                    </Text>
+                  </View>
+                  <View style={styles.diagnosticsRow}>
+                    <Text style={styles.diagnosticsLabel}>AUDIO</Text>
+                    <Text style={styles.diagnosticsVal}>
+                      Track {choice.audio + 1}
+                    </Text>
+                  </View>
+                  <View style={styles.diagnosticsRow}>
+                    <Text style={styles.diagnosticsLabel}>STATUS</Text>
+                    <Text style={[styles.diagnosticsVal, { color: "#4ade80" }]}>
+                      {status.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Skip segment pill (bottom-right) */}
+          </View>
         </View>
       )}
+
+      {!locked &&
+        activeSkip &&
+        scrub == null &&
+        status !== "loading" &&
+        !resume &&
+        !menu &&
+        !ended && (
+          <View
+            style={{
+              position: "absolute",
+              right: 20,
+              bottom: layoutFull
+                ? Math.max(insets.bottom, 16) + (show ? 150 : 32)
+                : 92,
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Skip ${skipLabel}`}
+              onPress={() => seek(activeSkip[1]!.end)}
+              style={({ pressed }) => [
+                styles.skipPill,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Text style={styles.skipPillText}>Skip {skipLabel}</Text>
+            </Pressable>
+          </View>
+        )}
 
       {/* ── Resume prompt ── */}
       {resume && (
@@ -2242,7 +2158,6 @@ function Playback({
               }}
               accessibilityRole="button"
               accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
-              hasTVPreferredFocus={true}
               style={(s: any) => [
                 {
                   width: "100%",
@@ -2252,11 +2167,16 @@ function Playback({
                   alignItems: "center",
                   justifyContent: "center",
                 },
-                s.focused && Platform.isTV && styles.resumeBtnPrimaryFocusedTv,
                 s.pressed && { opacity: 0.85 },
               ]}
             >
-              <Text style={{ color: "#000000", fontFamily: fonts.bold, fontSize: 15 }}>
+              <Text
+                style={{
+                  color: "#000000",
+                  fontFamily: fonts.bold,
+                  fontSize: 15,
+                }}
+              >
                 Continue watching ({timeLabel(initialResume)})
               </Text>
             </Pressable>
@@ -2278,11 +2198,16 @@ function Playback({
                   alignItems: "center",
                   justifyContent: "center",
                 },
-                s.focused && Platform.isTV && styles.resumeBtnFocusedTv,
                 s.pressed && { opacity: 0.85 },
               ]}
             >
-              <Text style={{ color: "rgba(255,255,255,0.9)", fontFamily: fonts.medium, fontSize: 14 }}>
+              <Text
+                style={{
+                  color: "rgba(255,255,255,0.9)",
+                  fontFamily: fonts.medium,
+                  fontSize: 14,
+                }}
+              >
                 Start from beginning
               </Text>
             </Pressable>
@@ -2303,11 +2228,16 @@ function Playback({
                   alignItems: "center",
                   justifyContent: "center",
                 },
-                s.focused && Platform.isTV && styles.resumeBtnFocusedTv,
                 s.pressed && { opacity: 0.7 },
               ]}
             >
-              <Text style={{ color: "rgba(255,255,255,0.6)", fontFamily: fonts.medium, fontSize: 14 }}>
+              <Text
+                style={{
+                  color: "rgba(255,255,255,0.6)",
+                  fontFamily: fonts.medium,
+                  fontSize: 14,
+                }}
+              >
                 Cancel
               </Text>
             </Pressable>
@@ -2324,9 +2254,18 @@ function Playback({
         supportedOrientations={["portrait", "landscape"]}
       >
         <View style={styles.sheetBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={() => setMenu(null)} />
-          <Animated.View style={[styles.sheetContainer, { transform: [{ translateX: drawerAnim }] }]}>
-            <FocusGroup style={{ flex: 1 }}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            focusable
+            onPress={() => setMenu(null)}
+          />
+          <Animated.View
+            style={[
+              styles.sheetContainer,
+              { transform: [{ translateX: drawerAnim }] },
+            ]}
+          >
+            <View style={{ flex: 1 }}>
               {/* Title row */}
               <View style={styles.sheetTitleRow}>
                 <Text style={styles.sheetTitle}>
@@ -2342,7 +2281,10 @@ function Playback({
                 </Text>
                 <Pressable
                   focusable={true}
-                  onPress={() => { setMenu(null); reveal(); }}
+                  onPress={() => {
+                    setMenu(null);
+                    reveal();
+                  }}
                   style={({ pressed }: any) => [
                     styles.sheetCloseBtn,
                     pressed && { opacity: 0.7 },
@@ -2358,7 +2300,9 @@ function Playback({
               {menu === "episodes" && (
                 <ScrollView
                   ref={episodesScrollRef}
-                  contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }}
+                  contentContainerStyle={{
+                    paddingBottom: Math.max(insets.bottom, 24),
+                  }}
                   showsVerticalScrollIndicator={true}
                 >
                   {sortedEpisodes.map((ep, idx) => {
@@ -2369,7 +2313,8 @@ function Playback({
                         ep.episodeNumber === manifest.episodeNumber);
                     const isEpWatched =
                       drawerWatchedOverride[ep.id] ??
-                      (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+                      (progress.latest(ep.id)?.played ||
+                        Boolean(ep.watch?.played));
                     const epLabel =
                       ep.seasonNumber != null && ep.episodeNumber != null
                         ? `S${ep.seasonNumber} · E${ep.episodeNumber}`
@@ -2394,7 +2339,9 @@ function Playback({
                         <View style={styles.episodeThumbContainer}>
                           {ep.still || ep.backdrop || ep.poster ? (
                             <PosterImage
-                              source={api.image(ep.still || ep.backdrop || ep.poster)}
+                              source={api.image(
+                                ep.still || ep.backdrop || ep.poster,
+                              )}
                               style={styles.episodeThumb}
                             />
                           ) : (
@@ -2404,12 +2351,22 @@ function Playback({
                           )}
                           {isCurrent && (
                             <View style={styles.episodeThumbActiveOverlay}>
-                              <PlayIcon size={14} color="#000000" fill="#000000" />
+                              <PlayIcon
+                                size={14}
+                                color="#000000"
+                                fill="#000000"
+                              />
                             </View>
                           )}
                         </View>
                         <View style={{ flex: 1, gap: 3 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
                             <Text
                               style={[
                                 styles.episodeBadge,
@@ -2420,7 +2377,9 @@ function Playback({
                             </Text>
                             {isCurrent && (
                               <View style={styles.nowPlayingPill}>
-                                <Text style={styles.nowPlayingText}>NOW PLAYING</Text>
+                                <Text style={styles.nowPlayingText}>
+                                  NOW PLAYING
+                                </Text>
                               </View>
                             )}
                           </View>
@@ -2431,7 +2390,8 @@ function Playback({
                             ]}
                             numberOfLines={2}
                           >
-                            {ep.name || `Episode ${ep.episodeNumber ?? idx + 1}`}
+                            {ep.name ||
+                              `Episode ${ep.episodeNumber ?? idx + 1}`}
                           </Text>
                           {ep.watch?.duration ? (
                             <Text style={styles.episodeDuration}>
@@ -2448,11 +2408,15 @@ function Playback({
                             pressed && { opacity: 0.6 },
                           ]}
                           accessibilityRole="button"
-                          accessibilityLabel={isEpWatched ? "Mark unwatched" : "Mark watched"}
+                          accessibilityLabel={
+                            isEpWatched ? "Mark unwatched" : "Mark watched"
+                          }
                         >
                           <IconCheck
                             size={16}
-                            color={isEpWatched ? "#22c55e" : "rgba(255,255,255,0.4)"}
+                            color={
+                              isEpWatched ? "#22c55e" : "rgba(255,255,255,0.4)"
+                            }
                           />
                         </Pressable>
                       </Pressable>
@@ -2463,368 +2427,350 @@ function Playback({
 
               {menu !== "episodes" && (
                 <ScrollView
-                  contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) }}
-                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{
+                    paddingBottom: Math.max(insets.bottom, 20),
+                  }}
+                  showsVerticalScrollIndicator
                 >
-              {/* Settings menu */}
-              {menu === "settings" && (
-                <>
-                  {!platform.local && !offline && (
+                  {/* Settings menu */}
+                  {menu === "settings" && (
                     <>
-                      <SheetSection label="Stream" />
-                      <SheetItem
-                        label="Video quality"
-                        hint={choice.maxHeight ? `${choice.maxHeight}p` : "Auto"}
-                        preferred={platform.tv}
-                        onPress={() => setMenu("quality")}
-                      />
-                    </>
-                  )}
-
-                  <SheetSection label="Playback" />
-                  <SheetChips
-                    label="Speed"
-                    options={[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => ({
-                      key: String(rate),
-                      label: `${rate}×`,
-                      active: preferences.playbackRate === rate,
-                      onPress: () => {
-                        player.playbackRate = rate;
-                        updatePreferences({ playbackRate: rate });
-                      },
-                    }))}
-                  />
-
-                  {!platform.tv && (
-                    <>
-                      <SheetSection label="Picture" />
+                      <SheetSection label="Playback" />
                       <SheetChips
-                        label="Fit"
-                        options={[
-                          { key: "contain", label: "Best fit", active: fitMode === "contain", onPress: () => applyFit("contain", zoom) },
-                          { key: "cover", label: "Crop", active: fitMode === "cover", onPress: () => applyFit("cover", zoom) },
-                          { key: "fill", label: "Stretch", active: fitMode === "fill", onPress: () => applyFit("fill", zoom) },
-                        ]}
-                      />
-                      <SheetChips
-                        label="Zoom"
-                        options={[1, 1.25, 1.5, 2].map((scale) => ({
-                          key: String(scale),
-                          label: `${Math.round(scale * 100)}%`,
-                          active: zoom === scale,
-                          onPress: () => applyFit(fitMode, scale),
+                        label="Speed"
+                        options={[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => ({
+                          key: String(rate),
+                          label: `${rate}×`,
+                          active: preferences.playbackRate === rate,
+                          onPress: () => {
+                            player.playbackRate = rate;
+                            updatePreferences({ playbackRate: rate });
+                          },
                         }))}
                       />
+
+                      {
+                        <>
+                          <SheetSection label="Picture" />
+                          <SheetChips
+                            label="Fit"
+                            options={[
+                              {
+                                key: "contain",
+                                label: "Best fit",
+                                active: fitMode === "contain",
+                                onPress: () => applyFit("contain", zoom),
+                              },
+                              {
+                                key: "cover",
+                                label: "Crop",
+                                active: fitMode === "cover",
+                                onPress: () => applyFit("cover", zoom),
+                              },
+                              {
+                                key: "fill",
+                                label: "Stretch",
+                                active: fitMode === "fill",
+                                onPress: () => applyFit("fill", zoom),
+                              },
+                            ]}
+                          />
+                          <SheetChips
+                            label="Zoom"
+                            options={[1, 1.25, 1.5, 2].map((scale) => ({
+                              key: String(scale),
+                              label: `${Math.round(scale * 100)}%`,
+                              active: zoom === scale,
+                              onPress: () => applyFit(fitMode, scale),
+                            }))}
+                          />
+                        </>
+                      }
+
+                      <SheetSection label="Player" />
+                      <SheetItem
+                        label="Playback diagnostics"
+                        selected={diagnostics}
+                        onPress={() => setDiagnostics((v) => !v)}
+                      />
+                      {isPictureInPictureSupported() && (
+                        <SheetItem
+                          label="Picture in picture"
+                          onPress={() => {
+                            setMenu(null);
+                            pip.current = true;
+                            void video.current
+                              ?.startPictureInPicture()
+                              .catch(() => {
+                                pip.current = false;
+                                setMessage(
+                                  "Picture in picture is unavailable on this device.",
+                                );
+                              });
+                          }}
+                        />
+                      )}
                     </>
                   )}
 
-                  <SheetSection label="Player" />
-                  <SheetItem
-                    label="Playback diagnostics"
-                    selected={diagnostics}
-                    onPress={() => setDiagnostics((v) => !v)}
-                  />
-                  {!platform.tv && isPictureInPictureSupported() && (
-                    <SheetItem
-                      label="Picture in picture"
-                      onPress={() => {
-                        setMenu(null);
-                        pip.current = true;
-                        void video.current
-                          ?.startPictureInPicture()
-                          .catch(() => {
-                            pip.current = false;
-                            setMessage(
-                              "Picture in picture is unavailable on this device.",
-                            );
-                          });
-                      }}
-                    />
-                  )}
-                  {!offline && !platform.local && (
-                    <SheetItem
-                      label="Retry with server conversion"
-                      onPress={() => {
-                        setMenu(null);
-                        setChoice((old) => ({
-                          path: "transcode",
-                          audio: old.audio,
-                          start: currentPosition.current,
-                          maxHeight: 1080,
-                          revision: old.revision + 1,
-                        }));
-                      }}
-                    />
-                  )}
-                </>
-              )}
+                  {/* Audio tracks */}
+                  {menu === "audio" &&
+                    (nativeAudio.length ? (
+                      <>
+                        <SheetSection label="Tracks" />
+                        {nativeAudio.map((track) => (
+                          <SheetItem
+                            key={track.id}
+                            label={
+                              track.label ||
+                              track.language ||
+                              track.id ||
+                              "Audio track"
+                            }
+                            selected={player.audioTrack?.id === track.id}
+                            onPress={() => {
+                              player.audioTrack = track;
+                              setMenu(null);
+                            }}
+                          />
+                        ))}
+                      </>
+                    ) : (
+                      <Text style={styles.sheetEmpty}>
+                        This file has a single audio track.
+                      </Text>
+                    ))}
 
-              {/* Audio tracks */}
-              {menu === "audio" &&
-                (offline || platform.local ? (
-                  nativeAudio.length ? (
+                  {/* Subtitles */}
+                  {menu === "captions" && (
                     <>
-                      <SheetSection label="Tracks" />
-                      {nativeAudio.map((track) => (
+                      <SheetSection label="Track" />
+                      <SheetItem
+                        label="Off"
+                        selected={!subtitle}
+                        onPress={() => {
+                          setSubtitle(null);
+                          updatePreferences({ autoSubtitles: false });
+                        }}
+                      />
+                      {manifest.tracks?.map((track) => (
                         <SheetItem
-                          key={track.id}
-                          label={track.label || track.language || track.id || "Audio track"}
-                          selected={player.audioTrack?.id === track.id}
+                          key={track.track}
+                          label={track.title || track.language || track.track}
+                          selected={subtitle === track.track}
                           onPress={() => {
-                            player.audioTrack = track;
-                            setMenu(null);
+                            setSubtitle(track.track);
+                            updatePreferences({
+                              autoSubtitles: true,
+                              subtitleLanguage: track.language || "",
+                            });
                           }}
                         />
                       ))}
-                    </>
-                  ) : (
-                    <Text style={styles.sheetEmpty}>
-                      This file has a single audio track.
-                    </Text>
-                  )
-                ) : (
-                  <>
-                    <SheetSection label="Tracks" />
-                    {manifest.audioTracks?.map((track, idx) => (
-                      <SheetItem
-                        key={track.index}
-                        preferred={platform.tv && idx === 0}
-                        label={track.language || "Unknown language"}
-                        hint={`${track.codec.toUpperCase()} · ${track.channels} ch`}
-                        selected={choice.audio === track.index}
-                        onPress={() => void switchAudio(track.index)}
-                      />
-                    ))}
-                  </>
-                ))}
 
-              {/* Subtitles */}
-              {menu === "captions" && (
-                <>
-                  <SheetSection label="Track" />
-                  <SheetItem
-                    label="Off"
-                    preferred={platform.tv}
-                    selected={!subtitle}
-                    onPress={() => {
-                      setSubtitle(null);
-                      updatePreferences({ autoSubtitles: false });
-                    }}
-                  />
-                  {manifest.tracks?.map((track) => (
-                    <SheetItem
-                      key={track.track}
-                      label={track.title || track.language || track.track}
-                      selected={subtitle === track.track}
-                      onPress={() => {
-                        setSubtitle(track.track);
-                        updatePreferences({
-                          autoSubtitles: true,
-                          subtitleLanguage: track.language || "",
-                        });
-                      }}
-                    />
-                  ))}
+                      {platform.local?.pickSubtitle && (
+                        <SheetItem
+                          label="Add subtitle file"
+                          hint="SRT or VTT"
+                          onPress={() => {
+                            void platform.local!.pickSubtitle!(manifest.fileId)
+                              .then((track) => {
+                                if (!track) return;
+                                setManifest((current) => ({
+                                  ...current,
+                                  tracks: [
+                                    ...(current.tracks || []).filter(
+                                      (t) => t.track !== track.track,
+                                    ),
+                                    track,
+                                  ],
+                                }));
+                                setSubtitle(track.track);
+                                updatePreferences({ autoSubtitles: true });
+                              })
+                              .catch(() =>
+                                setMessage(
+                                  "Could not add this subtitle file. Choose an SRT or VTT file.",
+                                ),
+                              );
+                          }}
+                        />
+                      )}
+                      {nativeSubtitles.map((track) => (
+                        <SheetItem
+                          key={`native:${track.id}`}
+                          label={
+                            track.label ||
+                            track.language ||
+                            "Embedded subtitles"
+                          }
+                          selected={subtitle === `native:${track.id}`}
+                          onPress={() => {
+                            setSubtitle(`native:${track.id}`);
+                            updatePreferences({ autoSubtitles: true });
+                          }}
+                        />
+                      ))}
 
-                  {platform.local?.pickSubtitle && (
-                    <SheetItem
-                      label="Add subtitle file"
-                      hint="SRT or VTT"
-                      onPress={() => {
-                        void platform.local!.pickSubtitle!(manifest.fileId).then(track => {
-                          if (!track) return;
-                          setManifest(current => ({ ...current, tracks: [...(current.tracks || []).filter(t => t.track !== track.track), track] }));
-                          setSubtitle(track.track);
-                          updatePreferences({ autoSubtitles: true });
-                        }).catch(() => setMessage("Could not add this subtitle file. Choose an SRT or VTT file."));
-                      }}
-                    />
-                  )}
-                  {platform.local && nativeSubtitles.map(track => (
-                    <SheetItem key={`native:${track.id}`} label={track.label || track.language || "Embedded subtitles"}
-                      selected={subtitle === `native:${track.id}`} onPress={() => {
-                        setSubtitle(`native:${track.id}`); updatePreferences({ autoSubtitles: true });
-                      }} />
-                  ))}
-
-                  <SheetSection label="Timing & appearance" />
-                  <SheetChips
-                    label={
-                      preferences.subtitleOffset === 0
-                        ? "Timing"
-                        : `Timing ${preferences.subtitleOffset > 0 ? "+" : ""}${preferences.subtitleOffset.toFixed(1)}s`
-                    }
-                    options={[
-                      {
-                        key: "earlier",
-                        label: "−0.5s",
-                        onPress: () => updatePreferences({ subtitleOffset: preferences.subtitleOffset - 0.5 }),
-                      },
-                      {
-                        key: "reset",
-                        label: "Reset",
-                        active: preferences.subtitleOffset === 0,
-                        onPress: () => updatePreferences({ subtitleOffset: 0 }),
-                      },
-                      {
-                        key: "later",
-                        label: "+0.5s",
-                        onPress: () => updatePreferences({ subtitleOffset: preferences.subtitleOffset + 0.5 }),
-                      },
-                    ]}
-                  />
-                  <SheetChips
-                    label="Size"
-                    options={[18, 22, 28, 34].map((size) => ({
-                      key: String(size),
-                      label: `${size}`,
-                      active: preferences.subtitleSize === size,
-                      onPress: () => updatePreferences({ subtitleSize: size }),
-                    }))}
-                  />
-                  <View style={styles.sheetStepper}>
-                    <View>
-                      <Text style={styles.sheetChipsLabel}>Vertical Position</Text>
-                      <Text style={styles.sheetStepperValue}>{subVertical}%</Text>
-                    </View>
-                    <View style={styles.sheetStepperButtons}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Move subtitles higher"
-                        onPress={() => {
-                          const nextVal = Math.max(8, subVertical - 6);
-                          setSubVertical(nextVal);
-                          updatePreferences({ subtitlePosition: nextVal < 50 ? "top" : "bottom" });
-                        }}
-                        style={({ pressed }) => [
-                          styles.sheetStepperButton,
-                          pressed && { opacity: 0.6 },
-                        ]}
-                      >
-                        <Minus size={18} color="#ffffff" strokeWidth={2.4} />
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Move subtitles lower"
-                        onPress={() => {
-                          const nextVal = Math.min(92, subVertical + 6);
-                          setSubVertical(nextVal);
-                          updatePreferences({ subtitlePosition: nextVal < 50 ? "top" : "bottom" });
-                        }}
-                        style={({ pressed }) => [
-                          styles.sheetStepperButton,
-                          pressed && { opacity: 0.6 },
-                        ]}
-                      >
-                        <Plus size={18} color="#ffffff" strokeWidth={2.4} />
-                      </Pressable>
-                    </View>
-                  </View>
-                  <SheetChips
-                    label="Position Presets"
-                    options={[
-                      { key: "top", label: "Top (12%)", active: subVertical === 12, onPress: () => { setSubVertical(12); updatePreferences({ subtitlePosition: "top" }); } },
-                      { key: "center", label: "Center (50%)", active: subVertical === 50, onPress: () => { setSubVertical(50); updatePreferences({ subtitlePosition: "bottom" }); } },
-                      { key: "lower", label: "Lower (75%)", active: subVertical === 75, onPress: () => { setSubVertical(75); updatePreferences({ subtitlePosition: "bottom" }); } },
-                      { key: "bottom", label: "Bottom (88%)", active: subVertical === 88, onPress: () => { setSubVertical(88); updatePreferences({ subtitlePosition: "bottom" }); } },
-                    ]}
-                  />
-                </>
-              )}
-
-              {/* Quality */}
-              {menu === "quality" &&
-                (platform.local ? <Text style={styles.sheetEmpty}>Original file quality. No video conversion.</Text> : offline ? (
-                  <Text style={styles.sheetEmpty}>
-                    This is the saved {offline.label} file. Choose another
-                    download for a different quality.
-                  </Text>
-                ) : (
-                  <>
-                    {manifest.path === "hls" && (
-                      <SheetItem
-                        label="Auto (adaptive)"
-                        preferred={platform.tv}
-                        selected={choice.path === "hls" && !choice.uri}
-                        onPress={() => {
-                          setChoice((old) => ({
-                            path: "hls",
-                            audio: old.audio,
-                            start: currentPosition.current,
-                            revision: old.revision + 1,
-                          }));
-                          setMenu(null);
-                        }}
-                      />
-                    )}
-                    {variants.map((variant) => (
-                      <SheetItem
-                        key={variant.uri}
-                        label={variant.label}
-                        selected={choice.uri === variant.uri}
-                        onPress={() => {
-                          const uri = api.url(variant.uri);
-                          setChoice((old) => ({
-                            ...old,
-                            path: "hls",
-                            uri,
-                            start: currentPosition.current,
-                            revision: old.revision + 1,
-                          }));
-                          setMenu(null);
-                        }}
-                      />
-                    ))}
-                    {manifest.versions?.map((version) => (
-                      <SheetItem
-                        key={version.fileId}
-                        label={`Source: ${version.label}`}
-                        selected={
-                          manifest.fileId === version.fileId && !choice.maxHeight
+                      <SheetSection label="Timing & appearance" />
+                      <SheetChips
+                        label={
+                          preferences.subtitleOffset === 0
+                            ? "Timing"
+                            : `Timing ${preferences.subtitleOffset > 0 ? "+" : ""}${preferences.subtitleOffset.toFixed(1)}s`
                         }
-                        onPress={() => {
-                          setMenu(null);
-                          save();
-                          next(version.fileId);
-                        }}
+                        options={[
+                          {
+                            key: "earlier",
+                            label: "−0.5s",
+                            onPress: () =>
+                              updatePreferences({
+                                subtitleOffset:
+                                  preferences.subtitleOffset - 0.5,
+                              }),
+                          },
+                          {
+                            key: "reset",
+                            label: "Reset",
+                            active: preferences.subtitleOffset === 0,
+                            onPress: () =>
+                              updatePreferences({ subtitleOffset: 0 }),
+                          },
+                          {
+                            key: "later",
+                            label: "+0.5s",
+                            onPress: () =>
+                              updatePreferences({
+                                subtitleOffset:
+                                  preferences.subtitleOffset + 0.5,
+                              }),
+                          },
+                        ]}
                       />
-                    ))}
+                      <SheetChips
+                        label="Size"
+                        options={[18, 22, 28, 34].map((size) => ({
+                          key: String(size),
+                          label: `${size}`,
+                          active: preferences.subtitleSize === size,
+                          onPress: () =>
+                            updatePreferences({ subtitleSize: size }),
+                        }))}
+                      />
+                      <View style={styles.sheetStepper}>
+                        <View>
+                          <Text style={styles.sheetChipsLabel}>
+                            Vertical Position
+                          </Text>
+                          <Text style={styles.sheetStepperValue}>
+                            {subVertical}%
+                          </Text>
+                        </View>
+                        <View style={styles.sheetStepperButtons}>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Move subtitles higher"
+                            onPress={() => {
+                              const nextVal = Math.max(8, subVertical - 6);
+                              setSubVertical(nextVal);
+                              updatePreferences({
+                                subtitlePosition:
+                                  nextVal < 50 ? "top" : "bottom",
+                              });
+                            }}
+                            style={({ pressed }) => [
+                              styles.sheetStepperButton,
+                              pressed && { opacity: 0.6 },
+                            ]}
+                          >
+                            <Minus
+                              size={18}
+                              color="#ffffff"
+                              strokeWidth={2.4}
+                            />
+                          </Pressable>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Move subtitles lower"
+                            onPress={() => {
+                              const nextVal = Math.min(92, subVertical + 6);
+                              setSubVertical(nextVal);
+                              updatePreferences({
+                                subtitlePosition:
+                                  nextVal < 50 ? "top" : "bottom",
+                              });
+                            }}
+                            style={({ pressed }) => [
+                              styles.sheetStepperButton,
+                              pressed && { opacity: 0.6 },
+                            ]}
+                          >
+                            <Plus size={18} color="#ffffff" strokeWidth={2.4} />
+                          </Pressable>
+                        </View>
+                      </View>
+                      <SheetChips
+                        label="Position Presets"
+                        options={[
+                          {
+                            key: "top",
+                            label: "Top (12%)",
+                            active: subVertical === 12,
+                            onPress: () => {
+                              setSubVertical(12);
+                              updatePreferences({ subtitlePosition: "top" });
+                            },
+                          },
+                          {
+                            key: "center",
+                            label: "Center (50%)",
+                            active: subVertical === 50,
+                            onPress: () => {
+                              setSubVertical(50);
+                              updatePreferences({ subtitlePosition: "bottom" });
+                            },
+                          },
+                          {
+                            key: "lower",
+                            label: "Lower (75%)",
+                            active: subVertical === 75,
+                            onPress: () => {
+                              setSubVertical(75);
+                              updatePreferences({ subtitlePosition: "bottom" });
+                            },
+                          },
+                          {
+                            key: "bottom",
+                            label: "Bottom (88%)",
+                            active: subVertical === 88,
+                            onPress: () => {
+                              setSubVertical(88);
+                              updatePreferences({ subtitlePosition: "bottom" });
+                            },
+                          },
+                        ]}
+                      />
+                    </>
+                  )}
 
-                    <SheetSection label="Server conversion cap" />
-                    {[360, 480, 720, 1080, 1440, 2160].map((height) => (
-                      <SheetItem
-                        key={height}
-                        label={`${height}p`}
-                        selected={choice.maxHeight === height}
-                        onPress={() => {
-                          setChoice((old) => ({
-                            path: "transcode",
-                            audio: old.audio,
-                            start: currentPosition.current,
-                            maxHeight: height,
-                            revision: old.revision + 1,
-                          }));
-                          setMenu(null);
-                        }}
-                      />
-                    ))}
-                  </>
-                ))}
-            </ScrollView>
-          )}
-          </FocusGroup>
-        </Animated.View>
-      </View>
-    </Modal>
+                  {/* Quality */}
+                  {menu === "quality" && (
+                    <Text style={styles.sheetEmpty}>
+                      Original file quality. No video conversion.
+                    </Text>
+                  )}
+                </ScrollView>
+              )}
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
-    </PlayerFocusCtx.Provider>
   );
 }
-
 // ---------------------------------------------------------------------------
 // SheetItem — full-width list row for bottom sheets
 // ---------------------------------------------------------------------------
-
 function SheetItem({
   label,
   hint,
@@ -2838,11 +2784,10 @@ function SheetItem({
   onPress: () => void;
   preferred?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
+  const [, setFocused] = useState(false);
   return (
     <Pressable
       focusable={true}
-      hasTVPreferredFocus={preferred}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -2851,44 +2796,31 @@ function SheetItem({
       style={({ pressed }) => [
         styles.sheetItem,
         selected && styles.sheetItemSelected,
-        focused && Platform.isTV && styles.sheetItemFocusedTv,
         pressed && { opacity: 0.75 },
       ]}
     >
       <Text
-        style={[
-          styles.sheetItemText,
-          selected && styles.sheetItemTextSelected,
-          focused && Platform.isTV && styles.sheetItemTextFocusedTv,
-        ]}
+        style={[styles.sheetItemText, selected && styles.sheetItemTextSelected]}
         numberOfLines={1}
       >
         {label}
       </Text>
       {!!hint && (
-        <Text
-          style={[
-            styles.sheetItemHint,
-            focused && Platform.isTV && { color: "rgba(0,0,0,0.55)" },
-          ]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.sheetItemHint]} numberOfLines={1}>
           {hint}
         </Text>
       )}
       {selected ? (
-        <View style={[styles.sheetCheckBadge, focused && Platform.isTV && styles.sheetCheckBadgeFocusedTv]}>
+        <View style={[styles.sheetCheckBadge]}>
           <IconCheck size={15} color="#000000" />
         </View>
       ) : null}
     </Pressable>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Sheet section label
 // ---------------------------------------------------------------------------
-
 function SheetSection({ label }: { label: string }) {
   return (
     <View style={styles.sheetSection}>
@@ -2896,18 +2828,15 @@ function SheetSection({ label }: { label: string }) {
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // SheetChips — inline choice row, far easier to scan than one row per value
 // ---------------------------------------------------------------------------
-
 type SheetChipOption = {
   key: string;
   label: string;
   active?: boolean;
   onPress: () => void;
 };
-
 function SheetChips({
   label,
   options,
@@ -2945,11 +2874,9 @@ function SheetChips({
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
   // Skip pill
   skipPill: {
@@ -2963,11 +2890,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
-  skipPillFocusedTv: {
-    borderWidth: 2.5,
-    borderColor: "#ffffff",
-  },
-
   // End screen buttons
   endBtn: {
     paddingHorizontal: 20,
@@ -2976,16 +2898,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.25)",
-  },
-  endBtnFocusedTv: {
-    borderWidth: 2.5,
-    borderColor: "#ffffff",
-    zIndex: 3,
-    elevation: 6,
-  },
-  endBtnPrimaryFocusedTv: {
-    borderWidth: 3,
-    borderColor: "#3B7DF9",
   },
   endBtnPrimary: {
     backgroundColor: "#ffffff",
@@ -2996,58 +2908,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
-
-  // Resume card
-  resumeCard: {
-    backgroundColor: "#121212",
-    borderRadius: 16,
-    padding: 28,
-    width: "100%",
-    maxWidth: 400,
-    gap: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  resumeTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  resumeBody: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 15,
-    marginBottom: 4,
-  },
-  resumeBtn: {
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    alignItems: "center",
-  },
-  resumeBtnFocusedTv: {
-    borderWidth: 3,
-    borderColor: "#ffffff",
-    transform: [{ scale: 1.05 }],
-    zIndex: 3,
-    elevation: 6,
-  },
-  resumeBtnPrimaryFocusedTv: {
-    borderWidth: 3,
-    borderColor: "#000000",
-  },
-  resumeBtnPrimary: {
-    backgroundColor: "#ffffff",
-  },
-  resumeBtnText: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
   // Right-side drawer
   sheetBackdrop: {
     flex: 1,
@@ -3067,15 +2927,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 20,
     elevation: 20,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.3)",
-    alignSelf: "center",
-    marginTop: 10,
-    marginBottom: 4,
   },
   sheetTitleRow: {
     flexDirection: "row",
@@ -3111,13 +2962,6 @@ const styles = StyleSheet.create({
   sheetItemSelected: {
     backgroundColor: "rgba(255,255,255,0.06)",
   },
-  sheetItemFocusedTv: {
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
-    marginHorizontal: 12,
-    marginVertical: 2,
-    zIndex: 3,
-  },
   sheetItemText: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 15,
@@ -3126,10 +2970,6 @@ const styles = StyleSheet.create({
   },
   sheetItemTextSelected: {
     color: "#ffffff",
-    fontWeight: "700",
-  },
-  sheetItemTextFocusedTv: {
-    color: "#000000",
     fontWeight: "700",
   },
   sheetItemHint: {
@@ -3145,9 +2985,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
-  },
-  sheetCheckBadgeFocusedTv: {
-    backgroundColor: "#ffffff",
   },
   sheetSection: {
     paddingHorizontal: 20,
@@ -3227,7 +3064,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
-
   // Episodes drawer
   episodeItem: {
     flexDirection: "row",
@@ -3318,7 +3154,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   // Diagnostics HUD
   diagnosticsCard: {
     backgroundColor: "rgba(0,0,0,0.8)",
@@ -3349,7 +3184,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#ffffff",
   },
-
   // Screen lock
   unlockOverlay: {
     position: "absolute",

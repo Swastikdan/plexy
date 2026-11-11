@@ -6,8 +6,10 @@
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx",
-    "../../packages/native-client/src/**/*.ts",
-    "../../packages/native-client/src/**/*.tsx"
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "tests",
+    "node_modules"
   ]
 }

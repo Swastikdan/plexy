@@ -9,30 +9,30 @@ export const colors = {
   quiet: "#5e5e5e",
   line: "rgba(255,255,255,0.08)",
   strong: "rgba(59,125,249,0.22)",
-  brand: "#3B7DF9",      // vibrant Plexy desktop blue
+  brand: "#3B7DF9", // vibrant Plexy desktop blue
   brandLight: "#6C9FFF", // light blue
-  brandDark: "#1F4FCB",  // deep blue
+  brandDark: "#1F4FCB", // deep blue
   amber: "#e8a33d",
   danger: "#ef5350",
 };
-
 import { Platform } from "react-native";
-
 export const fonts = {
   regular: "Archivo_400Regular",
   medium: "Archivo_500Medium",
   bold: "Archivo_700Bold",
   black: "Archivo_900Black",
-  mono: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+  mono: Platform.select({
+    ios: "Menlo",
+    android: "monospace",
+    default: "monospace",
+  }),
 };
-
 export function timeLabel(value: number) {
   const n = Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
   return n >= 3600
     ? `${Math.floor(n / 3600)}:${String(Math.floor(n / 60) % 60).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`
     : `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
 }
-
 export function sizeLabel(n: number) {
   return n >= 1024 ** 3
     ? `${(n / 1024 ** 3).toFixed(1)} GB`

@@ -17,24 +17,33 @@ apps/web/src/routeTree.gen.ts
 
 # Native app build output and signing material
 apps/mobile/.expo/
-apps/tv/.expo/
 apps/mobile/android/
-apps/tv/android/
 *.jks
 *.keystore
 !scripts/native/debug.keystore
 plexy-exact/
 
-# Local agent instructions, design references, and debugging captures
-/Android TV screens/
-/tv_*.png
-
 # Desktop packaging resources regenerated from SVG sources during build
-/build/icon.png
 /build/icon.icns
 /build/background.png
 /build/background@2x.png
-/apps/desktop/build/icon.png
-/apps/desktop/build/icon.icns
+/apps/desktop/apps/desktop/build/icon.icns
 /apps/desktop/resources/icon.png
 /apps/desktop/resources/icon.icns
+
+# Generated exports, recordings, screenshots, and scratch plans
+**/dist/
+/streams/
+/recordings/
+/screenshots/
+/*PLAN*.md
+/docs/*PLAN*.md
+/PLAN.md
+/release/
+/release-notes.md
+
+/apps/desktop/resources/AppIcon.icns
+/apps/mobile/assets/splashscreen.png
+/*.png
+/*.mp4
+/*.webm

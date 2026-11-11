@@ -1,7 +1,26 @@
+import {
+  readLocalServerEnabled,
+  writeLocalServerEnabled,
+} from "./local-server-preference";
+import { discoverServers } from "./discovery";
 import { installCertificateTrust } from "./certificate-trust";
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  shell,
+  net,
+} from "electron";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setupApplicationMenu } from "./menu";
@@ -16,6 +35,13 @@ let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let stopStaticUi: (() => Promise<void>) | null = null;
 
+function localServerEnabled(): boolean {
+  return readLocalServerEnabled(app.getPath("userData"));
+}
+function saveLocalServerEnabled(enabled: boolean): void {
+  writeLocalServerEnabled(app.getPath("userData"), enabled);
+}
+
 function serverPreferenceFile(): string {
   return path.join(app.getPath("userData"), "server-preference.json");
 }
@@ -25,7 +51,12 @@ function isValidServerUrl(raw: string): boolean {
     const url = new URL(raw);
     return (
       (url.protocol === "http:" || url.protocol === "https:") &&
-      Boolean(url.hostname)
+      Boolean(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.pathname === "/"
     );
   } catch {
     return false;
@@ -38,7 +69,8 @@ function readServerPreference(): string {
     const raw = JSON.parse(readFileSync(serverPreferenceFile(), "utf8")) as {
       url?: unknown;
     };
-    const url = typeof raw.url === "string" ? raw.url.trim().replace(/\/+$/, "") : "";
+    const url =
+      typeof raw.url === "string" ? raw.url.trim().replace(/\/+$/, "") : "";
     return isValidServerUrl(url) ? url : "";
   } catch {
     return "";
@@ -82,7 +114,9 @@ function resolvePreloadPath(): string {
     }
   }
 
-  console.warn(`[Plexy Desktop] Preload script candidate not found, falling back to ${candidates[0]}`);
+  console.warn(
+    `[Plexy Desktop] Preload script candidate not found, falling back to ${candidates[0]}`,
+  );
   return candidates[0];
 }
 
@@ -193,9 +227,14 @@ function createWindow(serverUrl: string): BrowserWindow {
     win.webContents.send("fullscreen-change", false);
   });
 
-  win.webContents.on("did-fail-load", (_e, errorCode, errorDescription, validatedURL) => {
-    console.error(`[Plexy Desktop] Failed to load UI from ${validatedURL}: ${errorDescription} (${errorCode})`);
-  });
+  win.webContents.on(
+    "did-fail-load",
+    (_e, errorCode, errorDescription, validatedURL) => {
+      console.error(
+        `[Plexy Desktop] Failed to load UI from ${validatedURL}: ${errorDescription} (${errorCode})`,
+      );
+    },
+  );
 
   // Open external links in default OS browser instead of Electron
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -206,9 +245,10 @@ function createWindow(serverUrl: string): BrowserWindow {
     return { action: "allow" };
   });
 
-  const loadTarget = !app.isPackaged && process.env.VITE_DEV_SERVER_URL
-    ? process.env.VITE_DEV_SERVER_URL
-    : serverUrl;
+  const loadTarget =
+    !app.isPackaged && process.env.VITE_DEV_SERVER_URL
+      ? process.env.VITE_DEV_SERVER_URL
+      : serverUrl;
 
   console.log(`[Plexy Desktop] Loading UI from: ${loadTarget}`);
   win.loadURL(loadTarget);
@@ -217,7 +257,7 @@ function createWindow(serverUrl: string): BrowserWindow {
 }
 
 function setupIpcHandlers() {
-  ipcMain.handle("app:discover-servers", () => []);
+  ipcMain.handle("app:discover-servers", () => discoverServers());
   ipcMain.handle("dialog:select-folder", async () => {
     if (!mainWindow) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -248,20 +288,32 @@ function setupIpcHandlers() {
 
   ipcMain.handle("app:get-system-usage", () => {
     const processes = app.getAppMetrics();
-    const workingSet = (metric: (typeof processes)[number]) => (metric.memory.workingSetSize ?? 0) * 1024;
+    const workingSet = (metric: (typeof processes)[number]) =>
+      (metric.memory.workingSetSize ?? 0) * 1024;
     return {
-      cpuPercent: processes.reduce((total, metric) => total + (metric.cpu.percentCPUUsage ?? 0), 0),
-      appMemoryBytes: processes.reduce((total, metric) => total + workingSet(metric), 0),
-      appGpuMemoryBytes: processes.filter((metric) => metric.type.toLowerCase().includes("gpu")).reduce((total, metric) => total + workingSet(metric), 0),
+      cpuPercent: processes.reduce(
+        (total, metric) => total + (metric.cpu.percentCPUUsage ?? 0),
+        0,
+      ),
+      appMemoryBytes: processes.reduce(
+        (total, metric) => total + workingSet(metric),
+        0,
+      ),
+      appGpuMemoryBytes: processes
+        .filter((metric) => metric.type.toLowerCase().includes("gpu"))
+        .reduce((total, metric) => total + workingSet(metric), 0),
       systemMemoryTotalBytes: os.totalmem(),
       systemMemoryFreeBytes: os.freemem(),
     };
   });
 
   ipcMain.handle("app:check-for-updates", () => getUpdateStatus());
-  ipcMain.handle("app:install-update", (event) => checkForUpdates((progress) => {
-    if (!event.sender.isDestroyed()) event.sender.send("app:update-progress", progress);
-  }));
+  ipcMain.handle("app:install-update", (event) =>
+    checkForUpdates((progress) => {
+      if (!event.sender.isDestroyed())
+        event.sender.send("app:update-progress", progress);
+    }),
+  );
 
   ipcMain.handle("app:get-server-url", () => {
     return readServerPreference();
@@ -269,6 +321,45 @@ function setupIpcHandlers() {
 
   ipcMain.handle("app:set-server-url", (_event, value: unknown) => {
     writeServerPreference(typeof value === "string" ? value : "");
+  });
+
+  ipcMain.handle("app:get-local-server-enabled", () => localServerEnabled());
+  let changingServer = false;
+  ipcMain.handle(
+    "app:set-local-server-enabled",
+    async (_event, enabled: unknown) => {
+      if (typeof enabled !== "boolean")
+        throw new Error("Invalid server preference");
+      if (changingServer) throw new Error("Server mode is already changing");
+      changingServer = true;
+      try {
+        saveLocalServerEnabled(enabled);
+        if (enabled) writeServerPreference("");
+        // Reopen only after the IPC response reaches the renderer.
+        setTimeout(() => {
+          void openMainWindow()
+            .catch((error) =>
+              dialog.showErrorBox("Plexy server mode", String(error)),
+            )
+            .finally(() => {
+              changingServer = false;
+            });
+        }, 100);
+      } catch (error) {
+        changingServer = false;
+        throw error;
+      }
+    },
+  );
+  ipcMain.handle("app:probe-server", async (_event, raw: unknown) => {
+    if (typeof raw !== "string" || !isValidServerUrl(raw))
+      throw new Error("Invalid server address");
+    const response = await net.fetch(
+      new URL("/api/server/status", raw).toString(),
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!response.ok) throw new Error(`Server returned ${response.status}`);
+    return response.json();
   });
 
   ipcMain.handle("app:is-fullscreen", () => {
@@ -293,25 +384,40 @@ async function openMainWindow(): Promise<void> {
   // replace the existing backend rather than spawning a second one.
   await stopServer();
 
+  const previousWindow = mainWindow;
   try {
-    const { url } = await startServer();
-    // Authenticate before the window loads so the first API call already has a
-    // session cookie. A failure is not fatal: the app shows the pairing screen.
-    const authenticated = await ensureDesktopAuth(url);
-    if (!authenticated) {
-      console.warn("[Plexy Desktop] Opening unauthenticated; the pairing screen will be shown.");
+    if (!localServerEnabled()) {
+      const ui = await startStaticUi(readServerPreference);
+      stopStaticUi = ui.close;
+      mainWindow = createWindow(ui.url);
+    } else {
+      const { url } = await startServer();
+      // Authenticate before the window loads so the first API call already has a
+      // session cookie. A failure is not fatal: the app shows the pairing screen.
+      const authenticated = await ensureDesktopAuth(url);
+      if (!authenticated) {
+        console.warn(
+          "[Plexy Desktop] Opening unauthenticated; the pairing screen will be shown.",
+        );
+      }
+      mainWindow = createWindow(url);
     }
-    mainWindow = createWindow(url);
   } catch (err) {
-    console.error("[Plexy Desktop] Backend unavailable, opening the connection screen:", err);
+    console.error(
+      "[Plexy Desktop] Backend unavailable, opening the connection screen:",
+      err,
+    );
     await stopServer();
 
     try {
-      const fallback = await startStaticUi();
+      const fallback = await startStaticUi(readServerPreference);
       stopStaticUi = fallback.close;
       mainWindow = createWindow(fallback.url);
     } catch (fallbackError) {
-      console.error("[Plexy Desktop] Could not open the fallback UI:", fallbackError);
+      console.error(
+        "[Plexy Desktop] Could not open the fallback UI:",
+        fallbackError,
+      );
       dialog.showErrorBox(
         "Plexy Startup Error",
         `Failed to initialize Plexy:\n${err instanceof Error ? err.message : String(err)}`,
@@ -321,9 +427,11 @@ async function openMainWindow(): Promise<void> {
     }
   }
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  const openedWindow = mainWindow;
+  openedWindow.on("closed", () => {
+    if (mainWindow === openedWindow) mainWindow = null;
   });
+  previousWindow?.destroy();
 }
 
 void app

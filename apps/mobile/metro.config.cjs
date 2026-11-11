@@ -3,7 +3,6 @@ const { getDefaultConfig } = require('expo/metro-config');
 const projectRoot = __dirname;
 const config = getDefaultConfig(projectRoot);
 // Shared source must resolve the consuming app's React and native runtime.
-// In particular TV's npm alias must never enter the mobile bundle.
 const runtime = ['react', 'react-native'];
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const name = runtime.find(name => moduleName === name || moduleName.startsWith(name + '/'));
