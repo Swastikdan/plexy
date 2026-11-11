@@ -65,7 +65,11 @@ export function MobileProvider({ children }: React.PropsWithChildren) {
   }, [booted]);
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={colors.canvas} />
+      <StatusBar
+        barStyle="light-content"
+        translucent
+        backgroundColor="transparent"
+      />
       <View style={{ flex: 1, backgroundColor: colors.canvas }}>
         {error ? (
           <Notice message={error} />

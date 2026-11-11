@@ -27,7 +27,8 @@ plexy-exact/
 /build/icon.icns
 /build/background.png
 /build/background@2x.png
-/apps/desktop/apps/desktop/build/icon.icns
+/apps/desktop/build/icon.png
+/apps/desktop/build/icon.icns
 /apps/desktop/resources/icon.png
 /apps/desktop/resources/icon.icns
 
@@ -47,3 +48,5 @@ plexy-exact/
 /*.png
 /*.mp4
 /*.webm
+
+/plans/

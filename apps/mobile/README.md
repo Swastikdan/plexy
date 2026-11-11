@@ -32,3 +32,15 @@ APK builds use JDK 17 and Android SDK tooling. `expo prebuild` generates the ign
 CI and local preview builds target `arm64-v8a`. Override `PLEXY_ANDROID_ARCHITECTURES` for other devices. APKs use the repository's preview signing key; production signing belongs to the EAS production profile. Build output is ignored under `.build/native`.
 
 Check folder/file access, manual identification, embedded/imported subtitles, watch progress after restart, next-episode playback, Android Back, fullscreen rotation, and PiP on a real device before release.
+
+## Player interaction
+
+Pinch to zoom, or use the manual 5% zoom controls under player settings (75–300%).
+Fit mode stays independent of zoom. Double-tap the left or right side to seek
+backward or forward 30 seconds. Scrubbing previews the selected timestamp and
+commits a single seek on release; controls stay available while buffering.
+
+Local-file read-ahead targets 30% of the duration, bounded to 30–120 seconds and
+64 MB. Playback can resume once one second is buffered. The native decoder may
+reach the memory limit before the time target; this is not a guarantee that a
+third of a large movie is held in memory. The timeline displays actual buffering.

@@ -1,3 +1,16 @@
+import { bufferOptionsForDuration } from "../lib/client/player-buffer";
+import { PlayerLoading } from "../components/player/PlayerLoading";
+import {
+  clampZoom,
+  pinchZoom,
+  shouldShowPlayerLoading,
+  doubleTapSeek,
+  DOUBLE_TAP_MS,
+  SEEK_SECONDS,
+  MIN_ZOOM,
+  MAX_ZOOM,
+  type PlayerTap,
+} from "../lib/client/player-interactions";
 import { LocalThumbnail } from "../components/LocalThumbnail";
 import { useKeepAwake } from "expo-keep-awake";
 import { LinearGradient } from "expo-linear-gradient";
@@ -47,7 +60,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { localSegments } from "../../../../packages/local-library/src/library";
-import { Button, Label, Loading, Notice, PosterImage } from "../components/ui";
+import { Button, Label, Notice, PosterImage } from "../components/ui";
 import type { ItemCard, Playability, SkipSegments } from "../lib/client/api";
 import { useClient } from "../lib/client/context";
 import { useResource } from "../lib/client/hooks";
@@ -87,7 +100,7 @@ function IconPause({
 function IconRewind({
   size = 30,
   color = "#fff",
-  seconds = 10,
+  seconds = SEEK_SECONDS,
 }: {
   size?: number;
   color?: string;
@@ -122,7 +135,7 @@ function IconRewind({
 function IconForward({
   size = 30,
   color = "#fff",
-  seconds = 10,
+  seconds = SEEK_SECONDS,
 }: {
   size?: number;
   color?: string;
@@ -386,7 +399,7 @@ export function PlayerScreen({
           alignItems: "center",
         }}
       >
-        <Loading />
+        <PlayerLoading />
       </View>
     );
   }
@@ -449,6 +462,8 @@ function Playback({
   );
   const [playing, setPlaying] = useState(false);
   const [status, setStatus] = useState("loading");
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [bufferedPosition, setBufferedPosition] = useState(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   useEffect(() => {
@@ -549,6 +564,23 @@ function Playback({
   type FitMode = "contain" | "cover" | "fill";
   const [fitMode, setFitMode] = useState<FitMode>("contain");
   const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTap = useRef<PlayerTap | null>(null);
+  const gestureBlockedUntil = useRef(0);
+  const viewportWidth = useRef(1);
+  const cancelPendingTap = () => {
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+    tapTimer.current = null;
+    lastTap.current = null;
+  };
+  useEffect(
+    () => () => {
+      if (tapTimer.current) clearTimeout(tapTimer.current);
+    },
+    [],
+  );
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<any>(null);
   // Screen lock: controls ignore input until the viewer unlocks.
@@ -564,7 +596,9 @@ function Playback({
   };
   const applyFit = (mode: FitMode, scale: number) => {
     setFitMode(mode);
-    setZoom(scale);
+    const nextZoom = clampZoom(scale);
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
     showFitToast(
       scale === 1
         ? mode === "contain"
@@ -595,13 +629,14 @@ function Playback({
   };
   const initialPinchDist = useRef<number | null>(null);
   const initialZoom = useRef(1);
-  const lastTapTime = useRef(0);
   const pinchPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) =>
         evt.nativeEvent.touches.length >= 2,
       onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
       onPanResponderGrant: (evt) => {
+        cancelPendingTap();
+        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
         const touches = evt.nativeEvent.touches;
         if (touches.length >= 2) {
           const t0 = touches[0]!;
@@ -609,7 +644,7 @@ function Playback({
           const dx = t0.pageX - t1.pageX;
           const dy = t0.pageY - t1.pageY;
           initialPinchDist.current = Math.hypot(dx, dy);
-          initialZoom.current = zoom;
+          initialZoom.current = zoomRef.current;
         }
       },
       onPanResponderMove: (evt) => {
@@ -624,23 +659,23 @@ function Playback({
           const dx = t0.pageX - t1.pageX;
           const dy = t0.pageY - t1.pageY;
           const currentDist = Math.hypot(dx, dy);
-          const scaleFactor = currentDist / initialPinchDist.current;
-          const newZoom = Math.min(
-            3.0,
-            Math.max(
-              0.75,
-              Math.round(initialZoom.current * scaleFactor * 100) / 100,
-            ),
+          const newZoom = pinchZoom(
+            initialZoom.current,
+            initialPinchDist.current,
+            currentDist,
           );
+          zoomRef.current = newZoom;
           setZoom(newZoom);
           showFitToast(`${Math.round(newZoom * 100)}% zoom`);
         }
       },
       onPanResponderRelease: () => {
         initialPinchDist.current = null;
+        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
       },
       onPanResponderTerminate: () => {
         initialPinchDist.current = null;
+        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
       },
     }),
   ).current;
@@ -708,10 +743,14 @@ function Playback({
   const scrubTargetRef = useRef<number | null>(null);
   const scrubCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const player = useVideoPlayer(null, (instance) => {
+    instance.bufferOptions = bufferOptionsForDuration(initial.duration || 0);
     instance.timeUpdateEventInterval = 0.5;
     instance.staysActiveInBackground = false;
     instance.keepScreenOnWhilePlaying = true;
   });
+  useEffect(() => {
+    player.bufferOptions = bufferOptionsForDuration(duration);
+  }, [player, duration]);
   const save = useCallback(
     (completed = false) => {
       if (!manifest.itemId || !initialized.current) return;
@@ -782,6 +821,7 @@ function Playback({
       player.addListener("timeUpdate", (e) => {
         if (!initialized.current) return;
         const value = offset.current + e.currentTime;
+        setBufferedPosition(Math.max(0, e.bufferedPosition));
         currentPosition.current = value;
         setPosition(value);
         if (Date.now() - lastSaved.current > 10000) {
@@ -796,6 +836,10 @@ function Playback({
       }),
       player.addListener("statusChange", (e) => {
         setStatus(e.status);
+        if (e.status === "loading" && initialized.current) {
+          lastInteraction.current = Date.now();
+          setVisible(true);
+        }
         if (e.status === "error") {
           setError(
             "This device could not play the original file. Its video, audio or container format may be unsupported.",
@@ -810,6 +854,7 @@ function Playback({
             e.videoSource?.uri !== expectedUri.current)
         )
           return;
+        setHasLoaded(true);
         player.subtitleTrack = null;
         setNativeAudio(e.availableAudioTracks);
         setNativeSubtitles(e.availableSubtitleTracks);
@@ -849,6 +894,8 @@ function Playback({
     let live = true;
     setError("");
     setStatus("loading");
+    setHasLoaded(false);
+    setBufferedPosition(0);
     initialized.current = false;
     offset.current = 0;
     chosenStart.current = choice.start;
@@ -963,6 +1010,7 @@ function Playback({
     const timer = setInterval(() => {
       if (
         playingRef.current &&
+        status !== "loading" &&
         !menu &&
         scrub == null &&
         !timelineFocus &&
@@ -971,7 +1019,7 @@ function Playback({
         setVisible(false);
     }, 1000);
     return () => clearInterval(timer);
-  }, [menu, scrub, timelineFocus]);
+  }, [menu, scrub, timelineFocus, status]);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
@@ -1028,6 +1076,12 @@ function Playback({
   const show = visible || !!menu || resume || ended || !!error;
   const layoutFull = fullscreen;
   // Progress ratio helpers
+  const openingVideo = shouldShowPlayerLoading(
+    status,
+    hasLoaded,
+    scrub != null,
+  );
+  const bufferedRatio = duration ? Math.min(1, bufferedPosition / duration) : 0;
   const progressRatio = duration ? Math.min(1, previewTime / duration) : 0;
   // -------------------------------------------------------------------------
   // Render
@@ -1054,10 +1108,11 @@ function Playback({
         <VideoView
           ref={video}
           player={player}
-          nativeControls
+          nativeControls={false}
+          surfaceType="textureView"
           fullscreenOptions={{ enable: false }}
           allowsPictureInPicture={true}
-          startsPictureInPictureAutomatically
+          startsPictureInPictureAutomatically={false}
           onPictureInPictureStart={() => {
             pip.current = true;
           }}
@@ -1071,6 +1126,8 @@ function Playback({
           ]}
           contentFit={fitMode}
         />
+
+        {openingVideo && <PlayerLoading />}
 
         {/* Fit mode HUD Toast */}
         {!!fitToast && (
@@ -1107,29 +1164,47 @@ function Playback({
           </View>
         )}
 
-        {/* Tap-to-toggle controls, pinch-to-zoom & double tap to toggle zoom */}
+        {/* Single tap toggles controls; double tap seeks without changing fit or zoom. */}
         <View
           style={StyleSheet.absoluteFill}
           {...(!locked ? pinchPanResponder.panHandlers : {})}
-          collapsable
+          collapsable={false}
         >
           <Pressable
-            accessible
-            focusable
-            onPress={() => {
+            accessible={false}
+            focusable={false}
+            onLayout={(event) => {
+              viewportWidth.current = event.nativeEvent.layout.width;
+            }}
+            onPress={(event) => {
               const now = Date.now();
-              if (now - lastTapTime.current < 300) {
-                if (zoom !== 1) {
-                  applyFit("contain", 1);
-                } else {
-                  applyFit("cover", 1);
-                }
-                lastTapTime.current = 0;
+              if (now < gestureBlockedUntil.current || locked) return;
+              const tap: PlayerTap = {
+                time: now,
+                side:
+                  event.nativeEvent.locationX < viewportWidth.current / 2
+                    ? "left"
+                    : "right",
+              };
+              const seconds = doubleTapSeek(lastTap.current, tap);
+              if (seconds !== null) {
+                cancelPendingTap();
+                seek(currentPosition.current + seconds);
+                showFitToast(
+                  seconds > 0
+                    ? `Forward ${SEEK_SECONDS} seconds`
+                    : `Back ${SEEK_SECONDS} seconds`,
+                );
                 return;
               }
-              lastTapTime.current = now;
-              if (visible) setVisible(false);
-              else reveal();
+              cancelPendingTap();
+              lastTap.current = tap;
+              tapTimer.current = setTimeout(() => {
+                lastTap.current = null;
+                tapTimer.current = null;
+                lastInteraction.current = Date.now();
+                setVisible((current) => !current);
+              }, DOUBLE_TAP_MS);
             }}
             style={StyleSheet.absoluteFill}
           />
@@ -1236,7 +1311,6 @@ function Playback({
 
           {/* Inline progress bar */}
           <Pressable
-            disabled
             ref={timeline}
             accessibilityLabel="Playback position"
             accessibilityRole="adjustable"
@@ -1253,7 +1327,9 @@ function Playback({
             onAccessibilityAction={(e) =>
               seek(
                 position +
-                  (e.nativeEvent.actionName === "increment" ? 10 : -10),
+                  (e.nativeEvent.actionName === "increment"
+                    ? SEEK_SECONDS
+                    : -SEEK_SECONDS),
               )
             }
             onLayout={(e) => {
@@ -1308,6 +1384,18 @@ function Playback({
                 overflow: "visible",
               }}
             >
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: `${bufferedRatio * 100}%`,
+                  backgroundColor: "rgba(255,255,255,0.3)",
+                  borderRadius: 3,
+                }}
+              />
               {/* Fill */}
               <View
                 style={{
@@ -1363,18 +1451,13 @@ function Playback({
               gap: 4,
             }}
           >
-            <CircleBtn onPress={() => seek(position - 10)} disabled>
+            <CircleBtn onPress={() => seek(position - SEEK_SECONDS)}>
               <IconRewind size={20} />
             </CircleBtn>
-            <CircleBtn
-              onPress={togglePlay}
-              size={48}
-              bg="rgba(0,0,0,0.5)"
-              disabled
-            >
+            <CircleBtn onPress={togglePlay} size={48} bg="rgba(0,0,0,0.5)">
               {playing ? <IconPause size={20} /> : <IconPlay size={20} />}
             </CircleBtn>
-            <CircleBtn onPress={() => seek(position + 10)} disabled>
+            <CircleBtn onPress={() => seek(position + SEEK_SECONDS)}>
               <IconForward size={20} />
             </CircleBtn>
             <View style={{ flex: 1 }} />
@@ -1404,11 +1487,11 @@ function Playback({
       )}
 
       {/* ── Fullscreen overlay controls ── */}
-      {show && layoutFull && !locked && (
-        <View style={StyleSheet.absoluteFill}>
+      {show && layoutFull && !locked && !openingVideo && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <View
             style={StyleSheet.absoluteFill}
-            pointerEvents={menu || resume ? "none" : "auto"}
+            pointerEvents={menu || resume ? "none" : "box-none"}
             importantForAccessibility={
               menu || resume ? "no-hide-descendants" : "auto"
             }
@@ -1519,7 +1602,6 @@ function Playback({
               >
                 <CircleBtn
                   onPress={() => setMenu("audio")}
-                  disabled
                   size={44}
                   active={menu === "audio"}
                   bg="rgba(0,0,0,0.45)"
@@ -1540,7 +1622,6 @@ function Playback({
 
                 <CircleBtn
                   onPress={() => setMenu("captions")}
-                  disabled
                   size={44}
                   active={Boolean(subtitle)}
                   bg="rgba(0,0,0,0.45)"
@@ -1655,20 +1736,12 @@ function Playback({
                 alignItems: "center",
                 flexDirection: "row",
                 gap: 28,
-                opacity: status === "loading" || scrub != null || ended ? 0 : 1,
+                opacity: openingVideo || ended ? 0 : 1,
               }}
-              pointerEvents={
-                status === "loading" || scrub != null || ended
-                  ? "none"
-                  : "box-none"
-              }
-              accessibilityElementsHidden={
-                status === "loading" || scrub != null || ended
-              }
+              pointerEvents={openingVideo || ended ? "none" : "box-none"}
+              accessibilityElementsHidden={openingVideo || ended}
               importantForAccessibility={
-                status === "loading" || scrub != null || ended
-                  ? "no-hide-descendants"
-                  : "auto"
+                openingVideo || ended ? "no-hide-descendants" : "auto"
               }
             >
               {/* Previous episode (if any) */}
@@ -1682,12 +1755,11 @@ function Playback({
                 </CircleBtn>
               )}
 
-              {/* Rewind 10s */}
+              {/* Rewind 30s */}
               <CircleBtn
-                onPress={() => seek(position - 10)}
+                onPress={() => seek(position - SEEK_SECONDS)}
                 size={54}
                 bg="rgba(0,0,0,0.45)"
-                disabled
               >
                 <IconRewind size={28} />
               </CircleBtn>
@@ -1699,7 +1771,6 @@ function Playback({
                 active={true}
                 activeBg="#ffffff"
                 bg={"rgba(0,0,0,0.45)"}
-                disabled
               >
                 {({ focused }) => {
                   const darkIcon = true;
@@ -1717,12 +1788,11 @@ function Playback({
                 }}
               </CircleBtn>
 
-              {/* Forward 10s */}
+              {/* Forward 30s */}
               <CircleBtn
-                onPress={() => seek(position + 10)}
+                onPress={() => seek(position + SEEK_SECONDS)}
                 size={54}
                 bg="rgba(0,0,0,0.45)"
-                disabled
               >
                 <IconForward size={28} />
               </CircleBtn>
@@ -1737,11 +1807,6 @@ function Playback({
                 gap: 6,
               }}
             >
-              {status === "loading" && scrub == null && (
-                <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
-                  Loading video…
-                </Text>
-              )}
               {/* Error / messages */}
               {(!!error || choice.path === "unsupported") && (
                 <Notice
@@ -1917,7 +1982,7 @@ function Playback({
               {/* Progress bar */}
               <View
                 ref={timeline}
-                collapsable
+                collapsable={false}
                 {...{}}
                 accessibilityLabel="Playback position"
                 accessibilityRole="adjustable"
@@ -1934,7 +1999,9 @@ function Playback({
                 onAccessibilityAction={(e) =>
                   seek(
                     position +
-                      (e.nativeEvent.actionName === "increment" ? 10 : -10),
+                      (e.nativeEvent.actionName === "increment"
+                        ? SEEK_SECONDS
+                        : -SEEK_SECONDS),
                   )
                 }
                 onFocus={() => {
@@ -1943,7 +2010,7 @@ function Playback({
                 }}
                 onBlur={() => {
                   setTimelineFocus(false);
-                  if (scrub != null) seek(scrub);
+                  setScrub(null);
                 }}
                 onLayout={(e) => {
                   timelineWidth.current = Math.max(
@@ -1954,6 +2021,7 @@ function Playback({
                 onStartShouldSetResponder={() => true}
                 onMoveShouldSetResponder={() => true}
                 onResponderTerminationRequest={() => false}
+                onResponderTerminate={() => setScrub(null)}
                 onResponderGrant={(e) => {
                   {
                     reveal();
@@ -2007,8 +2075,8 @@ function Playback({
                       left: 0,
                       top: 0,
                       bottom: 0,
-                      width: `${duration ? Math.min(100, (player.bufferedPosition / duration) * 100) : 0}%`,
-                      backgroundColor: "rgba(255,255,255,0.2)",
+                      width: `${bufferedRatio * 100}%`,
+                      backgroundColor: "rgba(255,255,255,0.3)",
                       borderRadius: 3,
                     }}
                   />
@@ -2256,7 +2324,7 @@ function Playback({
         <View style={styles.sheetBackdrop}>
           <Pressable
             style={StyleSheet.absoluteFill}
-            focusable
+            focusable={false}
             onPress={() => setMenu(null)}
           />
           <Animated.View
@@ -2430,7 +2498,7 @@ function Playback({
                   contentContainerStyle={{
                     paddingBottom: Math.max(insets.bottom, 20),
                   }}
-                  showsVerticalScrollIndicator
+                  showsVerticalScrollIndicator={false}
                 >
                   {/* Settings menu */}
                   {menu === "settings" && (
@@ -2475,6 +2543,46 @@ function Playback({
                               },
                             ]}
                           />
+                          <View style={styles.sheetStepper}>
+                            <View>
+                              <Text style={styles.sheetChipsLabel}>
+                                Manual zoom
+                              </Text>
+                              <Text style={styles.sheetStepperValue}>
+                                {Math.round(zoom * 100)}%
+                              </Text>
+                            </View>
+                            <View style={styles.sheetStepperButtons}>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Decrease zoom by 5 percent"
+                                disabled={zoom <= MIN_ZOOM}
+                                onPress={() =>
+                                  applyFit(fitMode, clampZoom(zoom - 0.05))
+                                }
+                                style={[
+                                  styles.sheetStepperButton,
+                                  zoom <= MIN_ZOOM && { opacity: 0.4 },
+                                ]}
+                              >
+                                <Minus size={18} color="#fff" />
+                              </Pressable>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Increase zoom by 5 percent"
+                                disabled={zoom >= MAX_ZOOM}
+                                onPress={() =>
+                                  applyFit(fitMode, clampZoom(zoom + 0.05))
+                                }
+                                style={[
+                                  styles.sheetStepperButton,
+                                  zoom >= MAX_ZOOM && { opacity: 0.4 },
+                                ]}
+                              >
+                                <Plus size={18} color="#fff" />
+                              </Pressable>
+                            </View>
+                          </View>
                           <SheetChips
                             label="Zoom"
                             options={[1, 1.25, 1.5, 2].map((scale) => ({

@@ -1,3 +1,5 @@
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LibraryAttention } from "../components/LibraryAttention";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   ArrowLeft,
@@ -77,6 +79,7 @@ export function Hero({
   onHeroFocus?: () => void;
 }) {
   const { api } = useClient();
+  const insets = useSafeAreaInsets();
   const [, setPlayFocus] = useState(false);
   const [, setDetailFocus] = useState(false);
   const [, setTrailerFocus] = useState(false);
@@ -107,7 +110,11 @@ export function Hero({
   }
   return (
     <View
-      style={[styles.heroContainer, { height: 540 }, width ? { width } : null]}
+      style={[
+        styles.heroContainer,
+        { height: 540 + insets.top },
+        width ? { width } : null,
+      ]}
     >
       {item.poster ? (
         <PosterImage
@@ -149,7 +156,11 @@ export function Hero({
               resizeMode="contain"
             />
           ) : (
-            <Text style={[styles.heroTitle]} numberOfLines={2} selectable>
+            <Text
+              style={[styles.heroTitle]}
+              numberOfLines={2}
+              selectable={false}
+            >
               {item.name}
             </Text>
           )}
@@ -161,7 +172,7 @@ export function Hero({
                 <React.Fragment key={index}>
                   {index > 0 && <Text style={styles.heroMetaDot}>·</Text>}
                   {typeof part === "string" ? (
-                    <Text style={styles.heroMetaText} selectable>
+                    <Text style={styles.heroMetaText} selectable={false}>
                       {part}
                     </Text>
                   ) : (
@@ -174,7 +185,11 @@ export function Hero({
 
           {/* 2-line synopsis / overview */}
           {!!item.overview && (
-            <Text style={styles.heroOverview} numberOfLines={2} selectable>
+            <Text
+              style={styles.heroOverview}
+              numberOfLines={2}
+              selectable={false}
+            >
               {item.overview}
             </Text>
           )}
@@ -350,7 +365,7 @@ export function HeroCarousel({
         ref={carouselScrollRef}
         horizontal
         pagingEnabled
-        showsHorizontalScrollIndicator
+        showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(e) => {
           const index = Math.round(
             e.nativeEvent.contentOffset.x / (slideWidth || 1),
@@ -563,7 +578,7 @@ function CatalogRow({
           index,
         })}
         keyExtractor={(item) => String(item.id)}
-        showsHorizontalScrollIndicator
+        showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rowList}
         renderItem={({ item, index }) =>
           isContinueWatching ? (
@@ -616,6 +631,7 @@ export function HomeScreen({
   active: boolean;
 }) {
   const { api, progress } = useClient();
+  const insets = useSafeAreaInsets();
   const data = useResource((signal) => api.home(signal), [api]);
   const previousActive = useRef(active);
   React.useEffect(() => {
@@ -742,12 +758,16 @@ export function HomeScreen({
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <PageHeader logo style={styles.transparentHomeHeader} />
+      <PageHeader
+        logo
+        style={[styles.transparentHomeHeader, { top: insets.top }]}
+      />
       <ScrollView
         ref={scrollRef}
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={styles.homeContainer}
-        showsVerticalScrollIndicator
-        removeClippedSubviews
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={false}
         refreshControl={
           <RefreshControl
             refreshing={data.loading}
@@ -770,6 +790,8 @@ export function HomeScreen({
             />
           </View>
         )}
+
+        <LibraryAttention />
 
         {/* Continue watching row with full series or movie cards */}
         {continueItems.length > 0 && (
@@ -1213,7 +1235,7 @@ export function SearchScreen({
     <ScrollView
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.searchContainer}
-      showsVerticalScrollIndicator
+      showsVerticalScrollIndicator={false}
     >
       <PageHeader title="Search" />
 
@@ -1236,7 +1258,7 @@ export function SearchScreen({
           placeholder="Movies, shows and episodes"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
-          autoCorrect
+          autoCorrect={false}
           onFocus={() => setInputFocus(true)}
           onBlur={() => setInputFocus(false)}
         />
@@ -1383,6 +1405,7 @@ export function DetailScreen({
   play: (fileId: number) => void;
 }) {
   const { api, platform, progress } = useClient();
+  const insets = useSafeAreaInsets();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
   const [season, setSeason] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"episodes" | "details">(
@@ -1495,6 +1518,7 @@ export function DetailScreen({
         onPress={back}
         style={({ pressed }) => [
           styles.detailBack,
+          { top: insets.top + 14 },
           pressed && { opacity: 0.6 },
         ]}
         hitSlop={14}
@@ -1503,8 +1527,9 @@ export function DetailScreen({
       </Pressable>
 
       <ScrollView
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={styles.detailContainer}
-        showsVerticalScrollIndicator
+        showsVerticalScrollIndicator={false}
       >
         {data.loading && !detail ? (
           <View style={{ padding: 32 }}>
@@ -1640,7 +1665,7 @@ export function DetailScreen({
                               </Text>
                               <ScrollView
                                 horizontal
-                                showsHorizontalScrollIndicator
+                                showsHorizontalScrollIndicator={false}
                                 contentContainerStyle={{ gap: 8 }}
                               >
                                 {detail.seasons.map((s: any) => {
@@ -1759,7 +1784,7 @@ export function DetailScreen({
                             </Text>
                             <ScrollView
                               horizontal
-                              showsHorizontalScrollIndicator
+                              showsHorizontalScrollIndicator={false}
                               contentContainerStyle={{ gap: 14 }}
                             >
                               {detail.cast.map((person: any, i: number) => (
@@ -1835,7 +1860,7 @@ export function DetailScreen({
                         </Text>
                         <ScrollView
                           horizontal
-                          showsHorizontalScrollIndicator
+                          showsHorizontalScrollIndicator={false}
                           contentContainerStyle={{ gap: 14 }}
                         >
                           {detail.cast.map((person: any, i: number) => (

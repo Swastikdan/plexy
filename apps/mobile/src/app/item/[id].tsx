@@ -10,7 +10,7 @@ export default function DetailRoute() {
   const navigation = useMediaNavigation();
   if (!id || Array.isArray(id)) return <Notice message="Invalid title." />;
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1 }}>
       <DetailScreen id={id} {...navigation} />
     </SafeAreaView>
   );

@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
@@ -100,6 +100,7 @@ function MobileTabBar({
   );
 }
 export default function TabLayout() {
+  const isHome = usePathname() === "/";
   const [attention, setAttention] = useState(0);
   useEffect(() => {
     const update = () => setAttention(localRuntime.getAttentionCount?.() ?? 0);
@@ -108,10 +109,10 @@ export default function TabLayout() {
   }, []);
   return (
     <SafeAreaView
-      edges={["top", "left", "right"]}
+      edges={isHome ? ["left", "right"] : ["top", "left", "right"]}
       style={{ flex: 1, backgroundColor: "#000000" }}
     >
-      <LibraryAttention />
+      {!isHome && <LibraryAttention />}
       <Tabs
         backBehavior="initialRoute"
         tabBar={(props) => <MobileTabBar {...props} attention={attention} />}
