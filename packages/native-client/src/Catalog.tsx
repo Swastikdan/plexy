@@ -1,8 +1,10 @@
 import React, { useRef, useState } from "react";
 import {
+  Alert,
   FlatList,
   Image,
   Linking,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -14,10 +16,10 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Search as SearchIcon, Play, ArrowLeft, Download, Check, Tv as TvIcon, Info, Film, RefreshCw } from "lucide-react-native";
+import { Search as SearchIcon, Play, ArrowLeft, Download, Check, Tv as TvIcon, Info, Film, RefreshCw, ChevronDown, ArrowUpDown, X, Trash2 } from "lucide-react-native";
 import { useClient, useDownloads } from "./context";
 import { useResource } from "./hooks";
-import { Button, Card, Loading, Notice, PosterImage } from "./ui";
+import { Button, Card, Loading, Notice, PageHeader, PosterImage } from "./ui";
 import { colors, fonts, timeLabel } from "./theme";
 import type { ItemCard } from "./api";
 import { triggerHaptic } from "./haptics";
@@ -40,6 +42,7 @@ function GenrePill({ label }: { label: string }) {
 // ---------------------------------------------------------------------------
 export function Hero({
   item,
+  logo,
   onOpen,
   actionLabel,
   disabled,
@@ -49,11 +52,13 @@ export function Hero({
   isWatched,
   onDownload,
   downloadState,
+  onDelete,
   width,
   preferred,
   onHeroFocus,
 }: {
   item: ItemCard;
+  logo?: string | null;
   onOpen: () => void;
   actionLabel?: string;
   disabled?: boolean;
@@ -63,6 +68,7 @@ export function Hero({
   isWatched?: boolean;
   onDownload?: () => void;
   downloadState?: { state: string; bytes: number; expected: number };
+  onDelete?: () => void;
   width?: number;
   preferred?: boolean;
   onHeroFocus?: () => void;
@@ -73,6 +79,7 @@ export function Hero({
   const [trailerFocus, setTrailerFocus] = useState(false);
   const [watchedFocus, setWatchedFocus] = useState(false);
   const [downloadFocus, setDownloadFocus] = useState(false);
+  const [deleteFocus, setDeleteFocus] = useState(false);
   const playLabel = actionLabel ?? (item.watch?.position ? "Continue" : "Play");
 
   // Build metadata line: Year, runtime, rating, episode info, and genres all in the same row
@@ -130,9 +137,10 @@ export function Hero({
       >
         {/* Slide header: non-focusable, unselectable title and metadata */}
         <View style={styles.heroSlideHeader}>
+          {!!logo && <Image source={api.image(logo)} accessibilityLabel={item.name} style={{width:220,height:72,marginBottom:12}} resizeMode="contain" />}
           {/* Title taking full width */}
           <Text
-            style={[styles.heroTitle, platform.tv && styles.heroTitleTV]}
+            style={[styles.heroTitle, platform.tv && styles.heroTitleTV, !!logo && {fontSize:16,lineHeight:22,color:colors.muted}]}
             numberOfLines={2}
             selectable={false}
           >
@@ -298,6 +306,32 @@ export function Hero({
                 <Download size={18} color="#fff" strokeWidth={2} />
               )}
               {platform.tv && downloadFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
+            </Pressable>
+          )}
+
+          {/* Delete series / item button */}
+          {onDelete && (
+            <Pressable
+              onPress={() => {
+                triggerHaptic("medium");
+                onDelete();
+              }}
+              onFocus={() => {
+                setDeleteFocus(true);
+                onHeroFocus?.();
+              }}
+              onBlur={() => setDeleteFocus(false)}
+              style={({ pressed }) => [
+                styles.heroIconBtn,
+                styles.heroIconBtnDanger,
+                platform.tv && deleteFocus && styles.heroIconBtnFocused,
+                pressed && styles.heroBtnPressed,
+              ]}
+              hitSlop={8}
+              accessibilityLabel="Delete"
+            >
+              <Trash2 size={18} color="#ef4444" strokeWidth={2.2} />
+              {platform.tv && deleteFocus && <View style={styles.iconBtnFocusRing} pointerEvents="none" />}
             </Pressable>
           )}
         </View>
@@ -719,7 +753,7 @@ export function HomeScreen({
   const continueItems = React.useMemo(() => {
     if (!data.value?.rows) return [];
     const continueRow = data.value.rows.find(
-      (r) => r.items.some((i) => i.watch?.position && !i.watch?.played),
+      (r) => r.key === "continue",
     );
     if (!continueRow) return [];
     const seen = new Set<string>();
@@ -739,7 +773,7 @@ export function HomeScreen({
   const otherRows = React.useMemo(() => {
     if (!data.value?.rows) return [];
     const continueRowKey = data.value.rows.find(
-      (r) => r.items.some((i) => i.watch?.position && !i.watch?.played),
+      (r) => r.key === "continue",
     )?.key;
     return data.value.rows
       .filter((r) => r.key !== "next" && r.key !== continueRowKey)
@@ -771,10 +805,12 @@ export function HomeScreen({
         <RefreshControl
           refreshing={data.loading}
           onRefresh={data.retry}
-          tintColor={colors.brand}
+          tintColor="#ffffff"
         />
       }
     >
+      <PageHeader logo />
+
       {/* Hero Carousel */}
       {carouselItems.length > 0 && (
         <View onLayout={recordRowY("hero")}>
@@ -879,19 +915,20 @@ export function LibraryScreen({
   openDownloads,
   defaultSubTab,
 }: {
-  kind: "movie" | "series";
+  kind: "movie" | "series" | "anime";
   open: OpenTitle;
   openDownloads?: () => void;
-  defaultSubTab?: "movie" | "series" | "downloads";
+  defaultSubTab?: "movie" | "series" | "anime" | "downloads";
 }) {
   const { api, platform, progress } = useClient();
   const downloadEntries = useDownloads();
   const { width } = useWindowDimensions();
-  type LibraryTab = "movie" | "series" | "downloads";
+  type LibraryTab = "movie" | "series" | "anime" | "downloads";
   const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || kind);
   const [dlFilter, setDlFilter] = useState<"all" | "movie" | "series">("all");
-  const [sort, setSort] = useState("name");
+  const [sort, setSort] = useState("added");
   const [unwatched, setUnwatched] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const [extra, setExtra] = useState<ItemCard[]>([]);
   const [more, setMore] = useState(false);
   const [moreError, setMoreError] = useState("");
@@ -902,18 +939,18 @@ export function LibraryScreen({
   // Probe both movies and series to auto-hide empty tabs when online
   const movieProbe = useResource(
     (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("movie", 0, "name", signal)),
-    [api, defaultSubTab],
+    [api, defaultSubTab, "movie-probe"],
   );
   const seriesProbe = useResource(
     (signal) => (defaultSubTab === "downloads" ? Promise.resolve({ items: [] }) : api.items("series", 0, "name", signal)),
-    [api, defaultSubTab],
+    [api, defaultSubTab, "series-probe"],
   );
 
   const hasMovies = (movieProbe.value?.items?.length ?? 0) > 0;
   const hasSeries = (seriesProbe.value?.items?.length ?? 0) > 0;
 
   React.useEffect(() => {
-    if (movieProbe.value && seriesProbe.value) {
+    if (!platform.local && movieProbe.value && seriesProbe.value) {
       if (!hasMovies && hasSeries && activeTab === "movie") {
         setActiveTab("series");
       } else if (hasMovies && !hasSeries && activeTab === "series") {
@@ -1010,7 +1047,7 @@ export function LibraryScreen({
   }, [downloadedCards, dlFilter]);
 
   const items = activeTab === "downloads" ? filteredDownloadedItems : [...(data.value?.items || []), ...extra];
-  const available = width - (platform.tv ? 58 : 0) - 32;
+  const available = width - (platform.tv ? 58 : 0) - 40;
   const columns = Math.max(2, Math.floor(available / (platform.tv ? 126 : 150)));
   const cardWidth = Math.floor(available / columns) - 10;
 
@@ -1041,54 +1078,98 @@ export function LibraryScreen({
   }
 
   const FILTERS: [string, string][] = [
-    ["name", "Name"],
     ["added", "Recently added"],
+    ["name", "Name"],
     ["year", "Year"],
     ["rating", "Rating"],
   ];
+  const sortLabel = FILTERS.find(([key]) => key === sort)?.[1] || "Name";
+  const libraryTabs = platform.tv
+    ? (["movie", "series"] as const)
+    : platform.local
+      ? (["movie", "series", "anime"] as const)
+      : (["movie", "series", "anime", "downloads"] as const);
 
   return (
     <View style={styles.libraryRoot}>
-      {/* Tab bar — Movies | TV Shows | Downloads */}
+      <PageHeader
+        title="Libraries"
+        right={
+          activeTab !== "downloads" ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}`}
+              onPress={() => {
+                triggerHaptic("light");
+                setSortOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.sortButton,
+                sortOpen && styles.sortButtonOpen,
+                pressed && { opacity: 0.72 },
+              ]}
+            >
+              <ArrowUpDown size={14} color="#ffffff" strokeWidth={2} />
+              <Text style={styles.sortButtonText} numberOfLines={1}>
+                {sortLabel}
+              </Text>
+              <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
+            </Pressable>
+          ) : null
+        }
+      />
+
+      {/* Movies | TV Shows | Anime — full-width segmented control with real touch targets */}
       {showLibTabs && defaultSubTab !== "downloads" && (
-        <View style={styles.libTabBar}>
-          {(platform.tv
-            ? (["movie", "series"] as const)
-            : (["movie", "series", "downloads"] as const)
-          ).map((tab) => {
-            const active = activeTab === tab;
-            const label =
-              tab === "movie"
-                ? "Movies"
-                : tab === "series"
-                  ? "TV Shows"
-                  : "Downloads";
-            return (
-              <FilterChip
-                key={tab}
-                label={label}
-                active={active}
-                onPress={() => {
-                  triggerHaptic("selection");
-                  setActiveTab(tab);
-                  setExtra([]);
-                  setEnd(false);
-                  setMoreError("");
-                }}
-              />
-            );
-          })}
+        <View style={styles.libSegmentWrap}>
+          <View style={styles.libSegment} accessibilityRole="tablist">
+            {libraryTabs.map((tab) => {
+              const active = activeTab === tab;
+              const label =
+                tab === "movie"
+                  ? "Movies"
+                  : tab === "series"
+                    ? "TV Shows"
+                    : tab === "anime"
+                      ? "Anime"
+                      : "Downloads";
+              return (
+                <Pressable
+                  key={tab}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => {
+                    if (active) return;
+                    triggerHaptic("selection");
+                    setActiveTab(tab);
+                    setExtra([]);
+                    setEnd(false);
+                    setMoreError("");
+                  }}
+                  style={({ pressed }) => [
+                    styles.libSegmentItem,
+                    active && styles.libSegmentItemActive,
+                    pressed && !active && { opacity: 0.65 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.libSegmentText,
+                      active && styles.libSegmentTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       )}
 
-      {/* Filter chips */}
-      {activeTab === "downloads" ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ flexGrow: 0 }}
-          contentContainerStyle={styles.filterRow}
-        >
+      {/* Downloads filters */}
+      {activeTab === "downloads" && (
+        <View style={styles.dlFilterRow}>
           <FilterChip
             label={`All (${downloadedCards.length})`}
             active={dlFilter === "all"}
@@ -1104,28 +1185,7 @@ export function LibraryScreen({
             active={dlFilter === "series"}
             onPress={() => setDlFilter("series")}
           />
-        </ScrollView>
-      ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ flexGrow: 0 }}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTERS.map(([key, label]) => (
-            <FilterChip
-              key={key}
-              label={label}
-              active={sort === key}
-              onPress={() => reset(key, unwatched)}
-            />
-          ))}
-          <FilterChip
-            label="Unwatched"
-            active={unwatched}
-            onPress={() => reset(sort, !unwatched)}
-          />
-        </ScrollView>
+        </View>
       )}
 
       {/* Grid */}
@@ -1199,6 +1259,79 @@ export function LibraryScreen({
           onEndReachedThreshold={0.4}
         />
       )}
+
+      <Modal
+        visible={sortOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSortOpen(false)}
+      >
+        <Pressable
+          style={styles.sortBackdrop}
+          onPress={() => setSortOpen(false)}
+          accessibilityLabel="Close sort and filter"
+        >
+          <Pressable style={styles.sortSheet} onPress={() => {}}>
+            <View style={styles.sortHandle} />
+            <Text style={styles.sortTitle}>Sort & filter</Text>
+            {FILTERS.map(([key, label]) => {
+              const active = sort === key;
+              return (
+                <Pressable
+                  key={key}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: active }}
+                  onPress={() => {
+                    triggerHaptic("selection");
+                    reset(key, unwatched);
+                    setSortOpen(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.sortRow,
+                    active && styles.sortRowActive,
+                    pressed && { opacity: 0.75 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.sortRowText,
+                      active && styles.sortRowTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                  {active && <Check size={18} color="#000000" strokeWidth={2.6} />}
+                </Pressable>
+              );
+            })}
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: unwatched }}
+              onPress={() => {
+                triggerHaptic("selection");
+                reset(sort, !unwatched);
+              }}
+              style={({ pressed }) => [
+                styles.sortRow,
+                unwatched && styles.sortRowActive,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sortRowText,
+                  unwatched && styles.sortRowTextActive,
+                ]}
+              >
+                Unwatched only
+              </Text>
+              {unwatched && <Check size={18} color="#000000" strokeWidth={2.6} />}
+            </Pressable>
+            <View style={{ height: 16 }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1264,7 +1397,7 @@ export function SearchScreen({
 
   // Grid config (responsive cols for search results)
   const isTv = Platform.isTV;
-  const available = width - (isTv ? 58 : 0) - 32;
+  const available = width - (isTv ? 58 : 0) - 40;
   const columns = isTv ? Math.max(3, Math.floor(available / 126)) : 2;
   const cardWidth = Math.floor(available / columns) - 10;
 
@@ -1274,16 +1407,17 @@ export function SearchScreen({
       contentContainerStyle={styles.searchContainer}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[styles.searchHeading, Platform.isTV && styles.searchHeadingTv]}>Search</Text>
+      <PageHeader title="Search" />
 
-      {/* Shorter, compact search bar — extra wide on TV */}
+      {/* Compact search field with an explicit search affordance */}
       <View
         style={[
           styles.searchInputWrap,
           Platform.isTV && styles.searchInputWrapTv,
-          Platform.isTV && inputFocus && styles.searchInputWrapTvFocused,
+          inputFocus && styles.searchInputWrapFocused,
         ]}
       >
+        <SearchIcon size={18} color={inputFocus ? "#ffffff" : colors.muted} strokeWidth={2.1} />
         <TextInput
           style={[
             styles.searchInput,
@@ -1291,7 +1425,7 @@ export function SearchScreen({
           ]}
           value={query}
           onChangeText={setQuery}
-          placeholder="Movies, shows and episodes…"
+          placeholder="Movies, shows and episodes"
           placeholderTextColor={colors.muted}
           returnKeyType="search"
           autoCorrect={false}
@@ -1299,8 +1433,14 @@ export function SearchScreen({
           onBlur={() => setInputFocus(false)}
         />
         {!!query && (
-          <Pressable onPress={() => setQuery("")} style={{ padding: 4 }}>
-            <Text style={{ color: colors.muted, fontSize: 14, fontFamily: fonts.medium }}>✕</Text>
+          <Pressable
+            onPress={() => setQuery("")}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            hitSlop={10}
+            style={({ pressed }) => [styles.searchClear, pressed && { opacity: 0.6 }]}
+          >
+            <X size={15} color={colors.muted} strokeWidth={2.4} />
           </Pressable>
         )}
       </View>
@@ -1316,7 +1456,7 @@ export function SearchScreen({
         ) : (
           <>
             {homeData.value?.rows.map((row) => {
-              const isContinue = row.items.some((i) => i.watch?.position && !i.watch?.played);
+              const isContinue = row.key === "continue";
               if (isContinue) {
                 return (
                   <CatalogRow
@@ -1400,7 +1540,7 @@ function SearchGrid({
 }) {
   const { api } = useClient();
   return (
-    <View style={{ gap: 12 }}>
+    <View style={styles.searchGridSection}>
       <Text style={styles.rowTitle}>{title}</Text>
       <View style={styles.searchGrid}>
         {items.map((item) => (
@@ -1820,6 +1960,7 @@ export function DetailScreen({
               {/* Hero section */}
               <Hero
                 item={item}
+                logo={"logo" in detail ? detail.logo : null}
                 preferred={true}
                 actionLabel={
                   item.watch?.position && !isSeriesWatched ? "Resume" : "Play"
@@ -1842,6 +1983,27 @@ export function DetailScreen({
                 isWatched={isSeriesWatched}
                 onDownload={!platform.local && detail.file ? () => download(item, detail.file!.fileId) : undefined}
                 downloadState={movieDl}
+                onDelete={hasEpisodes || item.kind === "series" ? () => {
+                  Alert.alert(
+                    "Delete Series?",
+                    `Are you sure you want to delete "${item.name}"? All episode video files will be permanently deleted from your device storage.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            await api.deleteItem(item.id);
+                            back();
+                          } catch (err) {
+                            setActionError(err instanceof Error ? err.message : String(err));
+                          }
+                        },
+                      },
+                    ]
+                  );
+                } : undefined}
               />
 
               <View style={[styles.detailBody, platform.tv && styles.detailBodyTV]}>
@@ -1902,10 +2064,12 @@ export function DetailScreen({
                                     onBlur={() => setSeasonFocus(null)}
                                     style={[
                                       styles.seasonPill,
+                                      { flexDirection: "row", alignItems: "center" },
                                       active && styles.seasonPillActive,
                                       seasonFocus === s.number && styles.seasonPillFocusedTv,
                                     ]}
                                   >
+                                    {!!s.poster && <Image source={api.image(s.poster)} style={{width:28,height:42,borderRadius:3,marginRight:8}} resizeMode="cover" />}
                                     <Text style={[styles.seasonPillText, active && styles.seasonPillTextActive]}>
                                       {s.name || `Season ${s.number}`}
                                     </Text>
@@ -2378,6 +2542,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderColor: "#ffffff",
   },
+  heroIconBtnDanger: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderColor: "rgba(239, 68, 68, 0.5)",
+  },
   heroDetailsBtn: {
     flex: 0,
     borderRadius: 20,
@@ -2589,14 +2757,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     marginBottom: 2,
   },
   rowTitle: {
     fontFamily: fonts.bold,
-    fontSize: 15,
+    fontSize: 16,
     color: colors.ink,
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
   },
   rowSeeAll: {
     fontFamily: fonts.medium,
@@ -2604,7 +2772,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   rowList: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     gap: 10,
   },
 
@@ -2623,55 +2791,144 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 0,
   },
-  libTabBar: {
+  sortButton: {
     flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-    backgroundColor: colors.canvas,
-  },
-  libTab: {
-    flex: 1,
-    paddingVertical: 10,
     alignItems: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
+    gap: 6,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: colors.surface,
+    maxWidth: 190,
   },
-  libTabActive: {
-    borderBottomColor: colors.brand,
+  sortButtonOpen: {
+    borderColor: "rgba(255,255,255,0.4)",
+    backgroundColor: colors.elevated,
   },
-  libTabText: {
+  sortButtonText: {
     fontFamily: fonts.medium,
-    fontSize: 13,
-    color: colors.muted,
-  },
-  libTabTextActive: {
+    fontSize: 12.5,
     color: colors.ink,
+    flexShrink: 1,
+  },
+  libSegmentWrap: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  libSegment: {
+    flexDirection: "row",
+    height: 46,
+    padding: 3,
+    borderRadius: 23,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  libSegmentItem: {
+    flex: 1,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  libSegmentItemActive: {
+    backgroundColor: "#ffffff",
+  },
+  libSegmentText: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.muted,
+    letterSpacing: 0.1,
+  },
+  libSegmentTextActive: {
     fontFamily: fonts.bold,
+    color: "#000000",
+  },
+  dlFilterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  sortBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.66)",
+  },
+  sortSheet: {
+    backgroundColor: "#0b0b0b",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.14)",
+    paddingTop: 8,
+    paddingHorizontal: 12,
+  },
+  sortHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    alignSelf: "center",
+    marginBottom: 10,
+  },
+  sortTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    color: colors.ink,
+    letterSpacing: -0.3,
+    paddingHorizontal: 8,
+    paddingBottom: 12,
+  },
+  sortRow: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  sortRowActive: {
+    backgroundColor: "#ffffff",
+  },
+  sortRowText: {
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    color: colors.ink,
+  },
+  sortRowTextActive: {
+    fontFamily: fonts.bold,
+    color: "#000000",
   },
   filterRow: {
     gap: 6,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 8,
   },
   filterChip: {
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 19,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
   },
   filterChipActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff",
   },
   filterChipText: {
     fontFamily: fonts.medium,
-    fontSize: 11,
+    fontSize: 12.5,
     color: colors.muted,
   },
   filterChipTextActive: {
-    color: "#fff",
+    color: "#000000",
+    fontFamily: fonts.bold,
   },
   filterChipFocusedTv: {
     borderWidth: 2,
@@ -2682,39 +2939,31 @@ const styles = StyleSheet.create({
   },
   libGrid: {
     gap: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 24,
     paddingTop: 4,
   },
 
   // --- Search ---
   searchContainer: {
-    padding: 16,
-    gap: 14,
     paddingBottom: 32,
-  },
-  searchHeading: {
-    fontFamily: fonts.black,
-    fontSize: 34,
-    color: colors.ink,
-    letterSpacing: -0.5,
-  },
-  searchHeadingTv: {
-    fontSize: 18,
-    lineHeight: 22,
+    gap: 14,
   },
   searchInputWrap: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    minHeight: 46,
     backgroundColor: colors.surface,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: colors.line,
-    maxWidth: 380,
-    width: "100%",
-    alignSelf: "center",
+  },
+  searchInputWrapFocused: {
+    borderColor: "rgba(255,255,255,0.36)",
+    backgroundColor: colors.elevated,
   },
   searchInputWrapTv: {
     maxWidth: "100%",
@@ -2723,7 +2972,6 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 4,
     borderWidth: 2,
     borderColor: colors.line,
   },
@@ -2735,15 +2983,29 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.ink,
+    paddingVertical: 10,
   },
   searchInputTv: {
     fontSize: 13,
     paddingVertical: 0,
   },
+  searchClear: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
   searchHint: {
     fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.muted,
+    paddingHorizontal: 20,
+  },
+  searchGridSection: {
+    gap: 12,
+    paddingHorizontal: 20,
   },
   searchGrid: {
     flexDirection: "row",

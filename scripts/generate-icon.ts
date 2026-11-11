@@ -215,6 +215,25 @@ export async function generateIcons() {
   await copyFile(masterSplashPng, join(mobileAssets, "splashscreen.png"));
   await copyFile(masterBannerPng, join(tvAssets, "tv-banner.png"));
 
+  // Mobile Expo splash mark: transparent, tightly cropped emblem for a clean
+  // lockup on the black splash background (no dark square, no tiny icon).
+  const splashIconSvgPath = join(tempDir, "splash-icon.svg");
+  const splashIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-16 -7 288 290">
+  <defs>
+    <linearGradient id="plexy-blue" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#6C9FFF" />
+      <stop offset="50%" stop-color="#3B7DF9" />
+      <stop offset="100%" stop-color="#1F4FCB" />
+    </linearGradient>
+  </defs>
+  <path
+    fill="url(#plexy-blue)"
+    d="M223.517 44.823 161.174 8.85a65.565 65.565 0 0 0-65.792 0l-62.63 35.973C12.642 56.623 0 78.495 0 101.806v72.235c0 23.6 12.641 45.183 32.752 56.982l62.343 36.263a65.565 65.565 0 0 0 65.791 0l62.343-36.263c20.399-11.799 32.752-33.383 32.752-56.982v-72.235c.575-23.311-12.066-45.183-32.464-56.983Zm-95.383 157.422c-35.337 0-64.067-28.78-64.067-64.177 0-35.399 28.73-64.178 64.067-64.178 35.338 0 64.355 28.779 64.355 64.178 0 35.398-28.73 64.177-64.355 64.177Z"
+  />
+</svg>`;
+  await writeFile(splashIconSvgPath, splashIconSvg);
+  execSync(`sips -s format png "${splashIconSvgPath}" --out "${join(mobileAssets, "splash-icon.png")}" >/dev/null 2>&1`);
+
   // 6. Generate matching Dark Splash Screen logos and drawables for Mobile & TV
   console.log("Generating matching Android Mobile & TV dark splash screens...");
   const splashDensities = [
@@ -237,7 +256,7 @@ export async function generateIcons() {
 </layer-list>
 `;
 
-  for (const resRoot of [mobileRes, tvRes]) {
+  for (const resRoot of [tvRes]) {
     for (const s of splashDensities) {
       const targetDir = join(resRoot, s.dir);
       await mkdir(targetDir, { recursive: true });

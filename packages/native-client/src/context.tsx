@@ -28,7 +28,11 @@ export interface NativePlatform {
     refresh(): Promise<void>;
     needsSetup(): boolean;
     Settings: React.ComponentType<{ back?: () => void }>;
-    Thumbnail?: React.ComponentType<{ player: import("expo-video").VideoPlayer; time: number }>;
+    pickSubtitle?(fileId: number): Promise<import("../../api-client/src/types").SubtitleTrack | null>;
+    Thumbnail?: React.ComponentType<{ player: import("expo-video").VideoPlayer; time: number; fileId: number }>;
+    getAttentionCount?(): number;
+    getAttentionFingerprint?(): string;
+    subscribe?(fn: () => void): () => void;
   };
   CastControl?: React.ComponentType<import("./cast-types").CastControlProps>;
   RemoteEvents: React.ComponentType<{ onEvent: (event: string) => void }>;

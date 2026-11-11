@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { resourceKey } from "./resource-key";
+import { useEffect, useId, useRef, useState } from "react";
 
 // In-memory cache for fast screen navigation (stale-while-revalidate)
 const resourceCache = new Map<string, any>();
@@ -11,16 +12,17 @@ export function invalidateLocalResources() {
 export function useResource<T>(
   load: (signal: AbortSignal) => Promise<T>,
   keys: React.DependencyList,
+  namespace?: string,
 ) {
-  const cacheKey = keys
-    .map((k) => (typeof k === "object" && k !== null && "id" in k ? (k as any).id : String(k)))
-    .join(":");
+  const instance = useId();
+  const cacheKey = resourceKey(namespace || instance, keys);
 
   const cached = resourceCache.get(cacheKey) as T | undefined;
   const [value, setValue] = useState<T | null>(cached ?? null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(cached === undefined);
   const [revision, setRevision] = useState(0);
+  const previousKey = useRef(cacheKey);
   useEffect(() => {
     const invalidate = () => setRevision(n => n + 1);
     invalidations.add(invalidate);
@@ -31,10 +33,12 @@ export function useResource<T>(
     const controller = new AbortController();
     let live = true;
 
-    // If no cached value exists, show loading indicator
-    if (!resourceCache.has(cacheKey)) {
-      setLoading(true);
-      setValue(null);
+    // Keep mounted consumers (especially playback) alive during invalidation.
+    // A changed query may show a loader; a refreshed query retains its last value.
+    if (previousKey.current !== cacheKey) {
+      setLoading(!resourceCache.has(cacheKey));
+      setValue((resourceCache.get(cacheKey) as T | undefined) ?? null);
+      previousKey.current = cacheKey;
     }
     setError(null);
 
@@ -42,6 +46,7 @@ export function useResource<T>(
       .then((v) => {
         if (live) {
           resourceCache.set(cacheKey, v);
+          if (resourceCache.size > 128) resourceCache.delete(resourceCache.keys().next().value!);
           setValue(v);
         }
       })

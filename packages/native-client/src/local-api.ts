@@ -1,5 +1,5 @@
 import { PlexyApi, type Playability, type Session } from "./api";
-import { LocalLibrary, localSegments } from "../../local-library/src/library";
+import { LocalLibrary } from "../../local-library/src/library";
 
 export const localSession: Session = {
   profile: { id: "this-device", serverId: "this-device", url: "http://127.0.0.1",
@@ -34,6 +34,7 @@ export class LocalApi extends PlexyApi {
       title: r.card.parentTitle || r.card.name, subtitle: r.card.kind === "episode" ? r.card.name : null,
       seasonNumber: r.card.seasonNumber, episodeNumber: r.card.episodeNumber,
       duration: r.card.watch?.duration, watch: r.card.watch, audioTracks: [], tracks: await this.subtitles(fileId),
+      episodes: siblings.map(s => s.card),
       nextFileId: next?.id ?? null, next: next ? { fileId: next.id, itemId: next.id,
         title: next.card.parentTitle || next.card.name, subtitle: next.card.name, poster: next.card.poster,
         seasonNumber: next.card.seasonNumber ?? null, episodeNumber: next.card.episodeNumber ?? null } : null };
@@ -51,11 +52,15 @@ export class LocalApi extends PlexyApi {
       const continuing = this.library.state.records.map(r => r.card).filter(c => c.watch && !c.watch.played && c.watch.position > 0);
       result = { featured: all.find(c => c.backdrop) || all[0] || null, rows: [
         { key: "continue", title: "Continue watching", items: continuing },
-        { key: "movies", title: "Movies on this device", items: all.filter(c => c.kind === "movie") },
-        { key: "series", title: "Series on this device", items: all.filter(c => c.kind === "series") },
+        { key: "movies", title: "Movies on this device", items: all.filter(c => c.kind === "movie" && !c.isAnime) },
+        { key: "series", title: "Series on this device", items: all.filter(c => c.kind === "series" && !c.isAnime) },
+        { key: "anime", title: "Anime on this device", items: all.filter(c => c.isAnime) },
       ].filter(r => r.items.length) };
     } else if (route === "/api/items") {
-      let items = all.filter(c => c.kind === url.searchParams.get("kind"));
+      const requestedKind = url.searchParams.get("kind");
+      let items = requestedKind === "anime"
+        ? all.filter(c => c.isAnime)
+        : all.filter(c => c.kind === requestedKind && !c.isAnime);
       if (url.searchParams.get("unwatched") === "true") items = items.filter(c => !c.watch?.played);
       const sort = url.searchParams.get("sort");
       items.sort((a,b) => sort === "year" ? (b.year || 0) - (a.year || 0) : sort === "rating" ? (b.rating || 0) - (a.rating || 0)
@@ -67,7 +72,13 @@ export class LocalApi extends PlexyApi {
       result = { titles: all.filter(c => c.name.toLowerCase().includes(q)),
         episodes: this.library.state.records.filter(r => r.card.kind === "episode" && r.card.name.toLowerCase().includes(q)).map(r => r.card) };
     } else if (route.startsWith("/api/items/")) {
-      result = this.library.detail(Number(decodeURIComponent(route.split("/").at(-1)!).replace(/^local-/, "")));
+      const id = Number(decodeURIComponent(route.split("/").at(-1)!).replace(/^local-/, ""));
+      if (init.method === "DELETE") {
+        await this.library.deleteTitle(id, true);
+        result = { ok: true };
+      } else {
+        result = this.library.detail(id);
+      }
     } else if (route === "/api/progress") {
       await this.library.progress(body.itemId, body.position, body.duration || null, body.played);
       result = { ok: true };
@@ -76,7 +87,7 @@ export class LocalApi extends PlexyApi {
       if (init.method === "DELETE") await this.library.clearWatch(id);
       else await this.library.progress(id, 0, null, !!body.played);
       result = { ok: true };
-    } else if (route.startsWith("/api/skip-segments/")) result = localSegments(this.library.record(Number(route.split("/").at(-1))).skips || {}, this.library.record(Number(route.split("/").at(-1))).card.watch?.duration);
+    } else if (route.startsWith("/api/skip-segments/")) result = await this.library.getMarkers(Number(route.split("/").at(-1)));
     else if (route === "/api/auth/logout") result = { ok: true };
     else throw new Error("This feature is unavailable in the local library.");
     return result as T;

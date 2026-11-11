@@ -1,3 +1,5 @@
+import * as Application from "expo-application";
+import { selectUpdate, type UpdateTarget } from "./update-policy";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { NativeModules, Platform } from "react-native";
@@ -41,21 +43,11 @@ const GITHUB_REPO = "Swastikdan/plexy";
  * Gets currently installed version and build number from native PackageManager.
  */
 export async function getInstalledAppInfo(): Promise<AppInfo> {
-  if (Platform.OS === "android") {
-    try {
-      if (NativeModules.PlexyLanModule?.getAppInfo) {
-        const info = await NativeModules.PlexyLanModule.getAppInfo();
-        if (info && typeof info.buildNumber === "number") {
-          return {
-            versionName: String(info.versionName || "1.0.2"),
-            versionCode: Number(info.versionCode || 50028),
-            buildNumber: Number(info.buildNumber || 28),
-          };
-        }
-      }
-    } catch {}
-  }
-  return { versionName: "1.0.2", versionCode: 50028, buildNumber: 28 };
+  const versionName = Application.nativeApplicationVersion;
+  const versionCode = Number(Application.nativeBuildVersion);
+  if (!versionName || !Number.isSafeInteger(versionCode) || versionCode <= 0)
+    throw new Error("Could not read the installed app version. Try restarting the app.");
+  return { versionName, versionCode, buildNumber: versionCode >= 50000 ? versionCode - 50000 : versionCode };
 }
 
 /**
@@ -65,8 +57,8 @@ export async function checkForUpdate(
   isTv: boolean,
   currentBuild?: number,
 ): Promise<UpdateInfo | null> {
-  const targetApk = isTv ? "plexy-tv-preview.apk" : "plexy-mobile-preview.apk";
-  const appInfo = currentBuild ? { buildNumber: currentBuild } : await getInstalledAppInfo();
+  const targetApk: UpdateTarget = isTv ? "tv" : "mobile";
+  const appInfo = currentBuild !== undefined ? { buildNumber: currentBuild } : await getInstalledAppInfo();
 
   const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`, {
     headers: {
@@ -84,32 +76,7 @@ export async function checkForUpdate(
     return null;
   }
 
-  // Find the first release that has the required APK asset and is newer
-  for (const release of releases) {
-    const asset = release.assets?.find((a) => a.name === targetApk);
-    if (asset) {
-      const match = release.tag_name.match(/build\.(\d+)/i);
-      const releaseBuildNumber = match ? parseInt(match[1], 10) : 0;
-
-      // If installed build is already >= release build number, there is no newer update
-      if (appInfo.buildNumber && releaseBuildNumber > 0 && releaseBuildNumber <= appInfo.buildNumber) {
-        return null;
-      }
-
-      return {
-        tagName: release.tag_name,
-        releaseName: release.name || release.tag_name,
-        releaseNotes: release.body || "",
-        publishedAt: release.published_at,
-        apkUrl: asset.browser_download_url,
-        apkName: asset.name,
-        apkSize: asset.size,
-        buildNumber: releaseBuildNumber,
-      };
-    }
-  }
-
-  return null;
+  return selectUpdate(releases, targetApk, appInfo.buildNumber);
 }
 
 /**

@@ -1,4 +1,7 @@
 import type { ExpoConfig } from "expo/config";
+const buildNumber = Number(
+  process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
+);
 const config: ExpoConfig = {
   name: "Plexy TV",
   slug: "plexy-tv",
@@ -9,17 +12,18 @@ const config: ExpoConfig = {
   icon: "../../build/icon.png",
   backgroundColor: "#080808",
   orientation: "landscape",
+  // @ts-ignore
   splash: {
     image: "./assets/splashscreen.png",
     resizeMode: "contain",
     backgroundColor: "#080808",
   },
   extra: {
-    buildNumber: Number(process.env.GITHUB_RUN_NUMBER || 1),
+    buildNumber,
   },
   android: {
     package: "app.plexy.tv",
-    versionCode: 50000 + Number(process.env.GITHUB_RUN_NUMBER || 1),
+    versionCode: 50000 + buildNumber,
     allowBackup: false,
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",

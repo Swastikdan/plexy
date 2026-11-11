@@ -1,10 +1,13 @@
 import React, { forwardRef, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Image,
   Platform,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -175,8 +178,27 @@ export function Icon({
 }
 
 // ---------------------------------------------------------------------------
-// PlexyLogo
+// PlexyMark / PlexyLogo
 // ---------------------------------------------------------------------------
+export function PlexyMark({ size = 22 }: { size?: number }) {
+  const height = (size * 277) / 256;
+  return (
+    <Svg width={size} height={height} viewBox="0 0 256 277">
+      <Defs>
+        <SvgGradient id="plexy__blue" x1="0%" y1="0%" x2="100%" y2="100%">
+          <Stop offset="0%" stopColor="#6C9FFF" />
+          <Stop offset="50%" stopColor="#3B7DF9" />
+          <Stop offset="100%" stopColor="#1F4FCB" />
+        </SvgGradient>
+      </Defs>
+      <Path
+        fill="url(#plexy__blue)"
+        d="M223.517 44.823 161.174 8.85a65.565 65.565 0 0 0-65.792 0l-62.63 35.973C12.642 56.623 0 78.495 0 101.806v72.235c0 23.6 12.641 45.183 32.752 56.982l62.343 36.263a65.565 65.565 0 0 0 65.791 0l62.343-36.263c20.399-11.799 32.752-33.383 32.752-56.982v-72.235c.575-23.311-12.066-45.183-32.464-56.983Zm-95.383 157.422c-35.337 0-64.067-28.78-64.067-64.177 0-35.399 28.73-64.178 64.067-64.178 35.338 0 64.355 28.779 64.355 64.178 0 35.398-28.73 64.177-64.355 64.177Z"
+      />
+    </Svg>
+  );
+}
+
 export function PlexyLogo({
   size = 22,
   showText = true,
@@ -184,22 +206,9 @@ export function PlexyLogo({
   size?: number;
   showText?: boolean;
 }) {
-  const height = (size * 277) / 256;
   return (
     <View style={styles.logoRow}>
-      <Svg width={size} height={height} viewBox="0 0 256 277">
-        <Defs>
-          <SvgGradient id="plexy__blue" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#6C9FFF" />
-            <Stop offset="50%" stopColor="#3B7DF9" />
-            <Stop offset="100%" stopColor="#1F4FCB" />
-          </SvgGradient>
-        </Defs>
-        <Path
-          fill="url(#plexy__blue)"
-          d="M223.517 44.823 161.174 8.85a65.565 65.565 0 0 0-65.792 0l-62.63 35.973C12.642 56.623 0 78.495 0 101.806v72.235c0 23.6 12.641 45.183 32.752 56.982l62.343 36.263a65.565 65.565 0 0 0 65.791 0l62.343-36.263c20.399-11.799 32.752-33.383 32.752-56.982v-72.235c.575-23.311-12.066-45.183-32.464-56.983Zm-95.383 157.422c-35.337 0-64.067-28.78-64.067-64.177 0-35.399 28.73-64.178 64.067-64.178 35.338 0 64.355 28.779 64.355 64.178 0 35.398-28.73 64.177-64.355 64.177Z"
-        />
-      </Svg>
+      <PlexyMark size={size} />
       {showText && (
         <Text
           style={{
@@ -212,6 +221,42 @@ export function PlexyLogo({
           Plexy
         </Text>
       )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PageHeader — the one title treatment shared by every root screen.
+// Titles only: no eyebrow labels, no subtitles, no decorative rules.
+// ---------------------------------------------------------------------------
+export function PageHeader({
+  title,
+  logo = false,
+  right,
+  style,
+}: {
+  title?: string;
+  logo?: boolean;
+  right?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.pageHeader, style]}>
+      <View style={styles.pageHeaderTitleRow}>
+        {logo ? (
+          <>
+            <PlexyMark size={24} />
+            <Text accessibilityRole="header" style={styles.pageTitle}>
+              Plexy
+            </Text>
+          </>
+        ) : (
+          <Text accessibilityRole="header" style={styles.pageTitle}>
+            {title}
+          </Text>
+        )}
+      </View>
+      {right ? <View style={styles.pageHeaderRight}>{right}</View> : null}
     </View>
   );
 }
@@ -419,19 +464,143 @@ export function Notice({
 }
 
 // ---------------------------------------------------------------------------
-// Loading
+// ToggleSwitch — one consistent switch for the whole app
+// ---------------------------------------------------------------------------
+export function ToggleSwitch({
+  value,
+  onValueChange,
+  disabled,
+  accessibilityLabel,
+}: {
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+}) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: value ? 1 : 0,
+      duration: 180,
+      useNativeDriver: false,
+    }).start();
+  }, [value, anim]);
+
+  const translateX = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [2, 20],
+  });
+
+  const backgroundColor = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["rgba(255, 255, 255, 0.16)", "#38bdf8"],
+  });
+
+  const thumbColor = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#e4e4e7", "#09090b"],
+  });
+
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled }}
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled}
+      onPress={() => onValueChange(!value)}
+      style={({ pressed }) => [
+        {
+          opacity: disabled ? 0.4 : pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <Animated.View
+        style={{
+          width: 44,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor,
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: value ? "rgba(56, 189, 248, 0.4)" : "rgba(255, 255, 255, 0.1)",
+        }}
+      >
+        <Animated.View
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: thumbColor,
+            transform: [{ translateX }],
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.3,
+            shadowRadius: 2,
+            elevation: 2,
+          }}
+        />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading — quiet logo lockup with an indeterminate hairline.
 // ---------------------------------------------------------------------------
 export function Loading({ showLogo }: { showLogo?: boolean } = {}) {
   const shouldShowLogo = showLogo !== undefined ? showLogo : !Platform.isTV;
+  const slide = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!shouldShowLogo) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(slide, {
+          toValue: 1,
+          duration: 1150,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slide, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shouldShowLogo, slide]);
+
+  if (!shouldShowLogo) {
+    return (
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator size="small" color="#ffffff" accessibilityLabel="Loading" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.loadingWrap}>
-      {shouldShowLogo && <PlexyLogo size={36} showText={true} />}
-      <ActivityIndicator
-        size="small"
-        color={colors.brand}
-        accessibilityLabel="Loading"
-        style={shouldShowLogo ? { marginTop: 18 } : undefined}
-      />
+      <PlexyLogo size={34} showText={true} />
+      <View style={styles.loadingTrack} accessibilityLabel="Loading">
+        <Animated.View
+          style={[
+            styles.loadingBar,
+            {
+              transform: [
+                {
+                  translateX: slide.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 78],
+                  }),
+                },
+              ],
+            },
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -645,6 +814,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+
+  // --- Page header ---
+  pageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    minHeight: 64,
+  },
+  pageHeaderTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 1,
+  },
+  pageTitle: {
+    fontFamily: fonts.black,
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.9,
+    color: colors.ink,
+  },
+  pageHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   logoMark: {
     backgroundColor: colors.brand,
     alignItems: "center",
@@ -729,6 +927,20 @@ const styles = StyleSheet.create({
     padding: 48,
     alignItems: "center",
     justifyContent: "center",
+    gap: 26,
+  },
+  loadingTrack: {
+    width: 120,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    overflow: "hidden",
+  },
+  loadingBar: {
+    width: 42,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#ffffff",
   },
 
   // --- Card ---

@@ -5,6 +5,7 @@ const snippet = `\n${marker}
 tasks.configureEach { task ->
   if (task.name.startsWith('createBundle') && task.name.endsWith('JsAndAssets')) {
     task.inputs.dir(new File(rootProject.projectDir, '../../../packages/native-client/src'))
+    task.inputs.dir(new File(rootProject.projectDir, '../../../packages/local-library/src'))
   }
 }
 `;

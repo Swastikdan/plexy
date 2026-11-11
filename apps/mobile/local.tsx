@@ -1,28 +1,34 @@
-import React, { useEffect, useState } from "react";
-import { Alert, ScrollView, Text, View, TextInput } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { loadLibrary, saveLibrary } from "./database";
+import { LocalSettings } from "./LocalSettings";
+import Constants from "expo-constants";
+import { fetchMetadata } from "../../packages/local-library/src/metadata";
 import * as SecureStore from "expo-secure-store";
 import { Directory, File, Paths } from "expo-file-system";
 import NetInfo from "@react-native-community/netinfo";
 import { LocalThumbnail } from "./LocalThumbnail";
 import { LocalApi, invalidateLocalResources } from "@plexy/native-client";
-import { LocalLibrary, parseLocalName, localSegments, type LocalFile, type LocalRecord, type LocalRoot, type LocalState } from "../../packages/local-library/src/library";
-import { Button, Heading, Label, Notice } from "../../packages/native-client/src/ui";
-import { useClient } from "../../packages/native-client/src/context";
+import { LocalLibrary, parseLocalName, localSegments, type LocalFile, type LocalRecord, type LocalRoot } from "../../packages/local-library/src/library";
 import type { SubtitleTrack } from "../../packages/api-client/src/types";
 
-const databaseKey = "plexy.local-library.v1";
 const tokenKey = "plexy.local.tmdb-token";
 let online = true;
 const imageDirectory = new Directory(Paths.document, "library-artwork");
 const requests = new Map<string, Promise<any>>();
 
-function displayName(uri: string) {
+export function displayName(uri: string) {
+  uri = uri.replace(/\/+$/, "");
   try { return decodeURIComponent(uri.split("/").at(-1)!).split("/").at(-1)!; }
   catch { return uri.split("/").at(-1)!; }
 }
 async function walk(root: LocalRoot): Promise<LocalFile[]> {
   const files: LocalFile[] = [];
+  if (root.singleFile) {
+    const file = new File(root.uri);
+    const info = file.info();
+    if (!info.exists) throw new Error("File access is unavailable");
+    return [{ uri: file.uri, name: displayName(file.uri), relativePath: displayName(file.uri),
+      size: info.size || 0, modified: info.modificationTime || 0 }];
+  }
   const pending = [{ directory: new Directory(root.uri), path: "" }];
   const visited = new Set<string>();
   while (pending.length) {
@@ -61,11 +67,12 @@ async function tmdb(path: string, token: string) {
       } finally { clearTimeout(timer); }
     })();
     requests.set(key, request);
+    if (requests.size > 256) requests.delete(requests.keys().next().value!);
     request.catch(() => requests.delete(key));
   }
   return request;
 }
-async function artwork(path: string | null | undefined, size: string) {
+async function downloadArtwork(path: string | null | undefined, size: string) {
   if (!path) return null;
   imageDirectory.create({ intermediates: true, idempotent: true });
   const destination = new File(imageDirectory, `${size}-${path.replace(/[^a-zA-Z0-9._-]/g, "")}`);
@@ -79,52 +86,106 @@ async function artwork(path: string | null | undefined, size: string) {
   }
   return destination.uri;
 }
-const normalized = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const imageDownloads = new Map<string, Promise<string | null>>();
+async function artwork(path: string | null | undefined, size: string) {
+  if (!path) return null;
+  const key = `${size}:${path}`;
+  let download = imageDownloads.get(key);
+  if (!download) {
+    download = downloadArtwork(path, size).finally(() => imageDownloads.delete(key));
+    imageDownloads.set(key, download);
+  }
+  return download;
+}
+export const bundledMetadata = !!Constants.expoConfig?.extra?.tmdbToken;
+async function token() { return Constants.expoConfig?.extra?.tmdbToken || await SecureStore.getItemAsync(tokenKey); }
 async function metadata(record: LocalRecord): Promise<Partial<LocalRecord> | null> {
   if (!online) return null;
-  const token = await SecureStore.getItemAsync(tokenKey);
-  if (!token) return null;
-  const kind = record.card.kind === "episode" ? "tv" : "movie";
-  const parsed = parseLocalName(record.file.relativePath, kind === "tv" ? "tv" : "movies");
-  let id = record.tmdbId || parsed.explicitId;
-  if (!id) {
-    const query = new URLSearchParams({ query: parsed.title, include_adult: "false" });
-    if (parsed.year) query.set(kind === "tv" ? "first_air_date_year" : "year", String(parsed.year));
-    const search = await tmdb(`/search/${kind}?${query}`, token);
-    const matches = search.results.filter((r: any) => normalized(r.title || r.name || "") === normalized(parsed.title)
-      || normalized(r.original_title || r.original_name || "") === normalized(parsed.title));
-    // Ambiguous results remain filename-based rather than attaching the wrong movie.
-    if (matches.length !== 1) return { metadataAt: Date.now() };
-    id = matches[0].id;
+  const key = await token();
+  if (!key) throw new Error("This build has no TMDB configuration.");
+  return fetchMetadata(record, { request: path => tmdb(path, key), artwork, settings: localLibrary.metadataSettings });
+}
+export async function searchTitles(query: string, kind: "movies" | "tv") {
+  const key = await token();
+  if (!key) throw new Error("TMDB is not configured in this build.");
+  const trimmed = query.trim();
+  const directId = trimmed.match(/^(?:https?:\/\/(?:www\.)?themoviedb\.org\/(?:movie|tv)\/)?(\d+)/i);
+  if (directId) {
+    try {
+      const explicit = await tmdb(`/${kind === "movies" ? "movie" : "tv"}/${directId[1]}?language=${localLibrary.metadataSettings.language}`, key);
+      if (explicit && explicit.id) return [explicit];
+    } catch {}
   }
-  const data = await tmdb(`/${kind}/${id}?append_to_response=credits`, token);
-  let episode: any = null;
-  if (kind === "tv" && parsed.season != null && parsed.episode != null) {
-    episode = await tmdb(`/tv/${id}/season/${parsed.season}/episode/${parsed.episode}`, token);
+
+  const yearMatch = trimmed.match(/\b((?:19|20)\d{2})\b/);
+  const cleanQuery = yearMatch && trimmed.length > 5 ? trimmed.replace(new RegExp(`\\b${yearMatch[1]}\\b`, "g"), "").trim() : trimmed;
+  const params: Record<string, string> = {
+    query: cleanQuery || trimmed,
+    include_adult: "false",
+    language: localLibrary.metadataSettings.language,
+    region: localLibrary.metadataSettings.region,
+  };
+  if (yearMatch) {
+    if (kind === "movies") params.primary_release_year = yearMatch[1];
+    else params.first_air_date_year = yearMatch[1];
   }
-  const poster = await artwork(data.poster_path, "w500");
-  const backdrop = await artwork(data.backdrop_path, "w1280");
-  const cast = [];
-  for (const person of (data.credits?.cast || []).slice(0, 12)) {
-    cast.push({ name: person.name, character: person.character || null,
-      photo: await artwork(person.profile_path, "w185") });
+
+  const response = await tmdb(`/search/${kind === "movies" ? "movie" : "tv"}?${new URLSearchParams(params)}`, key);
+  if (response.results?.length) return response.results;
+  if (yearMatch && cleanQuery) {
+    const fallback = await tmdb(`/search/${kind === "movies" ? "movie" : "tv"}?${new URLSearchParams({
+      query: trimmed,
+      include_adult: "false",
+      language: localLibrary.metadataSettings.language,
+      region: localLibrary.metadataSettings.region,
+    })}`, key);
+    return fallback.results || [];
   }
-  const card = { ...record.card,
-    name: episode?.name || data.title || data.name || record.card.name,
-    parentTitle: kind === "tv" ? data.name : null,
-    year: Number((data.release_date || data.first_air_date || "").slice(0, 4)) || parsed.year,
-    poster, backdrop, overview: episode?.overview || data.overview || null,
-    rating: episode?.vote_average || data.vote_average || null, runtime: episode?.runtime || data.runtime || null,
-    genres: (data.genres || []).map((g: any) => g.name), matchStatus: "matched" };
-  return { card, cast, tmdbId: id!, metadataAt: Date.now() };
+  return response.results || [];
+}
+
+async function animeSkipMarkers(title: string, episodeNumber: number) {
+  try {
+    const jikanController = new AbortController();
+    const jikanTimer = setTimeout(() => jikanController.abort(), 3500);
+    const jikanRes = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(title)}&limit=1`, { signal: jikanController.signal });
+    clearTimeout(jikanTimer);
+    if (!jikanRes.ok) return null;
+    const jikanData = await jikanRes.json();
+    const malId = jikanData.data?.[0]?.mal_id;
+    if (!malId) return null;
+
+    const skipController = new AbortController();
+    const skipTimer = setTimeout(() => skipController.abort(), 3500);
+    const skipRes = await fetch(`https://api.aniskip.com/v2/skip-times/${malId}/${episodeNumber}?types[]=op&types[]=ed`, { signal: skipController.signal });
+    clearTimeout(skipTimer);
+    if (!skipRes.ok) return null;
+    const skipData = await skipRes.json();
+    if (!skipData.found || !Array.isArray(skipData.results)) return null;
+
+    const intro = skipData.results.find((r: any) => r.skipType === "op")?.interval;
+    const outro = skipData.results.find((r: any) => r.skipType === "ed")?.interval;
+    return localSegments({
+      intro: intro ? { start: intro.startTime, end: intro.endTime } : null,
+      outro: outro ? { start: outro.startTime, end: outro.endTime } : null,
+      recap: null,
+    });
+  } catch {
+    return null;
+  }
 }
 
 async function markers(record: LocalRecord) {
   if (!online) return null;
-  const token = await SecureStore.getItemAsync(tokenKey);
-  if (!token || !record.tmdbId) return null;
+  if (record.isAnime && record.card.episodeNumber != null) {
+    const animeTitle = record.card.parentTitle || record.card.name;
+    const animeMarkers = await animeSkipMarkers(animeTitle, record.card.episodeNumber);
+    if (animeMarkers && (animeMarkers.intro || animeMarkers.outro)) return animeMarkers;
+  }
+  const accessToken = await token();
+  if (!accessToken || !record.tmdbId) return null;
   const episode = record.card.kind === "episode";
-  const ids = await tmdb(`/${episode ? "tv" : "movie"}/${record.tmdbId}/external_ids`, token);
+  const ids = await tmdb(`/${episode ? "tv" : "movie"}/${record.tmdbId}/external_ids`, accessToken);
   if (!ids.imdb_id) return { intro: null, recap: null, outro: null };
   const params = new URLSearchParams({ imdb_id: ids.imdb_id });
   if (episode) { params.set("season", String(record.card.seasonNumber)); params.set("episode", String(record.card.episodeNumber)); }
@@ -139,23 +200,29 @@ async function markers(record: LocalRecord) {
   } finally { clearTimeout(timer); }
 }
 
+async function deleteFile(uri: string): Promise<void> {
+  try {
+    const file = new File(uri);
+    if (file.exists) {
+      await file.delete();
+    }
+  } catch (err) {
+    console.warn("Could not delete file:", uri, err);
+  }
+}
+
 export const localLibrary = new LocalLibrary({
-  async load() {
-    // Unlike the generic preference reader, storage errors must not reset a library.
-    const json = await AsyncStorage.getItem(databaseKey);
-    return json ? JSON.parse(json) as LocalState : null;
-  },
-  save: state => AsyncStorage.setItem(databaseKey, JSON.stringify(state)), walk, metadata, markers,
+  load: loadLibrary, save: saveLibrary, walk, metadata, markers, deleteFile,
 });
 async function subtitleTracks(fileId: number): Promise<SubtitleTrack[]> {
   const record = localLibrary.record(fileId);
   const root = localLibrary.state.roots.find(r => r.uri === record.root)!;
-  const files = await walk(record.file.directoryUri ? { ...root, uri: record.file.directoryUri } : root);
+  const files = root.singleFile ? [] : await walk(record.file.directoryUri ? { ...root, uri: record.file.directoryUri } : root);
   const stem = (record.file.directoryUri ? record.file.name : record.file.relativePath).replace(/\.[^.]+$/, "");
-  return files.filter(f => /\.(srt|vtt)$/i.test(f.name)
+  return [...(record.externalSubtitles || []), ...files.filter(f => /\.(srt|vtt)$/i.test(f.name)
     && (f.relativePath.replace(/\.[^.]+$/, "") === stem || f.relativePath.startsWith(stem + ".")))
-    .map(f => ({ track: f.uri, kind: "sidecar", title: f.name,
-      language: f.name.match(/\.([a-z]{2,3})\.(?:srt|vtt)$/i)?.[1] || null }));
+    .map(f => ({ track: f.uri, kind: "sidecar" as const, title: f.name,
+      language: f.name.match(/\.([a-z]{2,3})\.(?:srt|vtt)$/i)?.[1] || null }))];
 }
 export const localApi = new LocalApi(localLibrary, uri => new File(uri).text(), subtitleTracks);
 localLibrary.subscribe(invalidateLocalResources);
@@ -176,61 +243,32 @@ export const localRuntime = {
     restored = true;
   },
   async refresh() { requests.clear(); await localLibrary.scan(); },
+  clearMetadataCache() { requests.clear(); },
+  async refreshMetadata() { requests.clear(); await localLibrary.refreshMetadata(); },
+  async testMetadata() {
+    const key = await token();
+    if (!key) throw new Error("TMDB is not configured in this build.");
+    requests.clear();
+    await tmdb("/configuration", key);
+  },
+  async pickSubtitle(fileId: number): Promise<SubtitleTrack | null> {
+    const picked = await File.pickFileAsync({});
+    if (picked.canceled) return null;
+    const file = picked.result;
+    if (!/\.(srt|vtt)$/i.test(file.name)) throw new Error("Choose an SRT or VTT subtitle file.");
+    const directory = new Directory(Paths.document, "external-subtitles");
+    directory.create({ intermediates: true, idempotent: true });
+    const destination = new File(directory, `${fileId}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`);
+    await file.copy(destination);
+    const track: SubtitleTrack = { track: destination.uri, kind: "sidecar", title: file.name, language: null };
+    await localLibrary.addSubtitle(fileId, track);
+    return track;
+  },
   Settings: LocalSettings,
   Thumbnail: LocalThumbnail,
+  getAttentionCount: () =>
+    localLibrary.state.records.filter(r => r.card.matchStatus !== "matched" || !!r.metadataError).length + localLibrary.issues.length,
+  getAttentionFingerprint: () =>
+    `${localLibrary.issues.join("|")}::${localLibrary.state.records.filter(r => r.card.matchStatus !== "matched" || !!r.metadataError).map(r => r.id).sort().join(",")}`,
+  subscribe: (fn: () => void) => localLibrary.subscribe(fn),
 };
-
-function LocalSettings({ back }: { back?: () => void }) {
-  const [, update] = useState(0);
-  const [token, setToken] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const { preferences, updatePreferences } = useClient();
-  useEffect(() => localLibrary.subscribe(() => update(n => n + 1)), []);
-  const action = async (fn: () => Promise<void>) => {
-    setBusy(true); setMessage("");
-    try { await fn(); } catch (e) { setMessage(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
-  };
-  const add = async (kind: LocalRoot["kind"]) => {
-    const folder = await Directory.pickDirectoryAsync();
-    await localLibrary.addRoot({ uri: folder.uri, name: displayName(folder.uri), kind });
-  };
-  return <ScrollView contentContainerStyle={{ padding: 24, gap: 18, paddingBottom: 100 }}>
-    {back && <Button label="Back" onPress={back} />}
-    <Heading>On this device</Heading>
-    <Label>Videos stay in their original folders. Your library, posters and watch progress are saved on this device.</Label>
-    {!!message && <Notice message={message} />}
-    {localLibrary.issues.map(issue => <Notice key={issue} message={issue} />)}
-    <Button label="Add movie folder" disabled={busy} onPress={() => void action(() => add("movies"))} />
-    <Button label="Add series folder" disabled={busy} onPress={() => void action(() => add("tv"))} />
-    {localLibrary.state.roots.map(root => <View key={root.uri} style={{ gap: 8 }}>
-      <Text style={{ color: "white", fontSize: 16 }}>{root.name} · {root.kind}</Text>
-      <Button label="Remove from library" disabled={busy} onPress={() => Alert.alert("Remove this folder?", "The original files will stay untouched.", [
-        { text: "Cancel" }, { text: "Remove", onPress: () => void action(() => localLibrary.removeRoot(root.uri)) },
-      ])} />
-    </View>)}
-    <Button label={localLibrary.scanning ? "Checking files and metadata…" : "Check files and refresh metadata"}
-      disabled={busy || localLibrary.scanning} onPress={() => void action(() => localRuntime.refresh())} />
-    <Heading>Movie and series information</Heading>
-    <Label>Add your TMDB API read access token to fetch titles, posters and cast. Cached information remains available offline.</Label>
-    <TextInput value={token} onChangeText={setToken} placeholder="TMDB read access token" placeholderTextColor="#999"
-      secureTextEntry autoCapitalize="none" autoCorrect={false} accessibilityLabel="TMDB read access token"
-      style={{ color: "white", backgroundColor: "#202020", borderRadius: 12, padding: 16 }} />
-    <Button label="Save token and refresh" disabled={busy || !token.trim()} onPress={() => void action(async () => {
-      if (online) await tmdb("/configuration", token.trim());
-      await SecureStore.setItemAsync(tokenKey, token.trim()); setToken(""); requests.clear();
-      for (const r of localLibrary.state.records) r.metadataAt = 0;
-      await localLibrary.scan(); setMessage("Token saved. Metadata will refresh when online.");
-    })} />
-    <Label>This product uses the TMDB API but is not endorsed or certified by TMDB.</Label>
-    <Heading>Playback</Heading>
-    <Label>Original files only. No conversion or extra video copies. Format support depends on this device.</Label>
-    <Button label={`Subtitles: ${preferences.autoSubtitles ? "automatic" : "off"}`}
-      onPress={() => updatePreferences({ autoSubtitles: !preferences.autoSubtitles })} />
-    <Button label={`Auto skip intros: ${preferences.autoSkip ? "on" : "off"}`}
-      onPress={() => updatePreferences({ autoSkip: !preferences.autoSkip })} />
-    <Button label={`Next episode: ${preferences.autoNext ? "automatic" : "manual"}`}
-      onPress={() => updatePreferences({ autoNext: !preferences.autoNext })} />
-  </ScrollView>;
-}

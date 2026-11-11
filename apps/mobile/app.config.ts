@@ -1,25 +1,24 @@
 import type { ExpoConfig } from "expo/config";
+import packageInfo from "./package.json";
 const receiverAppId = process.env.PLEXY_CAST_RECEIVER_ID || "";
 const castReceiverEnabled =
   /^[A-Fa-f0-9]{8}$/.test(receiverAppId) && receiverAppId !== "CC1AD845";
+const buildNumber = Number(
+  process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
+);
 const config: ExpoConfig = {
   name: "Plexy",
   slug: "plexy-mobile",
-  version: "1.0.2",
+  version: packageInfo.version,
   platforms: ["android"],
   scheme: "plexy-mobile",
   userInterfaceStyle: "dark",
   icon: "../../build/icon.png",
   backgroundColor: "#080808",
   orientation: "default",
-  splash: {
-    image: "./assets/splashscreen.png",
-    resizeMode: "contain",
-    backgroundColor: "#080808",
-  },
   android: {
     package: "app.plexy.mobile",
-    versionCode: 50000 + Number(process.env.GITHUB_RUN_NUMBER || 1),
+    versionCode: 50000 + buildNumber,
     allowBackup: false,
     adaptiveIcon: {
       foregroundImage: "../../build/icon.png",
@@ -34,9 +33,12 @@ const config: ExpoConfig = {
   },
   extra: {
     castReceiverEnabled,
-    buildNumber: Number(process.env.GITHUB_RUN_NUMBER || 1),
+    tmdbToken: process.env.EXPO_PUBLIC_TMDB_TOKEN || process.env.TMDB_TOKEN || process.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || "",
+    buildNumber,
   },
   plugins: [
+    "expo-sqlite",
+    ["expo-splash-screen", { image: "./assets/splash-icon.png", backgroundColor: "#000000", imageWidth: 132 }],
     [
       "react-native-google-cast",
       {

@@ -28,7 +28,7 @@ import { Connect } from "./Connect";
 import { ClientProvider, useClient, useDownloads, type NativePlatform } from "./context";
 import { sessionStore } from "./storage";
 import { type Session, type ItemCard } from "./api";
-import { Button, Heading, Icon, Label, Loading, Notice, PlexyLogo, UserAvatar, type IconName } from "./ui";
+import { Button, Heading, Icon, Label, Loading, Notice, UserAvatar, type IconName } from "./ui";
 import {
   HomeScreen,
   LibraryScreen,
@@ -57,6 +57,7 @@ const mobileTabs: Array<{ id: Tab; label: string; icon: IconName }> = [
   { id: "home", label: "Home", icon: "home" },
   { id: "libraries", label: "Libraries", icon: "library" },
   { id: "search", label: "Search", icon: "search" },
+  { id: "settings", label: "Settings", icon: "settings" },
 ];
 
 const tvTabs: Array<{ id: Tab; label: string; icon: IconName }> = [
@@ -86,28 +87,31 @@ function PageTransition({
       setMounted(true);
       if (isTv) {
         anim.setValue(1);
-      } else {
-        Animated.timing(anim, {
-          toValue: 1,
-          duration: isDetail ? 200 : 160,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
-          useNativeDriver: true,
-        }).start();
+        return;
       }
+      // Start from the incoming edge so a pushed page reads as arriving,
+      // not as a hard cut that pops over the tab.
+      anim.setValue(0);
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: isDetail ? 240 : 170,
+        easing: Easing.bezier(0.22, 1, 0.36, 1),
+        useNativeDriver: true,
+      }).start();
     } else {
       if (isTv) {
         anim.setValue(0);
         setMounted(false);
-      } else {
-        Animated.timing(anim, {
-          toValue: 0,
-          duration: 130,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
-          useNativeDriver: true,
-        }).start(({ finished }) => {
-          if (finished) setMounted(false);
-        });
+        return;
       }
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: isDetail ? 150 : 120,
+        easing: Easing.bezier(0.4, 0, 1, 1),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
     }
   }, [visible, isDetail, anim, isTv]);
 
@@ -123,10 +127,12 @@ function PageTransition({
           opacity: anim,
           transform: [
             {
-              scale: anim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.97, 1],
-              }),
+              translateX: isDetail
+                ? anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [34, 0],
+                  })
+                : 0,
             },
           ],
         },
@@ -328,6 +334,21 @@ function Shell({
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [toggleFocused, setToggleFocused] = useState(false);
+  const [attentionCount, setAttentionCount] = useState(0);
+  const [attentionFingerprint, setAttentionFingerprint] = useState("");
+  const [dismissedFingerprint, setDismissedFingerprint] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!platform.local?.subscribe) return;
+    const update = () => {
+      const count = platform.local?.getAttentionCount?.() ?? 0;
+      const fp = platform.local?.getAttentionFingerprint?.() ?? "";
+      setAttentionCount(count);
+      setAttentionFingerprint(fp);
+    };
+    update();
+    return platform.local.subscribe(update);
+  }, [platform.local]);
 
   const current = routes[routes.length - 1];
 
@@ -473,14 +494,13 @@ function Shell({
     if (screen === "settings") {
       if (platform.local) {
         const LocalSettings = platform.local.Settings;
-        return <LocalSettings back={() => switchTab("home")} />;
+        return <LocalSettings />;
       }
       return (
         <SettingsScreen
           connect={connect}
           signout={signout}
           sessionChanged={sessionChanged}
-          back={!isTv ? () => switchTab("home") : undefined}
         />
       );
     }
@@ -547,23 +567,6 @@ function Shell({
     </FocusGroup>
   );
 
-  // ── Mobile header (home tab only) ────────────────────────────────────────────
-  const mobileHeader = tab === "home" && !current && (
-    <View style={styles.mobileHeader}>
-      <PlexyLogo size={22} showText={true} />
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Settings"
-          onPress={() => switchTab("settings")}
-          style={{ padding: 4 }}
-        >
-          <UserAvatar name={displayUsername} size={32} />
-        </Pressable>
-      </View>
-    </View>
-  );
-
   // ── Mobile bottom tab bar ────────────────────────────────────────────────────
   const MobileTabBar = () => {
     const bottomPadding = Math.max(insets.bottom, 8);
@@ -605,6 +608,9 @@ function Shell({
                   size={24}
                   color={isActive ? "#000000" : INACTIVE_COLOR}
                 />
+                {item.id === "settings" && attentionCount > 0 && (
+                  <View style={styles.tabBadgeDot} />
+                )}
               </View>
               <Text
                 style={[
@@ -647,6 +653,35 @@ function Shell({
             isTv && styles.contentAreaTv,
           ]}
         >
+          {/* Dismissible library attention banner */}
+          {attentionCount > 0 && attentionFingerprint !== dismissedFingerprint && !current && tab !== "settings" && (
+            <View style={styles.attentionBanner}>
+              <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={styles.attentionDot} />
+                <Text style={styles.attentionBannerText}>
+                  {attentionCount} title{attentionCount > 1 ? "s" : ""} in your library need attention
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Pressable
+                  onPress={() => switchTab("settings")}
+                  style={styles.attentionBannerAction}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.attentionBannerActionText}>Review</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setDismissedFingerprint(attentionFingerprint)}
+                  hitSlop={10}
+                  accessibilityLabel="Dismiss notice"
+                  accessibilityRole="button"
+                >
+                  <Icon name="close" size={16} color="rgba(255,255,255,0.7)" />
+                </Pressable>
+              </View>
+            </View>
+          )}
+
           {/* Main content: Offline mode vs Online tab screens */}
           {!isOnline && !current ? (
             !hasCompletedDownloads ? (
@@ -695,9 +730,6 @@ function Shell({
             )
           ) : (
             <>
-              {/* Mobile: contextual header */}
-              {!isTv && mobileHeader}
-
               {/* Offline catalog banner */}
               {cachedCatalog && isOnline && (
                 <Label muted style={{ padding: 12 }}>
@@ -791,60 +823,6 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
 
-  // ── Mobile header ────────────────────────────────────────────────────────────
-  mobileHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: colors.canvas,
-  },
-  mobileHeaderOriginal: {
-    fontSize: 13,
-    color: colors.muted,
-    fontFamily: "Archivo_400Regular",
-  },
-  mobileHeaderBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  mobileAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: BRAND_BLUE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  downloadBadge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    backgroundColor: BRAND_BLUE,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 3,
-  },
-  downloadBadgeText: {
-    color: "#fff",
-    fontSize: 9,
-    fontFamily: "Archivo_700Bold",
-  },
-  mobileAvatarText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: ACTIVE_COLOR,
-    fontFamily: "Archivo_700Bold",
-  },
-
   // ── Mobile bottom tab bar ─────────────────────────────────────────────────
   tabBar: {
     flexDirection: "row",
@@ -893,6 +871,53 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 9,
     fontFamily: "Archivo_700Bold",
+  },
+  tabBadgeDot: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#f59e0b",
+    borderWidth: 1.5,
+    borderColor: "#0b0b0b",
+  },
+  attentionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    borderColor: "rgba(245, 158, 11, 0.35)",
+    borderWidth: 1,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  attentionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#f59e0b",
+  },
+  attentionBannerText: {
+    color: "#fef3c7",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  attentionBannerAction: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "#f59e0b",
+    borderRadius: 6,
+  },
+  attentionBannerActionText: {
+    color: "#000",
+    fontSize: 12,
+    fontWeight: "700",
   },
   tabLabel: {
     fontSize: 12,

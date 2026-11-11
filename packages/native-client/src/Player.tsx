@@ -1,10 +1,13 @@
+import { localSegments } from "../../local-library/src/library";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
   AppState,
   BackHandler,
   findNodeHandle,
   Image,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -41,12 +44,20 @@ import {
   PictureInPicture,
   Volume2,
   VolumeX,
+  Lock,
+  Unlock,
+  Minus,
+  Plus,
+  Crop,
+  ZoomIn,
+  MoveHorizontal,
+  ListVideo,
 } from "lucide-react-native";
 import { useClient } from "./context";
 import { usePlayerOrientation } from "./use-player-orientation";
 import { useResource } from "./hooks";
 import { Button, Heading, Label, Loading, Notice } from "./ui";
-import { colors, fonts, timeLabel } from "./theme";
+import { fonts, timeLabel } from "./theme";
 import {
   parseHlsVariants,
   parsePreviews,
@@ -56,7 +67,7 @@ import {
   type Preview,
 } from "./vtt";
 import type { DownloadEntry } from "./downloads";
-import type { Playability, SkipSegments } from "./api";
+import type { ItemCard, Playability, SkipSegments } from "./api";
 
 // ---------------------------------------------------------------------------
 // Player Icon components — high-contrast crisp Lucide icons
@@ -136,6 +147,36 @@ function IconFullscreen({ size = 22, color = "#fff" }: { size?: number; color?: 
   return <Maximize size={size} color={color} strokeWidth={2} />;
 }
 
+function IconFitState({ mode, zoom, size = 20, color = "#fff" }: { mode: "contain" | "cover" | "fill"; zoom: number; size?: number; color?: string }) {
+  if (mode === "cover") {
+    return <Crop size={size} color={color} strokeWidth={2.2} />;
+  }
+  if (mode === "fill") {
+    return <MoveHorizontal size={size} color={color} strokeWidth={2.2} />;
+  }
+  if (zoom === 1.05) {
+    return (
+      <View style={{ width: size + 6, height: size + 6, alignItems: "center", justifyContent: "center" }}>
+        <ZoomIn size={size} color={color} strokeWidth={2} />
+        <View style={{ position: "absolute", bottom: -2, right: -4, backgroundColor: "#3b82f6", borderRadius: 4, paddingHorizontal: 2, paddingVertical: 0.5 }}>
+          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>105</Text>
+        </View>
+      </View>
+    );
+  }
+  if (zoom === 1.2 || zoom > 1) {
+    return (
+      <View style={{ width: size + 6, height: size + 6, alignItems: "center", justifyContent: "center" }}>
+        <ZoomIn size={size} color={color} strokeWidth={2} />
+        <View style={{ position: "absolute", bottom: -2, right: -4, backgroundColor: "#8b5cf6", borderRadius: 4, paddingHorizontal: 2, paddingVertical: 0.5 }}>
+          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>120</Text>
+        </View>
+      </View>
+    );
+  }
+  return <Maximize size={size} color={color} strokeWidth={2.2} />;
+}
+
 function IconMinimize({ size = 22, color = "#fff" }: { size?: number; color?: string }) {
   return <Minimize size={size} color={color} strokeWidth={2} />;
 }
@@ -198,15 +239,17 @@ function CircleBtn({
   const isTv = Platform.isTV;
   const isPlayBtn = focusId === "play";
 
-  // Clearly denoted TV focus: 3.5px high-contrast ring + scale lift
-  const ringWidth = focused ? (isTv ? 3.5 : 2) : 0;
-  const ringColor = focused ? (isPlayBtn || active ? "#3B7DF9" : "#ffffff") : "transparent";
+  // Focus rings are a remote-control affordance. On touch screens a
+  // Pressable can take focus on tap, which used to leave a blue halo
+  // around the play button. Keep touch controls clean.
+  const ringWidth = isTv && focused ? 3.5 : 0;
+  const ringColor = focused ? "#ffffff" : "transparent";
   const scale = isTv && focused ? 1.14 : 1;
   const currentBg = (isTv && focused && isPlayBtn)
     ? "#ffffff"
     : active
       ? activeBg
-      : focused
+      : focused && isTv
         ? "rgba(255,255,255,0.36)"
         : bg;
 
@@ -360,8 +403,74 @@ function Playback({
   const [fullscreen, setFullscreen] = useState(true);
   const [visible, setVisible] = useState(true);
   const [menu, setMenu] = useState<
-    "settings" | "audio" | "captions" | "quality" | null
+    "settings" | "audio" | "captions" | "quality" | "episodes" | null
   >(null);
+  const drawerAnim = useRef(new Animated.Value(520)).current;
+  useEffect(() => {
+    if (menu != null) {
+      drawerAnim.setValue(520);
+      Animated.timing(drawerAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [menu]);
+
+  const isTvShow = Boolean(
+    manifest.parentItemId ||
+    manifest.seasonNumber != null ||
+    manifest.episodeNumber != null ||
+    manifest.episodes?.length,
+  );
+  const [episodesList, setEpisodesList] = useState<ItemCard[]>(manifest.episodes || []);
+  useEffect(() => {
+    if (manifest.episodes?.length) {
+      setEpisodesList(manifest.episodes);
+      return;
+    }
+    const parentId = manifest.parentPublicId || manifest.parentItemId;
+    if (parentId) {
+      let live = true;
+      api.detail(parentId)
+        .then((detail) => {
+          if (live && detail?.episodes?.length) {
+            setEpisodesList(detail.episodes);
+          }
+        })
+        .catch(() => {});
+      return () => { live = false; };
+    }
+  }, [api, manifest.episodes, manifest.parentPublicId, manifest.parentItemId]);
+
+  const sortedEpisodes = React.useMemo(() => {
+    return [...episodesList].sort((a, b) => {
+      const sDiff = (a.seasonNumber ?? 1) - (b.seasonNumber ?? 1);
+      if (sDiff !== 0) return sDiff;
+      return (a.episodeNumber ?? 1) - (b.episodeNumber ?? 1);
+    });
+  }, [episodesList]);
+
+  const currentEpIndex = sortedEpisodes.findIndex(
+    (ep) =>
+      ep.fileId === manifest.fileId ||
+      ep.id === manifest.itemId ||
+      (ep.seasonNumber === manifest.seasonNumber &&
+        ep.episodeNumber === manifest.episodeNumber),
+  );
+
+  const episodesScrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (menu === "episodes" && currentEpIndex > 0) {
+      const timer = setTimeout(() => {
+        episodesScrollRef.current?.scrollTo({
+          y: Math.max(0, currentEpIndex * 68),
+          animated: false,
+        });
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [menu, currentEpIndex]);
   const [subtitle, setSubtitle] = useState<string | null>(() =>
     preferences.autoSubtitles
       ? initial.tracks?.find((t) => t.language === preferences.subtitleLanguage)
@@ -385,9 +494,18 @@ function Playback({
   const [timelineHandle, setTimelineHandle] = useState<number | undefined>();
   const timeline = useRef<View>(null);
   const [casting, setCasting] = useState(false);
-  const [fitMode, setFitMode] = useState<"contain" | "cover" | "fill" | "zoom">("contain");
+  type FitMode = "contain" | "cover" | "fill";
+  const [fitMode, setFitMode] = useState<FitMode>("contain");
+  const [zoom, setZoom] = useState(1);
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<any>(null);
+
+  // Screen lock: controls ignore input until the viewer unlocks.
+  const [locked, setLocked] = useState(false);
+  const [unlockHint, setUnlockHint] = useState(false);
+  const lockedRef = useRef(false);
+  lockedRef.current = locked;
+  const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showFitToast = (label: string) => {
     setFitToast(label);
@@ -395,18 +513,78 @@ function Playback({
     toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
   };
 
-  const cycleFitMode = () => {
-    const modes: Array<{ mode: "contain" | "cover" | "fill" | "zoom"; label: string }> = [
-      { mode: "contain", label: "Best Fit" },
-      { mode: "cover", label: "Crop to Fill" },
-      { mode: "fill", label: "Stretch to Fill" },
-      { mode: "zoom", label: "125% Zoom" },
-    ];
-    const currentIndex = modes.findIndex((m) => m.mode === fitMode);
-    const next = modes[(currentIndex + 1) % modes.length]!;
-    setFitMode(next.mode);
-    showFitToast(next.label);
+  const applyFit = (mode: FitMode, scale: number) => {
+    setFitMode(mode);
+    setZoom(scale);
+    showFitToast(
+      scale === 1
+        ? mode === "contain"
+          ? "Best fit"
+          : mode === "cover"
+            ? "Crop to fill"
+            : "Stretch to fill"
+        : `${Math.round(scale * 100)}% zoom`,
+    );
   };
+
+  const FIT_PRESETS: Array<{ mode: FitMode; zoom: number; label: string }> = [
+    { mode: "contain", zoom: 1, label: "Best fit" },
+    { mode: "contain", zoom: 1.05, label: "105% zoom" },
+    { mode: "contain", zoom: 1.2, label: "120% zoom" },
+    { mode: "cover", zoom: 1, label: "Crop to fill" },
+    { mode: "fill", zoom: 1, label: "Stretch to fill" },
+  ];
+
+  const cycleFitMode = () => {
+    const currentIndex = FIT_PRESETS.findIndex(
+      (preset) => preset.mode === fitMode && preset.zoom === zoom,
+    );
+    const next = FIT_PRESETS[(currentIndex + 1) % FIT_PRESETS.length]!;
+    applyFit(next.mode, next.zoom);
+  };
+
+  const initialPinchDist = useRef<number | null>(null);
+  const initialZoom = useRef(1);
+  const lastTapTime = useRef(0);
+
+  const pinchPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
+      onPanResponderGrant: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          const t0 = touches[0]!;
+          const t1 = touches[1]!;
+          const dx = t0.pageX - t1.pageX;
+          const dy = t0.pageY - t1.pageY;
+          initialPinchDist.current = Math.hypot(dx, dy);
+          initialZoom.current = zoom;
+        }
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2 && initialPinchDist.current && initialPinchDist.current > 0) {
+          const t0 = touches[0]!;
+          const t1 = touches[1]!;
+          const dx = t0.pageX - t1.pageX;
+          const dy = t0.pageY - t1.pageY;
+          const currentDist = Math.hypot(dx, dy);
+          const scaleFactor = currentDist / initialPinchDist.current;
+          const newZoom = Math.min(3.0, Math.max(0.75, Math.round(initialZoom.current * scaleFactor * 100) / 100));
+          setZoom(newZoom);
+          showFitToast(`${Math.round(newZoom * 100)}% zoom`);
+        }
+      },
+      onPanResponderRelease: () => {
+        initialPinchDist.current = null;
+      },
+      onPanResponderTerminate: () => {
+        initialPinchDist.current = null;
+      },
+    })
+  ).current;
+
   const [muted, setMuted] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -465,8 +643,26 @@ function Playback({
     [api, manifest.itemId, progress],
   );
   const reveal = () => {
+    if (lockedRef.current) return;
     lastInteraction.current = Date.now();
     setVisible(true);
+  };
+  const lockScreen = () => {
+    setMenu(null);
+    setVisible(false);
+    setUnlockHint(false);
+    setLocked(true);
+  };
+  const unlockScreen = () => {
+    setLocked(false);
+    setUnlockHint(false);
+    lastInteraction.current = Date.now();
+    setVisible(true);
+  };
+  const showUnlockHint = () => {
+    if (unlockTimer.current) clearTimeout(unlockTimer.current);
+    setUnlockHint(true);
+    unlockTimer.current = setTimeout(() => setUnlockHint(false), 2600);
   };
   const seek = (seconds: number) => {
     if (casting) return;
@@ -497,6 +693,8 @@ function Playback({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (unlockTimer.current) clearTimeout(unlockTimer.current);
+      if (toastTimeout.current) clearTimeout(toastTimeout.current);
     };
   }, []);
   useEffect(() => {
@@ -605,10 +803,11 @@ function Playback({
       setSkips(offline.skips || { intro: null, recap: null, outro: null });
       return;
     }
-    void api
-      .skips(manifest.fileId)
-      .then(setSkips)
-      .catch(() => {});
+    let live = true;
+    setSkips({ intro: null, recap: null, outro: null });
+    autoSkipEnd.current = -1;
+    void api.skips(manifest.fileId).then(value => { if (live) setSkips(value); }).catch(() => {});
+    return () => { live = false; };
   }, [api, manifest.fileId, offline]);
   useEffect(() => {
     const controller = new AbortController();
@@ -682,16 +881,17 @@ function Playback({
       .catch(() => {});
     return () => controller.abort();
   }, [api, manifest.fileId, manifest.path, choice.audio, offline]);
+  const validatedSkips = platform.local ? localSegments(skips, duration || null) : skips;
   useEffect(() => {
-    const active = Object.values(skips).find(
+    const active = Object.values(validatedSkips).find(
       (segment) =>
         segment && position >= segment.start && position < segment.end,
     );
-    if (preferences.autoSkip && active && active.end !== autoSkipEnd.current) {
+    if (scrub == null && status !== "loading" && !resume && preferences.autoSkip && active && active.end !== autoSkipEnd.current) {
       autoSkipEnd.current = active.end;
       seek(active.end);
     }
-  }, [position, preferences.autoSkip, skips]);
+  }, [position, preferences.autoSkip, skips, duration, scrub, status, resume]);
   useEffect(() => {
     if (
       !ended ||
@@ -754,6 +954,10 @@ function Playback({
   };
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (lockedRef.current) {
+        unlockScreen();
+        return true;
+      }
       if (menu) {
         setMenu(null);
         return true;
@@ -869,10 +1073,11 @@ function Playback({
     }
     reveal();
   };
-  const activeSkip = Object.entries(skips).find(
+  const activeSkip = Object.entries(validatedSkips).find(
     ([, segment]) =>
       segment && position >= segment.start && position < segment.end,
   );
+  const skipLabel = activeSkip?.[0] === "outro" ? "credits" : activeSkip?.[0];
   const previewTime = scrub ?? position;
   const preview = previews.find(
     (p) => previewTime >= p.start && previewTime < p.end,
@@ -914,6 +1119,7 @@ function Playback({
             ? StyleSheet.absoluteFill
             : { width: "100%", aspectRatio: 16 / 9 }
         }
+        {...(!platform.tv && !locked ? pinchPanResponder.panHandlers : {})}
       >
         <VideoView
           ref={video}
@@ -931,9 +1137,9 @@ function Playback({
           }}
           style={[
             StyleSheet.absoluteFill,
-            fitMode === "zoom" && { transform: [{ scale: 1.25 }] },
+            zoom !== 1 && { transform: [{ scale: zoom }] },
           ]}
-          contentFit={fitMode === "zoom" ? "contain" : (fitMode as any)}
+          contentFit={fitMode}
         />
 
         {/* Fit mode HUD Toast */}
@@ -971,16 +1177,59 @@ function Playback({
           </View>
         )}
 
-        {/* Tap-to-toggle controls */}
+        {/* Tap-to-toggle controls & double tap to toggle zoom */}
         <Pressable
           accessible={false}
           focusable={false}
           onPress={() => {
+            const now = Date.now();
+            if (now - lastTapTime.current < 300) {
+              if (zoom !== 1) {
+                applyFit("contain", 1);
+              } else {
+                applyFit("cover", 1);
+              }
+              lastTapTime.current = 0;
+              return;
+            }
+            lastTapTime.current = now;
             if (visible) setVisible(false);
             else reveal();
           }}
           style={StyleSheet.absoluteFill}
         />
+
+        {/* Screen lock: swallow every touch until the viewer unlocks */}
+        {locked && (
+          <>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={showUnlockHint}
+              accessibilityRole="button"
+              accessibilityLabel="Screen locked. Tap to show the unlock button."
+            />
+            {unlockHint && (
+              <View style={styles.unlockOverlay} pointerEvents="box-none">
+                <Pressable
+                  onPress={unlockScreen}
+                  accessibilityRole="button"
+                  accessibilityLabel="Unlock screen"
+                  hasTVPreferredFocus={platform.tv}
+                  style={({ pressed }) => [
+                    styles.unlockPill,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <Unlock size={18} color="#000000" strokeWidth={2.4} />
+                  <Text style={styles.unlockPillText}>Tap to unlock</Text>
+                </Pressable>
+              </View>
+            )}
+            <View style={styles.lockIndicator} pointerEvents="none">
+              <Lock size={13} color="rgba(255,255,255,0.7)" strokeWidth={2.2} />
+            </View>
+          </>
+        )}
 
         {/* Subtitle overlay */}
         {!!text && (
@@ -1011,15 +1260,7 @@ function Playback({
           </View>
         )}
 
-        {/* Loading spinner */}
-        {status === "loading" && (
-          <View
-            pointerEvents="none"
-            style={{ ...StyleSheet.absoluteFill, justifyContent: "center" }}
-          >
-            <Loading />
-          </View>
-        )}
+
       </View>
 
       {/* ── Inline (non-fullscreen) title + simple controls ── */}
@@ -1161,7 +1402,7 @@ function Playback({
       )}
 
       {/* ── Fullscreen overlay controls ── */}
-      {show && layoutFull && (
+      {show && layoutFull && !locked && (
         <FocusGroup style={StyleSheet.absoluteFill}>
           <View
             style={StyleSheet.absoluteFill}
@@ -1361,7 +1602,37 @@ function Playback({
                   size={44}
                   bg="rgba(0,0,0,0.45)"
                 >
-                  <Maximize size={20} color="#ffffff" />
+                  <IconFitState mode={fitMode} zoom={zoom} size={20} />
+                </CircleBtn>
+              )}
+
+              {isTvShow && sortedEpisodes.length > 0 && (
+                <CircleBtn
+                  onPress={() => setMenu("episodes")}
+                  size={platform.tv ? 36 : 44}
+                  active={menu === "episodes"}
+                  bg="rgba(0,0,0,0.45)"
+                  focusId="episodes"
+                >
+                  {({ focused }) => (
+                    <View style={{ alignItems: "center", justifyContent: "center" }}>
+                      <ListVideo
+                        size={platform.tv ? 18 : 20}
+                        color={menu === "episodes" ? "#000000" : focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                      />
+                      <Text
+                        style={{
+                          position: "absolute",
+                          bottom: -2,
+                          fontSize: 8,
+                          fontFamily: fonts.bold,
+                          color: menu === "episodes" ? "#000000" : "#ffffff",
+                        }}
+                      >
+                        {sortedEpisodes.length}
+                      </Text>
+                    </View>
+                  )}
                 </CircleBtn>
               )}
 
@@ -1379,6 +1650,21 @@ function Playback({
                   />
                 )}
               </CircleBtn>
+
+              <CircleBtn
+                onPress={lockScreen}
+                size={platform.tv ? 36 : 44}
+                bg="rgba(0,0,0,0.45)"
+                focusId="lock"
+              >
+                {({ focused }) => (
+                  <Lock
+                    size={platform.tv ? 18 : 21}
+                    color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
+                    strokeWidth={2}
+                  />
+                )}
+              </CircleBtn>
             </View>
           </View>
 
@@ -1390,8 +1676,11 @@ function Playback({
               alignItems: "center",
               flexDirection: "row",
               gap: platform.tv ? 32 : 28,
+              opacity: status === "loading" || scrub != null || ended ? 0 : 1,
             }}
-            pointerEvents="box-none"
+            pointerEvents={status === "loading" || scrub != null || ended ? "none" : "box-none"}
+            accessibilityElementsHidden={status === "loading" || scrub != null || ended}
+            importantForAccessibility={status === "loading" || scrub != null || ended ? "no-hide-descendants" : "auto"}
           >
             {/* Previous episode (if any) */}
             {!!(manifest as any).previousFileId && (
@@ -1457,6 +1746,7 @@ function Playback({
               gap: 6,
             }}
           >
+            {status === "loading" && scrub == null && <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Loading video…</Text>}
             {/* Error / messages */}
             {(!!error || (!offline && choice.path === "unsupported")) && (
               <Notice
@@ -1559,7 +1849,7 @@ function Playback({
                   zIndex: 20,
                 }}
               >
-                {LocalThumbnail && <LocalThumbnail key={manifest.fileId} player={player} time={scrub} />}
+                {LocalThumbnail && <LocalThumbnail key={manifest.fileId} player={player} time={scrub} fileId={manifest.fileId} />}
                 {preview && (
                   <View
                     style={{
@@ -1827,7 +2117,7 @@ function Playback({
           </View>
 
           {/* Skip segment pill (bottom-right) */}
-          {activeSkip && (
+          {platform.tv && activeSkip && scrub == null && status !== "loading" && !resume && (
             <View
               style={{
                 position: "absolute",
@@ -1838,7 +2128,7 @@ function Playback({
               <Pressable
                 onPress={() => seek(activeSkip[1]!.end)}
                 accessibilityRole="button"
-                accessibilityLabel={`Skip ${activeSkip[0]}`}
+                accessibilityLabel={`Skip ${skipLabel}`}
                 style={(s: any) => [
                   styles.skipPill,
                   s.focused && Platform.isTV && styles.skipPillFocusedTv,
@@ -1846,13 +2136,22 @@ function Playback({
                 ]}
               >
                 <Text style={styles.skipPillText}>
-                  Skip {activeSkip[0]}
+                  Skip {skipLabel}
                 </Text>
               </Pressable>
             </View>
           )}
           </View>
         </FocusGroup>
+      )}
+
+      {!platform.tv && !locked && activeSkip && scrub == null && status !== "loading" && !resume && !menu && !ended && (
+        <View style={{position:"absolute",right:20,bottom:layoutFull ? Math.max(insets.bottom,16) + (show ? 150 : 32) : 92}}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Skip ${skipLabel}`}
+            onPress={() => seek(activeSkip[1]!.end)} style={({pressed}) => [styles.skipPill,pressed && {opacity:.85}]}>
+            <Text style={styles.skipPillText}>Skip {skipLabel}</Text>
+          </Pressable>
+        </View>
       )}
 
       {/* ── Resume prompt ── */}
@@ -1898,7 +2197,7 @@ function Playback({
                 {
                   width: "100%",
                   paddingVertical: 14,
-                  backgroundColor: colors.brand,
+                  backgroundColor: "#ffffff",
                   borderRadius: 12,
                   alignItems: "center",
                   justifyContent: "center",
@@ -1907,7 +2206,7 @@ function Playback({
                 s.pressed && { opacity: 0.85 },
               ]}
             >
-              <Text style={{ color: "#fff", fontFamily: fonts.bold, fontSize: 15 }}>
+              <Text style={{ color: "#000000", fontFamily: fonts.bold, fontSize: 15 }}>
                 Resume ({timeLabel(initialResume)})
               </Text>
             </Pressable>
@@ -1940,119 +2239,222 @@ function Playback({
         </View>
       )}
 
-      {/* ── Bottom-sheet menus ── */}
+      {/* ── Right-side drawer menus ── */}
       <Modal
         visible={menu != null}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setMenu(null)}
         supportedOrientations={["portrait", "landscape"]}
       >
         <View style={styles.sheetBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={() => setMenu(null)} />
-          <FocusGroup style={styles.sheetContainer}>
-            {/* Drag handle */}
-            <View style={styles.sheetHandle} />
+          <Animated.View style={[styles.sheetContainer, { transform: [{ translateX: drawerAnim }] }]}>
+            <FocusGroup style={{ flex: 1 }}>
+              {/* Title row */}
+              <View style={styles.sheetTitleRow}>
+                <Text style={styles.sheetTitle}>
+                  {menu === "captions"
+                    ? "Subtitles"
+                    : menu === "audio"
+                      ? "Audio tracks"
+                      : menu === "quality"
+                        ? "Video quality"
+                        : menu === "episodes"
+                          ? `Episodes (${sortedEpisodes.length})`
+                          : "Player settings"}
+                </Text>
+                <Pressable
+                  focusable={true}
+                  onPress={() => { setMenu(null); reveal(); }}
+                  style={({ pressed }: any) => [
+                    styles.sheetCloseBtn,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close menu"
+                >
+                  <IconClose size={18} color="#fff" />
+                </Pressable>
+              </View>
 
-            {/* Title row */}
-            <View style={styles.sheetTitleRow}>
-              <Text style={styles.sheetTitle}>
-                {menu === "captions"
-                  ? "Subtitles"
-                  : menu === "audio"
-                    ? "Audio tracks"
-                    : menu === "quality"
-                      ? "Video quality"
-                      : "Player settings"}
-              </Text>
-              <Pressable
-                focusable={true}
-                onPress={() => { setMenu(null); reveal(); }}
-                style={({ pressed }: any) => [
-                  styles.sheetCloseBtn,
-                  pressed && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Close menu"
-              >
-                <IconClose size={18} color="#fff" />
-              </Pressable>
-            </View>
+              {/* Episodes menu */}
+              {menu === "episodes" && (
+                <ScrollView
+                  ref={episodesScrollRef}
+                  contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }}
+                  showsVerticalScrollIndicator={true}
+                >
+                  {sortedEpisodes.map((ep, idx) => {
+                    const isCurrent =
+                      ep.fileId === manifest.fileId ||
+                      ep.id === manifest.itemId ||
+                      (ep.seasonNumber === manifest.seasonNumber &&
+                        ep.episodeNumber === manifest.episodeNumber);
+                    const epLabel =
+                      ep.seasonNumber != null && ep.episodeNumber != null
+                        ? `S${ep.seasonNumber} · E${ep.episodeNumber}`
+                        : `Episode ${ep.episodeNumber ?? idx + 1}`;
+                    return (
+                      <Pressable
+                        key={ep.id || `${ep.seasonNumber}-${ep.episodeNumber}`}
+                        onPress={() => {
+                          if (ep.fileId) {
+                            setMenu(null);
+                            next(ep.fileId);
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.episodeItem,
+                          isCurrent && styles.episodeItemCurrent,
+                          pressed && { opacity: 0.75 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${epLabel}, ${ep.name}${isCurrent ? ", currently playing" : ""}`}
+                      >
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <Text
+                              style={[
+                                styles.episodeBadge,
+                                isCurrent && styles.episodeBadgeCurrent,
+                              ]}
+                            >
+                              {epLabel}
+                            </Text>
+                            {isCurrent && (
+                              <View style={styles.nowPlayingPill}>
+                                <Text style={styles.nowPlayingText}>NOW PLAYING</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text
+                            style={[
+                              styles.episodeItemTitle,
+                              isCurrent && styles.episodeItemTitleCurrent,
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {ep.name || `Episode ${ep.episodeNumber ?? idx + 1}`}
+                          </Text>
+                          {ep.watch?.duration ? (
+                            <Text style={styles.episodeDuration}>
+                              {timeLabel(ep.watch.duration)}
+                            </Text>
+                          ) : null}
+                        </View>
+                        {isCurrent ? (
+                          <PlayIcon size={16} color="#38bdf8" fill="#38bdf8" />
+                        ) : (
+                          <IconForward size={16} color="rgba(255,255,255,0.4)" />
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
-            <ScrollView
-              contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) }}
-              showsVerticalScrollIndicator={false}
-            >
+              {menu !== "episodes" && (
+                <ScrollView
+                  contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) }}
+                  showsVerticalScrollIndicator={false}
+                >
               {/* Settings menu */}
               {menu === "settings" && (
                 <>
-                  <SheetItem
-                    label="Video quality"
-                    preferred={platform.tv}
-                    onPress={() => setMenu("quality")}
-                  />
-
-                  <View style={styles.sheetSectionLabel}>
-                    <Text style={styles.sheetSectionLabelText}>Playback speed</Text>
-                  </View>
-                  {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
-                    <SheetItem
-                      key={rate}
-                      label={`${rate}×`}
-                      selected={preferences.playbackRate === rate}
-                      onPress={() => {
-                        player.playbackRate = rate;
-                        updatePreferences({ playbackRate: rate });
-                      }}
-                    />
-                  ))}
-
-                  <View style={styles.sheetSectionLabel}>
-                    <Text style={styles.sheetSectionLabelText}>
-                      Volume — {Math.round(volume * 100)}%
-                    </Text>
-                  </View>
-                  <SheetItem
-                    label="Quieter"
-                    onPress={() => {
-                      const value = Math.max(0, volume - 0.1);
-                      player.volume = value;
-                      setVolume(value);
-                    }}
-                  />
-                  <SheetItem
-                    label="Louder"
-                    onPress={() => {
-                      const value = Math.min(1, volume + 0.1);
-                      player.volume = value;
-                      setVolume(value);
-                    }}
-                  />
-                  {!platform.tv && (
+                  {!platform.local && !offline && (
                     <>
-                      <View style={styles.sheetSectionLabel}>
-                        <Text style={styles.sheetSectionLabelText}>Screen fit & scaling</Text>
-                      </View>
-                      {[
-                        { mode: "contain" as const, label: "Best Fit (Contain)" },
-                        { mode: "cover" as const, label: "Crop to Fill (100% Full)" },
-                        { mode: "fill" as const, label: "Stretch (Full Screen)" },
-                        { mode: "zoom" as const, label: "125% Zoom (Smart Crop)" },
-                      ].map((item) => (
-                        <SheetItem
-                          key={item.mode}
-                          label={item.label}
-                          selected={fitMode === item.mode}
-                          onPress={() => {
-                            setFitMode(item.mode);
-                            showFitToast(item.label);
-                          }}
-                        />
-                      ))}
+                      <SheetSection label="Stream" />
+                      <SheetItem
+                        label="Video quality"
+                        hint={choice.maxHeight ? `${choice.maxHeight}p` : "Auto"}
+                        preferred={platform.tv}
+                        onPress={() => setMenu("quality")}
+                      />
                     </>
                   )}
+
+                  <SheetSection label="Playback" />
+                  <SheetChips
+                    label="Speed"
+                    options={[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => ({
+                      key: String(rate),
+                      label: `${rate}×`,
+                      active: preferences.playbackRate === rate,
+                      onPress: () => {
+                        player.playbackRate = rate;
+                        updatePreferences({ playbackRate: rate });
+                      },
+                    }))}
+                  />
+                  <View style={styles.sheetStepper}>
+                    <View>
+                      <Text style={styles.sheetChipsLabel}>Volume</Text>
+                      <Text style={styles.sheetStepperValue}>
+                        {Math.round(volume * 100)}%
+                      </Text>
+                    </View>
+                    <View style={styles.sheetStepperButtons}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Lower volume"
+                        onPress={() => {
+                          const value = Math.max(0, Math.round((volume - 0.1) * 10) / 10);
+                          player.volume = value;
+                          setVolume(value);
+                        }}
+                        style={({ pressed }) => [
+                          styles.sheetStepperButton,
+                          pressed && { opacity: 0.6 },
+                        ]}
+                      >
+                        <Minus size={18} color="#ffffff" strokeWidth={2.4} />
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Raise volume"
+                        onPress={() => {
+                          const value = Math.min(1, Math.round((volume + 0.1) * 10) / 10);
+                          player.volume = value;
+                          setVolume(value);
+                        }}
+                        style={({ pressed }) => [
+                          styles.sheetStepperButton,
+                          pressed && { opacity: 0.6 },
+                        ]}
+                      >
+                        <Plus size={18} color="#ffffff" strokeWidth={2.4} />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  {!platform.tv && (
+                    <>
+                      <SheetSection label="Picture" />
+                      <SheetChips
+                        label="Fit"
+                        options={[
+                          { key: "contain", label: "Best fit", active: fitMode === "contain", onPress: () => applyFit("contain", zoom) },
+                          { key: "cover", label: "Crop", active: fitMode === "cover", onPress: () => applyFit("cover", zoom) },
+                          { key: "fill", label: "Stretch", active: fitMode === "fill", onPress: () => applyFit("fill", zoom) },
+                        ]}
+                      />
+                      <SheetChips
+                        label="Zoom"
+                        options={[1, 1.25, 1.5, 2].map((scale) => ({
+                          key: String(scale),
+                          label: `${Math.round(scale * 100)}%`,
+                          active: zoom === scale,
+                          onPress: () => applyFit(fitMode, scale),
+                        }))}
+                      />
+                    </>
+                  )}
+
+                  <SheetSection label="Player" />
                   <SheetItem
-                    label={`${diagnostics ? "Hide" : "Show"} playback diagnostics`}
+                    label="Playback diagnostics"
+                    selected={diagnostics}
                     onPress={() => setDiagnostics((v) => !v)}
                   />
                   {!platform.tv && isPictureInPictureSupported() && (
@@ -2094,37 +2496,45 @@ function Playback({
               {menu === "audio" &&
                 (offline || platform.local ? (
                   nativeAudio.length ? (
-                    nativeAudio.map((track) => (
-                      <SheetItem
-                        key={track.id}
-                        label={track.label || track.language || track.id || "Audio track"}
-                        selected={player.audioTrack?.id === track.id}
-                        onPress={() => {
-                          player.audioTrack = track;
-                          setMenu(null);
-                        }}
-                      />
-                    ))
+                    <>
+                      <SheetSection label="Tracks" />
+                      {nativeAudio.map((track) => (
+                        <SheetItem
+                          key={track.id}
+                          label={track.label || track.language || track.id || "Audio track"}
+                          selected={player.audioTrack?.id === track.id}
+                          onPress={() => {
+                            player.audioTrack = track;
+                            setMenu(null);
+                          }}
+                        />
+                      ))}
+                    </>
                   ) : (
                     <Text style={styles.sheetEmpty}>
-                      No alternate audio tracks are available in this file.
+                      This file has a single audio track.
                     </Text>
                   )
                 ) : (
-                  manifest.audioTracks?.map((track, idx) => (
-                    <SheetItem
-                      key={track.index}
-                      preferred={platform.tv && idx === 0}
-                      label={`${track.language || "Unknown language"} · ${track.codec.toUpperCase()} · ${track.channels} channels`}
-                      selected={choice.audio === track.index}
-                      onPress={() => void switchAudio(track.index)}
-                    />
-                  ))
+                  <>
+                    <SheetSection label="Tracks" />
+                    {manifest.audioTracks?.map((track, idx) => (
+                      <SheetItem
+                        key={track.index}
+                        preferred={platform.tv && idx === 0}
+                        label={track.language || "Unknown language"}
+                        hint={`${track.codec.toUpperCase()} · ${track.channels} ch`}
+                        selected={choice.audio === track.index}
+                        onPress={() => void switchAudio(track.index)}
+                      />
+                    ))}
+                  </>
                 ))}
 
               {/* Subtitles */}
               {menu === "captions" && (
                 <>
+                  <SheetSection label="Track" />
                   <SheetItem
                     label="Off"
                     preferred={platform.tv}
@@ -2149,39 +2559,65 @@ function Playback({
                     />
                   ))}
 
+                  {platform.local?.pickSubtitle && (
+                    <SheetItem
+                      label="Add subtitle file"
+                      hint="SRT or VTT"
+                      onPress={() => {
+                        void platform.local!.pickSubtitle!(manifest.fileId).then(track => {
+                          if (!track) return;
+                          setManifest(current => ({ ...current, tracks: [...(current.tracks || []).filter(t => t.track !== track.track), track] }));
+                          setSubtitle(track.track);
+                          updatePreferences({ autoSubtitles: true });
+                        }).catch(() => setMessage("Could not add this subtitle file. Choose an SRT or VTT file."));
+                      }}
+                    />
+                  )}
                   {platform.local && nativeSubtitles.map(track => (
                     <SheetItem key={`native:${track.id}`} label={track.label || track.language || "Embedded subtitles"}
                       selected={subtitle === `native:${track.id}`} onPress={() => {
                         setSubtitle(`native:${track.id}`); updatePreferences({ autoSubtitles: true });
                       }} />
                   ))}
-                  <View style={styles.sheetSectionLabel}>
-                    <Text style={styles.sheetSectionLabelText}>
-                      Timing offset: {preferences.subtitleOffset.toFixed(1)}s
-                    </Text>
-                  </View>
-                  <SheetItem
-                    label="Earlier −0.5s"
-                    onPress={() =>
-                      updatePreferences({
-                        subtitleOffset: preferences.subtitleOffset - 0.5,
-                      })
+
+                  <SheetSection label="Timing & appearance" />
+                  <SheetChips
+                    label={
+                      preferences.subtitleOffset === 0
+                        ? "Timing"
+                        : `Timing ${preferences.subtitleOffset > 0 ? "+" : ""}${preferences.subtitleOffset.toFixed(1)}s`
                     }
+                    options={[
+                      {
+                        key: "earlier",
+                        label: "−0.5s",
+                        onPress: () => updatePreferences({ subtitleOffset: preferences.subtitleOffset - 0.5 }),
+                      },
+                      {
+                        key: "reset",
+                        label: "Reset",
+                        active: preferences.subtitleOffset === 0,
+                        onPress: () => updatePreferences({ subtitleOffset: 0 }),
+                      },
+                      {
+                        key: "later",
+                        label: "+0.5s",
+                        onPress: () => updatePreferences({ subtitleOffset: preferences.subtitleOffset + 0.5 }),
+                      },
+                    ]}
+                  />
+                  <SheetChips
+                    label="Size"
+                    options={[18, 22, 28, 34].map((size) => ({
+                      key: String(size),
+                      label: `${size}`,
+                      active: preferences.subtitleSize === size,
+                      onPress: () => updatePreferences({ subtitleSize: size }),
+                    }))}
                   />
                   <SheetItem
-                    label="Later +0.5s"
-                    onPress={() =>
-                      updatePreferences({
-                        subtitleOffset: preferences.subtitleOffset + 0.5,
-                      })
-                    }
-                  />
-                  <SheetItem
-                    label="Reset timing"
-                    onPress={() => updatePreferences({ subtitleOffset: 0 })}
-                  />
-                  <SheetItem
-                    label={`Position: ${preferences.subtitlePosition}`}
+                    label="Position"
+                    hint={preferences.subtitlePosition === "bottom" ? "Bottom" : "Top"}
                     onPress={() =>
                       updatePreferences({
                         subtitlePosition:
@@ -2191,18 +2627,6 @@ function Playback({
                       })
                     }
                   />
-
-                  <View style={styles.sheetSectionLabel}>
-                    <Text style={styles.sheetSectionLabelText}>Subtitle size</Text>
-                  </View>
-                  {[18, 22, 28, 34].map((size) => (
-                    <SheetItem
-                      key={size}
-                      label={`${size}px`}
-                      selected={preferences.subtitleSize === size}
-                      onPress={() => updatePreferences({ subtitleSize: size })}
-                    />
-                  ))}
                 </>
               )}
 
@@ -2264,11 +2688,7 @@ function Playback({
                       />
                     ))}
 
-                    <View style={styles.sheetSectionLabel}>
-                      <Text style={styles.sheetSectionLabelText}>
-                        Server conversion cap
-                      </Text>
-                    </View>
+                    <SheetSection label="Server conversion cap" />
                     {[360, 480, 720, 1080, 1440, 2160].map((height) => (
                       <SheetItem
                         key={height}
@@ -2289,9 +2709,11 @@ function Playback({
                   </>
                 ))}
             </ScrollView>
+          )}
           </FocusGroup>
-        </View>
-      </Modal>
+        </Animated.View>
+      </View>
+    </Modal>
     </View>
     </PlayerFocusCtx.Provider>
   );
@@ -2303,11 +2725,13 @@ function Playback({
 
 function SheetItem({
   label,
+  hint,
   selected,
   onPress,
   preferred,
 }: {
   label: string;
+  hint?: string;
   selected?: boolean;
   onPress: () => void;
   preferred?: boolean;
@@ -2339,12 +2763,84 @@ function SheetItem({
       >
         {label}
       </Text>
+      {!!hint && (
+        <Text
+          style={[
+            styles.sheetItemHint,
+            focused && Platform.isTV && { color: "rgba(0,0,0,0.55)" },
+          ]}
+          numberOfLines={1}
+        >
+          {hint}
+        </Text>
+      )}
       {selected ? (
         <View style={[styles.sheetCheckBadge, focused && Platform.isTV && styles.sheetCheckBadgeFocusedTv]}>
-          <IconCheck size={16} color={focused && Platform.isTV ? "#000000" : "#ffffff"} />
+          <IconCheck size={15} color="#000000" />
         </View>
       ) : null}
     </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sheet section label
+// ---------------------------------------------------------------------------
+
+function SheetSection({ label }: { label: string }) {
+  return (
+    <View style={styles.sheetSection}>
+      <Text style={styles.sheetSectionText}>{label}</Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SheetChips — inline choice row, far easier to scan than one row per value
+// ---------------------------------------------------------------------------
+
+type SheetChipOption = {
+  key: string;
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+};
+
+function SheetChips({
+  label,
+  options,
+}: {
+  label: string;
+  options: SheetChipOption[];
+}) {
+  return (
+    <View style={styles.sheetChipsBlock}>
+      <Text style={styles.sheetChipsLabel}>{label}</Text>
+      <View style={styles.sheetChipsRow}>
+        {options.map((option) => (
+          <Pressable
+            key={option.key}
+            accessibilityRole="button"
+            accessibilityState={{ selected: !!option.active }}
+            onPress={option.onPress}
+            style={({ pressed }) => [
+              styles.sheetChip,
+              option.active && styles.sheetChipActive,
+              pressed && { opacity: 0.72 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sheetChipText,
+                option.active && styles.sheetChipTextActive,
+              ]}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -2439,7 +2935,7 @@ const styles = StyleSheet.create({
   },
   resumeBtnPrimaryFocusedTv: {
     borderWidth: 3,
-    borderColor: "#ffffff",
+    borderColor: "#000000",
   },
   resumeBtnPrimary: {
     backgroundColor: "#ffffff",
@@ -2450,17 +2946,25 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Bottom sheet
+  // Right-side drawer
   sheetBackdrop: {
     flex: 1,
+    flexDirection: "row",
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.6)",
   },
   sheetContainer: {
-    backgroundColor: "#14161f",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "80%",
+    backgroundColor: "#0d0e12",
+    width: "40%",
+    minWidth: 320,
+    maxWidth: 520,
+    height: "100%",
+    borderLeftWidth: 1,
+    borderLeftColor: "rgba(255,255,255,0.1)",
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 20,
   },
   sheetHandle: {
     width: 36,
@@ -2503,7 +3007,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.08)",
   },
   sheetItemSelected: {
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   sheetItemFocusedTv: {
     backgroundColor: "#ffffff",
@@ -2526,33 +3030,187 @@ const styles = StyleSheet.create({
     color: "#000000",
     fontWeight: "700",
   },
+  sheetItemHint: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 13,
+    fontWeight: "500",
+    marginRight: 10,
+  },
   sheetCheckBadge: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: colors.brand,
+    backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
   },
   sheetCheckBadgeFocusedTv: {
     backgroundColor: "#ffffff",
   },
-  sheetSectionLabel: {
+  sheetSection: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 4,
+  },
+  sheetSectionText: {
+    color: "rgba(255,255,255,0.42)",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  sheetChipsBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    gap: 10,
+  },
+  sheetChipsLabel: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  sheetChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  sheetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  sheetChipActive: {
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff",
+  },
+  sheetChipText: {
+    color: "rgba(255,255,255,0.78)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  sheetChipTextActive: {
+    color: "#000000",
+  },
+  sheetStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 6,
   },
-  sheetSectionLabelText: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+  sheetStepperValue: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  sheetStepperButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  sheetStepperButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   sheetEmpty: {
     color: "rgba(255,255,255,0.5)",
     fontSize: 14,
     paddingHorizontal: 20,
     paddingVertical: 20,
+  },
+
+  // Episodes drawer
+  episodeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  episodeItemCurrent: {
+    backgroundColor: "rgba(56, 189, 248, 0.12)",
+    borderLeftWidth: 3,
+    borderLeftColor: "#38bdf8",
+  },
+  episodeBadge: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  episodeBadgeCurrent: {
+    color: "#38bdf8",
+  },
+  nowPlayingPill: {
+    backgroundColor: "#38bdf8",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  nowPlayingText: {
+    color: "#000000",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  episodeItemTitle: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  episodeItemTitleCurrent: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  episodeDuration: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+  },
+
+  // Screen lock
+  unlockOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  unlockPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.94)",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  unlockPillText: {
+    color: "#000000",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  lockIndicator: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

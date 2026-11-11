@@ -27,6 +27,7 @@ export interface ItemCard {
   genres: string[];
   matchStatus: string;
   watch: Watch | null;
+  isAnime?: boolean;
 }
 
 export interface HomeRow {
@@ -154,6 +155,7 @@ export interface Playability {
   nextFileId?: number | null;
   next?: NextEpisode | null;
   tracks?: SubtitleTrack[];
+  episodes?: ItemCard[];
   trickplay?: Trickplay;
   optimization?: OptimizationState;
   watch: { position: number; duration: number | null; played: boolean } | null;

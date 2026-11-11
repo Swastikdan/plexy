@@ -242,7 +242,7 @@ export class PlexyApi {
     return this.request<HomePayload>("/api/home", { signal });
   }
   items(
-    kind: "movie" | "series",
+    kind: "movie" | "series" | "anime",
     offset = 0,
     sort = "name",
     signal?: AbortSignal,
@@ -252,6 +252,11 @@ export class PlexyApi {
       `/api/items?kind=${kind}&offset=${offset}&limit=60&sort=${encodeURIComponent(sort)}&unwatched=${unwatched}`,
       { signal },
     );
+  }
+  deleteItem(id: string | number) {
+    return this.request<{ ok: boolean }>(`/api/items/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   }
   search(q: string, signal?: AbortSignal) {
     return this.request<{ titles: ItemCard[]; episodes: ItemCard[] }>(

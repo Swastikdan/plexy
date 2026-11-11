@@ -42,6 +42,8 @@ module.exports = function withLanNetworking(config) {
     const source = (await fs.readFile(path.join(__dirname, 'android/PlexyLanModule.kt'), 'utf8')).replaceAll('__PACKAGE__', applicationId);
     await fs.writeFile(path.join(directory, 'PlexyLanModule.kt'), source);
 
+    // Mobile uses Expo's square Android splash icon without legacy bitmap overrides.
+    if (applicationId !== 'app.plexy.mobile') {
     // Dark splash screen configuration
     const resDir = path.join(mod.modRequest.platformProjectRoot, 'app/src/main/res');
     const drawableDir = path.join(resDir, 'drawable');
@@ -64,6 +66,8 @@ module.exports = function withLanNetworking(config) {
       styles = styles.replace('@drawable/splashscreen_logo', '@drawable/splashscreen');
       await fs.writeFile(stylesPath, styles);
     } catch {}
+
+    }
 
     const appBuildGradlePath = path.join(mod.modRequest.platformProjectRoot, 'app/build.gradle');
     try {

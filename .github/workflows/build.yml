@@ -246,7 +246,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: plexy-android-${{ matrix.target }}
-          path: .build/native/plexy-${{ matrix.target }}-preview.apk
+          path: .build/native/Plexy-*.apk
           if-no-files-found: error
 
   server:
@@ -324,8 +324,8 @@ jobs:
           require_asset() { compgen -G "release/$1" >/dev/null || { echo "Missing release asset: $1"; exit 1; }; }
           if [ "$BUILD_WEB" = true ]; then require_asset 'plexy-web.tar.gz'; fi
           if [ "$BUILD_DESKTOP" = true ]; then require_asset '*.dmg'; require_asset '*.zip'; fi
-          if [ "$BUILD_MOBILE" = true ]; then require_asset 'plexy-mobile-preview.apk'; fi
-          if [ "$BUILD_TV" = true ]; then require_asset 'plexy-tv-preview.apk'; fi
+          if [ "$BUILD_MOBILE" = true ]; then require_asset 'Plexy-mobile-*.apk'; fi
+          if [ "$BUILD_TV" = true ]; then require_asset 'Plexy-TV-*.apk'; fi
           if [ "$BUILD_SERVER" = true ]; then
             require_asset 'plexy-server-linux-x64.tar.gz'
             require_asset 'plexy-server-macos-arm64.tar.gz'
@@ -357,21 +357,23 @@ jobs:
           if [[ "$version" == *-beta.* ]]; then
             prerelease_flag="--prerelease"
             latest_flag=""
+            release_title="Plexy Beta ${tag}"
           else
             prerelease_flag=""
             latest_flag="--latest"
+            release_title="Plexy ${tag}"
           fi
 
           cat > release-notes.md <<EOF
-          ## Plexy Beta ${tag}
+          ## ${release_title}
 
           **Web app:** ${SITE_URL} (when configured). Download \`plexy-web.tar.gz\` to host the built website.
 
           Only components affected by this change are attached to this release.
 
-          **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy Beta** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy Beta.app** into **Applications**.
+          **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**.
 
-          **Android phone/tablet:** install \`plexy-mobile-preview.apk\`. **Android TV:** sideload \`plexy-tv-preview.apk\`. These standalone preview APKs use the template test signing identity and are not store releases.
+          **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. **Android TV:** sideload **Plexy-TV-…apk**. File names include the app version and this build's number so preview builds stay distinguishable. These standalone preview APKs use the template test signing identity and are not store releases.
 
           **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg and migrations beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. Backend archives do not include the web app; connect a Plexy client.
 
@@ -385,7 +387,7 @@ jobs:
 
           Advanced Terminal alternative:
 
-              xattr -dr com.apple.quarantine "/Applications/Plexy Beta.app"
+              xattr -dr com.apple.quarantine "/Applications/Plexy.app"
 
           The web app asks for your Plexy server address on first launch and remembers it on that device. The Mac app includes its own server.
 
@@ -398,20 +400,20 @@ jobs:
           if [ ${#release_files[@]} -gt 0 ]; then
             if gh release view "$tag" >/dev/null 2>&1; then
               gh release upload "$tag" "${release_files[@]}" --clobber
-              gh release edit "$tag" --notes-file release-notes.md
+              gh release edit "$tag" --notes-file release-notes.md --title "$release_title"
             else
               gh release create "$tag" "${release_files[@]}" \
-                --title "Plexy Beta ${tag}" \
+                --title "$release_title" \
                 --notes-file release-notes.md \
                 --target "$GITHUB_SHA" \
                 $prerelease_flag $latest_flag
             fi
           else
             if gh release view "$tag" >/dev/null 2>&1; then
-              gh release edit "$tag" --notes-file release-notes.md
+              gh release edit "$tag" --notes-file release-notes.md --title "$release_title"
             else
               gh release create "$tag" \
-                --title "Plexy Beta ${tag}" \
+                --title "$release_title" \
                 --notes-file release-notes.md \
                 --target "$GITHUB_SHA" \
                 $prerelease_flag $latest_flag

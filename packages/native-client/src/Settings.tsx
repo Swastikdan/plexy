@@ -5,7 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ArrowLeft, CheckCircle2, Shield, User, Play, Sparkles } from "lucide-react-native";
 import { useClient } from "./context";
 import { useResource } from "./hooks";
-import { Button, Field, Heading, Label, Notice, UserAvatar } from "./ui";
+import { Button, Field, Heading, Label, Notice, PageHeader, UserAvatar } from "./ui";
 import { colors, fonts } from "./theme";
 import { sessionStore } from "./storage";
 import type { AuthResult, Session } from "./api";
@@ -71,9 +71,9 @@ export function SettingsScreen({
 
   // App updater state
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    versionName: "1.0.2",
-    versionCode: 50028,
-    buildNumber: 28,
+    versionName: "…",
+    versionCode: 0,
+    buildNumber: 0,
   });
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
@@ -82,7 +82,7 @@ export function SettingsScreen({
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   React.useEffect(() => {
-    void getInstalledAppInfo().then(setAppInfo);
+    void getInstalledAppInfo().then(setAppInfo).catch(e => setUpdateError(String(e)));
   }, []);
 
   const handleCheckUpdate = async () => {
@@ -181,7 +181,7 @@ export function SettingsScreen({
         </Pressable>
       )}
 
-      <Heading large>Settings</Heading>
+      <PageHeader title="Settings" style={settingsStyles.pageHeader} />
 
       {/* ── Category Tabs Bar ── */}
       <View style={[settingsStyles.tabBar, platform.tv && settingsStyles.tabBarTv]}>
@@ -750,6 +750,12 @@ const settingsStyles = StyleSheet.create({
     padding: 16,
     paddingBottom: 48,
     gap: 16,
+  },
+  pageHeader: {
+    paddingHorizontal: 0,
+    paddingTop: 2,
+    paddingBottom: 0,
+    minHeight: 0,
   },
   containerTv: {
     padding: 32,
