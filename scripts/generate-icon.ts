@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 
 export async function generateIcons() {
+  if (process.platform !== "darwin") {
+    console.log("generateIcons: Skipping sips/iconutil icon generation on non-macOS platform.");
+    return;
+  }
   const root = process.cwd();
   const svgSource = join(root, "apps/web/public/app-icon.svg");
   const tempDir = "/tmp/.plexy-icon-gen";

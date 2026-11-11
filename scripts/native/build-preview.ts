@@ -67,7 +67,9 @@ for (const target of requested === "all" ? ["mobile", "tv"] : [requested]) {
     ? JSON.parse(await readFile(resolve(cwd, "package.json"), "utf8")).version as string
     : version;
   await run(["bun", "run", "prebuild"], cwd);
-  await generateIcons();
+  if (process.platform === "darwin") {
+    await generateIcons();
+  }
   await run(
     [
       Bun.env.PLEXY_GRADLE_BINARY || "./gradlew",
