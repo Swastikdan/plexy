@@ -1,6 +1,6 @@
 import { Tabs, usePathname } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -31,6 +31,40 @@ function MobileTabBar({
 }) {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, 10);
+  const tabScales = useRef(tabs.map(() => new Animated.Value(1))).current;
+  const tabActiveOpacities = useRef(
+    tabs.map((_, i) => new Animated.Value(i === state.index ? 1 : 0)),
+  ).current;
+
+  useEffect(() => {
+    tabs.forEach((_, i) => {
+      Animated.timing(tabActiveOpacities[i], {
+        toValue: state.index === i ? 1 : 0,
+        duration: 150,
+        easing: Easing.bezier(0.23, 1, 0.32, 1),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [state.index]);
+
+  const handlePressIn = (i: number) => {
+    Animated.spring(tabScales[i]!, {
+      toValue: 0.90,
+      useNativeDriver: true,
+      damping: 20,
+      stiffness: 400,
+      mass: 0.8,
+    }).start();
+  };
+  const handlePressOut = (i: number) => {
+    Animated.spring(tabScales[i]!, {
+      toValue: 1,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 350,
+      mass: 0.8,
+    }).start();
+  };
   return (
     <View
       style={[
@@ -58,21 +92,28 @@ function MobileTabBar({
           <Pressable
             key={tab.name}
             onPress={onPress}
+            onPressIn={() => handlePressIn(index)}
+            onPressOut={() => handlePressOut(index)}
             hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
-            style={({ pressed }) => [
-              styles.tabItem,
-              pressed && { opacity: 0.7, transform: [{ scale: 0.94 }] },
-            ]}
+            style={styles.tabItem}
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
             accessibilityLabel={tab.title}
           >
-            <View
+            <Animated.View
               style={[
                 styles.tabIconWrap,
-                isFocused && styles.tabIconWrapActive,
+                { transform: [{ scale: tabScales[index]! }] },
               ]}
             >
+              {/* Animated pill background — fades in/out instead of switching */}
+              <Animated.View
+                style={[
+                  styles.tabIconWrapActive,
+                  StyleSheet.absoluteFill,
+                  { opacity: tabActiveOpacities[index]!, borderRadius: 9999 },
+                ]}
+              />
               <Icon
                 name={tab.icon}
                 size={24}
@@ -81,7 +122,7 @@ function MobileTabBar({
               {tab.name === "settings" && attention > 0 && (
                 <View style={styles.tabBadgeDot} />
               )}
-            </View>
+            </Animated.View>
             <Text
               style={[
                 styles.tabLabel,
@@ -159,7 +200,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 9999,
-    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",

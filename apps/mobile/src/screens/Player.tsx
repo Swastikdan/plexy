@@ -49,6 +49,7 @@ import {
   Animated,
   AppState,
   BackHandler,
+  Easing,
   Modal,
   PanResponder,
   Pressable,
@@ -63,7 +64,7 @@ import { localSegments } from "../../../../packages/local-library/src/library";
 import { Button, Label, Notice, PosterImage } from "../components/ui";
 import type { ItemCard, Playability, SkipSegments } from "../lib/client/api";
 import { useClient } from "../lib/client/context";
-import { useResource } from "../lib/client/hooks";
+import { useReducedMotion, useResource } from "../lib/client/hooks";
 import { usePlayerOrientation } from "../lib/client/use-player-orientation";
 import { parseVtt, subtitleText, type Cue } from "../lib/client/vtt";
 import { fonts, timeLabel } from "../ui/theme";
@@ -443,6 +444,7 @@ function Playback({
   const { api, platform, preferences, updatePreferences, progress } =
     useClient();
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const [manifest, setManifest] = useState(initial);
   const [choice, setChoice] = useState<SourceChoice>({
     path: initial.path,
@@ -477,16 +479,35 @@ function Playback({
     "settings" | "audio" | "captions" | "quality" | "episodes" | null
   >(null);
   const drawerAnim = useRef(new Animated.Value(560)).current;
+  const resumeBackdropOpacity = useRef(new Animated.Value(0)).current;
+  const resumeCardOpacity = useRef(new Animated.Value(0)).current;
+  const resumeCardScale = useRef(new Animated.Value(0.94)).current;
   useEffect(() => {
     if (menu != null) {
-      drawerAnim.setValue(560);
+      if (reduceMotion) {
+        Animated.timing(drawerAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        Animated.spring(drawerAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 32,
+          stiffness: 320,
+          mass: 1,
+        }).start();
+      }
+    } else {
       Animated.timing(drawerAnim, {
-        toValue: 0,
-        duration: 220,
+        toValue: 560,
+        duration: reduceMotion ? 0 : 180,
+        easing: Easing.bezier(0.32, 0, 1, 1),
         useNativeDriver: true,
       }).start();
     }
-  }, [menu]);
+  }, [menu, reduceMotion]);
   const isTvShow = Boolean(
     manifest.parentItemId ||
       manifest.seasonNumber != null ||
@@ -583,6 +604,8 @@ function Playback({
   );
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<any>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastScale = useRef(new Animated.Value(0.88)).current;
   // Screen lock: controls ignore input until the viewer unlocks.
   const [locked, setLocked] = useState(false);
   const [unlockHint, setUnlockHint] = useState(false);
@@ -594,6 +617,33 @@ function Playback({
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
   };
+  useEffect(() => {
+    if (fitToast) {
+      toastOpacity.setValue(0);
+      toastScale.setValue(0.88);
+      Animated.parallel([
+        Animated.timing(toastOpacity, {
+          toValue: 1,
+          duration: reduceMotion ? 0 : 160,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }),
+        Animated.timing(toastScale, {
+          toValue: 1,
+          duration: reduceMotion ? 0 : 160,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.timing(toastOpacity, {
+        toValue: 0,
+        duration: reduceMotion ? 0 : 120,
+        easing: Easing.bezier(0.32, 0, 1, 1),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [fitToast, reduceMotion]);
   const applyFit = (mode: FitMode, scale: number) => {
     setFitMode(mode);
     const nextZoom = clampZoom(scale);
@@ -742,6 +792,7 @@ function Playback({
   const initialized = useRef(false);
   const scrubTargetRef = useRef<number | null>(null);
   const scrubCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
   const player = useVideoPlayer(null, (instance) => {
     instance.bufferOptions = bufferOptionsForDuration(initial.duration || 0);
     instance.timeUpdateEventInterval = 0.5;
@@ -1083,6 +1134,49 @@ function Playback({
   );
   const bufferedRatio = duration ? Math.min(1, bufferedPosition / duration) : 0;
   const progressRatio = duration ? Math.min(1, previewTime / duration) : 0;
+
+  useEffect(() => {
+    const shouldHide = openingVideo || scrub != null || ended;
+    Animated.timing(controlsOpacity, {
+      toValue: shouldHide ? 0 : 1,
+      duration: reduceMotion ? 0 : 100,
+      easing: Easing.bezier(0.23, 1, 0.32, 1),
+      useNativeDriver: true,
+    }).start();
+  }, [openingVideo, scrub, ended, reduceMotion]);
+
+  useEffect(() => {
+    if (resume) {
+      resumeBackdropOpacity.setValue(0);
+      resumeCardOpacity.setValue(0);
+      resumeCardScale.setValue(0.94);
+      Animated.parallel([
+        Animated.timing(resumeBackdropOpacity, {
+          toValue: 1,
+          duration: reduceMotion ? 0 : 200,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.delay(reduceMotion ? 0 : 60),
+          Animated.parallel([
+            Animated.timing(resumeCardOpacity, {
+              toValue: 1,
+              duration: reduceMotion ? 0 : 240,
+              easing: Easing.bezier(0.23, 1, 0.32, 1),
+              useNativeDriver: true,
+            }),
+            Animated.timing(resumeCardScale, {
+              toValue: 1,
+              duration: reduceMotion ? 0 : 240,
+              easing: Easing.bezier(0.23, 1, 0.32, 1),
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
+      ]).start();
+    }
+  }, [resume, reduceMotion]);
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -1130,39 +1224,39 @@ function Playback({
         {openingVideo && <PlayerLoading />}
 
         {/* Fit mode HUD Toast */}
-        {!!fitToast && (
-          <View
-            pointerEvents="none"
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 50,
+            alignSelf: "center",
+            backgroundColor: "rgba(10, 10, 14, 0.9)",
+            paddingHorizontal: 18,
+            paddingVertical: 10,
+            borderRadius: 22,
+            borderWidth: 1.2,
+            borderColor: "rgba(255, 255, 255, 0.25)",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.5,
+            shadowRadius: 8,
+            elevation: 8,
+            zIndex: 999,
+            opacity: toastOpacity,
+            transform: [{ scale: toastScale }],
+          }}
+        >
+          <Text
             style={{
-              position: "absolute",
-              top: 50,
-              alignSelf: "center",
-              backgroundColor: "rgba(10, 10, 14, 0.9)",
-              paddingHorizontal: 18,
-              paddingVertical: 10,
-              borderRadius: 22,
-              borderWidth: 1.2,
-              borderColor: "rgba(255, 255, 255, 0.25)",
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.5,
-              shadowRadius: 8,
-              elevation: 8,
-              zIndex: 999,
+              color: "#ffffff",
+              fontSize: 14,
+              fontFamily: fonts.bold,
+              letterSpacing: 0.2,
             }}
           >
-            <Text
-              style={{
-                color: "#ffffff",
-                fontSize: 14,
-                fontFamily: fonts.bold,
-                letterSpacing: 0.2,
-              }}
-            >
-              {fitToast}
-            </Text>
-          </View>
-        )}
+            {fitToast ?? ""}
+          </Text>
+        </Animated.View>
 
         {/* Single tap toggles controls; double tap seeks without changing fit or zoom. */}
         <View
@@ -1729,14 +1823,14 @@ function Playback({
             </View>
 
             {/* ── MIDDLE PLAY CONTROLS ── */}
-            <View
+            <Animated.View
               style={{
                 flex: 1,
                 justifyContent: "center",
                 alignItems: "center",
                 flexDirection: "row",
                 gap: 28,
-                opacity: openingVideo || ended ? 0 : 1,
+                opacity: controlsOpacity,
               }}
               pointerEvents={openingVideo || ended ? "none" : "box-none"}
               accessibilityElementsHidden={openingVideo || ended}
@@ -1796,7 +1890,7 @@ function Playback({
               >
                 <IconForward size={28} />
               </CircleBtn>
-            </View>
+            </Animated.View>
 
             {/* ── BOTTOM SECTION ── */}
             <View
@@ -2190,7 +2284,7 @@ function Playback({
 
       {/* ── Resume prompt ── */}
       {resume && (
-        <View
+        <Animated.View
           style={{
             ...StyleSheet.absoluteFill,
             justifyContent: "center",
@@ -2198,9 +2292,10 @@ function Playback({
             backgroundColor: "rgba(0,0,0,0.72)",
             padding: 24,
             zIndex: 100,
+            opacity: resumeBackdropOpacity,
           }}
         >
-          <View
+          <Animated.View
             style={{
               backgroundColor: "rgba(18,18,18,0.95)",
               borderRadius: 18,
@@ -2216,6 +2311,8 @@ function Playback({
               shadowOpacity: 0.6,
               shadowRadius: 16,
               elevation: 10,
+              opacity: resumeCardOpacity,
+              transform: [{ scale: resumeCardScale }],
             }}
           >
             <Pressable
@@ -2309,8 +2406,8 @@ function Playback({
                 Cancel
               </Text>
             </Pressable>
-          </View>
-        </View>
+          </Animated.View>
+        </Animated.View>
       )}
 
       {/* ── Right-side drawer menus ── */}

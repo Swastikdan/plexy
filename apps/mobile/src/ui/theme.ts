@@ -15,7 +15,7 @@ export const colors = {
   amber: "#e8a33d",
   danger: "#ef5350",
 };
-import { Platform } from "react-native";
+import { Easing, Platform } from "react-native";
 export const fonts = {
   regular: "Archivo_400Regular",
   medium: "Archivo_500Medium",
@@ -38,3 +38,13 @@ export function sizeLabel(n: number) {
     ? `${(n / 1024 ** 3).toFixed(1)} GB`
     : `${Math.round(n / 1024 ** 2)} MB`;
 }
+export const easings = {
+  /** Strong ease-out: fast start, slow settle. Use for entering elements. */
+  out: Easing.bezier(0.23, 1, 0.32, 1),
+  /** Strong ease-in-out: for elements moving across the screen. */
+  inOut: Easing.bezier(0.77, 0, 0.175, 1),
+  /** iOS-like drawer curve: for slide-in panels from an edge. */
+  drawer: Easing.bezier(0.32, 0.72, 0, 1),
+  /** Fast ease-in: for dismissal/exit animations. */
+  in: Easing.bezier(0.32, 0, 1, 1),
+};

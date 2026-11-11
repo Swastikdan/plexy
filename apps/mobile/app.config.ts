@@ -9,6 +9,7 @@ const config: ExpoConfig = {
   slug: "plexy-mobile",
   version: packageInfo.version,
   platforms: ["android"],
+  experiments: { reactCompiler: true },
   scheme: "plexy-mobile",
   userInterfaceStyle: "dark",
   icon: "../../build/icon.png",

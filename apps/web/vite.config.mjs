@@ -1,5 +1,6 @@
 import { createLogger, defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
@@ -10,8 +11,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const apiTarget = `http://127.0.0.1:${process.env.PLEXY_PORT ?? 8765}`;
 
 // react-compiler-runtime (pulled in by @videojs/react) opens with a "use no
-// memo" directive that cannot survive a bundle boundary. React Compiler is not
-// enabled in this app, so the directive has no effect on behavior. Rolldown
+// memo" directive that cannot survive a bundle boundary. Dependencies are already
+// compiled and excluded from our compiler pass. Rolldown
 // exposes no check for this notice, so filter exactly this message and leave
 // every other warning intact.
 //
@@ -37,6 +38,7 @@ export default defineConfig({
       autoCodeSplitting: false,
     }),
     react(),
+    babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
     viteSingleFile(),
   ],

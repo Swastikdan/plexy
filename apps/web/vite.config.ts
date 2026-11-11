@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { dirname, join, resolve } from "node:path";
@@ -15,6 +16,7 @@ export default defineConfig({
       generatedRouteTree: join(here, "src", "routeTree.gen.ts"),
     }),
     react(),
+    babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
   ],
   build: {

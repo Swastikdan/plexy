@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { AccessibilityInfo } from "react-native";
 import { resourceKey } from "./resource-key";
 // In-memory cache for fast screen navigation (stale-while-revalidate)
 const resourceCache = new Map<string, any>();
@@ -63,4 +64,17 @@ export function useResource<T>(
     };
   }, [...keys, revision, cacheKey]);
   return { value, error, loading, retry: () => setRevision((n) => n + 1) };
+}
+
+export function useReducedMotion(): boolean {
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      setReduceMotion,
+    );
+    return () => sub.remove();
+  }, []);
+  return reduceMotion;
 }

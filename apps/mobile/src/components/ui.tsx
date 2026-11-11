@@ -50,6 +50,7 @@ import Svg, {
   LinearGradient as SvgGradient,
 } from "react-native-svg";
 import type { ItemCard, LocalCatalog } from "../lib/client/api";
+import { useReducedMotion } from "../lib/client/hooks";
 import { colors, fonts } from "../ui/theme";
 // ---------------------------------------------------------------------------
 // Icon registry
@@ -415,14 +416,16 @@ export function ToggleSwitch({
   disabled?: boolean;
   accessibilityLabel?: string;
 }) {
+  const reduceMotion = useReducedMotion();
   const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
   useEffect(() => {
     Animated.timing(anim, {
       toValue: value ? 1 : 0,
-      duration: 180,
+      duration: reduceMotion ? 0 : 160,
+      easing: Easing.bezier(0.23, 1, 0.32, 1),
       useNativeDriver: false,
     }).start();
-  }, [value, anim]);
+  }, [value, anim, reduceMotion]);
   const translateX = anim.interpolate({
     inputRange: [0, 1],
     outputRange: [2, 20],
@@ -487,6 +490,7 @@ export function Loading({
 }: {
   showLogo?: boolean;
 } = {}) {
+  const reduceMotion = useReducedMotion();
   const shouldShowLogo = showLogo !== undefined ? showLogo : true;
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -495,20 +499,21 @@ export function Loading({
       Animated.sequence([
         Animated.timing(slide, {
           toValue: 1,
-          duration: 1150,
+          duration: reduceMotion ? 0 : 1150,
           easing: Easing.inOut(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(slide, {
           toValue: 0,
-          duration: 0,
+          duration: reduceMotion ? 0 : 800,
+          easing: Easing.bezier(0.77, 0, 0.175, 1),
           useNativeDriver: true,
         }),
       ]),
     );
     loop.start();
     return () => loop.stop();
-  }, [shouldShowLogo, slide]);
+  }, [shouldShowLogo, slide, reduceMotion]);
   if (!shouldShowLogo) {
     return (
       <View style={styles.loadingWrap}>

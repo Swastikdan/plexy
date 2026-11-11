@@ -79,7 +79,9 @@ async function buildDesktop() {
   console.log("\n========================================================");
   console.log("  Plexy Beta Electron Desktop Build for macOS");
   console.log("========================================================\n");
-  const desktopPackage = JSON.parse(await readFile(join(rootDir, "apps/desktop/package.json"), "utf8")) as { version: string };
+  const releasePackage = JSON.parse(
+    await readFile(join(rootDir, "package.json"), "utf8"),
+  ) as { version: string };
 
   await mkdir(distBin, { recursive: true });
   await mkdir(distMigrations, { recursive: true });
@@ -89,7 +91,9 @@ async function buildDesktop() {
   console.log("1. Building Web UI (Vite + React)...");
   if (process.env.PLEXY_REUSE_WEB_BUILD === "true") {
     if (!existsSync(join(rootDir, "dist/web/index.html"))) {
-      throw new Error("Verified website artifact is missing dist/web/index.html");
+      throw new Error(
+        "Verified website artifact is missing dist/web/index.html",
+      );
     }
     console.log("✓ Reusing verified web build");
   } else {
@@ -112,17 +116,20 @@ async function buildDesktop() {
   // PLEXY_FFMPEG_VARIANT=custom to package the LGPL-only minimal build from
   // scripts/build-minimal-ffmpeg.sh after building it separately.
   const ffmpegVariant = process.env.PLEXY_FFMPEG_VARIANT ?? "node-av";
-  const ffmpegSource = ffmpegVariant === "custom"
-    ? join(distBin, "ffmpeg-custom")
-    : ffmpegVariant === "node-av"
-      ? await findFfmpeg(rootDir)
-      : null;
-  if (!ffmpegSource) {
-    throw new Error(ffmpegVariant === "custom"
-      ? "Custom FFmpeg missing; run scripts/build-minimal-ffmpeg.sh first."
+  const ffmpegSource =
+    ffmpegVariant === "custom"
+      ? join(distBin, "ffmpeg-custom")
       : ffmpegVariant === "node-av"
-        ? "FFmpeg binary missing; install the project dependencies before packaging the desktop app."
-        : `Unknown PLEXY_FFMPEG_VARIANT: ${ffmpegVariant} (expected node-av or custom).`);
+        ? await findFfmpeg(rootDir)
+        : null;
+  if (!ffmpegSource) {
+    throw new Error(
+      ffmpegVariant === "custom"
+        ? "Custom FFmpeg missing; run scripts/build-minimal-ffmpeg.sh first."
+        : ffmpegVariant === "node-av"
+          ? "FFmpeg binary missing; install the project dependencies before packaging the desktop app."
+          : `Unknown PLEXY_FFMPEG_VARIANT: ${ffmpegVariant} (expected node-av or custom).`,
+    );
   }
   const ffmpegOut = join(distBin, "ffmpeg");
   await copyFile(ffmpegSource, ffmpegOut);
@@ -138,9 +145,14 @@ async function buildDesktop() {
   await generateDmgBackground();
 
   // 4. Compile Standalone Server Binary
-  console.log("\n4. Compiling Standalone Backend Server (Bun native compilation)...");
+  console.log(
+    "\n4. Compiling Standalone Backend Server (Bun native compilation)...",
+  );
   const serverOut = join(distBin, "plexy-server");
-  execSync(`bun build --compile --minify --outfile="${serverOut}" apps/server/src/main.ts`, { stdio: "inherit" });
+  execSync(
+    `bun build --compile --minify --outfile="${serverOut}" apps/server/src/main.ts`,
+    { stdio: "inherit" },
+  );
   await chmod(serverOut, 0o755);
   console.log(`✓ Standalone server compiled: ${serverOut}`);
 
@@ -152,10 +164,12 @@ async function buildDesktop() {
   // `--publish never` is required: on CI, electron-builder otherwise tries to
   // publish to GitHub and fails without GH_TOKEN. The release workflow uploads
   // the artifacts itself.
-  console.log("\n6. Packaging macOS Electron Application with electron-builder...");
+  console.log(
+    "\n6. Packaging macOS Electron Application with electron-builder...",
+  );
   detachStaleInstallerVolumes("Plexy Beta");
   execSync(
-    "./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never",
+    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${releasePackage.version}`,
     {
       stdio: "inherit",
       env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
@@ -166,16 +180,26 @@ async function buildDesktop() {
   const appBundle = join(distMac, "mac-arm64", "Plexy Beta.app");
   const appResources = join(appBundle, "Contents", "Resources");
   try {
-    await copyFile(join(rootDir, "build/icon.icns"), join(appResources, "icon.icns"));
-    await copyFile(join(rootDir, "build/icon.png"), join(appResources, "icon.png"));
+    await copyFile(
+      join(rootDir, "build/icon.icns"),
+      join(appResources, "icon.icns"),
+    );
+    await copyFile(
+      join(rootDir, "build/icon.png"),
+      join(appResources, "icon.png"),
+    );
     execSync(`touch "${appBundle}"`);
   } catch {}
 
   console.log("\n========================================================");
   console.log("  Plexy Beta macOS Electron Build Complete!");
-  console.log(`  • macOS DMG Disk    : dist/mac/Plexy Beta-${desktopPackage.version}-arm64.dmg`);
+  console.log(
+    `  • macOS DMG Disk    : dist/mac/Plexy Beta-${releasePackage.version}-arm64.dmg`,
+  );
   console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy Beta.app`);
-  console.log(`  • macOS ZIP Archive : dist/mac/Plexy Beta-${desktopPackage.version}-arm64.zip`);
+  console.log(
+    `  • macOS ZIP Archive : dist/mac/Plexy Beta-${releasePackage.version}-arm64.zip`,
+  );
   console.log("========================================================\n");
 }
 
