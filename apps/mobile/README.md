@@ -16,6 +16,8 @@ A standalone Android library and player. Files and watch progress stay on the de
 - `src/shared/theme.ts`: colors, typography, and shape tokens.
 - `tests`: mobile regression and architecture checks.
 
+Use `@/` for imports from mobile `src` (for example, `@/shared/theme`). Shared package source uses `@plexy/api-client/*` and `@plexy/local-library/*`. These aliases are defined in `tsconfig.json` and resolved by Expo Metro and Bun. Keep asset/configuration filesystem paths relative.
+
 Use kebab-case for files and folders. React component symbols remain PascalCase. Expo Router keeps its required `_layout.tsx` and `index.tsx` names; dynamic routes use `[id].tsx` and `[file-id].tsx`. The player still opens at `/player/<id>`.
 
 Keep routes focused on URL parameters and navigation. Put a screen's components and playback, settings, or catalog logic in that feature. Extract a component when it has its own responsibility or is reused; import shared UI directly from its file. Avoid catch-all `ui.tsx` files and feature code in generic client folders. File import logic belongs to Library, so Library Report never imports the Settings screen.
@@ -38,14 +40,26 @@ APK builds use JDK 17 and Android SDK tooling. `expo prebuild` generates the ign
 
 CI and local preview builds target `arm64-v8a`. Override `PLEXY_ANDROID_ARCHITECTURES` for other devices. APKs use the repository's preview signing key; production signing belongs to the EAS production profile. Build output is ignored under `.build/native`.
 
-Check folder/file access, manual identification, embedded/imported subtitles, watch progress after restart, next-episode playback, Android Back, fullscreen rotation, and PiP on a real device before release.
+Check folder/file access, manual identification, embedded/imported subtitles, watch progress after restart, next-episode playback, Android Back, the landscape player lock (portrait shell restored on exit), and PiP on a real device before release.
 
 ## Player interaction
 
-Pinch to zoom, or use the manual 5% zoom controls under player settings (75–300%).
-Fit mode stays independent of zoom. Double-tap the left or right side to seek
-backward or forward 30 seconds. Scrubbing previews the selected timestamp and
-commits a single seek on release; controls stay available while buffering.
+The player is landscape-only: the device locks to landscape the moment the
+player opens and the app shell (portrait) is restored on exit. The chrome
+follows the reference design (its portrait mockups read as this layout when
+rotated upright): the seek bar runs along the bottom with the elapsed time at
+its left end and the remaining time at its right end, Speed / Lock / Episodes
+/ Audio & Subtitles / Next Episode sit in a bottom row just under it, the
+episode title is top-center, fit / PiP / settings sit top-left and the close
+button top-right. Pinch with two fingers to zoom (75–300%); fit mode stays
+independent of zoom. Swipe up or down on the left half of the video to adjust
+brightness (in-app dimming) and on the right half to adjust volume; each
+indicator is a vertical bar hugging its screen edge and is only visible while
+the gesture is in progress. Double-tap the left or right side to seek backward
+or forward 10 seconds. Scrubbing previews the selected timestamp with a
+trick-play thumbnail and commits a single seek on release; controls stay
+available while buffering. During the credits the next-episode countdown runs
+behind "Watch credits" / "Next Episode" pills in the bottom-right.
 
 Local-file read-ahead targets 30% of the duration, bounded to 30–120 seconds and
 64 MB. Playback can resume once one second is buffered. The native decoder may

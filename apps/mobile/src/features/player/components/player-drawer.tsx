@@ -1,8 +1,6 @@
 import {
 isPictureInPictureSupported,
 VideoView,
-type AudioTrack,
-type SubtitleTrack,
 type VideoPlayer,
 } from "expo-video";
 import React from "react";
@@ -15,21 +13,20 @@ Text,
 View,
 } from "react-native";
 import type { EdgeInsets } from "react-native-safe-area-context";
-import { useClient } from "../../../core/client/client-provider";
-import type { ItemCard,Playability } from "../../../core/library/catalog-api";
-import { cn } from "../../../shared/lib/cn";
-import { timeLabel } from "../../../shared/theme";
-import { Film,Minus,Play as PlayIcon,Plus } from "../../../shared/ui/icons";
-import { PosterImage } from "../../../shared/ui/poster-image";
-import { clampZoom,MAX_ZOOM,MIN_ZOOM } from "../lib/player-interactions";
+import { useClient } from "@/core/client/client-provider";
+import type { ItemCard,Playability } from "@/core/library/catalog-api";
+import { cn } from "@/shared/lib/cn";
+import { timeLabel } from "@/shared/theme";
+import { Film,Minus,Plus } from "@/shared/ui/icons";
+import { PosterImage } from "@/shared/ui/poster-image";
 import { IconCheck,IconClose } from "./player-icons";
 import { SheetChips,SheetItem,SheetSection } from "./player-sheet";
 
 interface PlayerDrawerProps {
-  menu: "settings" | "audio" | "captions" | "quality" | "episodes" | null;
+  menu: "settings" | "quality" | "episodes" | null;
   setMenu: React.Dispatch<
     React.SetStateAction<
-      "settings" | "audio" | "captions" | "quality" | "episodes" | null
+      "settings" | "quality" | "episodes" | null
     >
   >;
   drawerAnim: Animated.Value;
@@ -45,16 +42,9 @@ interface PlayerDrawerProps {
   fitMode: "fill" | "contain" | "cover";
   applyFit: (mode: "fill" | "contain" | "cover", scale: number) => void;
   zoom: number;
-  diagnostics: boolean;
-  setDiagnostics: React.Dispatch<React.SetStateAction<boolean>>;
   pip: React.RefObject<boolean>;
   video: React.RefObject<VideoView | null>;
   setMessage: React.Dispatch<React.SetStateAction<string>>;
-  nativeAudio: AudioTrack[];
-  subtitle: string | null;
-  setSubtitle: React.Dispatch<React.SetStateAction<string | null>>;
-  setManifest: React.Dispatch<React.SetStateAction<Playability>>;
-  nativeSubtitles: SubtitleTrack[];
   subVertical: number;
   setSubVertical: React.Dispatch<React.SetStateAction<number>>;
 }
@@ -75,28 +65,20 @@ export function PlayerDrawer({
   fitMode,
   applyFit,
   zoom,
-  diagnostics,
-  setDiagnostics,
   pip,
   video,
   setMessage,
-  nativeAudio,
-  subtitle,
-  setSubtitle,
-  setManifest,
-  nativeSubtitles,
   subVertical,
   setSubVertical,
 }: PlayerDrawerProps) {
-  const { api, platform, preferences, updatePreferences, progress } =
-    useClient();
+  const { api, preferences, updatePreferences, progress } = useClient();
   return (
     <Modal
       visible={menu != null}
       transparent
       animationType="fade"
       onRequestClose={() => setMenu(null)}
-      supportedOrientations={["portrait", "landscape"]}
+      supportedOrientations={["landscape"]}
     >
       <View className="flex-1 flex-row justify-end bg-black/60">
         <Pressable
@@ -105,7 +87,7 @@ export function PlayerDrawer({
           onPress={() => setMenu(null)}
         />
         <Animated.View
-          className="h-full w-[48%] min-w-[380px] max-w-[540px] border-l border-white/10 bg-[#0d0e12]"
+          className="h-full w-[46%] min-w-[380px] max-w-[560px] border-l border-white/10 bg-[#0d0e12]"
           style={{
             transform: [{ translateX: drawerAnim }],
             shadowColor: "#000",
@@ -118,15 +100,11 @@ export function PlayerDrawer({
             {/* Title row */}
             <View className="flex-row items-center justify-between border-b-[0.33px] border-border px-5 py-3.5">
               <Text className="text-white text-[17px] font-bold">
-                {menu === "captions"
-                  ? "Subtitles"
-                  : menu === "audio"
-                    ? "Audio tracks"
-                    : menu === "quality"
-                      ? "Video quality"
-                      : menu === "episodes"
-                        ? `Episodes (${sortedEpisodes.length})`
-                        : "Player settings"}
+                {menu === "quality"
+                  ? "Video quality"
+                  : menu === "episodes"
+                    ? `Episodes (${sortedEpisodes.length})`
+                    : "Player settings"}
               </Text>
               <Pressable
                 focusable={true}
@@ -193,15 +171,6 @@ export function PlayerDrawer({
                         ) : (
                           <View className="h-[50px] w-[88px] items-center justify-center bg-white/[0.05]">
                             <Film size={18} color="rgba(255,255,255,0.3)" />
-                          </View>
-                        )}
-                        {isCurrent && (
-                          <View className="absolute inset-0 bg-white/75 items-center justify-center">
-                            <PlayIcon
-                              size={14}
-                              color="#000000"
-                              fill="#000000"
-                            />
                           </View>
                         )}
                       </View>
@@ -291,331 +260,179 @@ export function PlayerDrawer({
                       }))}
                     />
 
-                    {
-                      <>
-                        <SheetSection label="Picture" />
-                        <SheetChips
-                          label="Fit"
-                          options={[
-                            {
-                              key: "contain",
-                              label: "Best fit",
-                              active: fitMode === "contain",
-                              onPress: () => applyFit("contain", zoom),
-                            },
-                            {
-                              key: "cover",
-                              label: "Crop",
-                              active: fitMode === "cover",
-                              onPress: () => applyFit("cover", zoom),
-                            },
-                            {
-                              key: "fill",
-                              label: "Stretch",
-                              active: fitMode === "fill",
-                              onPress: () => applyFit("fill", zoom),
-                            },
-                          ]}
-                        />
-                        <View className="flex-row items-center justify-between px-5 pt-[18px]">
-                          <View>
-                            <Text className="text-white text-[14px] font-semibold">
-                              Manual zoom
-                            </Text>
-                            <Text className="text-white text-[18px] font-bold mt-1">
-                              {Math.round(zoom * 100)}%
-                            </Text>
-                          </View>
-                          <View className="flex-row gap-2">
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Decrease zoom by 5 percent"
-                              disabled={zoom <= MIN_ZOOM}
-                              onPress={() =>
-                                applyFit(fitMode, clampZoom(zoom - 0.05))
-                              }
-                              className={cn(
-                                "w-10 h-10 rounded-full bg-white/10 items-center justify-center",
-                                zoom <= MIN_ZOOM && "opacity-40",
-                              )}
-                            >
-                              <Minus size={18} color="#fff" />
-                            </Pressable>
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Increase zoom by 5 percent"
-                              disabled={zoom >= MAX_ZOOM}
-                              onPress={() =>
-                                applyFit(fitMode, clampZoom(zoom + 0.05))
-                              }
-                              className={cn(
-                                "w-10 h-10 rounded-full bg-white/10 items-center justify-center",
-                                zoom >= MAX_ZOOM && "opacity-40",
-                              )}
-                            >
-                              <Plus size={18} color="#fff" />
-                            </Pressable>
-                          </View>
-                        </View>
-                        <SheetChips
-                          label="Zoom"
-                          options={[1, 1.25, 1.5, 2].map((scale) => ({
-                            key: String(scale),
-                            label: `${Math.round(scale * 100)}%`,
-                            active: zoom === scale,
-                            onPress: () => applyFit(fitMode, scale),
-                          }))}
-                        />
-                      </>
-                    }
-
-                    <SheetSection label="Player" />
-                    <SheetItem
-                      label="Playback diagnostics"
-                      selected={diagnostics}
-                      onPress={() => setDiagnostics((v) => !v)}
-                    />
-                    {isPictureInPictureSupported() && (
-                      <SheetItem
-                        label="Picture in picture"
-                        onPress={() => {
-                          setMenu(null);
-                          pip.current = true;
-                          void video.current
-                            ?.startPictureInPicture()
-                            .catch(() => {
-                              pip.current = false;
-                              setMessage(
-                                "Picture in picture is unavailable on this device.",
-                              );
-                            });
-                        }}
-                      />
-                    )}
-                  </>
-                )}
-
-                {/* Audio tracks */}
-                {menu === "audio" &&
-                  (nativeAudio.length ? (
                     <>
-                      <SheetSection label="Tracks" />
-                      {nativeAudio.map((track) => (
+                      <SheetSection label="Picture" />
+                      <SheetChips
+                        label="Fit"
+                        options={[
+                          {
+                            key: "contain",
+                            label: "Best fit",
+                            active: fitMode === "contain",
+                            onPress: () => applyFit("contain", zoom),
+                          },
+                          {
+                            key: "cover",
+                            label: "Crop",
+                            active: fitMode === "cover",
+                            onPress: () => applyFit("cover", zoom),
+                          },
+                          {
+                            key: "fill",
+                            label: "Stretch",
+                            active: fitMode === "fill",
+                            onPress: () => applyFit("fill", zoom),
+                          },
+                        ]}
+                      />
+                      <Text className="text-white/45 text-[12px] px-5 pt-3 leading-[17px]">
+                        Pinch with two fingers on the video to zoom in or out.
+                      </Text>
+
+                      <SheetSection label="Subtitles" />
+                      <SheetChips
+                        label={
+                          preferences.subtitleOffset === 0
+                            ? "Timing"
+                            : `Timing ${preferences.subtitleOffset > 0 ? "+" : ""}${preferences.subtitleOffset.toFixed(1)}s`
+                        }
+                        options={[
+                          {
+                            key: "earlier",
+                            label: "−0.5s",
+                            onPress: () =>
+                              updatePreferences({
+                                subtitleOffset: preferences.subtitleOffset - 0.5,
+                              }),
+                          },
+                          {
+                            key: "reset",
+                            label: "Reset",
+                            active: preferences.subtitleOffset === 0,
+                            onPress: () =>
+                              updatePreferences({ subtitleOffset: 0 }),
+                          },
+                          {
+                            key: "later",
+                            label: "+0.5s",
+                            onPress: () =>
+                              updatePreferences({
+                                subtitleOffset: preferences.subtitleOffset + 0.5,
+                              }),
+                          },
+                        ]}
+                      />
+                      <SheetChips
+                        label="Size"
+                        options={[18, 22, 28, 34].map((size) => ({
+                          key: String(size),
+                          label: `${size}`,
+                          active: preferences.subtitleSize === size,
+                          onPress: () =>
+                            updatePreferences({ subtitleSize: size }),
+                        }))}
+                      />
+                      <View className="flex-row items-center justify-between px-5 pt-[18px]">
+                        <View>
+                          <Text className="text-white text-[14px] font-semibold">
+                            Vertical Position
+                          </Text>
+                          <Text className="text-white text-[18px] font-bold mt-1">
+                            {subVertical}%
+                          </Text>
+                        </View>
+                        <View className="flex-row gap-2">
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Move subtitles higher"
+                            onPress={() => {
+                              const nextVal = Math.max(8, subVertical - 6);
+                              setSubVertical(nextVal);
+                              updatePreferences({
+                                subtitlePosition: nextVal < 50 ? "top" : "bottom",
+                              });
+                            }}
+                            className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
+                          >
+                            <Minus size={18} color="#ffffff" strokeWidth={2.4} />
+                          </Pressable>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Move subtitles lower"
+                            onPress={() => {
+                              const nextVal = Math.min(92, subVertical + 6);
+                              setSubVertical(nextVal);
+                              updatePreferences({
+                                subtitlePosition: nextVal < 50 ? "top" : "bottom",
+                              });
+                            }}
+                            className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
+                          >
+                            <Plus size={18} color="#ffffff" strokeWidth={2.4} />
+                          </Pressable>
+                        </View>
+                      </View>
+                      <SheetChips
+                        label="Position Presets"
+                        options={[
+                          {
+                            key: "top",
+                            label: "Top (12%)",
+                            active: subVertical === 12,
+                            onPress: () => {
+                              setSubVertical(12);
+                              updatePreferences({ subtitlePosition: "top" });
+                            },
+                          },
+                          {
+                            key: "center",
+                            label: "Center (50%)",
+                            active: subVertical === 50,
+                            onPress: () => {
+                              setSubVertical(50);
+                              updatePreferences({ subtitlePosition: "bottom" });
+                            },
+                          },
+                          {
+                            key: "lower",
+                            label: "Lower (75%)",
+                            active: subVertical === 75,
+                            onPress: () => {
+                              setSubVertical(75);
+                              updatePreferences({ subtitlePosition: "bottom" });
+                            },
+                          },
+                          {
+                            key: "bottom",
+                            label: "Bottom (88%)",
+                            active: subVertical === 88,
+                            onPress: () => {
+                              setSubVertical(88);
+                              updatePreferences({ subtitlePosition: "bottom" });
+                            },
+                          },
+                        ]}
+                      />
+
+                      <SheetSection label="Player" />
+                      {isPictureInPictureSupported() && (
                         <SheetItem
-                          key={track.id}
-                          label={
-                            track.label ||
-                            track.language ||
-                            track.id ||
-                            "Audio track"
-                          }
-                          selected={player.audioTrack?.id === track.id}
+                          label="Picture in picture"
                           onPress={() => {
-                            player.audioTrack = track;
                             setMenu(null);
+                            pip.current = true;
+                            void video.current
+                              ?.startPictureInPicture()
+                              .catch(() => {
+                                pip.current = false;
+                                setMessage(
+                                  "Picture in picture is unavailable on this device.",
+                                );
+                              });
                           }}
                         />
-                      ))}
+                      )}
                     </>
-                  ) : (
-                    <Text className="text-white/50 text-[14px] px-5 py-5">
-                      This file has a single audio track.
-                    </Text>
-                  ))}
-
-                {/* Subtitles */}
-                {menu === "captions" && (
-                  <>
-                    <SheetSection label="Track" />
-                    <SheetItem
-                      label="Off"
-                      selected={!subtitle}
-                      onPress={() => {
-                        setSubtitle(null);
-                        updatePreferences({ autoSubtitles: false });
-                      }}
-                    />
-                    {manifest.tracks?.map((track) => (
-                      <SheetItem
-                        key={track.track}
-                        label={track.title || track.language || track.track}
-                        selected={subtitle === track.track}
-                        onPress={() => {
-                          setSubtitle(track.track);
-                          updatePreferences({
-                            autoSubtitles: true,
-                            subtitleLanguage: track.language || "",
-                          });
-                        }}
-                      />
-                    ))}
-
-                    {platform.local?.pickSubtitle && (
-                      <SheetItem
-                        label="Add subtitle file"
-                        hint="SRT or VTT"
-                        onPress={() => {
-                          void platform.local!.pickSubtitle!(manifest.fileId)
-                            .then((track) => {
-                              if (!track) return;
-                              setManifest((current) => ({
-                                ...current,
-                                tracks: [
-                                  ...(current.tracks || []).filter(
-                                    (t) => t.track !== track.track,
-                                  ),
-                                  track,
-                                ],
-                              }));
-                              setSubtitle(track.track);
-                              updatePreferences({ autoSubtitles: true });
-                            })
-                            .catch(() =>
-                              setMessage(
-                                "Could not add this subtitle file. Choose an SRT or VTT file.",
-                              ),
-                            );
-                        }}
-                      />
-                    )}
-                    {nativeSubtitles.map((track) => (
-                      <SheetItem
-                        key={`native:${track.id}`}
-                        label={
-                          track.label || track.language || "Embedded subtitles"
-                        }
-                        selected={subtitle === `native:${track.id}`}
-                        onPress={() => {
-                          setSubtitle(`native:${track.id}`);
-                          updatePreferences({ autoSubtitles: true });
-                        }}
-                      />
-                    ))}
-
-                    <SheetSection label="Timing & appearance" />
-                    <SheetChips
-                      label={
-                        preferences.subtitleOffset === 0
-                          ? "Timing"
-                          : `Timing ${preferences.subtitleOffset > 0 ? "+" : ""}${preferences.subtitleOffset.toFixed(1)}s`
-                      }
-                      options={[
-                        {
-                          key: "earlier",
-                          label: "−0.5s",
-                          onPress: () =>
-                            updatePreferences({
-                              subtitleOffset: preferences.subtitleOffset - 0.5,
-                            }),
-                        },
-                        {
-                          key: "reset",
-                          label: "Reset",
-                          active: preferences.subtitleOffset === 0,
-                          onPress: () =>
-                            updatePreferences({ subtitleOffset: 0 }),
-                        },
-                        {
-                          key: "later",
-                          label: "+0.5s",
-                          onPress: () =>
-                            updatePreferences({
-                              subtitleOffset: preferences.subtitleOffset + 0.5,
-                            }),
-                        },
-                      ]}
-                    />
-                    <SheetChips
-                      label="Size"
-                      options={[18, 22, 28, 34].map((size) => ({
-                        key: String(size),
-                        label: `${size}`,
-                        active: preferences.subtitleSize === size,
-                        onPress: () =>
-                          updatePreferences({ subtitleSize: size }),
-                      }))}
-                    />
-                    <View className="flex-row items-center justify-between px-5 pt-[18px]">
-                      <View>
-                        <Text className="text-white text-[14px] font-semibold">
-                          Vertical Position
-                        </Text>
-                        <Text className="text-white text-[18px] font-bold mt-1">
-                          {subVertical}%
-                        </Text>
-                      </View>
-                      <View className="flex-row gap-2">
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Move subtitles higher"
-                          onPress={() => {
-                            const nextVal = Math.max(8, subVertical - 6);
-                            setSubVertical(nextVal);
-                            updatePreferences({
-                              subtitlePosition: nextVal < 50 ? "top" : "bottom",
-                            });
-                          }}
-                          className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
-                        >
-                          <Minus size={18} color="#ffffff" strokeWidth={2.4} />
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Move subtitles lower"
-                          onPress={() => {
-                            const nextVal = Math.min(92, subVertical + 6);
-                            setSubVertical(nextVal);
-                            updatePreferences({
-                              subtitlePosition: nextVal < 50 ? "top" : "bottom",
-                            });
-                          }}
-                          className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
-                        >
-                          <Plus size={18} color="#ffffff" strokeWidth={2.4} />
-                        </Pressable>
-                      </View>
-                    </View>
-                    <SheetChips
-                      label="Position Presets"
-                      options={[
-                        {
-                          key: "top",
-                          label: "Top (12%)",
-                          active: subVertical === 12,
-                          onPress: () => {
-                            setSubVertical(12);
-                            updatePreferences({ subtitlePosition: "top" });
-                          },
-                        },
-                        {
-                          key: "center",
-                          label: "Center (50%)",
-                          active: subVertical === 50,
-                          onPress: () => {
-                            setSubVertical(50);
-                            updatePreferences({ subtitlePosition: "bottom" });
-                          },
-                        },
-                        {
-                          key: "lower",
-                          label: "Lower (75%)",
-                          active: subVertical === 75,
-                          onPress: () => {
-                            setSubVertical(75);
-                            updatePreferences({ subtitlePosition: "bottom" });
-                          },
-                        },
-                        {
-                          key: "bottom",
-                          label: "Bottom (88%)",
-                          active: subVertical === 88,
-                          onPress: () => {
-                            setSubVertical(88);
-                            updatePreferences({ subtitlePosition: "bottom" });
-                          },
-                        },
-                      ]}
-                    />
                   </>
                 )}
 

@@ -36,6 +36,8 @@ import SlidersHorizontalIcon from "@hugeicons/core-free-icons/SlidersHorizontalI
 import SquareLock01Icon from "@hugeicons/core-free-icons/SquareLock01Icon";
 import SquareUnlock01Icon from "@hugeicons/core-free-icons/SquareUnlock01Icon";
 import SubtitleIcon from "@hugeicons/core-free-icons/SubtitleIcon";
+import Sun01Icon from "@hugeicons/core-free-icons/Sun01Icon";
+import GaugeIcon from "@hugeicons/core-free-icons/GaugeIcon";
 import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import Tv01Icon from "@hugeicons/core-free-icons/Tv01Icon";
 import VolumeHighIcon from "@hugeicons/core-free-icons/VolumeHighIcon";
@@ -69,7 +71,7 @@ export const ChevronLeft = glyph(ArrowLeft01Icon);
 export const ChevronRight = glyph(ArrowRight01Icon);
 export const Film = glyph(Film01Icon);
 export const Info = glyph(InformationCircleIcon);
-export const Play = glyph(PlayIcon);
+export const Play = glyph(PlayIcon, true);
 export const Trash2 = glyph(Delete02Icon);
 export const X = glyph(Cancel01Icon);
 export const AudioLines = glyph(AudioLinesIcon);
@@ -103,4 +105,37 @@ export const RotateCw = glyph(RotateRight01Icon);
 export const SlidersHorizontal = glyph(SlidersHorizontalIcon);
 export const Unlock = glyph(SquareUnlock01Icon);
 export const ZoomIn = glyph(ZoomInIcon);
+export const Sun = glyph(Sun01Icon);
+export const Gauge = glyph(GaugeIcon);
 export const MoreHorizontal = glyph(MoreHorizontalIcon);
+
+/**
+ * Solid info mark — the filled "i" by itself, for use on an opaque chip
+ * (black glyph on a white chip, white glyph on a dark chip). It deliberately
+ * has no disc around it: the chip supplies the background. The hugeicons free
+ * set is stroke-only, so this is hand-built on the same 24-unit grid.
+ */
+export const InfoSolid: NativeIcon = function InfoSolid({
+  size = 24,
+  color = "#000",
+  // A solid glyph ignores stroke width and fill overrides on purpose.
+  ...props
+}: IconProps) {
+  const { strokeWidth: _strokeWidth, fill: _fill, ...rest } = props;
+  return (
+    <HugeiconsIcon
+      icon={[
+        [
+          "path",
+          {
+            d: "M12 4.1A1.9 1.9 0 1 0 12 7.9A1.9 1.9 0 1 0 12 4.1ZM10.3 11.1A1.7 1.7 0 0 1 12 9.4A1.7 1.7 0 0 1 13.7 11.1V17.7A1.7 1.7 0 0 1 12 19.4A1.7 1.7 0 0 1 10.3 17.7Z",
+            fill: "currentColor",
+          },
+        ],
+      ]}
+      size={size}
+      color={color}
+      {...rest}
+    />
+  );
+};

@@ -1,8 +1,8 @@
 import { View } from "react-native";
-import { useClient } from "../../core/client/client-provider";
-import { useResource } from "../../core/resources/use-resource";
-import { Button } from "../../shared/ui/button";
-import { Notice } from "../../shared/ui/notice";
+import { useClient } from "@/core/client/client-provider";
+import { useResource } from "@/core/resources/use-resource";
+import { Button } from "@/shared/ui/button";
+import { Notice } from "@/shared/ui/notice";
 import { PlayerLoading } from "./components/player-loading";
 import { PlaybackScreen } from "./playback-screen";
 

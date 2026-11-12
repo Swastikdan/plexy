@@ -4,7 +4,7 @@ import { ImageManipulator,SaveFormat } from "expo-image-manipulator";
 import type { VideoPlayer } from "expo-video";
 import { useEffect,useRef,useState } from "react";
 import { View } from "react-native";
-import { localLibrary } from "../../../core/library/local-runtime";
+import { localLibrary } from "@/core/library/local-runtime";
 // Only visited timestamps are decoded. JPEGs survive app restarts in private storage.
 const directory = new Directory(Paths.document, "trickplay");
 const pending = new Map<string, Promise<string>>();
@@ -71,10 +71,14 @@ export function LocalThumbnail({
   player,
   time,
   fileId,
+  width = 120,
+  height = 68,
 }: {
   player: VideoPlayer;
   time: number;
   fileId: number;
+  width?: number;
+  height?: number;
 }) {
   const [uri, setUri] = useState<string | null>(null);
   const wanted = useRef(0);
@@ -110,7 +114,10 @@ export function LocalThumbnail({
     });
   }, [player, second, fileId]);
   return uri ? (
-    <View className="h-[68px] w-[120px] overflow-hidden rounded-[8px] border-[1.5px] border-white/40 bg-black">
+    <View
+      className="overflow-hidden rounded-[10px] border-[1.5px] border-white/40 bg-black"
+      style={{ width, height }}
+    >
       <Image
         source={uri}
         style={{ width: "100%", height: "100%" }}

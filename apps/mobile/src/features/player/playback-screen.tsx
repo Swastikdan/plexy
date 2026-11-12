@@ -1,8 +1,6 @@
 import { useKeepAwake } from "expo-keep-awake";
-import { LinearGradient } from "expo-linear-gradient";
 import * as Orientation from "expo-screen-orientation";
 import {
-isPictureInPictureSupported,
 useVideoPlayer,
 VideoView,
 } from "expo-video";
@@ -18,41 +16,40 @@ ScrollView,
 StatusBar,
 StyleSheet,
 Text,
+useWindowDimensions,
 View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { localSegments } from "../../../../../packages/local-library/src/library";
-import { useClient } from "../../core/client/client-provider";
+import { localSegments } from "@plexy/local-library/library";
+import { useClient } from "@/core/client/client-provider";
 import type {
 ItemCard,
 Playability,
 SkipSegments,
-} from "../../core/library/catalog-api";
-import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
-import { cn } from "../../shared/lib/cn";
-import { colors,fonts,timeLabel } from "../../shared/theme";
-import { ListVideo,Lock,SkipBack,Unlock } from "../../shared/ui/icons";
-import { Notice } from "../../shared/ui/notice";
-import { Label } from "../../shared/ui/text";
+} from "@/core/library/catalog-api";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { cn } from "@/shared/lib/cn";
+import { timeLabel } from "@/shared/theme";
+import { Lock,Unlock } from "@/shared/ui/icons";
+import { Notice } from "@/shared/ui/notice";
+import { Label } from "@/shared/ui/text";
 import { LocalThumbnail } from "./components/local-thumbnail";
+import { AudioPanel } from "./components/audio-panel";
+import { BottomToolbar } from "./components/bottom-toolbar";
 import { PlayerControl } from "./components/player-control";
 import { PlayerDrawer } from "./components/player-drawer";
+import { PlayerGestureHud } from "./components/player-gesture-hud";
 import {
-IconAudio,
 IconBack,
-IconClose,
-IconFitState,
-IconForward,
-IconFullscreen,
-IconNext,
 IconPause,
-IconPip,
 IconPlay,
-IconRewind,
 IconSettings,
-IconSubtitles,
+IconSeekBack,
+IconSeekForward,
 } from "./components/player-icons";
 import { PlayerLoading } from "./components/player-loading";
+import { SpeedPanel } from "./components/speed-panel";
+import { TimelineBar } from "./components/timeline-bar";
 import { usePlayerOrientation } from "./hooks/use-player-orientation";
 import { bufferOptionsForDuration } from "./lib/player-buffer";
 import {
@@ -75,6 +72,56 @@ interface SourceChoice {
   revision: number;
 }
 
+/** A rounded end-of-episode pill ("Next Episode", "Watch credits"). */
+function EndPill({
+  label,
+  onPress,
+  variant,
+  fill,
+}: {
+  label: string;
+  onPress: () => void;
+  variant: "dark" | "light" | "ghost";
+  fill?: number;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      className={cn(
+        "min-w-[150px] items-center justify-center overflow-hidden rounded-full px-6 py-3",
+        variant === "light"
+          ? "bg-white"
+          : variant === "dark"
+            ? "bg-white/20"
+            : "border border-white/30 bg-transparent",
+      )}
+      style={({ pressed }) => ({
+        opacity: pressed ? 0.85 : 1,
+        transform: [{ scale: pressed ? 0.96 : 1 }],
+      })}
+    >
+      {fill != null && (
+        <View
+          pointerEvents="none"
+          className="absolute left-0 top-0 bottom-0 bg-black/[0.12]"
+          style={{ width: `${Math.round(fill * 100)}%` }}
+        />
+      )}
+      <Text
+        pointerEvents="none"
+        className={cn(
+          "text-[14px] font-archivo-bold",
+          variant === "light" ? "text-black" : "text-white/95",
+        )}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function PlaybackScreen({
   initial,
   back,
@@ -88,6 +135,7 @@ export function PlaybackScreen({
   const { api, platform, preferences, updatePreferences, progress } =
     useClient();
   const insets = useSafeAreaInsets();
+  const win = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const [manifest, setManifest] = useState(initial);
   const [choice, setChoice] = useState<SourceChoice>({
@@ -117,11 +165,12 @@ export function PlaybackScreen({
     const t = setTimeout(() => setMessage(""), 4000);
     return () => clearTimeout(t);
   }, [message]);
-  const [fullscreen, setFullscreen] = useState(true);
   const [visible, setVisible] = useState(true);
   const [menu, setMenu] = useState<
-    "settings" | "audio" | "captions" | "quality" | "episodes" | null
+    "settings" | "quality" | "episodes" | null
   >(null);
+  const [speedPanel, setSpeedPanel] = useState(false);
+  const [audioPanel, setAudioPanel] = useState(false);
   const drawerAnim = useRef(new Animated.Value(560)).current;
   const resumeBackdropOpacity = useRef(new Animated.Value(0)).current;
   const resumeCardOpacity = useRef(new Animated.Value(0)).current;
@@ -223,9 +272,6 @@ export function PlaybackScreen({
     outro: null,
   });
   const [scrub, setScrub] = useState<number | null>(null);
-  const [timelineFocus, setTimelineFocus] = useState(false);
-  const [] = useState<number | undefined>();
-  const timeline = useRef<View>(null);
   type FitMode = "contain" | "cover" | "fill";
   const [fitMode, setFitMode] = useState<FitMode>("contain");
   const [zoom, setZoom] = useState(1);
@@ -303,78 +349,130 @@ export function PlaybackScreen({
         : `${Math.round(scale * 100)}% zoom`,
     );
   };
-  const FIT_PRESETS: Array<{
-    mode: FitMode;
-    zoom: number;
-    label: string;
-  }> = [
-    { mode: "contain", zoom: 1, label: "Best fit" },
-    { mode: "contain", zoom: 1.05, label: "105% zoom" },
-    { mode: "contain", zoom: 1.2, label: "120% zoom" },
-    { mode: "cover", zoom: 1, label: "Crop to fill" },
-    { mode: "fill", zoom: 1, label: "Stretch to fill" },
-  ];
-  const cycleFitMode = () => {
-    const currentIndex = FIT_PRESETS.findIndex(
-      (preset) => preset.mode === fitMode && preset.zoom === zoom,
-    );
-    const next = FIT_PRESETS[(currentIndex + 1) % FIT_PRESETS.length]!;
-    applyFit(next.mode, next.zoom);
-  };
+  // Zoom is a plain two-finger pinch on the video; brightness and volume are
+  // vertical drags on the left / right half of the screen.
+  const [brightness, setBrightness] = useState(1);
+  const [volume, setVolume] = useState(1);
+  const [adjusting, setAdjusting] = useState<
+    "brightness" | "volume" | null
+  >(null);
+  const brightnessRef = useRef(brightness);
+  brightnessRef.current = brightness;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+  const hasLoadedRef = useRef(hasLoaded);
+  hasLoadedRef.current = hasLoaded;
+  const screenRef = useRef({ w: win.width, h: win.height });
+  screenRef.current = { w: win.width, h: win.height };
   const initialPinchDist = useRef<number | null>(null);
   const initialZoom = useRef(1);
-  const pinchPanResponder = useRef(
+  const gestureMode = useRef<"pinch" | "av" | null>(null);
+  const avCandidate = useRef<{ x: number; y: number } | null>(null);
+  const avStart = useRef<{
+    side: "left" | "right";
+    y: number;
+    level: number;
+  } | null>(null);
+  const finishGesture = () => {
+    gestureMode.current = null;
+    avCandidate.current = null;
+    avStart.current = null;
+    initialPinchDist.current = null;
+    gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
+    setAdjusting(null);
+  };
+  const videoGestures = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) =>
         evt.nativeEvent.touches.length >= 2,
-      onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponder: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) return true;
+        if (touches.length !== 1) return false;
+        // Brightness/volume drags need a loaded video.
+        if (!hasLoadedRef.current) return false;
+        const touch = touches[0]!;
+        if (!avCandidate.current) {
+          avCandidate.current = { x: touch.pageX, y: touch.pageY };
+          return false;
+        }
+        const dx = touch.pageX - avCandidate.current.x;
+        const dy = touch.pageY - avCandidate.current.y;
+        if (Math.hypot(dx, dy) < 16) return false;
+        if (Math.abs(dy) <= Math.abs(dx) * 1.2) {
+          // Not a vertical drag: forget this origin so the next drag starts fresh.
+          avCandidate.current = null;
+          return false;
+        }
+        return true;
+      },
       onPanResponderGrant: (evt) => {
         cancelPendingTap();
         gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
         const touches = evt.nativeEvent.touches;
         if (touches.length >= 2) {
+          gestureMode.current = "pinch";
           const t0 = touches[0]!;
           const t1 = touches[1]!;
           const dx = t0.pageX - t1.pageX;
           const dy = t0.pageY - t1.pageY;
           initialPinchDist.current = Math.hypot(dx, dy);
           initialZoom.current = zoomRef.current;
+          return;
         }
+        const touch = touches[0]!;
+        const side =
+          evt.nativeEvent.locationX < viewportWidth.current / 2
+            ? "left"
+            : "right";
+        gestureMode.current = "av";
+        avStart.current = {
+          side,
+          y: touch.pageY,
+          level: side === "left" ? brightnessRef.current : volumeRef.current,
+        };
+        setAdjusting(side === "left" ? "brightness" : "volume");
       },
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
-        if (
-          touches.length >= 2 &&
-          initialPinchDist.current &&
-          initialPinchDist.current > 0
-        ) {
-          const t0 = touches[0]!;
-          const t1 = touches[1]!;
-          const dx = t0.pageX - t1.pageX;
-          const dy = t0.pageY - t1.pageY;
-          const currentDist = Math.hypot(dx, dy);
-          const newZoom = pinchZoom(
-            initialZoom.current,
-            initialPinchDist.current,
-            currentDist,
-          );
-          zoomRef.current = newZoom;
-          setZoom(newZoom);
-          showFitToast(`${Math.round(newZoom * 100)}% zoom`);
+        if (gestureMode.current === "pinch") {
+          if (
+            touches.length >= 2 &&
+            initialPinchDist.current &&
+            initialPinchDist.current > 0
+          ) {
+            const t0 = touches[0]!;
+            const t1 = touches[1]!;
+            const dx = t0.pageX - t1.pageX;
+            const dy = t0.pageY - t1.pageY;
+            const currentDist = Math.hypot(dx, dy);
+            const newZoom = pinchZoom(
+              initialZoom.current,
+              initialPinchDist.current,
+              currentDist,
+            );
+            zoomRef.current = newZoom;
+            setZoom(newZoom);
+            showFitToast(`${Math.round(newZoom * 100)}% zoom`);
+          }
+          return;
+        }
+        if (gestureMode.current === "av" && avStart.current && touches.length === 1) {
+          const dy = avStart.current.y - touches[0]!.pageY;
+          const delta = dy / (screenRef.current.h * 0.55);
+          if (avStart.current.side === "left") {
+            setBrightness(
+              Math.min(1, Math.max(0.2, avStart.current.level + delta)),
+            );
+          } else {
+            setVolume(Math.min(1, Math.max(0, avStart.current.level + delta)));
+          }
         }
       },
-      onPanResponderRelease: () => {
-        initialPinchDist.current = null;
-        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
-      },
-      onPanResponderTerminate: () => {
-        initialPinchDist.current = null;
-        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
-      },
+      onPanResponderRelease: finishGesture,
+      onPanResponderTerminate: finishGesture,
     }),
   ).current;
-  const [] = useState(false);
-  const [diagnostics, setDiagnostics] = useState(false);
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [autoNextCancelled, setAutoNextCancelled] = useState(false);
@@ -415,7 +513,6 @@ export function PlaybackScreen({
   const [subVertical, setSubVertical] = useState<number>(
     preferences.subtitlePosition === "top" ? 12 : 88,
   );
-  const [] = useState(1);
   const expectedUri = useRef("");
 
   const video = useRef<VideoView>(null);
@@ -430,13 +527,13 @@ export function PlaybackScreen({
   preferencesRef.current = preferences;
   const playingRef = useRef(false);
   const lastSaved = useRef(0);
-  const timelineWidth = useRef(1);
   const lastInteraction = useRef(Date.now());
   const chosenStart = useRef(0);
   const initialized = useRef(false);
   const scrubTargetRef = useRef<number | null>(null);
   const scrubCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlsOpacity = useRef(new Animated.Value(1)).current;
+  const chromeIn = useRef(new Animated.Value(1)).current;
   const player = useVideoPlayer(null, (instance) => {
     instance.bufferOptions = bufferOptionsForDuration(initial.duration || 0);
     instance.timeUpdateEventInterval = 0.5;
@@ -446,6 +543,9 @@ export function PlaybackScreen({
   useEffect(() => {
     player.bufferOptions = bufferOptionsForDuration(duration);
   }, [player, duration]);
+  useEffect(() => {
+    player.volume = volume;
+  }, [player, volume]);
   const save = useCallback(
     (completed = false) => {
       if (!manifest.itemId || !initialized.current) return;
@@ -472,6 +572,8 @@ export function PlaybackScreen({
   };
   const lockScreen = () => {
     setMenu(null);
+    setSpeedPanel(false);
+    setAudioPanel(false);
     setVisible(false);
     setUnlockHint(false);
     setLocked(true);
@@ -680,9 +782,29 @@ export function PlaybackScreen({
       seek(active.end);
     }
   }, [position, preferences.autoSkip, skips, duration, scrub, status, resume]);
+  const activeSkip = Object.entries(validatedSkips).find(
+    ([, segment]) =>
+      segment && position >= segment.start && position < segment.end,
+  );
+  const skipLabel = activeSkip?.[0] === "outro" ? "credits" : activeSkip?.[0];
+  // While the credits roll the next-episode countdown already runs, Netflix
+  // style; "Watch credits" cancels it and keeps playing.
+  const creditsPhase =
+    !ended &&
+    activeSkip?.[0] === "outro" &&
+    scrub == null &&
+    status !== "loading";
+  const creditsPills =
+    creditsPhase &&
+    preferences.autoNext &&
+    !!manifest.nextFileId &&
+    !autoNextCancelled;
+  useEffect(() => {
+    if (creditsPhase) setCountdown(10);
+  }, [creditsPhase]);
   useEffect(() => {
     if (
-      !ended ||
+      (!ended && !creditsPhase) ||
       !preferences.autoNext ||
       autoNextCancelled ||
       !manifest.nextFileId
@@ -695,6 +817,7 @@ export function PlaybackScreen({
     return () => clearTimeout(timer);
   }, [
     ended,
+    creditsPhase,
     preferences.autoNext,
     autoNextCancelled,
     manifest.nextFileId,
@@ -707,14 +830,15 @@ export function PlaybackScreen({
         playingRef.current &&
         status !== "loading" &&
         !menu &&
+        !speedPanel &&
+        !audioPanel &&
         scrub == null &&
-        !timelineFocus &&
         Date.now() - lastInteraction.current > 6000
       )
         setVisible(false);
     }, 1000);
     return () => clearInterval(timer);
-  }, [menu, scrub, timelineFocus, status]);
+  }, [menu, speedPanel, audioPanel, scrub, status]);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
@@ -724,12 +848,9 @@ export function PlaybackScreen({
     });
     return () => sub.remove();
   }, [player, save]);
-  usePlayerOrientation(fullscreen, () =>
+  usePlayerOrientation(() =>
     setMessage("The device could not change screen orientation."),
   );
-  useEffect(() => {
-    if (error && fullscreen) setFullscreen(false);
-  }, [error, fullscreen]);
   const exit = () => {
     save();
     player.pause();
@@ -746,6 +867,14 @@ export function PlaybackScreen({
         unlockScreen();
         return true;
       }
+      if (speedPanel) {
+        setSpeedPanel(false);
+        return true;
+      }
+      if (audioPanel) {
+        setAudioPanel(false);
+        return true;
+      }
       if (menu) {
         setMenu(null);
         return true;
@@ -754,22 +883,17 @@ export function PlaybackScreen({
       return true;
     });
     return () => sub.remove();
-  }, [menu, fullscreen, back, save, player]);
+  }, [menu, speedPanel, audioPanel, back, save, player]);
   const togglePlay = () => {
     reveal();
     if (ended) seek(0);
     player.playing ? player.pause() : player.play();
   };
-  const activeSkip = Object.entries(validatedSkips).find(
-    ([, segment]) =>
-      segment && position >= segment.start && position < segment.end,
-  );
-  const skipLabel = activeSkip?.[0] === "outro" ? "credits" : activeSkip?.[0];
   const previewTime = scrub ?? position;
 
   const text = subtitleText(cues, position, preferences.subtitleOffset);
-  const show = visible || !!menu || resume || ended || !!error;
-  const layoutFull = fullscreen;
+  const show =
+    visible || !!menu || speedPanel || audioPanel || resume || ended || !!error;
   // Progress ratio helpers
   const openingVideo = shouldShowPlayerLoading(
     status,
@@ -778,16 +902,27 @@ export function PlaybackScreen({
   );
   const bufferedRatio = duration ? Math.min(1, bufferedPosition / duration) : 0;
   const progressRatio = duration ? Math.min(1, previewTime / duration) : 0;
-
-  useEffect(() => {
-    const shouldHide = openingVideo || scrub != null || ended;
-    Animated.timing(controlsOpacity, {
-      toValue: shouldHide ? 0 : 1,
-      duration: reduceMotion ? 0 : 100,
-      easing: Easing.bezier(0.23, 1, 0.32, 1),
-      useNativeDriver: true,
-    }).start();
-  }, [openingVideo, scrub, ended, reduceMotion]);
+  // Track geometry of TimelineBar (row inset 24 + 52px labels + 12px gaps) so
+  // the scrub preview can track the thumb position.
+  const trackLeft = 24 + 52 + 12;
+  const trackWidth = Math.max(60, win.width - 176);
+  const scrubRatio = duration
+    ? Math.min(1, Math.max(0, (scrub ?? 0) / duration))
+    : 0;
+  const chromeTitle = (() => {
+    if (manifest.seasonNumber != null && manifest.episodeNumber != null) {
+      const cleaned = (manifest.subtitle || "")
+        .replace(
+          /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
+          "",
+        )
+        .trim();
+      return `S${manifest.seasonNumber}:E${manifest.episodeNumber}${
+        cleaned ? ` "${cleaned}"` : ""
+      }`;
+    }
+    return manifest.title || "Plexy";
+  })();
 
   useEffect(() => {
     if (resume) {
@@ -821,44 +956,60 @@ export function PlaybackScreen({
       ]).start();
     }
   }, [resume, reduceMotion]);
+  // Fade the full chrome in the moment playback becomes live.
+  useEffect(() => {
+    if (hasLoaded) {
+      chromeIn.setValue(0);
+      Animated.timing(chromeIn, {
+        toValue: 1,
+        duration: reduceMotion ? 0 : 220,
+        easing: Easing.bezier(0.23, 1, 0.32, 1),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [hasLoaded, reduceMotion]);
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
+  const videoViewProps = {
+    ref: video,
+    player,
+    nativeControls: false,
+    surfaceType: "textureView" as const,
+    fullscreenOptions: { enable: false },
+    allowsPictureInPicture: true,
+    startsPictureInPictureAutomatically: false,
+    onPictureInPictureStart: () => {
+      pip.current = true;
+    },
+    onPictureInPictureStop: () => {
+      pip.current = false;
+      reveal();
+    },
+    contentFit: fitMode,
+  };
   return (
-    <View
-      className="flex-1 bg-black"
-      style={{ paddingTop: layoutFull ? 0 : insets.top }}
-    >
-      <StatusBar hidden={layoutFull} barStyle="light-content" />
+    <View className="flex-1 bg-black">
+      <StatusBar hidden barStyle="light-content" />
 
-      {/* ── Video container ── */}
+      {/* ── Video ── */}
       <View
-        className={cn(
-          "absolute inset-0",
-          !layoutFull && "w-full aspect-[16/9]",
-        )}
-        {...(!locked ? pinchPanResponder.panHandlers : {})}
+        className="absolute inset-0"
+        {...(!locked ? videoGestures.panHandlers : {})}
       >
         <VideoView
-          ref={video}
-          player={player}
-          nativeControls={false}
-          surfaceType="textureView"
-          fullscreenOptions={{ enable: false }}
-          allowsPictureInPicture={true}
-          startsPictureInPictureAutomatically={false}
-          onPictureInPictureStart={() => {
-            pip.current = true;
-          }}
-          onPictureInPictureStop={() => {
-            pip.current = false;
-            reveal();
-          }}
+          {...videoViewProps}
           style={[
             StyleSheet.absoluteFill,
             zoom !== 1 && { transform: [{ scale: zoom }] },
           ]}
-          contentFit={fitMode}
+        />
+
+        {/* In-app brightness dimming (left-half drag) */}
+        <View
+          pointerEvents="none"
+          className="absolute inset-0 bg-black"
+          style={{ opacity: (1 - brightness) * 0.9 }}
         />
 
         {openingVideo && <PlayerLoading />}
@@ -894,7 +1045,6 @@ export function PlaybackScreen({
         {/* Single tap toggles controls; double tap seeks without changing fit or zoom. */}
         <View
           className="absolute inset-0"
-          {...(!locked ? pinchPanResponder.panHandlers : {})}
           collapsable={false}
         >
           <Pressable
@@ -997,153 +1147,201 @@ export function PlaybackScreen({
         )}
       </View>
 
-      {/* ── Inline (non-fullscreen) title + simple controls ── */}
-      {!layoutFull && (
-        <View className="flex-1 bg-[#111]">
-          {/* Title row */}
-          <View className="flex-row items-center gap-3 px-4 pt-3.5 pb-1.5">
-            <PlayerControl onPress={exit} size={36} bg="rgba(255,255,255,0.1)">
-              <IconBack size={18} />
-            </PlayerControl>
-            <View className="flex-1">
-              <Text
-                className="text-white text-[16px] font-bold"
-                numberOfLines={1}
-              >
-                {manifest.title || undefined || "Plexy"}
-              </Text>
-              {!!manifest.subtitle && (
-                <Text
-                  className="text-white/60 text-[13px] mt-0.5"
-                  numberOfLines={1}
-                >
-                  {manifest.subtitle}
-                </Text>
-              )}
-            </View>
-          </View>
+      {/* ── Player chrome (landscape only) ── */}
+      {show && !locked && (
+        <Animated.View
+          className="absolute inset-0"
+          pointerEvents="box-none"
+          style={{ opacity: chromeIn }}
+        >
+          {/* Bottom seek bar (hidden while loading or the end pills show) */}
+          {!openingVideo && !ended && !creditsPills && (
+            <TimelineBar
+              duration={duration}
+              value={previewTime}
+              buffered={bufferedPosition}
+              scrubbing={scrub != null}
+              seekStep={SEEK_SECONDS}
+              bottom={Math.max(insets.bottom, 8) + 52}
+              onScrub={(target) => {
+                reveal();
+                setScrub(target);
+              }}
+              onCommit={(target) => seek(target)}
+            />
+          )}
 
-          {/* Inline progress bar */}
-          <Pressable
-            ref={timeline}
-            accessibilityLabel="Playback position"
-            accessibilityRole="adjustable"
-            accessibilityValue={{
-              min: 0,
-              max: duration,
-              now: position,
-              text: timeLabel(position),
-            }}
-            accessibilityActions={[
-              { name: "increment" },
-              { name: "decrement" },
-            ]}
-            onAccessibilityAction={(e) =>
-              seek(
-                position +
-                  (e.nativeEvent.actionName === "increment"
-                    ? SEEK_SECONDS
-                    : -SEEK_SECONDS),
-              )
-            }
-            onLayout={(e) => {
-              timelineWidth.current = e.nativeEvent.layout.width;
-            }}
-            onStartShouldSetResponder={() => true}
-            onResponderGrant={(e) => {
-              reveal();
-              setScrub(
-                Math.max(
-                  0,
-                  Math.min(
-                    duration,
-                    (e.nativeEvent.locationX / timelineWidth.current) *
-                      duration,
-                  ),
-                ),
-              );
-            }}
-            onResponderMove={(e) => {
-              setScrub(
-                Math.max(
-                  0,
-                  Math.min(
-                    duration,
-                    (e.nativeEvent.locationX / timelineWidth.current) *
-                      duration,
-                  ),
-                ),
-              );
-            }}
-            onResponderRelease={(e) => {
-              seek(
-                Math.max(
-                  0,
-                  Math.min(
-                    duration,
-                    (e.nativeEvent.locationX / timelineWidth.current) *
-                      duration,
-                  ),
-                ),
-              );
-            }}
-            className="px-4 py-2.5"
-          >
-            {/* Track */}
+          {/* Trick-play scrub preview above the seek bar, tracking the thumb */}
+          {!openingVideo && scrub != null && !ended && !creditsPills && (
             <View
-              className="rounded-[3px] bg-white/20 overflow-visible"
-              style={{ height: scrub != null ? 5 : 3 }}
+              pointerEvents="none"
+              className="absolute items-center gap-1.5"
+              style={{
+                left: Math.max(
+                  106,
+                  Math.min(
+                    win.width - 106,
+                    24 + 52 + 12 + scrubRatio * trackWidth,
+                  ),
+                ),
+                bottom: Math.max(insets.bottom, 8) + 100,
+                transform: [{ translateX: -100 }],
+              }}
             >
-              <View
-                pointerEvents="none"
-                className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white/30"
-                style={{ width: `${bufferedRatio * 100}%` }}
+              <LocalThumbnail
+                key={manifest.fileId}
+                player={player}
+                time={scrub}
+                fileId={manifest.fileId}
+                width={200}
+                height={113}
               />
-              {/* Fill */}
-              <View
-                className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white"
-                style={{ width: `${progressRatio * 100}%` }}
-              />
-              {/* Thumb */}
-              <View
-                className="absolute top-1/2 h-3 w-3 rounded-full bg-white -mt-1.5 -ml-1.5"
-                style={{ left: `${progressRatio * 100}%` }}
-              />
+              <View className="rounded-[6px] border border-white/20 bg-black/85 px-2 py-[3px]">
+                <Text className="text-[11px] font-archivo-bold text-white">
+                  {timeLabel(scrub)}
+                </Text>
+              </View>
             </View>
-          </Pressable>
+          )}
 
-          {/* Time labels */}
-          <View className="flex-row justify-between px-4">
-            <Text className="text-white/70 text-[11px]">
-              {timeLabel(previewTime)}
-            </Text>
-            <Text className="text-white/70 text-[11px]">
-              {timeLabel(duration)}
-            </Text>
+          {/* Bottom toolbar: Speed / Lock / Episodes / Audio & Subtitles / Next Ep. */}
+          {!openingVideo && !ended && !creditsPills && (
+            <BottomToolbar
+              speed={preferences.playbackRate}
+              bottom={Math.max(insets.bottom, 8) + 10}
+              onSpeed={() => setSpeedPanel(true)}
+              onLock={lockScreen}
+              showEpisodes={isTvShow && sortedEpisodes.length > 0}
+              onEpisodes={() => setMenu("episodes")}
+              onAudioSubtitles={() => setAudioPanel(true)}
+              showNext={!!manifest.nextFileId}
+              onNext={() => {
+                if (manifest.nextFileId) next(manifest.nextFileId);
+              }}
+            />
+          )}
+
+          {/* Title, top-center */}
+          {!openingVideo && !ended && (
+            <View
+              pointerEvents="none"
+              className="absolute left-0 right-0 items-center"
+              style={{ top: Math.max(insets.top, 10) + 10 }}
+            >
+              <Text
+                numberOfLines={1}
+                className="max-w-[55%] text-center text-[15px] font-archivo-bold text-white/95"
+              >
+                {chromeTitle}
+              </Text>
+            </View>
+          )}
+
+          {/* Back — top-left (available while loading too) */}
+          <View
+            className="absolute"
+            style={{
+              left: Math.max(insets.left, 10) + 12,
+              top: Math.max(insets.top, 10) + 8,
+            }}
+          >
+            <PlayerControl onPress={exit} size={42} bg="rgba(0,0,0,0.4)">
+              <IconBack size={20} />
+            </PlayerControl>
           </View>
 
-          {/* Inline control row */}
-          <View className="flex-row items-center gap-1 px-3 py-2.5">
-            <PlayerControl onPress={() => seek(position - SEEK_SECONDS)}>
-              <IconRewind size={20} />
+          {/* Player settings — top-right */}
+          <View
+            className="absolute"
+            style={{
+              right: Math.max(insets.right, 10) + 12,
+              top: Math.max(insets.top, 10) + 8,
+            }}
+          >
+            <PlayerControl
+              onPress={() => setMenu("settings")}
+              size={42}
+              bg="rgba(0,0,0,0.4)"
+              active={menu === "settings"}
+            >
+              {({ focused }) => (
+                <IconSettings
+                  size={20}
+                  color={
+                    menu === "settings"
+                      ? "#000000"
+                      : focused
+                        ? "#ffffff"
+                        : "rgba(255,255,255,0.9)"
+                  }
+                />
+              )}
             </PlayerControl>
-            <PlayerControl onPress={togglePlay} size={48} bg="rgba(0,0,0,0.5)">
-              {playing ? <IconPause size={20} /> : <IconPlay size={20} />}
-            </PlayerControl>
-            <PlayerControl onPress={() => seek(position + SEEK_SECONDS)}>
-              <IconForward size={20} />
-            </PlayerControl>
-            <View className="flex-1" />
-            {
-              <PlayerControl onPress={() => setFullscreen(true)}>
-                <IconFullscreen size={20} />
-              </PlayerControl>
+          </View>
+
+          {/* Center transport: seek back / play-pause / seek forward */}
+          <Animated.View
+            className="absolute left-0 right-0 flex-row items-center justify-center gap-10"
+            style={{ top: 0, bottom: 0, opacity: controlsOpacity }}
+            pointerEvents={openingVideo || ended ? "none" : "box-none"}
+            accessibilityElementsHidden={openingVideo || ended}
+            importantForAccessibility={
+              openingVideo || ended ? "no-hide-descendants" : "auto"
             }
-          </View>
+          >
+            <PlayerControl
+              onPress={() => seek(currentPosition.current - SEEK_SECONDS)}
+              size={56}
+              bg="transparent"
+              accessibilityLabel={`Back ${SEEK_SECONDS} seconds`}
+            >
+              <IconSeekBack size={28} />
+            </PlayerControl>
 
-          {/* Error / message strip */}
+            <Pressable
+              onPress={togglePlay}
+              accessibilityRole="button"
+              accessibilityLabel={playing ? "Pause" : "Play"}
+              hitSlop={14}
+              className="p-3"
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.8 : 1,
+                transform: [{ scale: pressed ? 0.9 : 1 }],
+              })}
+            >
+              {playing ? (
+                <IconPause size={44} color="#ffffff" />
+              ) : (
+                <IconPlay size={46} color="#ffffff" />
+              )}
+            </Pressable>
+
+            <PlayerControl
+              onPress={() => seek(currentPosition.current + SEEK_SECONDS)}
+              size={56}
+              bg="transparent"
+              accessibilityLabel={`Forward ${SEEK_SECONDS} seconds`}
+            >
+              <IconSeekForward size={28} />
+            </PlayerControl>
+          </Animated.View>
+
+          {/* Brightness / volume edge indicators — only while adjusting */}
+          {!openingVideo && !ended && (
+            <PlayerGestureHud
+              brightness={brightness}
+              volume={volume}
+              adjusting={adjusting}
+            />
+          )}
+
+          {/* Error / message strips */}
           {(!!error || choice.path === "unsupported") && (
-            <View className="px-4 pb-3">
+            <View
+              className="absolute left-16 right-16 items-center"
+              style={{ top: Math.max(insets.top, 10) + 56 }}
+              pointerEvents="box-none"
+            >
               <Notice
                 message={error || manifest.reason}
                 retry={() =>
@@ -1156,590 +1354,101 @@ export function PlaybackScreen({
               />
             </View>
           )}
-        </View>
-      )}
-
-      {/* ── Fullscreen overlay controls ── */}
-      {show && layoutFull && !locked && !openingVideo && (
-        <View className="absolute inset-0" pointerEvents="box-none">
-          <View
-            className="absolute inset-0"
-            pointerEvents={menu || resume ? "none" : "box-none"}
-            importantForAccessibility={
-              menu || resume ? "no-hide-descendants" : "auto"
-            }
-            aria-hidden={!!(menu || resume)}
-          >
-            {/* Gradient */}
-            <LinearGradient
+          {!!message && (
+            <View
+              className="absolute left-16 right-16 items-center"
+              style={{ bottom: Math.max(insets.bottom, 10) + 116 }}
               pointerEvents="none"
-              colors={["rgba(0,0,0,0.85)", "transparent", "rgba(0,0,0,0.9)"]}
-              locations={[0, 0.4, 1]}
-              style={StyleSheet.absoluteFill}
+            >
+              <Text className="text-center text-[13px] text-white/85">
+                {message}
+              </Text>
+            </View>
+          )}
+
+          {/* Close removed: exit is the back button (top-left); player
+              settings live at the top-right. */}
+        </Animated.View>
+      )}
+
+      {/* End-of-episode pills, bottom-right: Watch credits / Play again + Next Episode */}
+      {(ended || creditsPills) && (
+        <View
+          className="absolute flex-row items-end gap-3"
+          style={{
+            right: Math.max(insets.right, 10) + 24,
+            bottom: Math.max(insets.bottom, 8) + 16,
+          }}
+          pointerEvents="box-none"
+        >
+          {ended ? (
+            <EndPill
+              label="Play again"
+              variant="dark"
+              onPress={() => seek(0)}
             />
-
-            {/* ── TOP BAR ── */}
-            <View
-              className="flex-row items-center justify-between"
-              style={{
-                paddingLeft: Math.max(insets.left + 10, 16),
-                paddingRight: Math.max(insets.right + 10, 16),
-                paddingTop: Math.max(insets.top + 6, 14),
-                paddingBottom: 10,
-              }}
-            >
-              {/* Left cluster: Back button + Title */}
-              <View className="flex-row items-center flex-1 mr-3">
-                <PlayerControl onPress={exit} size={44} bg="rgba(0,0,0,0.45)">
-                  {({ focused }) => (
-                    <IconBack
-                      size={22}
-                      color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                    />
-                  )}
-                </PlayerControl>
-
-                <View className="ml-3 flex-1">
-                  <Text
-                    className="text-white text-[15px] font-archivo-bold tracking-[-0.2px]"
-                    numberOfLines={1}
-                  >
-                    {manifest.title || undefined || "Plexy"}
-                  </Text>
-                  {(() => {
-                    const raw = manifest.subtitle || "";
-                    const cleaned = raw
-                      .replace(
-                        /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
-                        "",
-                      )
-                      .trim();
-                    const isEp = manifest.episodeNumber != null || Boolean(raw);
-                    const subLabel = isEp
-                      ? manifest.episodeNumber != null
-                        ? `Episode ${manifest.episodeNumber}${cleaned ? ` · ${cleaned}` : ""}`
-                        : raw
-                      : "";
-                    return subLabel ? (
-                      <Text
-                        className="text-white/65 text-[11.5px] font-archivo-regular mt-[1px]"
-                        numberOfLines={1}
-                      >
-                        {subLabel}
-                      </Text>
-                    ) : null;
-                  })()}
-                </View>
-              </View>
-
-              {/* Lock button on top bar */}
-              {
-                <PlayerControl
-                  onPress={lockScreen}
-                  size={44}
-                  bg="rgba(0,0,0,0.45)"
-                >
-                  {({ focused }) => (
-                    <Lock
-                      size={20}
-                      color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                      strokeWidth={2}
-                    />
-                  )}
-                </PlayerControl>
+          ) : (
+            <EndPill
+              label="Watch credits"
+              variant="dark"
+              onPress={() => setAutoNextCancelled(true)}
+            />
+          )}
+          {manifest.nextFileId && (
+            <EndPill
+              label="Next Episode"
+              variant="light"
+              fill={
+                preferences.autoNext && !autoNextCancelled
+                  ? 1 - countdown / 10
+                  : undefined
               }
-
-              {/* Top-Right cluster: Quality, Audio, Subtitles, Episodes, Settings */}
-              <View className="flex-row items-center gap-2 ml-3">
-                <PlayerControl
-                  onPress={() => setMenu("audio")}
-                  size={44}
-                  active={menu === "audio"}
-                  bg="rgba(0,0,0,0.45)"
-                >
-                  {({ focused }) => (
-                    <IconAudio
-                      size={22}
-                      color={
-                        menu === "audio"
-                          ? "#000000"
-                          : focused
-                            ? "#ffffff"
-                            : "rgba(255,255,255,0.9)"
-                      }
-                    />
-                  )}
-                </PlayerControl>
-
-                <PlayerControl
-                  onPress={() => setMenu("captions")}
-                  size={44}
-                  active={Boolean(subtitle)}
-                  bg="rgba(0,0,0,0.45)"
-                >
-                  {({ focused }) => (
-                    <IconSubtitles
-                      size={22}
-                      color={
-                        subtitle
-                          ? "#000000"
-                          : focused
-                            ? "#ffffff"
-                            : "rgba(255,255,255,0.9)"
-                      }
-                      active={!!subtitle}
-                    />
-                  )}
-                </PlayerControl>
-
-                {!!manifest.nextFileId && (
-                  <PlayerControl
-                    onPress={() => next(manifest.nextFileId!)}
-                    accessibilityLabel="Next episode"
-                    size={44}
-                    bg="rgba(0,0,0,0.45)"
-                  >
-                    {({ focused }) => (
-                      <IconNext
-                        size={22}
-                        color={focused ? "#ffffff" : "rgba(255,255,255,0.9)"}
-                      />
-                    )}
-                  </PlayerControl>
-                )}
-
-                {isPictureInPictureSupported() && (
-                  <PlayerControl
-                    onPress={() => {
-                      pip.current = true;
-                      void video.current?.startPictureInPicture().catch(() => {
-                        pip.current = false;
-                        setMessage(
-                          "Picture in picture is unavailable on this device.",
-                        );
-                      });
-                    }}
-                    size={44}
-                    bg="rgba(0,0,0,0.45)"
-                  >
-                    <IconPip size={22} />
-                  </PlayerControl>
-                )}
-
-                {
-                  <PlayerControl
-                    onPress={cycleFitMode}
-                    size={44}
-                    bg="rgba(0,0,0,0.45)"
-                  >
-                    <IconFitState mode={fitMode} zoom={zoom} size={20} />
-                  </PlayerControl>
-                }
-
-                {isTvShow && sortedEpisodes.length > 0 && (
-                  <PlayerControl
-                    onPress={() => setMenu("episodes")}
-                    size={46}
-                    active={menu === "episodes"}
-                    bg="rgba(0,0,0,0.45)"
-                  >
-                    {({ focused }) => (
-                      <ListVideo
-                        size={22}
-                        color={
-                          menu === "episodes"
-                            ? "#000000"
-                            : focused
-                              ? "#ffffff"
-                              : "rgba(255,255,255,0.9)"
-                        }
-                      />
-                    )}
-                  </PlayerControl>
-                )}
-
-                <PlayerControl
-                  onPress={() => setMenu("settings")}
-                  size={44}
-                  active={menu === "settings"}
-                  bg="rgba(0,0,0,0.45)"
-                >
-                  {({ focused }) => (
-                    <IconSettings
-                      size={22}
-                      color={
-                        menu === "settings"
-                          ? "#000000"
-                          : focused
-                            ? "#ffffff"
-                            : "rgba(255,255,255,0.9)"
-                      }
-                    />
-                  )}
-                </PlayerControl>
-              </View>
-            </View>
-
-            {/* ── MIDDLE PLAY CONTROLS ── */}
-            <Animated.View
-              className="flex-1 items-center justify-center flex-row gap-7"
-              style={{ opacity: controlsOpacity }}
-              pointerEvents={openingVideo || ended ? "none" : "box-none"}
-              accessibilityElementsHidden={openingVideo || ended}
-              importantForAccessibility={
-                openingVideo || ended ? "no-hide-descendants" : "auto"
-              }
-            >
-              {/* Previous episode (if any) */}
-              {!!(manifest as any).previousFileId && (
-                <PlayerControl
-                  onPress={() => next((manifest as any).previousFileId)}
-                  size={48}
-                  bg="rgba(0,0,0,0.4)"
-                  accessibilityLabel="Previous episode"
-                >
-                  <SkipBack size={24} color={colors.ink} />
-                </PlayerControl>
-              )}
-
-              {/* Rewind 30s */}
-              <PlayerControl
-                onPress={() => seek(position - SEEK_SECONDS)}
-                size={54}
-                bg="rgba(0,0,0,0.45)"
-              >
-                <IconRewind size={28} />
-              </PlayerControl>
-
-              {/* Play/Pause */}
-              <PlayerControl
-                onPress={togglePlay}
-                size={72}
-                active={true}
-                activeBg="#ffffff"
-                bg={"rgba(0,0,0,0.45)"}
-              >
-                {({ focused }) => {
-                  const darkIcon = true;
-                  return playing ? (
-                    <IconPause
-                      size={30}
-                      color={darkIcon ? "#000000" : "#ffffff"}
-                    />
-                  ) : (
-                    <IconPlay
-                      size={32}
-                      color={darkIcon ? "#000000" : "#ffffff"}
-                    />
-                  );
-                }}
-              </PlayerControl>
-
-              {/* Forward 30s */}
-              <PlayerControl
-                onPress={() => seek(position + SEEK_SECONDS)}
-                size={54}
-                bg="rgba(0,0,0,0.45)"
-              >
-                <IconForward size={28} />
-              </PlayerControl>
-            </Animated.View>
-
-            {/* ── BOTTOM SECTION ── */}
-            <View
-              className="gap-1.5"
-              style={{
-                paddingLeft: Math.max(insets.left + 10, 16),
-                paddingRight: Math.max(insets.right + 10, 16),
-                paddingBottom: Math.max(insets.bottom + 4, 16),
-              }}
-            >
-              {/* Error / messages */}
-              {(!!error || choice.path === "unsupported") && (
-                <Notice
-                  message={error || manifest.reason}
-                  retry={() =>
-                    setChoice((old) => ({
-                      ...old,
-                      start: currentPosition.current,
-                      revision: old.revision + 1,
-                    }))
-                  }
-                />
-              )}
-              {!!message && (
-                <View className="flex-row items-center gap-3 mb-1">
-                  <Text className="flex-1 text-white/80 text-[13px]">
-                    {message}
-                  </Text>
-                  <PlayerControl
-                    onPress={() => setMessage("")}
-                    size={32}
-                    bg="rgba(255,255,255,0.15)"
-                  >
-                    <IconClose size={14} />
-                  </PlayerControl>
-                </View>
-              )}
-
-              {/* Ended card */}
-              {ended && !resume && (
-                <View className="flex-row gap-2.5 self-center mb-2">
-                  <Pressable
-                    onPress={() => seek(0)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Play again"
-                    className="rounded-full bg-white/15 border border-white/25 px-5 py-2.5 active:opacity-80"
-                  >
-                    <Text className="text-white/90 font-semibold text-[14px]">Play again</Text>
-                  </Pressable>
-                  {manifest.nextFileId && (
-                    <Pressable
-                      onPress={() => next(manifest.nextFileId!)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Next episode"
-                      className="rounded-full bg-white border border-white px-5 py-2.5 active:opacity-80"
-                    >
-                      <Text className="text-black font-bold text-[14px]">
-                        {preferences.autoNext && !autoNextCancelled
-                          ? `Next  · ${countdown}s`
-                          : "Next episode"}
-                      </Text>
-                    </Pressable>
-                  )}
-                  {preferences.autoNext &&
-                    !autoNextCancelled &&
-                    manifest.nextFileId && (
-                      <Pressable
-                        onPress={() => setAutoNextCancelled(true)}
-                        accessibilityRole="button"
-                        accessibilityLabel="Cancel autoplay"
-                        className="rounded-full bg-transparent border border-white/25 px-5 py-2.5 active:opacity-70"
-                      >
-                        <Text className="text-white/90 font-semibold text-[14px]">Cancel</Text>
-                      </Pressable>
-                    )}
-                </View>
-              )}
-
-              {/* Scrub trickplay preview & floating time badge */}
-              {scrub != null && (
-                <View
-                  pointerEvents="none"
-                  className="absolute items-center w-[120px] gap-1 z-20"
-                  style={{
-                    bottom: 78,
-                    left: `${Math.max(12, Math.min(88, progressRatio * 100))}%`,
-                    transform: [{ translateX: -60 }],
-                  }}
-                >
-                  {LocalThumbnail && (
-                    <LocalThumbnail
-                      key={manifest.fileId}
-                      player={player}
-                      time={scrub}
-                      fileId={manifest.fileId}
-                    />
-                  )}
-
-                  {/* Floating time bubble like in reference screenshots */}
-                  <View className="bg-black/85 px-2 py-[3px] rounded-[6px] border border-white/20">
-                    <Text className="text-white text-[11px] font-archivo-bold">
-                      {timeLabel(previewTime)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Time row above timeline */}
-              <View className="flex-row items-center justify-end mb-1 px-0.5">
-                <Text className="text-white/85 text-[12px] font-archivo-medium">
-                  {timeLabel(previewTime)} / {timeLabel(duration)}
-                </Text>
-              </View>
-
-              {/* Progress bar */}
-              <View
-                ref={timeline}
-                collapsable={false}
-                {...{}}
-                accessibilityLabel="Playback position"
-                accessibilityRole="adjustable"
-                accessibilityValue={{
-                  min: 0,
-                  max: duration,
-                  now: position,
-                  text: timeLabel(position),
-                }}
-                accessibilityActions={[
-                  { name: "increment" },
-                  { name: "decrement" },
-                ]}
-                onAccessibilityAction={(e) =>
-                  seek(
-                    position +
-                      (e.nativeEvent.actionName === "increment"
-                        ? SEEK_SECONDS
-                        : -SEEK_SECONDS),
-                  )
-                }
-                onFocus={() => {
-                  reveal();
-                  setTimelineFocus(true);
-                }}
-                onBlur={() => {
-                  setTimelineFocus(false);
-                  setScrub(null);
-                }}
-                onLayout={(e) => {
-                  timelineWidth.current = Math.max(
-                    1,
-                    e.nativeEvent.layout.width,
-                  );
-                }}
-                onStartShouldSetResponder={() => true}
-                onMoveShouldSetResponder={() => true}
-                onResponderTerminationRequest={() => false}
-                onResponderTerminate={() => setScrub(null)}
-                onResponderGrant={(e) => {
-                  {
-                    reveal();
-                    const x = Math.max(
-                      0,
-                      Math.min(timelineWidth.current, e.nativeEvent.locationX),
-                    );
-                    const target = (x / timelineWidth.current) * duration;
-                    setScrub(target);
-                  }
-                }}
-                onResponderMove={(e) => {
-                  {
-                    const x = Math.max(
-                      0,
-                      Math.min(timelineWidth.current, e.nativeEvent.locationX),
-                    );
-                    const target = (x / timelineWidth.current) * duration;
-                    setScrub(target);
-                  }
-                }}
-                onResponderRelease={(e) => {
-                  {
-                    const x = Math.max(
-                      0,
-                      Math.min(timelineWidth.current, e.nativeEvent.locationX),
-                    );
-                    const target = (x / timelineWidth.current) * duration;
-                    seek(target);
-                  }
-                }}
-                className="py-3"
-              >
-                {/* Track */}
-                <View
-                  pointerEvents="none"
-                  className="rounded-[3px] bg-white/[0.22] overflow-visible"
-                  style={{
-                    height: scrub != null ? 6 : 4,
-                    borderColor: timelineFocus ? "#ffffff" : "transparent",
-                    borderWidth: timelineFocus ? 1.5 : 0,
-                  }}
-                >
-                  {/* Buffered fill */}
-                  <View
-                    pointerEvents="none"
-                    className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white/30"
-                    style={{ width: `${bufferedRatio * 100}%` }}
-                  />
-                  {/* Playhead fill */}
-                  <View
-                    pointerEvents="none"
-                    className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white"
-                    style={{ width: `${progressRatio * 100}%` }}
-                  />
-                  {/* Thumb */}
-                  <View
-                    pointerEvents="none"
-                    className="absolute top-1/2 rounded-full bg-white"
-                    style={{
-                      left: `${progressRatio * 100}%`,
-                      width: scrub != null ? 16 : 12,
-                      height: scrub != null ? 16 : 12,
-                      marginTop: scrub != null ? -8 : -6,
-                      marginLeft: scrub != null ? -8 : -6,
-                      shadowColor: "#000",
-                      shadowOpacity: 0.6,
-                      shadowRadius: 3,
-                      elevation: 4,
-                    }}
-                  />
-                </View>
-              </View>
-
-              {diagnostics && (
-                <View className="self-start mt-1.5 rounded-[8px] border border-white/15 bg-black/80 px-3 py-2 gap-1">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>SOURCE</Text>
-                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }} numberOfLines={1}>
-                      {choice.path.toUpperCase()}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>RESOLUTION</Text>
-                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
-                      {player.videoTrack?.size.height
-                        ? `${player.videoTrack.size.height}p`
-                        : "Auto"}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>BUFFERED</Text>
-                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
-                      {timeLabel(player.bufferedPosition)}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>AUDIO</Text>
-                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
-                      Track {choice.audio + 1}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>STATUS</Text>
-                    <Text className="text-[#4ade80] text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
-                      {status.toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-
-            {/* Skip segment pill (bottom-right) */}
-          </View>
+              onPress={() => next(manifest.nextFileId!)}
+            />
+          )}
+          {ended &&
+            preferences.autoNext &&
+            !autoNextCancelled &&
+            manifest.nextFileId && (
+              <EndPill
+                label="Cancel"
+                variant="ghost"
+                onPress={() => setAutoNextCancelled(true)}
+              />
+            )}
         </View>
       )}
 
+      {/* Skip segment pill — right side, above the bottom rows */}
       {!locked &&
         activeSkip &&
+        !creditsPills &&
         scrub == null &&
         status !== "loading" &&
         !resume &&
         !menu &&
+        !speedPanel &&
+        !audioPanel &&
         !ended && (
           <View
-            className="absolute right-5"
+            className="absolute"
             style={{
-              bottom: layoutFull
-                ? Math.max(insets.bottom, 16) + (show ? 150 : 32)
-                : 92,
+              right: Math.max(insets.right, 10) + 40,
+              bottom: Math.max(insets.bottom, 8) + 116,
             }}
           >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Skip ${skipLabel}`}
               onPress={() => seek(activeSkip[1]!.end)}
-              className="rounded-full bg-white/[0.92] px-[18px] py-[9px] active:opacity-85"
+              className="rounded-full bg-white/[0.92] px-[18px] py-[10px] active:opacity-85"
+              style={({ pressed }) => ({
+                transform: [{ scale: pressed ? 0.96 : 1 }],
+              })}
             >
-              <Text className="text-black font-bold text-[14px]">Skip {skipLabel}</Text>
+              <Text className="text-black font-bold text-[14px]">
+                Skip {skipLabel}
+              </Text>
             </Pressable>
           </View>
         )}
@@ -1751,7 +1460,7 @@ export function PlaybackScreen({
           style={{ opacity: resumeBackdropOpacity }}
         >
           <Animated.View
-            className="items-center gap-2.5 rounded-[18px] border border-white/[0.12] bg-[#121212]/[0.95] p-5 w-[320px] max-w-[90%]"
+            className="flex-row items-stretch justify-center gap-3"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 8 },
@@ -1770,7 +1479,10 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
-              className="w-full bg-white rounded-[12px] items-center justify-center py-3.5 active:opacity-85"
+              className="rounded-[14px] bg-white px-5 py-4 active:opacity-85"
+              style={({ pressed }) => ({
+                transform: [{ scale: pressed ? 0.97 : 1 }],
+              })}
             >
               <Text className="text-black font-archivo-bold text-[15px]">
                 Continue watching ({timeLabel(initialResume)})
@@ -1785,31 +1497,20 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel="Start from beginning"
-              className="w-full bg-white/[0.12] rounded-[12px] items-center justify-center py-3.5 active:opacity-85"
+              className="rounded-[14px] bg-white/[0.14] border border-white/20 px-5 py-4 active:opacity-85"
+              style={({ pressed }) => ({
+                transform: [{ scale: pressed ? 0.97 : 1 }],
+              })}
             >
-              <Text className="text-white/90 font-archivo-medium text-[14px]">
+              <Text className="text-white/95 font-archivo-medium text-[15px]">
                 Start from beginning
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                setResume(false);
-                back();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel playback"
-              className="w-full bg-transparent rounded-[12px] items-center justify-center py-3 active:opacity-70"
-            >
-              <Text className="text-white/60 font-archivo-medium text-[14px]">
-                Cancel
               </Text>
             </Pressable>
           </Animated.View>
         </Animated.View>
       )}
 
-      {/* ── Right-side drawer menus ── */}
+      {/* ── Right-side drawer (settings / episodes) ── */}
       <PlayerDrawer
         menu={menu}
         setMenu={setMenu}
@@ -1826,20 +1527,78 @@ export function PlaybackScreen({
         fitMode={fitMode}
         applyFit={applyFit}
         zoom={zoom}
-        diagnostics={diagnostics}
-        setDiagnostics={setDiagnostics}
         pip={pip}
         video={video}
         setMessage={setMessage}
-        nativeAudio={nativeAudio}
-        subtitle={subtitle}
-        setSubtitle={setSubtitle}
-        setManifest={setManifest}
-        nativeSubtitles={nativeSubtitles}
         subVertical={subVertical}
         setSubVertical={setSubVertical}
+      />
+
+      {/* ── Speed picker ── */}
+      <SpeedPanel
+        visible={speedPanel && !locked}
+        rate={preferences.playbackRate}
+        onClose={() => setSpeedPanel(false)}
+        onSelect={(rate) => {
+          player.playbackRate = rate;
+          updatePreferences({ playbackRate: rate });
+          setSpeedPanel(false);
+          showFitToast(`${rate}× speed`);
+        }}
+      />
+
+      {/* ── Audio & Subtitles picker ── */}
+      <AudioPanel
+        visible={audioPanel && !locked}
+        onClose={() => setAudioPanel(false)}
+        player={player}
+        nativeAudio={nativeAudio}
+        subtitle={subtitle}
+        serverTracks={manifest.tracks}
+        nativeSubtitles={nativeSubtitles}
+        canAddSubtitleFile={Boolean(platform.local?.pickSubtitle)}
+        onPickAudio={(track) => {
+          player.audioTrack = track;
+          setAudioPanel(false);
+        }}
+        onPickSubtitle={(value) => {
+          setSubtitle(value);
+          if (!value) {
+            updatePreferences({ autoSubtitles: false });
+          } else {
+            updatePreferences({ autoSubtitles: true });
+            const server = manifest.tracks?.find((t) => t.track === value);
+            if (server) {
+              updatePreferences({ subtitleLanguage: server.language || "" });
+            }
+          }
+          setAudioPanel(false);
+        }}
+        onAddSubtitleFile={() => {
+          void platform
+            .local!.pickSubtitle!(manifest.fileId)
+            .then((track) => {
+              if (!track) return;
+              setManifest((current) => ({
+                ...current,
+                tracks: [
+                  ...(current.tracks || []).filter(
+                    (t) => t.track !== track.track,
+                  ),
+                  track,
+                ],
+              }));
+              setSubtitle(track.track);
+              updatePreferences({ autoSubtitles: true });
+              setAudioPanel(false);
+            })
+            .catch(() =>
+              setMessage(
+                "Could not add this subtitle file. Choose an SRT or VTT file.",
+              ),
+            );
+        }}
       />
     </View>
   );
 }
-

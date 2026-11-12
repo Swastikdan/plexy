@@ -34,7 +34,8 @@ export function PlayerControl({
         width: size,
         height: size,
         backgroundColor: active ? activeBg : bg,
-        opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
+        opacity: disabled ? 0.4 : pressed ? 0.8 : 1,
+        transform: [{ scale: pressed ? 0.92 : 1 }],
       })}
     >
       {typeof children === "function" ? children({ focused: false }) : children}

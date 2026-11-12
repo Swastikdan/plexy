@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
-import { cn } from "../../../shared/lib/cn";
+import { cn } from "@/shared/lib/cn";
 import { IconCheck } from "./player-icons";
 
 export function SheetItem({

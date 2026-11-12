@@ -1,19 +1,31 @@
 import * as NavigationBar from "expo-navigation-bar";
 import * as Orientation from "expo-screen-orientation";
 import { useEffect,useRef } from "react";
-// Serialize native orientation calls so rapid fullscreen toggles cannot restore
-// a stale landscape lock after leaving the player.
-export function usePlayerOrientation(fullscreen: boolean, onError: () => void) {
+
+// The player is landscape-only: the device never rotates to portrait while
+// playback is open. The app shell outside the player is portrait and is
+// restored on exit. Serialize native calls so rapid changes cannot leave a
+// stale lock behind.
+export function usePlayerOrientation(onError: () => void) {
   const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const previous = useRef<Orientation.OrientationLock | null>(null);
   const error = useRef(onError);
   error.current = onError;
   useEffect(() => {
+    let live = true;
     queue.current = queue.current
       .then(async () => {
-        previous.current = await Orientation.getOrientationLockAsync();
+        if (!live) return;
+        await Orientation.lockAsync(Orientation.OrientationLock.LANDSCAPE);
+        if (live) NavigationBar.NavigationBar.setHidden(true);
       })
-      .catch(() => error.current());
+      .catch(() => {
+        if (live) error.current();
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  useEffect(() => {
     return () => {
       NavigationBar.NavigationBar.setHidden(false);
       queue.current = queue.current
@@ -23,23 +35,4 @@ export function usePlayerOrientation(fullscreen: boolean, onError: () => void) {
         .catch(() => {});
     };
   }, []);
-  useEffect(() => {
-    let live = true;
-    queue.current = queue.current
-      .then(async () => {
-        if (!live) return;
-        await Orientation.lockAsync(
-          fullscreen
-            ? Orientation.OrientationLock.LANDSCAPE
-            : Orientation.OrientationLock.PORTRAIT,
-        );
-        if (live) NavigationBar.NavigationBar.setHidden(fullscreen);
-      })
-      .catch(() => {
-        if (live) error.current();
-      });
-    return () => {
-      live = false;
-    };
-  }, [fullscreen]);
 }
