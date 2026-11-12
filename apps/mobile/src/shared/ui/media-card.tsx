@@ -1,8 +1,8 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
-import { Pressable,StyleSheet,Text,View } from "react-native";
+import { Pressable,Text,View } from "react-native";
 import type { ItemCard,LocalCatalog } from "../../core/library/catalog-api";
-import { colors,fonts } from "../theme";
+import { colors } from "../theme";
 import { Icon } from "./icon";
 import { Check } from "./icons";
 import { PosterImage } from "./poster-image";
@@ -39,26 +39,25 @@ export function Card({
       }}
       onBlur={() => setFocus(false)}
       onPress={onPress}
-      style={({ pressed }) => [
-        {
-          width: cardWidth,
-          gap: 8,
-          opacity: pressed ? 0.9 : 1,
-          // Press feedback on the compositor: scale only, no layout work.
-          transform: [{ scale: pressed ? 0.97 : 1 }],
-        },
-      ]}
+      style={{ width: cardWidth }}
+      className="gap-2 active:opacity-90 active:scale-[0.97]"
     >
       {/* Image container */}
       <View
         style={[
-          styles.cardImageWrap,
           { aspectRatio },
-          focus && styles.cardImageFocusedTv,
+          focus && {
+            // RN-only shadow: kept as a style (TV focus depth).
+            shadowColor: "#000",
+            shadowOpacity: 0.5,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 3 },
+          },
         ]}
+        className="bg-surface-secondary rounded-lg overflow-hidden justify-center items-center"
       >
         {/* Poster placeholder */}
-        <View style={styles.cardPlaceholder} pointerEvents="none">
+        <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
           <Icon
             name={item.kind === "series" ? "tv" : "film"}
             size={40}
@@ -72,48 +71,54 @@ export function Card({
         {/* Bottom gradient overlay */}
         <LinearGradient
           colors={["transparent", "rgba(0,0,0,0.85)"]}
-          style={styles.cardGradient}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "55%" }}
           pointerEvents="none"
         />
 
         {/* Episode badge: E1 and duration chip on top-left (as in reference screenshots) */}
         {isEpisode && (
-          <View style={styles.cardChipRow}>
+          <View className="absolute top-2 left-2 flex-row gap-[5px] z-[2]">
             {item.episodeNumber != null && (
-              <View style={styles.cardChip}>
-                <Text style={styles.cardChipText}>E{item.episodeNumber}</Text>
+              <View className="bg-black/[0.65] px-1.5 py-0.5 rounded-md border-[0.5px] border-white/[0.15]">
+                <Text className="text-white text-[10px] font-archivo-bold">E{item.episodeNumber}</Text>
               </View>
             )}
             {!!item.runtime && (
-              <View style={styles.cardChip}>
-                <Text style={styles.cardChipText}>{item.runtime}:00</Text>
+              <View className="bg-black/[0.65] px-1.5 py-0.5 rounded-md border-[0.5px] border-white/[0.15]">
+                <Text className="text-white text-[10px] font-archivo-bold">{item.runtime}:00</Text>
               </View>
             )}
           </View>
         )}
 
         {/* Title overlay at bottom */}
-        <View style={styles.cardTitleOverlay} pointerEvents="none">
-          <Text numberOfLines={2} style={styles.cardOverlayTitle}>
+        <View className="absolute left-0 right-0 bottom-[18px] px-2.5" pointerEvents="none">
+          <Text
+            numberOfLines={2}
+            className="text-[12px] leading-4 text-white font-archivo-bold"
+            style={{
+              textShadowColor: "rgba(0,0,0,0.6)",
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 4,
+            }}
+          >
             {item.parentTitle ? `${item.parentTitle}: ${item.name}` : item.name}
           </Text>
         </View>
 
         {/* Progress bar */}
         {hasProgress && (
-          <View style={styles.progressTrack}>
+          <View className="absolute left-0 right-0 bottom-0 h-[2px] bg-white/[0.15]">
             <View
-              style={[
-                styles.progressFill,
-                { width: `${item.watch!.percent}%` },
-              ]}
+              className="h-[2px] bg-accent"
+              style={{ width: `${item.watch!.percent}%` }}
             />
           </View>
         )}
 
         {/* Watched badge */}
         {isWatched && (
-          <View style={styles.watchedBadge}>
+          <View className="absolute top-[7px] right-[7px] w-5 h-5 rounded-full bg-accent items-center justify-center">
             <Check size={10} color="#fff" strokeWidth={2.5} />
           </View>
         )}
@@ -123,7 +128,7 @@ export function Card({
       <Label
         muted
         numberOfLines={1}
-        style={{ fontSize: 11, fontFamily: fonts.medium }}
+        className="text-[11px] font-archivo-medium"
       >
         {isEpisode
           ? `Episode ${item.episodeNumber || 1}`
@@ -132,91 +137,3 @@ export function Card({
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-cardImageWrap: {
-    backgroundColor: colors.elevated,
-    borderRadius: 8,
-    overflow: "hidden",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-cardImageFocusedTv: {
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-  },
-cardPlaceholder: {
-    ...StyleSheet.absoluteFill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-cardGradient: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: "55%",
-  },
-cardTitleOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 18,
-    paddingHorizontal: 10,
-  },
-cardOverlayTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 12,
-    color: "#fff",
-    lineHeight: 16,
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-progressTrack: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 2,
-    backgroundColor: "rgba(255,255,255,0.15)",
-  },
-progressFill: {
-    height: 2,
-    backgroundColor: colors.brand,
-  },
-cardChipRow: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    flexDirection: "row",
-    gap: 5,
-    zIndex: 2,
-  },
-cardChip: {
-    backgroundColor: "rgba(0,0,0,0.65)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.15)",
-  },
-cardChipText: {
-    color: "#fff",
-    fontSize: 10,
-    fontFamily: fonts.bold,
-  },
-watchedBadge: {
-    position: "absolute",
-    top: 7,
-    right: 7,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-  }
-});

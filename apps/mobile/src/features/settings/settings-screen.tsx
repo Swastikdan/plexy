@@ -7,7 +7,6 @@ BackHandler,
 Modal,
 Pressable,
 ScrollView,
-StyleSheet,
 Text,
 View,
 } from "react-native";
@@ -20,7 +19,8 @@ localLibrary,
 localRuntime,
 } from "../../core/library/local-runtime";
 import { useOnline } from "../../shared/hooks/use-online";
-import { card,colors,fonts } from "../../shared/theme";
+import { cn } from "../../shared/lib/cn";
+import { colors } from "../../shared/theme";
 import { Button } from "../../shared/ui/button";
 import { Icon } from "../../shared/ui/icon";
 import { Notice } from "../../shared/ui/notice";
@@ -133,8 +133,13 @@ export function SettingsScreen() {
     return <LibraryReportScreen back={() => setPage("settings")} />;
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.canvas }}
-      contentContainerStyle={styles.page}
+      className="flex-1 bg-background"
+      contentContainerStyle={{
+        paddingHorizontal: 20,
+        paddingTop: 4,
+        paddingBottom: 36,
+        gap: 14,
+      }}
     >
       {!online && (
         <Notice message="Offline. Trailers, updates and metadata refresh are unavailable. Your saved library and markers still work." />
@@ -143,9 +148,11 @@ export function SettingsScreen() {
         <Pressable
           onPress={() => setPage("settings")}
           accessibilityLabel="Back to Settings"
-          style={{ paddingVertical: 12 }}
+          className="py-3"
         >
-          <Text style={styles.back}>‹ Settings</Text>
+          <Text className="text-[15px] font-archivo-medium text-accent">
+            ‹ Settings
+          </Text>
         </Pressable>
       )}
       <PageHeader
@@ -158,7 +165,12 @@ export function SettingsScreen() {
                 ? "Metadata & episode markers"
                 : "Settings"
         }
-        style={styles.settingsHeader}
+        style={{
+          paddingHorizontal: 0,
+          paddingTop: 0,
+          paddingBottom: 0,
+          minHeight: 0,
+        }}
       />
       <Modal
         visible={!!picker}
@@ -166,15 +178,8 @@ export function SettingsScreen() {
         animationType="fade"
         onRequestClose={() => setPicker(null)}
       >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            padding: 24,
-            backgroundColor: "rgba(0,0,0,.7)",
-          }}
-        >
-          <View style={styles.group}>
+        <View className="flex-1 justify-center bg-black/70 p-6">
+          <View className="overflow-hidden rounded-[18px] bg-overlay">
             <ScrollView style={{ maxHeight: 500 }}>
               <SettingsRow title={picker?.title || ""} />
               {picker?.options.map(([value, title]) => (
@@ -198,11 +203,13 @@ export function SettingsScreen() {
       {!!message && <Notice message={message} />}
       {page === "settings" && (
         <>
-          <Text style={styles.section}>Library</Text>
-          <View style={styles.group}>
+          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+            Library
+          </Text>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Library report"
-              subtitle={`${records.length} files${review ? ` · ${review} need attention` : " · All titles identified"}`}
+              subtitle={`${records.length} files, ${review ? `${review} need attention` : "all titles identified"}`}
               icon="library"
               onPress={() => setPage("report")}
             />
@@ -236,8 +243,10 @@ export function SettingsScreen() {
           {localLibrary.issues.map((issue) => (
             <Notice key={issue} message={issue} />
           ))}
-          <Text style={styles.section}>Playback</Text>
-          <View style={styles.group}>
+          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+            Playback
+          </Text>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Automatic subtitles"
               subtitle="Use your preferred subtitle track"
@@ -267,21 +276,25 @@ export function SettingsScreen() {
               />
             </SettingsRow>
           </View>
-          <Text style={styles.section}>About</Text>
-          <View style={styles.group}>
-            <View style={styles.row}>
-              <View style={styles.icon}>
+          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+            About
+          </Text>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
+            <View className="min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5">
+              <View className="w-6 items-center">
                 <Icon name="download" size={20} color={colors.muted} />
               </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.rowTitle}>App update</Text>
+              <View className="flex-1 gap-1">
+                <Text className="text-[15px] font-archivo-medium text-foreground">
+                  App update
+                </Text>
                 <Text
-                  style={[
-                    styles.rowSubtitle,
-                    (updateDownloading || updateProgress !== null) && {
-                      color: colors.ink,
-                    },
-                  ]}
+                  className={cn(
+                    "text-[12px] leading-[18px] font-archivo-regular",
+                    (updateDownloading || updateProgress !== null)
+                      ? "text-foreground"
+                      : "text-muted",
+                  )}
                 >
                   {updateProgress !== null
                     ? `Downloading update… ${updateProgress}%`
@@ -325,11 +338,11 @@ export function SettingsScreen() {
               }
             />
           </View>
-          <Text style={styles.footnote}>
+          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
             Videos stay in their original folders. Library data, artwork and
             saved scrub previews stay on this device.
           </Text>
-          <Text style={styles.footnote}>
+          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
             This product uses the TMDB API but is not endorsed or certified by
             TMDB.
           </Text>
@@ -337,7 +350,7 @@ export function SettingsScreen() {
       )}
       {page === "folders" && (
         <>
-          <View style={styles.group}>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Add movie folder"
               icon="film"
@@ -363,7 +376,10 @@ export function SettingsScreen() {
           {localLibrary.state.roots
             .filter((r) => !r.singleFile)
             .map((root) => (
-              <View style={styles.group} key={root.uri}>
+              <View
+                className="overflow-hidden rounded-[18px] bg-surface"
+                key={root.uri}
+              >
                 <SettingsRow
                   title={root.name || displayName(root.uri)}
                   subtitle={
@@ -401,8 +417,10 @@ export function SettingsScreen() {
       )}
       {page === "metadata" && (
         <>
-          <Text style={styles.section}>TMDB metadata</Text>
-          <View style={styles.group}>
+          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+            TMDB metadata
+          </Text>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="TMDB connection"
               subtitle={
@@ -476,12 +494,14 @@ export function SettingsScreen() {
               }
             />
           </View>
-          <Text style={styles.footnote}>
+          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
             Language, region and poster size apply on the next metadata refresh.
             Larger posters use more storage.
           </Text>
-          <Text style={styles.section}>Intro, recap & credits</Text>
-          <View style={styles.group}>
+          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+            Intro, recap & credits
+          </Text>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Community skip markers"
               subtitle="Look up timings from IntroDB and save on this device"
@@ -523,64 +543,20 @@ export function SettingsScreen() {
               />
             </SettingsRow>
           </View>
-          <Text style={styles.footnote}>
+          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
             When timings are available, the player offers Skip intro, Skip recap
             or Skip credits. Saved markers work offline. Missing or stale
             markers are checked during scans and playback; titles without
             community timings play normally.
           </Text>
-          {!!busy && <Text style={styles.footnote}>Updating…</Text>}
+          {!!busy && (
+            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
+              Updating…
+            </Text>
+          )}
         </>
       )}
       {page === "updates" && <Updates />}
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-page: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 36, gap: 14 },
-settingsHeader: {
-    paddingHorizontal: 0,
-    paddingTop: 0,
-    paddingBottom: 0,
-    minHeight: 0,
-  },
-section: {
-    color: colors.muted,
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    marginTop: 14,
-    marginLeft: 2,
-  },
-group: {
-    backgroundColor: colors.surface,
-    borderRadius: card.radius,
-    overflow: "hidden",
-  },
-row: {
-    minHeight: 66,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
-  },
-icon: { width: 24, alignItems: "center" },
-rowTitle: { color: colors.ink, fontSize: 15, fontFamily: fonts.medium },
-rowSubtitle: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    fontFamily: fonts.regular,
-  },
-footnote: {
-    color: colors.quiet,
-    fontSize: 12,
-    lineHeight: 18,
-    fontFamily: fonts.regular,
-    marginTop: 4,
-  },
-back: { color: colors.brandLight, fontFamily: fonts.medium, fontSize: 15 }
-});

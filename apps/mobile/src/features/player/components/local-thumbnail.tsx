@@ -110,17 +110,7 @@ export function LocalThumbnail({
     });
   }, [player, second, fileId]);
   return uri ? (
-    <View
-      style={{
-        width: 120,
-        height: 68,
-        overflow: "hidden",
-        borderRadius: 8,
-        borderWidth: 1.5,
-        borderColor: "rgba(255,255,255,0.4)",
-        backgroundColor: "black",
-      }}
-    >
+    <View className="h-[68px] w-[120px] overflow-hidden rounded-[8px] border-[1.5px] border-white/40 bg-black">
       <Image
         source={uri}
         style={{ width: "100%", height: "100%" }}

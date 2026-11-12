@@ -1,4 +1,4 @@
-import { StyleSheet,Text,View } from "react-native";
+import { Text,View } from "react-native";
 import Svg,{
 Defs,
 Path,
@@ -39,7 +39,7 @@ export function PlexyLogo({
   showText?: boolean;
 }) {
   return (
-    <View style={styles.logoRow}>
+    <View className="flex-row items-center gap-2">
       <PlexyMark size={size} />
       {showText && (
         <Text
@@ -57,10 +57,3 @@ export function PlexyLogo({
   );
 }
 
-const styles = StyleSheet.create({
-logoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  }
-});

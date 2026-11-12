@@ -6,7 +6,6 @@ Modal,
 PanResponder,
 Pressable,
 ScrollView,
-StyleSheet,
 Text,
 useWindowDimensions,
 View,
@@ -17,7 +16,8 @@ import { localLibrary } from "../../core/library/local-runtime";
 import { useResource } from "../../core/resources/use-resource";
 import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "../../shared/lib/haptics";
-import { colors,control,easings,fonts } from "../../shared/theme";
+import { colors,easings } from "../../shared/theme";
+import { cn } from "../../shared/lib/cn";
 import { Button } from "../../shared/ui/button";
 import { ArrowUpDown,Check,ChevronDown } from "../../shared/ui/icons";
 import { Loading } from "../../shared/ui/loading";
@@ -76,8 +76,8 @@ function TabPane({
   }, [paneKey, reduceMotion, translate, opacity]);
   return (
     <Animated.View
+      className="flex-1"
       style={{
-        flex: 1,
         transform: [{ translateX: translate }],
         opacity,
       }}
@@ -253,7 +253,7 @@ export function LibraryScreen({
   ];
   const sortLabel = FILTERS.find(([key]) => key === sort)?.[1] || "Name";
   return (
-    <View style={styles.libraryRoot} {...swipe.panHandlers}>
+    <View className="flex-1 gap-0" {...swipe.panHandlers}>
       <PageHeader
         title="Libraries"
         right={
@@ -264,14 +264,17 @@ export function LibraryScreen({
               triggerHaptic("light");
               setSortOpen(true);
             }}
-            style={({ pressed }) => [
-              styles.sortButton,
-              sortOpen && styles.sortButtonOpen,
-              pressed && { opacity: 0.72 },
-            ]}
+            className={cn(
+              "flex-row items-center gap-1.5 h-[38px] px-3 rounded-full border border-white/14 bg-surface max-w-[190px]",
+              sortOpen && "border-white/40 bg-surface-secondary",
+              "active:opacity-[0.72]",
+            )}
           >
             <ArrowUpDown size={14} color="#ffffff" strokeWidth={2} />
-            <Text style={styles.sortButtonText} numberOfLines={1}>
+            <Text
+              className="font-archivo-medium text-[12.5px] text-foreground shrink"
+              numberOfLines={1}
+            >
               {sortLabel}
             </Text>
             <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
@@ -297,21 +300,14 @@ export function LibraryScreen({
       />
       {activeTab === "movie" &&
         localLibrary.state.records.some((r) => r.collection) && (
-          <View style={{ paddingTop: 12, gap: 10 }}>
-            <Text
-              style={{
-                paddingHorizontal: 20,
-                color: colors.muted,
-                fontFamily: fonts.medium,
-                fontSize: 13,
-              }}
-            >
+          <View className="pt-3 gap-2.5">
+            <Text className="px-5 text-muted font-archivo-medium text-[13px]">
               Collections
             </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={{ flexGrow: 0 }}
+              className="grow-0"
               contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
             >
               {[
@@ -325,16 +321,12 @@ export function LibraryScreen({
                   key={group.id}
                   accessibilityRole="button"
                   onPress={() => setCollection(group)}
-                  style={({ pressed }) => ({
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    borderRadius: control.radius,
-                    backgroundColor: pressed ? colors.hover : colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.line,
-                  })}
+                  className={cn(
+                    "px-4 py-3 rounded-full border border-border bg-surface",
+                    "active:bg-surface-hover",
+                  )}
                 >
-                  <Text style={{ color: colors.ink, fontFamily: fonts.medium }}>
+                  <Text className="text-foreground font-archivo-medium">
                     {group.name}
                   </Text>
                 </Pressable>
@@ -344,8 +336,11 @@ export function LibraryScreen({
         )}
       {/* Movies | TV Shows | Anime — full-width segmented control with real touch targets */}
       {showLibTabs && (
-        <View style={styles.libSegmentWrap}>
-          <View style={styles.libSegment} accessibilityRole="tablist">
+        <View className="px-5 pb-3">
+          <View
+            className="flex-row h-[46px] p-[3px] rounded-full bg-surface border border-border"
+            accessibilityRole="tablist"
+          >
             {libraryTabs.map((tab) => {
               const active = activeTab === tab;
               const label =
@@ -365,17 +360,17 @@ export function LibraryScreen({
                     if (active) return;
                     switchTab(tab);
                   }}
-                  style={({ pressed }) => [
-                    styles.libSegmentItem,
-                    active && styles.libSegmentItemActive,
-                    pressed && !active && { opacity: 0.65 },
-                  ]}
+                  className={cn(
+                    "flex-1 rounded-full items-center justify-center px-3",
+                    active && "bg-white",
+                    !active && "active:opacity-[0.65]",
+                  )}
                 >
                   <Text
-                    style={[
-                      styles.libSegmentText,
-                      active && styles.libSegmentTextActive,
-                    ]}
+                    className={cn(
+                      "font-archivo-medium text-[14px] text-muted tracking-[0.1px]",
+                      active && "font-archivo-bold text-black",
+                    )}
                   >
                     {label}
                   </Text>
@@ -399,7 +394,12 @@ export function LibraryScreen({
           numColumns={columns}
           keyExtractor={(item) => String(item.id)}
           columnWrapperStyle={{ gap: 12 }}
-          contentContainerStyle={styles.libGrid}
+          contentContainerStyle={{
+            gap: 12,
+            paddingHorizontal: 20,
+            paddingBottom: 24,
+            paddingTop: 4,
+          }}
           renderItem={({ item, index }) => (
             <Card
               width={cardWidth}
@@ -419,7 +419,7 @@ export function LibraryScreen({
             <Notice message={"No titles match this filter."} />
           }
           ListFooterComponent={
-            <View style={{ gap: 12, paddingTop: 8 }}>
+            <View className="gap-3 pt-2">
               {!!moreError && <Notice message={moreError} />}
               {!end && data.value?.items?.length === 60 && (
                 <Button
@@ -444,13 +444,18 @@ export function LibraryScreen({
         onRequestClose={() => setSortOpen(false)}
       >
         <Pressable
-          style={styles.sortBackdrop}
+          className="flex-1 justify-end bg-black/66"
           onPress={() => setSortOpen(false)}
           accessibilityLabel="Close sort and filter"
         >
-          <Pressable style={styles.sortSheet} onPress={() => {}}>
-            <View style={styles.sortHandle} />
-            <Text style={styles.sortTitle}>Sort & filter</Text>
+          <Pressable
+            className="bg-[#0b0b0b] rounded-t-[24px] border-t-[0.33px] border-border pt-2 px-3"
+            onPress={() => {}}
+          >
+            <View className="w-[40px] h-[4px] rounded-[2px] bg-white/22 self-center mb-2.5" />
+            <Text className="font-archivo-bold text-[18px] text-foreground tracking-[-0.3px] px-2 pb-3">
+              Sort & filter
+            </Text>
             {FILTERS.map(([key, label]) => {
               const active = sort === key;
               return (
@@ -463,17 +468,17 @@ export function LibraryScreen({
                     reset(key, unwatched);
                     setSortOpen(false);
                   }}
-                  style={({ pressed }) => [
-                    styles.sortRow,
-                    active && styles.sortRowActive,
-                    pressed && { opacity: 0.75 },
-                  ]}
+                  className={cn(
+                    "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
+                    active && "bg-white",
+                    "active:opacity-[0.75]",
+                  )}
                 >
                   <Text
-                    style={[
-                      styles.sortRowText,
-                      active && styles.sortRowTextActive,
-                    ]}
+                    className={cn(
+                      "font-archivo-medium text-[15px] text-foreground",
+                      active && "font-archivo-bold text-black",
+                    )}
                   >
                     {label}
                   </Text>
@@ -490,17 +495,17 @@ export function LibraryScreen({
                 triggerHaptic("selection");
                 reset(sort, !unwatched);
               }}
-              style={({ pressed }) => [
-                styles.sortRow,
-                unwatched && styles.sortRowActive,
-                pressed && { opacity: 0.75 },
-              ]}
+              className={cn(
+                "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
+                unwatched && "bg-white",
+                "active:opacity-[0.75]",
+              )}
             >
               <Text
-                style={[
-                  styles.sortRowText,
-                  unwatched && styles.sortRowTextActive,
-                ]}
+                className={cn(
+                  "font-archivo-medium text-[15px] text-foreground",
+                  unwatched && "font-archivo-bold text-black",
+                )}
               >
                 Unwatched only
               </Text>
@@ -508,128 +513,10 @@ export function LibraryScreen({
                 <Check size={18} color="#000000" strokeWidth={2.6} />
               )}
             </Pressable>
-            <View style={{ height: 16 }} />
+            <View className="h-4" />
           </Pressable>
         </Pressable>
       </Modal>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-libraryRoot: {
-    flex: 1,
-    gap: 0,
-  },
-sortButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    height: 38,
-    paddingHorizontal: 12,
-    borderRadius: control.radius,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: colors.surface,
-    maxWidth: 190,
-  },
-sortButtonOpen: {
-    borderColor: "rgba(255,255,255,0.4)",
-    backgroundColor: colors.elevated,
-  },
-sortButtonText: {
-    fontFamily: fonts.medium,
-    fontSize: 12.5,
-    color: colors.ink,
-    flexShrink: 1,
-  },
-libSegmentWrap: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-libSegment: {
-    flexDirection: "row",
-    height: 46,
-    padding: 3,
-    borderRadius: control.radius,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-libSegmentItem: {
-    flex: 1,
-    borderRadius: control.radius,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-  },
-libSegmentItemActive: {
-    backgroundColor: "#ffffff",
-  },
-libSegmentText: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    color: colors.muted,
-    letterSpacing: 0.1,
-  },
-libSegmentTextActive: {
-    fontFamily: fonts.bold,
-    color: "#000000",
-  },
-sortBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.66)",
-  },
-sortSheet: {
-    backgroundColor: "#0b0b0b",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.14)",
-    paddingTop: 8,
-    paddingHorizontal: 12,
-  },
-sortHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    alignSelf: "center",
-    marginBottom: 10,
-  },
-sortTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 18,
-    color: colors.ink,
-    letterSpacing: -0.3,
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-  },
-sortRow: {
-    minHeight: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    borderRadius: 12,
-  },
-sortRowActive: {
-    backgroundColor: "#ffffff",
-  },
-sortRowText: {
-    fontFamily: fonts.medium,
-    fontSize: 15,
-    color: colors.ink,
-  },
-sortRowTextActive: {
-    fontFamily: fonts.bold,
-    color: "#000000",
-  },
-libGrid: {
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    paddingTop: 4,
-  }
-});

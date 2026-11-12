@@ -2,7 +2,6 @@ import React,{ useState } from "react";
 import {
 Pressable,
 ScrollView,
-StyleSheet,
 Text,
 TextInput,
 useWindowDimensions,
@@ -11,7 +10,8 @@ View,
 import { useClient } from "../../core/client/client-provider";
 import type { ItemCard } from "../../core/library/catalog-api";
 import { useResource } from "../../core/resources/use-resource";
-import { colors,fonts } from "../../shared/theme";
+import { colors } from "../../shared/theme";
+import { cn } from "../../shared/lib/cn";
 import { Search as SearchIcon,X } from "../../shared/ui/icons";
 import { Loading } from "../../shared/ui/loading";
 import { Notice } from "../../shared/ui/notice";
@@ -78,17 +78,17 @@ export function SearchScreen({
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.searchContainer}
+      contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
       showsVerticalScrollIndicator={false}
     >
       <PageHeader title="Search" />
 
       {/* Compact search field with an explicit search affordance */}
       <View
-        style={[
-          styles.searchInputWrap,
-          inputFocus && styles.searchInputWrapFocused,
-        ]}
+        className={cn(
+          "flex-row items-center gap-2.5 mx-5 min-h-[46px] bg-surface rounded-[12px] px-3 border border-border",
+          inputFocus && "border-white/36 bg-surface-secondary",
+        )}
       >
         <SearchIcon
           size={18}
@@ -96,7 +96,7 @@ export function SearchScreen({
           strokeWidth={2.1}
         />
         <TextInput
-          style={[styles.searchInput]}
+          className="flex-1 font-archivo-regular text-[15px] text-foreground py-2.5"
           value={query}
           onChangeText={setQuery}
           placeholder="Movies, shows and episodes"
@@ -112,10 +112,10 @@ export function SearchScreen({
             accessibilityRole="button"
             accessibilityLabel="Clear search"
             hitSlop={10}
-            style={({ pressed }) => [
-              styles.searchClear,
-              pressed && { opacity: 0.6 },
-            ]}
+            className={cn(
+              "w-6 h-6 rounded-full items-center justify-center bg-white/8",
+              "active:opacity-[0.6]",
+            )}
           >
             <X size={15} color={colors.muted} strokeWidth={2.4} />
           </Pressable>
@@ -162,7 +162,7 @@ export function SearchScreen({
               );
             })}
             {!homeData.value?.rows.length && (
-              <Text style={styles.searchHint}>
+              <Text className="font-archivo-regular text-[14px] text-muted px-5">
                 Find a title or an episode in your library.
               </Text>
             )}
@@ -197,47 +197,3 @@ export function SearchScreen({
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-searchContainer: {
-    paddingBottom: 32,
-    gap: 14,
-  },
-searchInputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginHorizontal: 20,
-    minHeight: 46,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-searchInputWrapFocused: {
-    borderColor: "rgba(255,255,255,0.36)",
-    backgroundColor: colors.elevated,
-  },
-searchInput: {
-    flex: 1,
-    fontFamily: fonts.regular,
-    fontSize: 15,
-    color: colors.ink,
-    paddingVertical: 10,
-  },
-searchClear: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-searchHint: {
-    fontFamily: fonts.regular,
-    fontSize: 14,
-    color: colors.muted,
-    paddingHorizontal: 20,
-  }
-});

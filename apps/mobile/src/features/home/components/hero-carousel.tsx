@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Pressable, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
 import type { ItemCard } from "../../../core/library/catalog-api";
+import { cn } from "../../../shared/lib/cn";
 import { control } from "../../../shared/theme";
 import { Hero } from "../../catalog/components/hero";
 import { HeroActions } from "../../catalog/components/hero-actions";
@@ -49,9 +50,9 @@ export function HeroCarousel({
   if (!activeItem) return null;
 
   return (
-    <View style={styles.carousel}>
+    <View className="relative w-full">
       <GestureDetector gesture={swipe}>
-        <View style={styles.stage}>
+        <View className="overflow-hidden">
           <Animated.View style={contentStyle} pointerEvents="none">
             <Hero
               key={activeItem.publicId}
@@ -64,7 +65,7 @@ export function HeroCarousel({
           </Animated.View>
         </View>
       </GestureDetector>
-      <View style={styles.actions}>
+      <View className="absolute left-5 right-5 bottom-[28px]">
         <HeroActions
           item={activeItem}
           busy={changing}
@@ -74,7 +75,7 @@ export function HeroCarousel({
         />
       </View>
       {items.length > 1 && (
-        <View style={styles.carouselDots}>
+        <View className="absolute bottom-[10px] left-5 right-5 flex-row items-center justify-center gap-1.5">
           {items.map((item, index) => (
             <Pressable
               key={item.publicId}
@@ -85,11 +86,12 @@ export function HeroCarousel({
                 onHeroFocus?.();
               }}
               onBlur={() => setFocusedDot(null)}
-              style={({ pressed }) => [
-                styles.carouselDot,
-                index === activeIndex && styles.carouselDotActive,
-                (pressed || focusedDot === index) && styles.carouselDotFocused,
-              ]}
+              className={cn(
+                "h-[4px] max-w-[44px] flex-1 rounded-[2px] bg-white/28",
+                index === activeIndex && "bg-white",
+                focusedDot === index && "bg-white/65",
+                "active:bg-white/65",
+              )}
               hitSlop={{ top: 12, bottom: 12, left: 3, right: 3 }}
               accessibilityRole="button"
               accessibilityLabel={`Show ${item.name}. Slide ${index + 1} of ${items.length}`}
@@ -101,28 +103,3 @@ export function HeroCarousel({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  carousel: { width: "100%", position: "relative" },
-  stage: { overflow: "hidden" },
-  actions: { position: "absolute", bottom: ACTION_BOTTOM, left: 20, right: 20 },
-  carouselDots: {
-    position: "absolute",
-    bottom: 10,
-    left: 20,
-    right: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  carouselDot: {
-    flex: 1,
-    maxWidth: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.28)",
-  },
-  carouselDotActive: { backgroundColor: "#ffffff" },
-  carouselDotFocused: { backgroundColor: "rgba(255,255,255,0.65)" },
-});

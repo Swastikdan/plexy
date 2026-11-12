@@ -1,16 +1,18 @@
 import React from "react";
-import { StyleSheet,Text } from "react-native";
-import { colors,fonts } from "../theme";
+import { Text } from "react-native";
+import { cn } from "../lib/cn";
 
 export function Label({
   children,
   muted = false,
   style,
+  className,
   numberOfLines,
   selectable,
 }: React.PropsWithChildren<{
   muted?: boolean;
   style?: import("react-native").StyleProp<import("react-native").TextStyle>;
+  className?: string;
   numberOfLines?: number;
   selectable?: boolean;
 }>) {
@@ -18,7 +20,12 @@ export function Label({
     <Text
       selectable={selectable}
       numberOfLines={numberOfLines}
-      style={[styles.text, muted && { color: colors.muted }, style]}
+      className={cn(
+        "text-[15px] leading-[22px] font-archivo-regular text-foreground",
+        muted && "text-muted",
+        className,
+      )}
+      style={style}
     >
       {children}
     </Text>
@@ -28,28 +35,20 @@ export function Label({
 export function Heading({
   children,
   large = false,
+  className,
 }: React.PropsWithChildren<{
   large?: boolean;
+  className?: string;
 }>) {
   return (
     <Label
-      style={{
-        fontFamily: fonts.black,
-        fontSize: large ? 34 : 24,
-        lineHeight: large ? 42 : 32,
-        letterSpacing: -0.5,
-      }}
+      className={cn(
+        "font-archivo-black tracking-[-0.5px]",
+        large ? "text-[34px] leading-[42px]" : "text-[24px] leading-[32px]",
+        className,
+      )}
     >
       {children}
     </Label>
   );
 }
-
-const styles = StyleSheet.create({
-text: {
-    fontFamily: fonts.regular,
-    color: colors.ink,
-    fontSize: 15,
-    lineHeight: 22,
-  }
-});

@@ -24,23 +24,15 @@ export function LibraryAttention() {
   )
     return null;
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        padding: 14,
-        backgroundColor: "#30230d",
-      }}
-    >
-      <Text style={{ flex: 1, color: "#fef3c7" }}>
+    <View className="flex-row items-center gap-3 bg-[#30230d] p-[14px]">
+      <Text className="flex-1 text-[#fef3c7]">
         {attention.count} title{attention.count === 1 ? "" : "s"} need attention
       </Text>
       <Pressable
         accessibilityRole="button"
         onPress={() => router.navigate("/settings")}
       >
-        <Text style={{ color: "#f59e0b" }}>Review</Text>
+        <Text className="text-[#f59e0b]">Review</Text>
       </Pressable>
       <Pressable
         accessibilityRole="button"

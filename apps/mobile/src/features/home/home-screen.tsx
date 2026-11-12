@@ -1,18 +1,12 @@
 import { useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
 import React, { useRef } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "../../core/client/client-provider";
 import type { ItemCard } from "../../core/library/catalog-api";
 import { useResource } from "../../core/resources/use-resource";
-import { colors, fonts } from "../../shared/theme";
+import { colors } from "../../shared/theme";
 import { Film } from "../../shared/ui/icons";
 import { Loading } from "../../shared/ui/loading";
 import { Notice } from "../../shared/ui/notice";
@@ -164,17 +158,28 @@ export function HomeScreen({
   if (data.loading) return <Loading />;
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View className="flex-1 bg-background">
       <TopFade />
       <PageHeader
         logo
-        style={[styles.transparentHomeHeader, { top: insets.top }]}
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            backgroundColor: "transparent",
+            elevation: 20,
+          },
+          { top: insets.top },
+        ]}
       />
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[
-          styles.homeContainer,
+          { paddingBottom: 28 },
           !carouselItems.length && { paddingTop: insets.top + 90 },
         ]}
         showsVerticalScrollIndicator={false}
@@ -233,33 +238,16 @@ export function HomeScreen({
         ))}
 
         {!data.loading && !data.error && !data.value?.rows.length && (
-          <View
-            className="px-7 py-12"
-            style={{ gap: 20, minHeight: 320, justifyContent: "center" }}
-          >
+          <View className="min-h-[320px] justify-center gap-5 px-7 py-12">
             <Film size={36} color={colors.brandLight} />
-            <Text
-              style={{
-                fontFamily: fonts.bold,
-                fontSize: 30,
-                lineHeight: 36,
-                color: colors.ink,
-              }}
-            >
+            <Text className="font-archivo-bold text-[30px] leading-[36px] text-foreground">
               Your next watch starts here.
             </Text>
-            <Text
-              style={{
-                fontFamily: fonts.regular,
-                fontSize: 16,
-                lineHeight: 24,
-                color: colors.muted,
-              }}
-            >
+            <Text className="font-archivo-regular text-[16px] leading-[24px] text-muted">
               Connect a media folder to bring your movies and shows into Plexy.
             </Text>
             <NativeButton
-              className="self-start rounded-full bg-plexy"
+              className="self-start rounded-full bg-accent"
               size="lg"
               onPress={() =>
                 homeRouter.push({
@@ -278,18 +266,3 @@ export function HomeScreen({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  homeContainer: {
-    paddingBottom: 28,
-  },
-  transparentHomeHeader: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    backgroundColor: "transparent",
-    elevation: 20,
-  },
-});

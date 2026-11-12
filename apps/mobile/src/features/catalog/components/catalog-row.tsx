@@ -1,8 +1,7 @@
 import { useRef } from "react";
-import { FlatList,StyleSheet,Text,View } from "react-native";
+import { FlatList,Text,View } from "react-native";
 import { useClient } from "../../../core/client/client-provider";
 import type { ItemCard } from "../../../core/library/catalog-api";
-import { colors,fonts } from "../../../shared/theme";
 import { Card } from "../../../shared/ui/media-card";
 import { OpenTitle } from "../types";
 import { ContinueWatchingCard } from "./continue-watching-card";
@@ -30,10 +29,10 @@ export function CatalogRow({
   const ref = useRef<FlatList<ItemCard>>(null);
   const cardWidth = isContinueWatching ? 220 : 150;
   return (
-    <View style={styles.rowContainer}>
+    <View className="mb-5 gap-1.5">
       {/* Section header */}
-      <View style={styles.rowHeader}>
-        <Text style={styles.rowTitle}>{title}</Text>
+      <View className="mb-0.5 flex-row items-center justify-between px-5">
+        <Text className="font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">{title}</Text>
       </View>
 
       <FlatList
@@ -47,7 +46,7 @@ export function CatalogRow({
         })}
         keyExtractor={(item) => String(item.id)}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.rowList}
+        contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
         renderItem={({ item, index }) =>
           isContinueWatching ? (
             <ContinueWatchingCard
@@ -82,27 +81,3 @@ export function CatalogRow({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-rowContainer: {
-    marginBottom: 20,
-    gap: 6,
-  },
-rowHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 2,
-  },
-rowTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 16,
-    color: colors.ink,
-    letterSpacing: -0.3,
-  },
-rowList: {
-    paddingHorizontal: 20,
-    gap: 10,
-  }
-});

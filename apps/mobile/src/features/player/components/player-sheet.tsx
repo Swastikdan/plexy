@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pressable,StyleSheet,Text,View } from "react-native";
+import { Pressable,Text,View } from "react-native";
+import { cn } from "../../../shared/lib/cn";
 import { IconCheck } from "./player-icons";
 
 export function SheetItem({
@@ -24,25 +25,30 @@ export function SheetItem({
       onBlur={() => setFocused(false)}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
-      style={({ pressed }) => [
-        styles.sheetItem,
-        selected && styles.sheetItemSelected,
-        pressed && { opacity: 0.75 },
-      ]}
+      className={cn(
+        "flex-row items-center justify-between px-5 py-4 border-b-[0.33px] border-border active:opacity-[0.75]",
+        selected && "bg-white/[0.06]",
+      )}
     >
       <Text
-        style={[styles.sheetItemText, selected && styles.sheetItemTextSelected]}
+        className={cn(
+          "flex-1 mr-2 text-[15px]",
+          selected ? "text-white font-bold" : "text-white/85",
+        )}
         numberOfLines={1}
       >
         {label}
       </Text>
       {!!hint && (
-        <Text style={[styles.sheetItemHint]} numberOfLines={1}>
+        <Text
+          className="text-white/45 text-[13px] font-medium mr-2.5"
+          numberOfLines={1}
+        >
           {hint}
         </Text>
       )}
       {selected ? (
-        <View style={[styles.sheetCheckBadge]}>
+        <View className="w-6 h-6 rounded-[12px] bg-white items-center justify-center">
           <IconCheck size={15} color="#000000" />
         </View>
       ) : null}
@@ -52,8 +58,10 @@ export function SheetItem({
 
 export function SheetSection({ label }: { label: string }) {
   return (
-    <View style={styles.sheetSection}>
-      <Text style={styles.sheetSectionText}>{label}</Text>
+    <View className="px-5 pt-[22px] pb-1">
+      <Text className="text-white/[0.42] text-[11px] font-bold uppercase tracking-[1.2px]">
+        {label}
+      </Text>
     </View>
   );
 }
@@ -73,26 +81,25 @@ export function SheetChips({
   options: SheetChipOption[];
 }) {
   return (
-    <View style={styles.sheetChipsBlock}>
-      <Text style={styles.sheetChipsLabel}>{label}</Text>
-      <View style={styles.sheetChipsRow}>
+    <View className="px-5 pt-3.5 gap-2.5">
+      <Text className="text-white text-[14px] font-semibold">{label}</Text>
+      <View className="flex-row flex-nowrap gap-1.5">
         {options.map((option) => (
           <Pressable
             key={option.key}
             accessibilityRole="button"
             accessibilityState={{ selected: !!option.active }}
             onPress={option.onPress}
-            style={({ pressed }) => [
-              styles.sheetChip,
-              option.active && styles.sheetChipActive,
-              pressed && { opacity: 0.72 },
-            ]}
+            className={cn(
+              "rounded-full border px-2.5 py-[7px] active:opacity-[0.72]",
+              option.active ? "bg-white border-white" : "bg-white/[0.08] border-white/10",
+            )}
           >
             <Text
-              style={[
-                styles.sheetChipText,
-                option.active && styles.sheetChipTextActive,
-              ]}
+              className={cn(
+                "text-[13px] font-semibold",
+                option.active ? "text-black" : "text-white/[0.78]",
+              )}
             >
               {option.label}
             </Text>
@@ -102,89 +109,3 @@ export function SheetChips({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-sheetItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.08)",
-  },
-sheetItemSelected: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-sheetItemText: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 15,
-    flex: 1,
-    marginRight: 8,
-  },
-sheetItemTextSelected: {
-    color: "#ffffff",
-    fontWeight: "700",
-  },
-sheetItemHint: {
-    color: "rgba(255,255,255,0.45)",
-    fontSize: 13,
-    fontWeight: "500",
-    marginRight: 10,
-  },
-sheetCheckBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-sheetSection: {
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 4,
-  },
-sheetSectionText: {
-    color: "rgba(255,255,255,0.42)",
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-  },
-sheetChipsBlock: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    gap: 10,
-  },
-sheetChipsLabel: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-sheetChipsRow: {
-    flexDirection: "row",
-    flexWrap: "nowrap",
-    gap: 6,
-  },
-sheetChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-  },
-sheetChipActive: {
-    backgroundColor: "#ffffff",
-    borderColor: "#ffffff",
-  },
-sheetChipText: {
-    color: "rgba(255,255,255,0.78)",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-sheetChipTextActive: {
-    color: "#000000",
-  }
-});

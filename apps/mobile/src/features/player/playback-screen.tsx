@@ -29,7 +29,8 @@ Playability,
 SkipSegments,
 } from "../../core/library/catalog-api";
 import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
-import { colors,control,fonts,timeLabel } from "../../shared/theme";
+import { cn } from "../../shared/lib/cn";
+import { colors,fonts,timeLabel } from "../../shared/theme";
 import { ListVideo,Lock,SkipBack,Unlock } from "../../shared/ui/icons";
 import { Notice } from "../../shared/ui/notice";
 import { Label } from "../../shared/ui/text";
@@ -825,21 +826,17 @@ export function PlaybackScreen({
   // -------------------------------------------------------------------------
   return (
     <View
-      style={{
-        flex: 1,
-        backgroundColor: "#000",
-        paddingTop: layoutFull ? 0 : insets.top,
-      }}
+      className="flex-1 bg-black"
+      style={{ paddingTop: layoutFull ? 0 : insets.top }}
     >
       <StatusBar hidden={layoutFull} barStyle="light-content" />
 
       {/* ── Video container ── */}
       <View
-        style={
-          layoutFull
-            ? StyleSheet.absoluteFill
-            : { width: "100%", aspectRatio: 16 / 9 }
-        }
+        className={cn(
+          "absolute inset-0",
+          !layoutFull && "w-full aspect-[16/9]",
+        )}
         {...(!locked ? pinchPanResponder.panHandlers : {})}
       >
         <VideoView
@@ -889,21 +886,14 @@ export function PlaybackScreen({
             transform: [{ scale: toastScale }],
           }}
         >
-          <Text
-            style={{
-              color: "#ffffff",
-              fontSize: 14,
-              fontFamily: fonts.bold,
-              letterSpacing: 0.2,
-            }}
-          >
+          <Text className="text-white text-[14px] font-archivo-bold tracking-[0.2px]">
             {fitToast ?? ""}
           </Text>
         </Animated.View>
 
         {/* Single tap toggles controls; double tap seeks without changing fit or zoom. */}
         <View
-          style={StyleSheet.absoluteFill}
+          className="absolute inset-0"
           {...(!locked ? pinchPanResponder.panHandlers : {})}
           collapsable={false}
         >
@@ -943,7 +933,7 @@ export function PlaybackScreen({
                 setVisible((current) => !current);
               }, DOUBLE_TAP_MS);
             }}
-            style={StyleSheet.absoluteFill}
+            className="absolute inset-0"
           />
         </View>
 
@@ -951,28 +941,28 @@ export function PlaybackScreen({
         {locked && (
           <>
             <Pressable
-              style={StyleSheet.absoluteFill}
+              className="absolute inset-0"
               onPress={showUnlockHint}
               accessibilityRole="button"
               accessibilityLabel="Screen locked. Tap to show the unlock button."
             />
             {unlockHint && (
-              <View style={styles.unlockOverlay} pointerEvents="box-none">
+              <View className="absolute inset-0 items-center justify-center" pointerEvents="box-none">
                 <Pressable
                   onPress={unlockScreen}
                   accessibilityRole="button"
                   accessibilityLabel="Unlock screen"
-                  style={({ pressed }) => [
-                    styles.unlockPill,
-                    pressed && { opacity: 0.8 },
-                  ]}
+                  className="flex-row items-center gap-2 rounded-full bg-white/[0.94] px-5 py-3 active:opacity-80"
                 >
                   <Unlock size={18} color="#000000" strokeWidth={2.4} />
-                  <Text style={styles.unlockPillText}>Tap to unlock</Text>
+                  <Text className="text-black text-[15px] font-bold">Tap to unlock</Text>
                 </Pressable>
               </View>
             )}
-            <View style={styles.lockIndicator} pointerEvents="none">
+            <View
+              className="absolute top-5 right-5 h-8 w-8 items-center justify-center rounded-[16px] bg-white/10 border border-white/[0.18]"
+              pointerEvents="none"
+            >
               <Lock size={13} color="rgba(255,255,255,0.7)" strokeWidth={2.2} />
             </View>
           </>
@@ -1009,35 +999,22 @@ export function PlaybackScreen({
 
       {/* ── Inline (non-fullscreen) title + simple controls ── */}
       {!layoutFull && (
-        <View style={{ flex: 1, backgroundColor: "#111" }}>
+        <View className="flex-1 bg-[#111]">
           {/* Title row */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              paddingHorizontal: 16,
-              paddingTop: 14,
-              paddingBottom: 6,
-              gap: 12,
-            }}
-          >
+          <View className="flex-row items-center gap-3 px-4 pt-3.5 pb-1.5">
             <PlayerControl onPress={exit} size={36} bg="rgba(255,255,255,0.1)">
               <IconBack size={18} />
             </PlayerControl>
-            <View style={{ flex: 1 }}>
+            <View className="flex-1">
               <Text
-                style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}
+                className="text-white text-[16px] font-bold"
                 numberOfLines={1}
               >
                 {manifest.title || undefined || "Plexy"}
               </Text>
               {!!manifest.subtitle && (
                 <Text
-                  style={{
-                    color: "rgba(255,255,255,0.6)",
-                    fontSize: 13,
-                    marginTop: 2,
-                  }}
+                  className="text-white/60 text-[13px] mt-0.5"
                   numberOfLines={1}
                 >
                   {manifest.subtitle}
@@ -1110,84 +1087,43 @@ export function PlaybackScreen({
                 ),
               );
             }}
-            style={{ paddingHorizontal: 16, paddingVertical: 10 }}
+            className="px-4 py-2.5"
           >
             {/* Track */}
             <View
-              style={{
-                height: scrub != null ? 5 : 3,
-                borderRadius: 3,
-                backgroundColor: "rgba(255,255,255,0.2)",
-                overflow: "visible",
-              }}
+              className="rounded-[3px] bg-white/20 overflow-visible"
+              style={{ height: scrub != null ? 5 : 3 }}
             >
               <View
                 pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: `${bufferedRatio * 100}%`,
-                  backgroundColor: "rgba(255,255,255,0.3)",
-                  borderRadius: 3,
-                }}
+                className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white/30"
+                style={{ width: `${bufferedRatio * 100}%` }}
               />
               {/* Fill */}
               <View
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: `${progressRatio * 100}%`,
-                  backgroundColor: "#fff",
-                  borderRadius: 3,
-                }}
+                className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white"
+                style={{ width: `${progressRatio * 100}%` }}
               />
               {/* Thumb */}
               <View
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: `${progressRatio * 100}%`,
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: "#fff",
-                  marginTop: -6,
-                  marginLeft: -6,
-                }}
+                className="absolute top-1/2 h-3 w-3 rounded-full bg-white -mt-1.5 -ml-1.5"
+                style={{ left: `${progressRatio * 100}%` }}
               />
             </View>
           </Pressable>
 
           {/* Time labels */}
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              paddingHorizontal: 16,
-            }}
-          >
-            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>
+          <View className="flex-row justify-between px-4">
+            <Text className="text-white/70 text-[11px]">
               {timeLabel(previewTime)}
             </Text>
-            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>
+            <Text className="text-white/70 text-[11px]">
               {timeLabel(duration)}
             </Text>
           </View>
 
           {/* Inline control row */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              paddingHorizontal: 12,
-              paddingVertical: 10,
-              gap: 4,
-            }}
-          >
+          <View className="flex-row items-center gap-1 px-3 py-2.5">
             <PlayerControl onPress={() => seek(position - SEEK_SECONDS)}>
               <IconRewind size={20} />
             </PlayerControl>
@@ -1197,7 +1133,7 @@ export function PlaybackScreen({
             <PlayerControl onPress={() => seek(position + SEEK_SECONDS)}>
               <IconForward size={20} />
             </PlayerControl>
-            <View style={{ flex: 1 }} />
+            <View className="flex-1" />
             {
               <PlayerControl onPress={() => setFullscreen(true)}>
                 <IconFullscreen size={20} />
@@ -1207,7 +1143,7 @@ export function PlaybackScreen({
 
           {/* Error / message strip */}
           {(!!error || choice.path === "unsupported") && (
-            <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+            <View className="px-4 pb-3">
               <Notice
                 message={error || manifest.reason}
                 retry={() =>
@@ -1225,9 +1161,9 @@ export function PlaybackScreen({
 
       {/* ── Fullscreen overlay controls ── */}
       {show && layoutFull && !locked && !openingVideo && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <View className="absolute inset-0" pointerEvents="box-none">
           <View
-            style={StyleSheet.absoluteFill}
+            className="absolute inset-0"
             pointerEvents={menu || resume ? "none" : "box-none"}
             importantForAccessibility={
               menu || resume ? "no-hide-descendants" : "auto"
@@ -1244,10 +1180,8 @@ export function PlaybackScreen({
 
             {/* ── TOP BAR ── */}
             <View
+              className="flex-row items-center justify-between"
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
                 paddingLeft: Math.max(insets.left + 10, 16),
                 paddingRight: Math.max(insets.right + 10, 16),
                 paddingTop: Math.max(insets.top + 6, 14),
@@ -1255,14 +1189,7 @@ export function PlaybackScreen({
               }}
             >
               {/* Left cluster: Back button + Title */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  flex: 1,
-                  marginRight: 12,
-                }}
-              >
+              <View className="flex-row items-center flex-1 mr-3">
                 <PlayerControl onPress={exit} size={44} bg="rgba(0,0,0,0.45)">
                   {({ focused }) => (
                     <IconBack
@@ -1272,14 +1199,9 @@ export function PlaybackScreen({
                   )}
                 </PlayerControl>
 
-                <View style={{ marginLeft: 12, flex: 1 }}>
+                <View className="ml-3 flex-1">
                   <Text
-                    style={{
-                      color: "#ffffff",
-                      fontSize: 15,
-                      fontFamily: fonts.bold,
-                      letterSpacing: -0.2,
-                    }}
+                    className="text-white text-[15px] font-archivo-bold tracking-[-0.2px]"
                     numberOfLines={1}
                   >
                     {manifest.title || undefined || "Plexy"}
@@ -1300,12 +1222,7 @@ export function PlaybackScreen({
                       : "";
                     return subLabel ? (
                       <Text
-                        style={{
-                          color: "rgba(255,255,255,0.65)",
-                          fontSize: 11.5,
-                          fontFamily: fonts.regular,
-                          marginTop: 1,
-                        }}
+                        className="text-white/65 text-[11.5px] font-archivo-regular mt-[1px]"
                         numberOfLines={1}
                       >
                         {subLabel}
@@ -1333,14 +1250,7 @@ export function PlaybackScreen({
               }
 
               {/* Top-Right cluster: Quality, Audio, Subtitles, Episodes, Settings */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  marginLeft: 12,
-                }}
-              >
+              <View className="flex-row items-center gap-2 ml-3">
                 <PlayerControl
                   onPress={() => setMenu("audio")}
                   size={44}
@@ -1472,14 +1382,8 @@ export function PlaybackScreen({
 
             {/* ── MIDDLE PLAY CONTROLS ── */}
             <Animated.View
-              style={{
-                flex: 1,
-                justifyContent: "center",
-                alignItems: "center",
-                flexDirection: "row",
-                gap: 28,
-                opacity: controlsOpacity,
-              }}
+              className="flex-1 items-center justify-center flex-row gap-7"
+              style={{ opacity: controlsOpacity }}
               pointerEvents={openingVideo || ended ? "none" : "box-none"}
               accessibilityElementsHidden={openingVideo || ended}
               importantForAccessibility={
@@ -1543,11 +1447,11 @@ export function PlaybackScreen({
 
             {/* ── BOTTOM SECTION ── */}
             <View
+              className="gap-1.5"
               style={{
                 paddingLeft: Math.max(insets.left + 10, 16),
                 paddingRight: Math.max(insets.right + 10, 16),
                 paddingBottom: Math.max(insets.bottom + 4, 16),
-                gap: 6,
               }}
             >
               {/* Error / messages */}
@@ -1564,21 +1468,8 @@ export function PlaybackScreen({
                 />
               )}
               {!!message && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 12,
-                    marginBottom: 4,
-                  }}
-                >
-                  <Text
-                    style={{
-                      flex: 1,
-                      color: "rgba(255,255,255,0.8)",
-                      fontSize: 13,
-                    }}
-                  >
+                <View className="flex-row items-center gap-3 mb-1">
+                  <Text className="flex-1 text-white/80 text-[13px]">
                     {message}
                   </Text>
                   <PlayerControl
@@ -1593,42 +1484,23 @@ export function PlaybackScreen({
 
               {/* Ended card */}
               {ended && !resume && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    gap: 10,
-                    alignSelf: "center",
-                    marginBottom: 8,
-                  }}
-                >
+                <View className="flex-row gap-2.5 self-center mb-2">
                   <Pressable
                     onPress={() => seek(0)}
                     accessibilityRole="button"
                     accessibilityLabel="Play again"
-                    style={(s: any) => [
-                      styles.endBtn,
-                      s.pressed && { opacity: 0.8 },
-                    ]}
+                    className="rounded-full bg-white/15 border border-white/25 px-5 py-2.5 active:opacity-80"
                   >
-                    <Text style={styles.endBtnText}>Play again</Text>
+                    <Text className="text-white/90 font-semibold text-[14px]">Play again</Text>
                   </Pressable>
                   {manifest.nextFileId && (
                     <Pressable
                       onPress={() => next(manifest.nextFileId!)}
                       accessibilityRole="button"
                       accessibilityLabel="Next episode"
-                      style={(s: any) => [
-                        styles.endBtn,
-                        styles.endBtnPrimary,
-                        s.pressed && { opacity: 0.8 },
-                      ]}
+                      className="rounded-full bg-white border border-white px-5 py-2.5 active:opacity-80"
                     >
-                      <Text
-                        style={[
-                          styles.endBtnText,
-                          { color: "#000", fontWeight: "700" },
-                        ]}
-                      >
+                      <Text className="text-black font-bold text-[14px]">
                         {preferences.autoNext && !autoNextCancelled
                           ? `Next  · ${countdown}s`
                           : "Next episode"}
@@ -1642,12 +1514,9 @@ export function PlaybackScreen({
                         onPress={() => setAutoNextCancelled(true)}
                         accessibilityRole="button"
                         accessibilityLabel="Cancel autoplay"
-                        style={(s: any) => [
-                          styles.endBtn,
-                          s.pressed && { opacity: 0.8 },
-                        ]}
+                        className="rounded-full bg-transparent border border-white/25 px-5 py-2.5 active:opacity-70"
                       >
-                        <Text style={styles.endBtnText}>Cancel</Text>
+                        <Text className="text-white/90 font-semibold text-[14px]">Cancel</Text>
                       </Pressable>
                     )}
                 </View>
@@ -1657,15 +1526,11 @@ export function PlaybackScreen({
               {scrub != null && (
                 <View
                   pointerEvents="none"
+                  className="absolute items-center w-[120px] gap-1 z-20"
                   style={{
-                    position: "absolute",
                     bottom: 78,
                     left: `${Math.max(12, Math.min(88, progressRatio * 100))}%`,
                     transform: [{ translateX: -60 }],
-                    alignItems: "center",
-                    width: 120,
-                    gap: 4,
-                    zIndex: 20,
                   }}
                 >
                   {LocalThumbnail && (
@@ -1678,23 +1543,8 @@ export function PlaybackScreen({
                   )}
 
                   {/* Floating time bubble like in reference screenshots */}
-                  <View
-                    style={{
-                      backgroundColor: "rgba(0,0,0,0.85)",
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                      borderRadius: 6,
-                      borderWidth: 1,
-                      borderColor: "rgba(255,255,255,0.2)",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: "#fff",
-                        fontSize: 11,
-                        fontFamily: fonts.bold,
-                      }}
-                    >
+                  <View className="bg-black/85 px-2 py-[3px] rounded-[6px] border border-white/20">
+                    <Text className="text-white text-[11px] font-archivo-bold">
                       {timeLabel(previewTime)}
                     </Text>
                   </View>
@@ -1702,22 +1552,8 @@ export function PlaybackScreen({
               )}
 
               {/* Time row above timeline */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "flex-end",
-                  marginBottom: 4,
-                  paddingHorizontal: 2,
-                }}
-              >
-                <Text
-                  style={{
-                    color: "rgba(255,255,255,0.85)",
-                    fontSize: 12,
-                    fontFamily: fonts.medium,
-                  }}
-                >
+              <View className="flex-row items-center justify-end mb-1 px-0.5">
+                <Text className="text-white/85 text-[12px] font-archivo-medium">
                   {timeLabel(previewTime)} / {timeLabel(duration)}
                 </Text>
               </View>
@@ -1796,16 +1632,14 @@ export function PlaybackScreen({
                     seek(target);
                   }
                 }}
-                style={{ paddingVertical: 12 }}
+                className="py-3"
               >
                 {/* Track */}
                 <View
                   pointerEvents="none"
+                  className="rounded-[3px] bg-white/[0.22] overflow-visible"
                   style={{
                     height: scrub != null ? 6 : 4,
-                    borderRadius: 3,
-                    backgroundColor: "rgba(255,255,255,0.22)",
-                    overflow: "visible",
                     borderColor: timelineFocus ? "#ffffff" : "transparent",
                     borderWidth: timelineFocus ? 1.5 : 0,
                   }}
@@ -1813,40 +1647,23 @@ export function PlaybackScreen({
                   {/* Buffered fill */}
                   <View
                     pointerEvents="none"
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: `${bufferedRatio * 100}%`,
-                      backgroundColor: "rgba(255,255,255,0.3)",
-                      borderRadius: 3,
-                    }}
+                    className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white/30"
+                    style={{ width: `${bufferedRatio * 100}%` }}
                   />
                   {/* Playhead fill */}
                   <View
                     pointerEvents="none"
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: `${progressRatio * 100}%`,
-                      backgroundColor: "#ffffff",
-                      borderRadius: 3,
-                    }}
+                    className="absolute left-0 top-0 bottom-0 rounded-[3px] bg-white"
+                    style={{ width: `${progressRatio * 100}%` }}
                   />
                   {/* Thumb */}
                   <View
                     pointerEvents="none"
+                    className="absolute top-1/2 rounded-full bg-white"
                     style={{
-                      position: "absolute",
-                      top: "50%",
                       left: `${progressRatio * 100}%`,
                       width: scrub != null ? 16 : 12,
                       height: scrub != null ? 16 : 12,
-                      borderRadius: 8,
-                      backgroundColor: "#fff",
                       marginTop: scrub != null ? -8 : -6,
                       marginLeft: scrub != null ? -8 : -6,
                       shadowColor: "#000",
@@ -1859,36 +1676,36 @@ export function PlaybackScreen({
               </View>
 
               {diagnostics && (
-                <View style={styles.diagnosticsCard}>
-                  <View style={styles.diagnosticsRow}>
-                    <Text style={styles.diagnosticsLabel}>SOURCE</Text>
-                    <Text style={styles.diagnosticsVal} numberOfLines={1}>
+                <View className="self-start mt-1.5 rounded-[8px] border border-white/15 bg-black/80 px-3 py-2 gap-1">
+                  <View className="flex-row items-center gap-2">
+                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>SOURCE</Text>
+                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }} numberOfLines={1}>
                       {choice.path.toUpperCase()}
                     </Text>
                   </View>
-                  <View style={styles.diagnosticsRow}>
-                    <Text style={styles.diagnosticsLabel}>RESOLUTION</Text>
-                    <Text style={styles.diagnosticsVal}>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>RESOLUTION</Text>
+                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
                       {player.videoTrack?.size.height
                         ? `${player.videoTrack.size.height}p`
                         : "Auto"}
                     </Text>
                   </View>
-                  <View style={styles.diagnosticsRow}>
-                    <Text style={styles.diagnosticsLabel}>BUFFERED</Text>
-                    <Text style={styles.diagnosticsVal}>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>BUFFERED</Text>
+                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
                       {timeLabel(player.bufferedPosition)}
                     </Text>
                   </View>
-                  <View style={styles.diagnosticsRow}>
-                    <Text style={styles.diagnosticsLabel}>AUDIO</Text>
-                    <Text style={styles.diagnosticsVal}>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>AUDIO</Text>
+                    <Text className="text-white text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
                       Track {choice.audio + 1}
                     </Text>
                   </View>
-                  <View style={styles.diagnosticsRow}>
-                    <Text style={styles.diagnosticsLabel}>STATUS</Text>
-                    <Text style={[styles.diagnosticsVal, { color: "#4ade80" }]}>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="w-20 text-white/45 text-[10px] font-bold" style={{ fontFamily: fonts.mono }}>STATUS</Text>
+                    <Text className="text-[#4ade80] text-[11px] font-semibold" style={{ fontFamily: fonts.mono }}>
                       {status.toUpperCase()}
                     </Text>
                   </View>
@@ -1909,9 +1726,8 @@ export function PlaybackScreen({
         !menu &&
         !ended && (
           <View
+            className="absolute right-5"
             style={{
-              position: "absolute",
-              right: 20,
               bottom: layoutFull
                 ? Math.max(insets.bottom, 16) + (show ? 150 : 32)
                 : 92,
@@ -1921,12 +1737,9 @@ export function PlaybackScreen({
               accessibilityRole="button"
               accessibilityLabel={`Skip ${skipLabel}`}
               onPress={() => seek(activeSkip[1]!.end)}
-              style={({ pressed }) => [
-                styles.skipPill,
-                pressed && { opacity: 0.85 },
-              ]}
+              className="rounded-full bg-white/[0.92] px-[18px] py-[9px] active:opacity-85"
             >
-              <Text style={styles.skipPillText}>Skip {skipLabel}</Text>
+              <Text className="text-black font-bold text-[14px]">Skip {skipLabel}</Text>
             </Pressable>
           </View>
         )}
@@ -1934,27 +1747,12 @@ export function PlaybackScreen({
       {/* ── Resume prompt ── */}
       {resume && (
         <Animated.View
-          style={{
-            ...StyleSheet.absoluteFill,
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "rgba(0,0,0,0.72)",
-            padding: 24,
-            zIndex: 100,
-            opacity: resumeBackdropOpacity,
-          }}
+          className="absolute inset-0 items-center justify-center bg-black/[0.72] p-6 z-[100]"
+          style={{ opacity: resumeBackdropOpacity }}
         >
           <Animated.View
+            className="items-center gap-2.5 rounded-[18px] border border-white/[0.12] bg-[#121212]/[0.95] p-5 w-[320px] max-w-[90%]"
             style={{
-              backgroundColor: "rgba(18,18,18,0.95)",
-              borderRadius: 18,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.12)",
-              padding: 20,
-              width: 320,
-              maxWidth: "90%",
-              alignItems: "center",
-              gap: 10,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 8 },
               shadowOpacity: 0.6,
@@ -1972,25 +1770,9 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
-              style={(s: any) => [
-                {
-                  width: "100%",
-                  paddingVertical: 14,
-                  backgroundColor: "#ffffff",
-                  borderRadius: 12,
-                  alignItems: "center",
-                  justifyContent: "center",
-                },
-                s.pressed && { opacity: 0.85 },
-              ]}
+              className="w-full bg-white rounded-[12px] items-center justify-center py-3.5 active:opacity-85"
             >
-              <Text
-                style={{
-                  color: "#000000",
-                  fontFamily: fonts.bold,
-                  fontSize: 15,
-                }}
-              >
+              <Text className="text-black font-archivo-bold text-[15px]">
                 Continue watching ({timeLabel(initialResume)})
               </Text>
             </Pressable>
@@ -2003,25 +1785,9 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel="Start from beginning"
-              style={(s: any) => [
-                {
-                  width: "100%",
-                  paddingVertical: 14,
-                  backgroundColor: "rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  alignItems: "center",
-                  justifyContent: "center",
-                },
-                s.pressed && { opacity: 0.85 },
-              ]}
+              className="w-full bg-white/[0.12] rounded-[12px] items-center justify-center py-3.5 active:opacity-85"
             >
-              <Text
-                style={{
-                  color: "rgba(255,255,255,0.9)",
-                  fontFamily: fonts.medium,
-                  fontSize: 14,
-                }}
-              >
+              <Text className="text-white/90 font-archivo-medium text-[14px]">
                 Start from beginning
               </Text>
             </Pressable>
@@ -2033,25 +1799,9 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel="Cancel playback"
-              style={(s: any) => [
-                {
-                  width: "100%",
-                  paddingVertical: 12,
-                  backgroundColor: "transparent",
-                  borderRadius: 12,
-                  alignItems: "center",
-                  justifyContent: "center",
-                },
-                s.pressed && { opacity: 0.7 },
-              ]}
+              className="w-full bg-transparent rounded-[12px] items-center justify-center py-3 active:opacity-70"
             >
-              <Text
-                style={{
-                  color: "rgba(255,255,255,0.6)",
-                  fontFamily: fonts.medium,
-                  fontSize: 14,
-                }}
-              >
+              <Text className="text-white/60 font-archivo-medium text-[14px]">
                 Cancel
               </Text>
             </Pressable>
@@ -2093,98 +1843,3 @@ export function PlaybackScreen({
   );
 }
 
-const styles = StyleSheet.create({
-skipPill: {
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: control.radius,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-  },
-skipPillText: {
-    color: "#000",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-endBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: control.radius,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
-  },
-endBtnPrimary: {
-    backgroundColor: "#ffffff",
-    borderColor: "#ffffff",
-  },
-endBtnText: {
-    color: "rgba(255,255,255,0.9)",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-diagnosticsCard: {
-    backgroundColor: "rgba(0,0,0,0.8)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 4,
-    alignSelf: "flex-start",
-    marginTop: 6,
-  },
-diagnosticsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-diagnosticsLabel: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.45)",
-    width: 80,
-  },
-diagnosticsVal: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-unlockOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-unlockPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(255,255,255,0.94)",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 999,
-  },
-unlockPillText: {
-    color: "#000000",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-lockIndicator: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  }
-});

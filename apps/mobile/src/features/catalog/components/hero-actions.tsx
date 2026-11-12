@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import type { ItemCard } from "../../../core/library/catalog-api";
 import { localLibrary } from "../../../core/library/local-runtime";
+import { cn } from "../../../shared/lib/cn";
 import { triggerHaptic } from "../../../shared/lib/haptics";
-import { control, fonts } from "../../../shared/theme";
 import { Check, Film, Info, Play, Trash2 } from "../../../shared/ui/icons";
 import { playbackAction } from "../lib/playback-action";
 export interface HeroActionsProps {
@@ -49,7 +49,10 @@ export function HeroActions({
   );
   const playLabel = actionLabel ?? action.label;
   return (
-    <View style={[styles.heroButtons, hideActions && { display: "none" }]}>
+    <View
+      className="mt-1.5 flex-row items-center gap-3"
+      style={hideActions ? { display: "none" } : null}
+    >
       <Pressable
         onPress={() => {
           triggerHaptic("medium");
@@ -64,15 +67,17 @@ export function HeroActions({
           onHeroFocus?.();
         }}
         onBlur={() => setPlayFocus(false)}
-        style={({ pressed }) => [
-          styles.heroPlayBtn,
-          disabled && styles.heroBtnDisabled,
-          pressed && styles.heroBtnPressed,
-        ]}
+        className={cn(
+          "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-white px-5 py-3.5",
+          disabled && "opacity-40",
+          "active:opacity-78",
+        )}
       >
         <Play size={16} color={"#000"} fill={"#000"} />
         <View style={{ alignItems: "center", flexShrink: 1 }}>
-          <Text style={styles.heroPlayBtnText}>{playLabel}</Text>
+          <Text className="font-archivo-bold text-[16px] tracking-[0.2px] text-black">
+            {playLabel}
+          </Text>
         </View>
       </Pressable>
 
@@ -88,10 +93,10 @@ export function HeroActions({
             onHeroFocus?.();
           }}
           onBlur={() => setDetailFocus(false)}
-          style={({ pressed }) => [
-            styles.heroIconBtn,
-            pressed && styles.heroBtnPressed,
-          ]}
+          className={cn(
+            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-white/45 bg-white/12",
+            "active:opacity-78",
+          )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Details"
@@ -112,10 +117,10 @@ export function HeroActions({
             onHeroFocus?.();
           }}
           onBlur={() => setTrailerFocus(false)}
-          style={({ pressed }) => [
-            styles.heroIconBtn,
-            pressed && styles.heroBtnPressed,
-          ]}
+          className={cn(
+            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-white/45 bg-white/12",
+            "active:opacity-78",
+          )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Watch Trailer"
@@ -136,11 +141,11 @@ export function HeroActions({
             onHeroFocus?.();
           }}
           onBlur={() => setWatchedFocus(false)}
-          style={({ pressed }) => [
-            styles.heroIconBtn,
-            isWatched && styles.heroIconBtnWatched,
-            pressed && styles.heroBtnPressed,
-          ]}
+          className={cn(
+            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px]",
+            isWatched ? "border-white bg-white" : "border-white/45 bg-white/12",
+            "active:opacity-78",
+          )}
           hitSlop={8}
           disabled={busy}
           accessibilityLabel={isWatched ? "Mark Unwatched" : "Mark Watched"}
@@ -166,11 +171,10 @@ export function HeroActions({
             onHeroFocus?.();
           }}
           onBlur={() => setDeleteFocus(false)}
-          style={({ pressed }) => [
-            styles.heroIconBtn,
-            styles.heroIconBtnDanger,
-            pressed && styles.heroBtnPressed,
-          ]}
+          className={cn(
+            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-[#ef4444]/50 bg-[#ef4444]/15",
+            "active:opacity-78",
+          )}
           hitSlop={8}
           disabled={busy}
           accessibilityLabel="Delete"
@@ -181,53 +185,3 @@ export function HeroActions({
     </View>
   );
 }
-const styles = StyleSheet.create({
-  heroButtons: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 6,
-    alignItems: "center",
-  },
-  heroPlayBtn: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    borderRadius: control.radius,
-    paddingHorizontal: control.inset,
-    paddingVertical: 14,
-    minHeight: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  heroPlayBtnText: {
-    fontFamily: fonts.bold,
-    fontSize: 16,
-    color: "#000000",
-    letterSpacing: 0.2,
-  },
-  heroIconBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: control.radius,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.45)",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heroIconBtnWatched: {
-    backgroundColor: "#ffffff",
-    borderColor: "#ffffff",
-  },
-  heroIconBtnDanger: {
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
-    borderColor: "rgba(239, 68, 68, 0.5)",
-  },
-  heroBtnDisabled: {
-    opacity: 0.4,
-  },
-  heroBtnPressed: {
-    opacity: 0.78,
-  },
-});

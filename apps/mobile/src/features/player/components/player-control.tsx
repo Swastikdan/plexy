@@ -1,6 +1,5 @@
 import React from "react";
 import { Pressable } from "react-native";
-import { control } from "../../../shared/theme";
 
 export function PlayerControl({
   onPress,
@@ -30,13 +29,11 @@ export function PlayerControl({
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       hitSlop={12}
+      className="items-center justify-center rounded-full"
       style={({ pressed }) => ({
         width: size,
         height: size,
-        borderRadius: control.radius,
         backgroundColor: active ? activeBg : bg,
-        justifyContent: "center",
-        alignItems: "center",
         opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
       })}
     >

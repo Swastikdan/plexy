@@ -4,7 +4,7 @@ import { Image, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "../../../core/client/client-provider";
 import type { ItemCard } from "../../../core/library/catalog-api";
-import { colors, control, fonts } from "../../../shared/theme";
+import { colors } from "../../../shared/theme";
 import { PosterImage } from "../../../shared/ui/poster-image";
 import { HeroActions } from "./hero-actions";
 
@@ -57,7 +57,10 @@ export function Hero({
   }
   if (item.rating != null) {
     metaParts.push(
-      <Text key="rating" style={styles.heroMetaRating}>
+      <Text
+        key="rating"
+        className="font-archivo-bold text-[11px] text-white/85"
+      >
         ★ {item.rating.toFixed(1)}
       </Text>,
     );
@@ -67,11 +70,8 @@ export function Hero({
   }
   return (
     <View
-      style={[
-        styles.heroContainer,
-        { height: 540 + insets.top },
-        width ? { width } : null,
-      ]}
+      className="w-full justify-end overflow-hidden"
+      style={[{ height: 540 + insets.top }, width ? { width } : null]}
     >
       {item.poster ? (
         <PosterImage
@@ -103,23 +103,21 @@ export function Hero({
 
       {/* Content: Title full width, metadata with genres inline, Play button + Action icons */}
       <View
-        style={[
-          styles.heroContent,
-          contentBottom != null && { paddingBottom: contentBottom },
-        ]}
+        className="max-w-full gap-2.5 px-5 pb-[28px]"
+        style={contentBottom != null ? { paddingBottom: contentBottom } : null}
       >
         {/* Slide header: non-focusable, unselectable title, logo, metadata and overview */}
-        <View style={styles.heroSlideHeader}>
+        <View className="rounded-[8px] p-[2px]">
           {logo ? (
             <Image
               source={api.image(logo)}
               accessibilityLabel={item.name}
-              style={[styles.heroLogo]}
+              className="mb-2 h-[70px] w-[240px]"
               resizeMode="contain"
             />
           ) : (
             <Text
-              style={[styles.heroTitle]}
+              className="font-archivo-black text-[36px] leading-[42px] tracking-[-0.5px] text-white"
               numberOfLines={2}
               selectable={false}
             >
@@ -129,12 +127,17 @@ export function Hero({
 
           {/* Metadata row under title: Year, rating, and genres in the exact same row */}
           {metaParts.length > 0 && (
-            <View style={styles.heroMetaRow}>
+            <View className="flex-row flex-wrap items-center gap-[5px]">
               {metaParts.map((part, index) => (
                 <React.Fragment key={index}>
-                  {index > 0 && <Text style={styles.heroMetaDot}>·</Text>}
+                  {index > 0 && (
+                    <Text className="text-[11px] text-white/50">·</Text>
+                  )}
                   {typeof part === "string" ? (
-                    <Text style={styles.heroMetaText} selectable={false}>
+                    <Text
+                      className="font-archivo-medium text-[11px] text-white/75"
+                      selectable={false}
+                    >
                       {part}
                     </Text>
                   ) : (
@@ -148,7 +151,7 @@ export function Hero({
           {/* 2-line synopsis / overview */}
           {!!item.overview && (
             <Text
-              style={styles.heroOverview}
+              className="mt-1 font-archivo-regular text-[12px] leading-[18px] text-white/78"
               numberOfLines={2}
               selectable={false}
             >
@@ -175,60 +178,3 @@ export function Hero({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  heroContainer: {
-    width: "100%",
-    justifyContent: "flex-end",
-    overflow: "hidden",
-  },
-  heroContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-    gap: 10,
-    maxWidth: "100%",
-  },
-  heroTitle: {
-    fontFamily: fonts.black,
-    fontSize: 36,
-    color: "#fff",
-    lineHeight: 42,
-    letterSpacing: -0.5,
-  },
-  heroMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 5,
-  },
-  heroMetaText: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    color: "rgba(255,255,255,0.75)",
-  },
-  heroMetaDot: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 11,
-  },
-  heroLogo: {
-    width: 240,
-    height: 70,
-    marginBottom: 8,
-  },
-  heroOverview: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    lineHeight: 18,
-    color: "rgba(255,255,255,0.78)",
-    marginTop: 4,
-  },
-  heroSlideHeader: {
-    borderRadius: 8,
-    padding: 2,
-  },
-  heroMetaRating: {
-    fontFamily: fonts.bold,
-    fontSize: 11,
-    color: "rgba(255,255,255,0.85)",
-  },
-});

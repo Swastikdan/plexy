@@ -1,5 +1,5 @@
-import { Pressable,StyleSheet,Text } from "react-native";
-import { colors,control,fonts } from "../../../shared/theme";
+import { Pressable,Text } from "react-native";
+import { cn } from "../../../shared/lib/cn";
 
 export function ReportAction({
   label,
@@ -17,30 +17,15 @@ export function ReportAction({
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        s.action,
-        subtle && s.subtle,
-        disabled && { opacity: 0.45 },
-        pressed && { opacity: 0.7 },
-      ]}
+      className={cn(
+        "min-h-[44px] items-center justify-center rounded-full px-4 py-3",
+        subtle ? "bg-surface-secondary" : "bg-accent",
+        "disabled:opacity-45 active:opacity-70",
+      )}
     >
-      <Text style={[s.actionText, subtle && { color: colors.ink }]}>
+      <Text className="text-[13px] font-archivo-medium text-foreground">
         {label}
       </Text>
     </Pressable>
   );
 }
-
-const s = StyleSheet.create({
-action: {
-    minHeight: 44,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: control.radius,
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-subtle: { backgroundColor: colors.elevated },
-actionText: { fontSize: 13, fontFamily: fonts.medium, color: colors.ink }
-});

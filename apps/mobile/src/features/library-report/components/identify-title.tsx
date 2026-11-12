@@ -3,7 +3,6 @@ import { useEffect,useState } from "react";
 import {
 Pressable,
 ScrollView,
-StyleSheet,
 Text,
 TextInput,
 View,
@@ -14,7 +13,8 @@ localLibrary,
 searchTitles,
 } from "../../../core/library/local-runtime";
 import { useOnline } from "../../../shared/hooks/use-online";
-import { colors,control,fonts } from "../../../shared/theme";
+import { cn } from "../../../shared/lib/cn";
+import { colors } from "../../../shared/theme";
 import { Notice } from "../../../shared/ui/notice";
 import { ReportAction } from "./report-action";
 
@@ -105,24 +105,33 @@ export function IdentifyTitle({
       <Pressable
         onPress={close}
         disabled={busy}
-        style={{ paddingVertical: 10 }}
+        className="py-2.5"
       >
-        <Text style={s.back}>‹ Library report</Text>
+        <Text className="text-[15px] font-archivo-medium text-accent">
+          ‹ Library report
+        </Text>
       </Pressable>
-      <Text style={s.title}>Identify title</Text>
-      <Text style={s.description}>
+      <Text className="text-[28px] font-archivo-bold text-foreground tracking-[-0.6px]">
+        Identify title
+      </Text>
+      <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
         Search by title, then choose the correct result. Change the type if this
         video was classified incorrectly.
       </Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <View className="flex-row gap-2">
         {(["movies", "tv"] as const).map((k) => (
           <Pressable
             key={k}
             disabled={busy}
             onPress={() => setKind(k)}
-            style={[s.chip, kind === k && s.selected]}
+            className={cn(
+              "rounded-full border px-4 py-2.5",
+              kind === k
+                ? "border-accent bg-accent/20"
+                : "border-border bg-surface",
+            )}
           >
-            <Text style={s.chipText}>
+            <Text className="text-[13px] font-archivo-medium text-foreground">
               {k === "movies" ? "Movie" : "TV show"}
             </Text>
           </Pressable>
@@ -135,35 +144,41 @@ export function IdentifyTitle({
         placeholder="Movie or show title"
         placeholderTextColor={colors.quiet}
         accessibilityLabel="Title to identify"
-        style={s.input}
+        className="rounded-[10px] border border-border bg-surface p-3.5 text-[16px] font-archivo-regular text-foreground"
       />
       {kind === "tv" && item.kind !== "series" && (
-        <View style={{ flexDirection: "row", gap: 12 }}>
-          <View style={{ flex: 1, gap: 6 }}>
-            <Text style={s.caption}>Season</Text>
+        <View className="flex-row gap-3">
+          <View className="flex-1 gap-1.5">
+            <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
+              Season
+            </Text>
             <TextInput
               value={season}
               onChangeText={setSeason}
               keyboardType="number-pad"
               accessibilityLabel="Season number"
-              style={s.input}
+              className="rounded-[10px] border border-border bg-surface p-3.5 text-[16px] font-archivo-regular text-foreground"
             />
           </View>
-          <View style={{ flex: 1, gap: 6 }}>
-            <Text style={s.caption}>Episode</Text>
+          <View className="flex-1 gap-1.5">
+            <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
+              Episode
+            </Text>
             <TextInput
               value={episode}
               onChangeText={setEpisode}
               keyboardType="number-pad"
               accessibilityLabel="Episode number"
-              style={s.input}
+              className="rounded-[10px] border border-border bg-surface p-3.5 text-[16px] font-archivo-regular text-foreground"
             />
           </View>
         </View>
       )}
       {!!error && <Notice message={error} />}
       {busy ? (
-        <Text style={s.description}>Saving title and downloading artwork…</Text>
+        <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
+          Saving title and downloading artwork…
+        </Text>
       ) : (
         <>
           <ReportAction
@@ -172,7 +187,7 @@ export function IdentifyTitle({
             disabled={!query.trim()}
             onPress={() => void choose()}
           />
-          <Text style={s.caption}>
+          <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
             {loading
               ? "Searching TMDB…"
               : results.length
@@ -184,27 +199,29 @@ export function IdentifyTitle({
               key={result.id}
               disabled={!online}
               onPress={() => void choose(result)}
-              style={[
-                s.card,
-                { flexDirection: "row", alignItems: "center", gap: 14 },
-              ]}
+              className="flex-row items-center gap-3.5 rounded-[12px] bg-surface p-3.5"
             >
               {!!result.poster_path && (
                 <Image
                   source={`https://image.tmdb.org/t/p/w185${result.poster_path}`}
-                  style={s.poster}
+                  className="h-[90px] w-[60px] rounded-[6px] bg-surface-secondary"
                   contentFit="cover"
                 />
               )}
-              <View style={{ flex: 1, gap: 5 }}>
-                <Text style={s.name}>{result.title || result.name}</Text>
-                <Text style={s.caption}>
+              <View className="flex-1 gap-[5px]">
+                <Text className="text-[16px] font-archivo-bold text-foreground">
+                  {result.title || result.name}
+                </Text>
+                <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
                   {(result.release_date || result.first_air_date || "").slice(
                     0,
                     4,
                   )}
                 </Text>
-                <Text style={s.caption} numberOfLines={3}>
+                <Text
+                  className="text-[12px] leading-[18px] font-archivo-regular text-muted"
+                  numberOfLines={3}
+                >
                   {result.overview}
                 </Text>
               </View>
@@ -215,58 +232,3 @@ export function IdentifyTitle({
     </ScrollView>
   );
 }
-
-const s = StyleSheet.create({
-title: {
-    fontSize: 28,
-    fontFamily: fonts.bold,
-    color: colors.ink,
-    letterSpacing: -0.6,
-  },
-description: {
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: fonts.regular,
-    color: colors.muted,
-  },
-back: { fontSize: 15, fontFamily: fonts.medium, color: colors.brandLight },
-card: {
-    padding: 14,
-    gap: 12,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-poster: {
-    width: 60,
-    height: 90,
-    borderRadius: 6,
-    backgroundColor: colors.elevated,
-  },
-name: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink },
-caption: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontFamily: fonts.regular,
-    color: colors.muted,
-  },
-chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: control.radius,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-selected: { backgroundColor: colors.strong, borderColor: colors.brand },
-chipText: { fontSize: 13, fontFamily: fonts.medium, color: colors.ink },
-input: {
-    color: colors.ink,
-    fontSize: 16,
-    fontFamily: fonts.regular,
-    backgroundColor: colors.surface,
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.line,
-  }
-});

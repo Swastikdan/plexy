@@ -59,7 +59,8 @@ export function PosterImage({
     <Image
       key={resolvedUri || String(attempt)}
       source={imageSource}
-      style={[{ width: "100%", height: "100%" }, style]}
+      className="w-full h-full"
+      style={style}
       resizeMode={resizeMode}
       onError={() => {
         if (attempt < 1) setAttempt((a) => a + 1);

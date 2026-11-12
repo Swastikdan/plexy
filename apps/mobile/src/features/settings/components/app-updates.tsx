@@ -57,7 +57,7 @@ export function Updates() {
     }
   }
   return (
-    <View style={{ gap: 12 }}>
+    <View className="gap-3">
       <Label>
         {info ? `Installed: ${info.versionName}` : "Reading installed version…"}
       </Label>
@@ -78,7 +78,7 @@ export function Updates() {
         </>
       )}
       {progress !== null && (
-        <Text style={{ color: "white" }}>Downloading: {progress}%</Text>
+        <Text className="text-white">Downloading: {progress}%</Text>
       )}
       {!!message && <Notice message={message} />}
     </View>

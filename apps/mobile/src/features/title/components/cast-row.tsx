@@ -1,16 +1,8 @@
-import {
-Image,
-Pressable,
-ScrollView,
-StyleSheet,
-Text,
-View,
-} from "react-native";
+import { Image,Pressable,ScrollView,Text,View } from "react-native";
 import type {
 LocalCatalog,
 TitleDetail,
 } from "../../../core/library/catalog-api";
-import { colors,fonts } from "../../../shared/theme";
 export function CastRow({
   people,
   api,
@@ -24,8 +16,10 @@ export function CastRow({
 }) {
   if (!people.length) return null;
   return (
-    <View style={{ gap: 12 }}>
-      <Text style={styles.detailSectionLabel}>Cast & Crew</Text>
+    <View className="gap-3">
+      <Text className="font-archivo-bold text-[18px] tracking-[-0.2px] text-foreground">
+        Cast & Crew
+      </Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -36,24 +30,24 @@ export function CastRow({
             disabled={!canOpen(person.name)}
             onPress={() => onSelect(person.name)}
             key={`${person.name}-${i}`}
-            style={styles.castCard}
+            className="w-24 gap-1.5"
           >
             {person.photo ? (
               <Image
                 source={api.image(person.photo)}
-                style={styles.castPhoto}
+                className="aspect-[2/3] w-full rounded-lg bg-surface"
               />
             ) : (
-              <View style={[styles.castPhoto, styles.castPhotoPlaceholder]}>
-                <Text style={styles.castInitial}>
+              <View className="aspect-[2/3] w-full items-center justify-center rounded-lg bg-surface">
+                <Text className="font-archivo-black text-[24px] text-muted">
                   {person.name?.[0]?.toUpperCase()}
                 </Text>
               </View>
             )}
-            <Text style={styles.castName} numberOfLines={2}>
+            <Text className="font-archivo-bold text-[12px] leading-4 text-foreground" numberOfLines={2}>
               {person.name}
             </Text>
-            <Text style={styles.castCharacter} numberOfLines={1}>
+            <Text className="font-archivo-regular text-[11px] text-muted" numberOfLines={1}>
               {person.character}
             </Text>
           </Pressable>
@@ -62,41 +56,3 @@ export function CastRow({
     </View>
   );
 }
-const styles = StyleSheet.create({
-detailSectionLabel: {
-    fontFamily: fonts.bold,
-    fontSize: 18,
-    color: colors.ink,
-    letterSpacing: -0.2,
-  },
-castCard: {
-    width: 96,
-    gap: 6,
-  },
-castPhoto: {
-    width: "100%",
-    aspectRatio: 2 / 3,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
-  },
-castPhotoPlaceholder: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-castInitial: {
-    fontFamily: fonts.black,
-    fontSize: 24,
-    color: colors.muted,
-  },
-castName: {
-    fontFamily: fonts.bold,
-    fontSize: 12,
-    color: colors.ink,
-    lineHeight: 16,
-  },
-castCharacter: {
-    fontFamily: fonts.regular,
-    fontSize: 11,
-    color: colors.muted,
-  }
-});

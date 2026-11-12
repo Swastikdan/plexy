@@ -5,7 +5,6 @@ Alert,
 FlatList,
 Modal,
 Pressable,
-StyleSheet,
 Text,
 View,
 } from "react-native";
@@ -13,7 +12,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { ItemCard } from "../../../../../packages/api-client/src/types";
 import type { LocalRoot } from "../../../../../packages/local-library/src/library";
 import { localLibrary } from "../../core/library/local-runtime";
-import { colors,control,fonts } from "../../shared/theme";
+import { cn } from "../../shared/lib/cn";
+import { colors } from "../../shared/theme";
 import { Icon } from "../../shared/ui/icon";
 import { Notice } from "../../shared/ui/notice";
 import { addLocalFiles } from "../library/lib/import-local-files";
@@ -61,29 +61,27 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
     }
   }
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View className="flex-1 bg-background">
       <FlatList
         data={items}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={{ padding: 20, paddingBottom: 30, gap: 12 }}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          <View style={{ gap: 14, marginBottom: 8 }}>
+          <View className="mb-2 gap-3.5">
             <Pressable
               accessibilityLabel="Back to Settings"
               onPress={back}
-              style={{ paddingVertical: 8 }}
+              className="py-2"
             >
-              <Text style={s.back}>‹ Settings</Text>
+              <Text className="text-[15px] font-archivo-medium text-accent">
+                ‹ Settings
+              </Text>
             </Pressable>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <Text style={s.title}>Library report</Text>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[28px] font-archivo-bold text-foreground tracking-[-0.6px]">
+                Library report
+              </Text>
               <ReportAction
                 label={busy ? "Adding…" : "+ Add"}
                 disabled={busy}
@@ -101,18 +99,23 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
                 }
               />
             </View>
-            <Text style={s.description}>
+            <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
               Add videos, correct a match, or remove a title. Your original
               files stay untouched.
             </Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
+            <View className="flex-row gap-2">
               {(["all", "review", "files"] as const).map((f) => (
                 <Pressable
                   key={f}
                   onPress={() => setFilter(f)}
-                  style={[s.chip, filter === f && s.selected]}
+                  className={cn(
+                    "rounded-full border px-4 py-2.5",
+                    filter === f
+                      ? "border-accent bg-accent/20"
+                      : "border-border bg-surface",
+                  )}
                 >
-                  <Text style={s.chipText}>
+                  <Text className="text-[13px] font-archivo-medium text-foreground">
                     {f === "all"
                       ? `All titles (${all.length})`
                       : f === "files"
@@ -126,7 +129,7 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
           </View>
         }
         ListEmptyComponent={
-          <Text style={s.description}>
+          <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
             {filter === "review"
               ? "No titles need attention."
               : "No titles yet. Add a video here, or connect a folder in Settings."}
@@ -137,21 +140,16 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
             (r) => r.id === item.id || r.card.parentId === item.id,
           );
           return (
-            <View style={s.card}>
-              <View style={{ flexDirection: "row", gap: 14 }}>
+            <View className="gap-3 rounded-[12px] bg-surface p-3.5">
+              <View className="flex-row gap-3.5">
                 {item.poster ? (
                   <Image
                     source={item.poster}
-                    style={s.poster}
+                    className="h-[90px] w-[60px] rounded-[6px] bg-surface-secondary"
                     contentFit="cover"
                   />
                 ) : (
-                  <View
-                    style={[
-                      s.poster,
-                      { alignItems: "center", justifyContent: "center" },
-                    ]}
-                  >
+                  <View className="h-[90px] w-[60px] items-center justify-center rounded-[6px] bg-surface-secondary">
                     <Icon
                       name={item.kind === "series" ? "tv" : "film"}
                       size={24}
@@ -159,11 +157,14 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
                     />
                   </View>
                 )}
-                <View style={{ flex: 1, gap: 6 }}>
-                  <Text style={s.name} numberOfLines={2}>
+                <View className="flex-1 gap-1.5">
+                  <Text
+                    className="text-[16px] font-archivo-bold text-foreground"
+                    numberOfLines={2}
+                  >
                     {item.name}
                   </Text>
-                  <Text style={s.caption}>
+                  <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
                     {item.kind === "series"
                       ? "TV show"
                       : item.kind === "episode"
@@ -172,27 +173,32 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
                     {item.year ? ` · ${item.year}` : ""}
                   </Text>
                   <Text
-                    style={[
-                      s.caption,
-                      item.matchStatus !== "matched" && { color: colors.amber },
-                    ]}
+                    className={cn(
+                      "text-[12px] leading-[18px] font-archivo-regular",
+                      item.matchStatus !== "matched"
+                        ? "text-warning"
+                        : "text-muted",
+                    )}
                   >
                     {item.matchStatus === "matched"
                       ? "Identified with TMDB"
                       : "Choose the correct title"}
                   </Text>
-                  <Text style={s.file} numberOfLines={1}>
+                  <Text
+                    className="text-[11px] text-muted"
+                    numberOfLines={1}
+                  >
                     {record?.file.name}
                   </Text>
                 </View>
               </View>
               {!!record?.metadataError && (
-                <Text style={[s.caption, { color: colors.amber }]}>
+                <Text className="text-[12px] leading-[18px] font-archivo-regular text-warning">
                   {record.metadataError}
                 </Text>
               )}
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <View style={{ flex: 1 }}>
+              <View className="flex-row gap-2">
+                <View className="flex-1">
                   <ReportAction
                     label="Identify / edit"
                     subtle
@@ -227,7 +233,7 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
         animationType="slide"
         onRequestClose={() => setEditing(null)}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
+        <SafeAreaView className="flex-1 bg-background">
           {editing && (
             <IdentifyTitle
               key={editing.id}
@@ -240,49 +246,3 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
     </View>
   );
 }
-
-const s = StyleSheet.create({
-title: {
-    fontSize: 28,
-    fontFamily: fonts.bold,
-    color: colors.ink,
-    letterSpacing: -0.6,
-  },
-description: {
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: fonts.regular,
-    color: colors.muted,
-  },
-back: { fontSize: 15, fontFamily: fonts.medium, color: colors.brandLight },
-card: {
-    padding: 14,
-    gap: 12,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-poster: {
-    width: 60,
-    height: 90,
-    borderRadius: 6,
-    backgroundColor: colors.elevated,
-  },
-name: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink },
-caption: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontFamily: fonts.regular,
-    color: colors.muted,
-  },
-file: { fontSize: 11, color: colors.quiet },
-chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: control.radius,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-selected: { backgroundColor: colors.strong, borderColor: colors.brand },
-chipText: { fontSize: 13, fontFamily: fonts.medium, color: colors.ink }
-});

@@ -3,7 +3,6 @@ import {
 ActivityIndicator,
 Animated,
 Easing,
-StyleSheet,
 View,
 } from "react-native";
 import { useReducedMotion } from "../hooks/use-reduced-motion";
@@ -40,7 +39,7 @@ export function Loading({
   }, [shouldShowLogo, slide, reduceMotion]);
   if (!shouldShowLogo) {
     return (
-      <View style={styles.loadingWrap}>
+      <View className="flex-1 p-12 items-center justify-center">
         <ActivityIndicator
           size="small"
           color="#ffffff"
@@ -50,48 +49,26 @@ export function Loading({
     );
   }
   return (
-    <View style={styles.loadingWrap}>
+    <View className="flex-1 p-12 items-center justify-center gap-[26px]">
       <PlexyLogo size={34} showText={true} />
-      <View style={styles.loadingTrack} accessibilityLabel="Loading">
+      <View
+        className="w-[140px] h-[3px] rounded-[2px] bg-white/[0.14] overflow-hidden"
+        accessibilityLabel="Loading"
+      >
         <Animated.View
-          style={[
-            styles.loadingBar,
-            {
-              transform: [
-                {
-                  translateX: slide.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 92],
-                  }),
-                },
-              ],
-            },
-          ]}
+          className="w-12 h-[3px] rounded-[2px] bg-white"
+          style={{
+            transform: [
+              {
+                translateX: slide.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 92],
+                }),
+              },
+            ],
+          }}
         />
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-loadingWrap: {
-    flex: 1,
-    padding: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 26,
-  },
-loadingTrack: {
-    width: 140,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    overflow: "hidden",
-  },
-loadingBar: {
-    width: 48,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: "#ffffff",
-  }
-});

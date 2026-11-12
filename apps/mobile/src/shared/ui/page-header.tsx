@@ -1,12 +1,10 @@
 import React from "react";
 import {
-StyleSheet,
 Text,
 View,
 type StyleProp,
 type ViewStyle,
 } from "react-native";
-import { colors,fonts } from "../theme";
 import { PlexyMark } from "./brand-logo";
 
 export function PageHeader({
@@ -21,52 +19,31 @@ export function PageHeader({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <View style={[styles.pageHeader, style]}>
-      <View style={styles.pageHeaderTitleRow}>
+    <View
+      className="flex-row items-center justify-between px-5 pt-[18px] pb-3 min-h-[64px]"
+      style={style}
+    >
+      <View className="flex-row items-center gap-2 shrink">
         {logo ? (
           <>
             <PlexyMark size={24} />
-            <Text accessibilityRole="header" style={styles.pageTitle}>
+            <Text
+              accessibilityRole="header"
+              className="font-archivo-black text-[30px] leading-[36px] tracking-[-0.9px] text-foreground"
+            >
               Plexy
             </Text>
           </>
         ) : (
-          <Text accessibilityRole="header" style={styles.pageTitle}>
+          <Text
+            accessibilityRole="header"
+            className="font-archivo-black text-[30px] leading-[36px] tracking-[-0.9px] text-foreground"
+          >
             {title}
           </Text>
         )}
       </View>
-      {right ? <View style={styles.pageHeaderRight}>{right}</View> : null}
+      {right ? <View className="flex-row items-center gap-2">{right}</View> : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-pageHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 12,
-    minHeight: 64,
-  },
-pageHeaderTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flexShrink: 1,
-  },
-pageTitle: {
-    fontFamily: fonts.black,
-    fontSize: 30,
-    lineHeight: 36,
-    letterSpacing: -0.9,
-    color: colors.ink,
-  },
-pageHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  }
-});

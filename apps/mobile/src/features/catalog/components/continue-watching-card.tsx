@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { Pressable,StyleSheet,Text,View } from "react-native";
+import { Pressable,Text,View } from "react-native";
 import type { ItemCard } from "../../../core/library/catalog-api";
-import { colors,fonts } from "../../../shared/theme";
 import { Play } from "../../../shared/ui/icons";
 import { PosterImage } from "../../../shared/ui/poster-image";
 
@@ -56,50 +55,62 @@ export function ContinueWatchingCard({
         onFocus?.();
       }}
       onBlur={() => setFocus(false)}
-      style={({ pressed }) => [styles.cwCard, pressed && { opacity: 0.8 }]}
+      className="w-[168px] gap-1.5 active:opacity-80"
     >
       {/* 16:9 Thumbnail container */}
-      <View style={styles.cwThumbWrap}>
+      <View
+        className="w-full items-center justify-center overflow-hidden rounded-[8px] bg-surface"
+        style={{ aspectRatio: 16 / 9 }}
+      >
         <PosterImage source={api.image(item.backdrop || item.poster)} />
         {!item.backdrop && !item.poster && (
-          <View style={[styles.cwThumb, styles.cwThumbPlaceholder]} />
+          <View className="h-full w-full bg-surface-secondary" />
         )}
 
         {/* White focus ring when selected */}
-        {focus && <View style={styles.cwFocusRing} pointerEvents="none" />}
+        {focus && (
+          <View
+            className="absolute inset-0 z-[5] rounded-[8px] border-[2.5px] border-white"
+            pointerEvents="none"
+          />
+        )}
 
         {/* Top-left badge: Episode number */}
         {epLabel && (
-          <View style={styles.cwBadge}>
-            <Text style={styles.cwBadgeText}>{epLabel}</Text>
+          <View className="absolute left-[6px] top-[6px] rounded-[4px] bg-black/72 px-[5px] py-[1.5px]">
+            <Text className="font-archivo-bold text-[9.5px] text-white">{epLabel}</Text>
           </View>
         )}
 
         {/* Center play icon overlay */}
-        <View style={styles.cwPlayCircle}>
+        <View className="absolute h-[26px] w-[26px] items-center justify-center rounded-[13px] border-[1.5px] border-white/80 bg-black/55 pl-[2px]">
           <Play size={16} color="#fff" fill="#fff" />
         </View>
 
         {/* Linear progress bar at the bottom */}
         {progressRatio > 0 && (
-          <View style={styles.cwProgressBar}>
+          <View className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-white/20">
             <View
-              style={[
-                styles.cwProgressFill,
-                { width: `${Math.round(progressRatio * 100)}%` },
-              ]}
+              className="h-full bg-accent"
+              style={{ width: `${Math.round(progressRatio * 100)}%` }}
             />
           </View>
         )}
       </View>
 
       {/* Info below thumbnail */}
-      <View style={styles.cwInfo}>
-        <Text style={styles.cwTitle} numberOfLines={1}>
+      <View className="gap-0.5">
+        <Text
+          className="font-archivo-bold text-[12px] leading-[15px] text-foreground"
+          numberOfLines={1}
+        >
           {title}
         </Text>
         {!!subtitle && (
-          <Text style={styles.cwSubtitle} numberOfLines={1}>
+          <Text
+            className="font-archivo-regular text-[10.5px] text-muted"
+            numberOfLines={1}
+          >
             {subtitle}
           </Text>
         )}
@@ -107,89 +118,3 @@ export function ContinueWatchingCard({
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-cwCard: {
-    width: 168,
-    gap: 6,
-  },
-cwFocusRing: {
-    position: "absolute" as const,
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderWidth: 2.5,
-    borderColor: "#ffffff",
-    borderRadius: 8,
-    zIndex: 5,
-  },
-cwThumbWrap: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-    borderRadius: 8,
-    overflow: "hidden",
-    backgroundColor: colors.surface,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-cwThumb: {
-    width: "100%",
-    height: "100%",
-  },
-cwThumbPlaceholder: {
-    backgroundColor: colors.elevated,
-  },
-cwBadge: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    backgroundColor: "rgba(0,0,0,0.72)",
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-  },
-cwBadgeText: {
-    fontFamily: fonts.bold,
-    fontSize: 9.5,
-    color: "#fff",
-  },
-cwPlayCircle: {
-    position: "absolute",
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.8)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingLeft: 2,
-  },
-cwProgressBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2.5,
-    backgroundColor: "rgba(255,255,255,0.2)",
-  },
-cwProgressFill: {
-    height: "100%",
-    backgroundColor: colors.brand,
-  },
-cwInfo: {
-    gap: 2,
-  },
-cwTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 12,
-    lineHeight: 15,
-    color: colors.ink,
-  },
-cwSubtitle: {
-    fontFamily: fonts.regular,
-    fontSize: 10.5,
-    color: colors.muted,
-  }
-});

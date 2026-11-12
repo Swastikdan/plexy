@@ -1,5 +1,5 @@
-import { StyleSheet,View } from "react-native";
-import { colors } from "../theme";
+import { View } from "react-native";
+import { cn } from "../lib/cn";
 import { Button } from "./button";
 import { Label } from "./text";
 
@@ -13,23 +13,16 @@ export function Notice({
   kind?: "info" | "error";
 }) {
   return (
-    <View accessibilityLiveRegion="polite" style={styles.notice}>
-      <Label style={{ color: kind === "error" ? colors.danger : colors.ink }}>
+    <View
+      accessibilityLiveRegion="polite"
+      className="p-4 bg-surface-secondary rounded-[10px] border border-white/[0.08] gap-3.5 my-3"
+    >
+      <Label
+        className={cn(kind === "error" ? "text-danger" : "text-foreground")}
+      >
         {message}
       </Label>
       {retry && <Button label="Retry" onPress={retry} />}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-notice: {
-    padding: 16,
-    backgroundColor: colors.elevated,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    gap: 14,
-    marginVertical: 12,
-  }
-});

@@ -1,6 +1,6 @@
 import { Tabs,usePathname } from "expo-router";
 import React,{ useEffect,useRef,useState } from "react";
-import { Animated,Pressable,StyleSheet,View } from "react-native";
+import { Animated,Pressable,View } from "react-native";
 import {
 SafeAreaView,
 useSafeAreaInsets,
@@ -75,13 +75,11 @@ function MobileTabBar({
   const bottomPadding = Math.max(insets.bottom, 10);
   return (
     <View
-      style={[
-        styles.tabBar,
-        {
-          paddingBottom: bottomPadding,
-          height: 64 + bottomPadding,
-        },
-      ]}
+      className="flex-row bg-background items-center justify-around pt-1 px-3"
+      style={{
+        paddingBottom: bottomPadding,
+        height: 64 + bottomPadding,
+      }}
     >
       {tabs.map((tab, index) => {
         const isFocused = state.index === index;
@@ -103,24 +101,21 @@ function MobileTabBar({
           <Pressable
             key={tab.name}
             onPress={onPress}
-            style={({ pressed }) => [
-              styles.tabItem,
-              // Scale toward the finger on touch-down, not opacity — keeps
-              // the icon present while answering the touch instantly.
-              pressed && { transform: [{ scale: 0.88 }], opacity: 0.8 },
-            ]}
+            // Scale toward the finger on touch-down, not opacity — keeps
+            // the icon present while answering the touch instantly.
+            className="flex-1 min-h-[56px] items-center justify-center active:scale-[0.88] active:opacity-80"
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
             accessibilityLabel={tab.title}
           >
-            <View style={styles.tabIconWrap}>
+            <View className="w-12 h-12 items-center justify-center">
               <TabIcon
                 name={tab.icon}
                 focused={isFocused}
                 filled={isFocused && tab.name === "index"}
               />
               {tab.name === "settings" && attention > 0 && (
-                <View style={styles.tabBadgeDot} />
+                <View className="absolute bottom-0 w-[5px] h-[5px] rounded-[3px] bg-warning" />
               )}
             </View>
           </Pressable>
@@ -140,7 +135,7 @@ export default function TabLayout() {
   return (
     <SafeAreaView
       edges={isHome ? ["left", "right"] : ["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: colors.canvas }}
+      className="flex-1 bg-background"
     >
       {!isHome && <LibraryAttention />}
       <Tabs
@@ -162,33 +157,4 @@ export default function TabLayout() {
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
-tabBar: {
-    flexDirection: "row",
-    backgroundColor: colors.canvas,
-    alignItems: "center",
-    justifyContent: "space-around",
-    paddingTop: 4,
-    paddingHorizontal: 12,
-  },
-tabItem: {
-    flex: 1,
-    minHeight: 56,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-tabIconWrap: {
-    width: 48,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-tabBadgeDot: {
-    position: "absolute",
-    bottom: 0,
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.amber,
-  }
-});
+

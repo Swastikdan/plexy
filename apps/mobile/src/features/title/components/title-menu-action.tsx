@@ -1,5 +1,6 @@
 import { Pressable,Text } from "react-native";
-import { colors,control,fonts } from "../../../shared/theme";
+import { cn } from "../../../shared/lib/cn";
+import { colors } from "../../../shared/theme";
 import type { NativeIcon } from "../../../shared/ui/icons";
 export function TitleMenuAction({
   label,
@@ -17,18 +18,15 @@ export function TitleMenuAction({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        minHeight: 48,
-        paddingHorizontal: 12,
-        borderRadius: control.radius,
-        backgroundColor: pressed ? colors.hover : "transparent",
-      })}
+      className="min-h-12 flex-row items-center gap-3 rounded-full bg-transparent px-3 active:bg-surface-hover"
     >
       <Icon size={20} color={color} />
-      <Text style={{ color, fontFamily: fonts.medium, fontSize: 15 }}>
+      <Text
+        className={cn(
+          "font-archivo-medium text-[15px]",
+          destructive ? "text-danger" : "text-foreground",
+        )}
+      >
         {label}
       </Text>
     </Pressable>

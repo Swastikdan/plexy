@@ -1,5 +1,5 @@
 import { Text,View } from "react-native";
-import { colors,fonts } from "../../../shared/theme";
+import { colors } from "../../../shared/theme";
 import {
 ArrowLeft as ArrowLeftIcon,
 AudioLines,
@@ -62,21 +62,14 @@ export function IconRewind({
   const containerSize = size + 16;
   return (
     <View
-      style={{
-        width: containerSize,
-        height: containerSize,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
+      className="items-center justify-center"
+      style={{ width: containerSize, height: containerSize }}
     >
       <RotateCcw size={size} color={color} strokeWidth={2.2} />
       <Text
+        className="absolute text-[10px] font-archivo-bold text-center"
         style={{
-          position: "absolute",
-          fontSize: 10,
           color,
-          fontFamily: fonts.bold,
-          textAlign: "center",
           top: Math.round(containerSize / 2) - 6,
         }}
       >
@@ -98,21 +91,14 @@ export function IconForward({
   const containerSize = size + 16;
   return (
     <View
-      style={{
-        width: containerSize,
-        height: containerSize,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
+      className="items-center justify-center"
+      style={{ width: containerSize, height: containerSize }}
     >
       <RotateCw size={size} color={color} strokeWidth={2.2} />
       <Text
+        className="absolute text-[10px] font-archivo-bold text-center"
         style={{
-          position: "absolute",
-          fontSize: 10,
           color,
-          fontFamily: fonts.bold,
-          textAlign: "center",
           top: Math.round(containerSize / 2) - 6,
         }}
       >
@@ -194,26 +180,15 @@ export function IconFitState({
   if (zoom === 1.05) {
     return (
       <View
-        style={{
-          width: size + 6,
-          height: size + 6,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
+        className="items-center justify-center"
+        style={{ width: size + 6, height: size + 6 }}
       >
         <ZoomIn size={size} color={color} strokeWidth={2} />
         <View
-          style={{
-            position: "absolute",
-            bottom: -2,
-            right: -4,
-            backgroundColor: colors.brand,
-            borderRadius: 4,
-            paddingHorizontal: 2,
-            paddingVertical: 0.5,
-          }}
+          className="absolute rounded-[4px] px-0.5 py-[0.5px] -bottom-0.5 -right-1"
+          style={{ backgroundColor: colors.brand }}
         >
-          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>
+          <Text className="text-white text-[7px] font-archivo-bold">
             105
           </Text>
         </View>
@@ -223,26 +198,15 @@ export function IconFitState({
   if (zoom === 1.2 || zoom > 1) {
     return (
       <View
-        style={{
-          width: size + 6,
-          height: size + 6,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
+        className="items-center justify-center"
+        style={{ width: size + 6, height: size + 6 }}
       >
         <ZoomIn size={size} color={color} strokeWidth={2} />
         <View
-          style={{
-            position: "absolute",
-            bottom: -2,
-            right: -4,
-            backgroundColor: colors.brand,
-            borderRadius: 4,
-            paddingHorizontal: 2,
-            paddingVertical: 0.5,
-          }}
+          className="absolute rounded-[4px] px-0.5 py-[0.5px] -bottom-0.5 -right-1"
+          style={{ backgroundColor: colors.brand }}
         >
-          <Text style={{ color: "#fff", fontSize: 7, fontFamily: fonts.bold }}>
+          <Text className="text-white text-[7px] font-archivo-bold">
             120
           </Text>
         </View>

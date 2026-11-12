@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "../../../core/client/client-provider";
 import type { ItemCard } from "../../../core/library/catalog-api";
 import { useReducedMotion } from "../../../shared/hooks/use-reduced-motion";
-import { colors,fonts } from "../../../shared/theme";
+import { colors } from "../../../shared/theme";
 import { ArrowLeft } from "../../../shared/ui/icons";
 import { Card } from "../../../shared/ui/media-card";
 
@@ -37,41 +37,25 @@ export function TitleBrowser({
       onRequestClose={close}
       animationType={reducedMotion ? "none" : "fade"}
     >
-      <View className="flex-1 bg-canvas" style={{ paddingTop: insets.top }}>
+      <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center gap-3 px-5 py-3">
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back to library"
             onPress={close}
             hitSlop={8}
-            style={({ pressed }) => ({
-              width: 44,
-              height: 44,
-              justifyContent: "center",
-              opacity: pressed ? 0.6 : 1,
-            })}
+            className="h-[44px] w-[44px] justify-center active:opacity-60"
           >
             <ArrowLeft size={24} color={colors.ink} />
           </Pressable>
-          <View style={{ flex: 1 }}>
+          <View className="flex-1">
             <Text
               accessibilityRole="header"
-              style={{
-                fontFamily: fonts.bold,
-                fontSize: 24,
-                lineHeight: 30,
-                color: colors.ink,
-              }}
+              className="font-archivo-bold text-[24px] leading-[30px] text-foreground"
             >
               {title}
             </Text>
-            <Text
-              style={{
-                fontFamily: fonts.regular,
-                color: colors.muted,
-                marginTop: 4,
-              }}
-            >
+            <Text className="mt-1 font-archivo-regular text-muted">
               {items.length} {items.length === 1 ? "title" : "titles"} in your
               library
             </Text>

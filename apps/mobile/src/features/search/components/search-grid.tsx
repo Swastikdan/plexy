@@ -1,7 +1,6 @@
-import { StyleSheet,Text,View } from "react-native";
+import { Text,View } from "react-native";
 import { useClient } from "../../../core/client/client-provider";
 import type { ItemCard } from "../../../core/library/catalog-api";
-import { colors,fonts } from "../../../shared/theme";
 import { Card } from "../../../shared/ui/media-card";
 import { OpenTitle } from "../../catalog/types";
 
@@ -24,9 +23,11 @@ export function SearchGrid({
 }) {
   const { api } = useClient();
   return (
-    <View style={styles.searchGridSection}>
-      <Text style={styles.rowTitle}>{title}</Text>
-      <View style={styles.searchGrid}>
+    <View className="gap-3 px-5">
+      <Text className="font-archivo-bold text-[16px] text-foreground tracking-[-0.3px]">
+        {title}
+      </Text>
+      <View className="flex-row flex-wrap gap-3">
         {items.map((item) => (
           <Card
             key={item.id}
@@ -44,21 +45,3 @@ export function SearchGrid({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-rowTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 16,
-    color: colors.ink,
-    letterSpacing: -0.3,
-  },
-searchGridSection: {
-    gap: 12,
-    paddingHorizontal: 20,
-  },
-searchGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  }
-});

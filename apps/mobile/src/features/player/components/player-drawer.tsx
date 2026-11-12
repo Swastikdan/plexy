@@ -11,14 +11,14 @@ Animated,
 Modal,
 Pressable,
 ScrollView,
-StyleSheet,
 Text,
 View,
 } from "react-native";
 import type { EdgeInsets } from "react-native-safe-area-context";
 import { useClient } from "../../../core/client/client-provider";
 import type { ItemCard,Playability } from "../../../core/library/catalog-api";
-import { control,fonts,timeLabel } from "../../../shared/theme";
+import { cn } from "../../../shared/lib/cn";
+import { timeLabel } from "../../../shared/theme";
 import { Film,Minus,Play as PlayIcon,Plus } from "../../../shared/ui/icons";
 import { PosterImage } from "../../../shared/ui/poster-image";
 import { clampZoom,MAX_ZOOM,MIN_ZOOM } from "../lib/player-interactions";
@@ -98,22 +98,26 @@ export function PlayerDrawer({
       onRequestClose={() => setMenu(null)}
       supportedOrientations={["portrait", "landscape"]}
     >
-      <View style={styles.sheetBackdrop}>
+      <View className="flex-1 flex-row justify-end bg-black/60">
         <Pressable
-          style={StyleSheet.absoluteFill}
+          className="absolute inset-0"
           focusable={false}
           onPress={() => setMenu(null)}
         />
         <Animated.View
-          style={[
-            styles.sheetContainer,
-            { transform: [{ translateX: drawerAnim }] },
-          ]}
+          className="h-full w-[48%] min-w-[380px] max-w-[540px] border-l border-white/10 bg-[#0d0e12]"
+          style={{
+            transform: [{ translateX: drawerAnim }],
+            shadowColor: "#000",
+            shadowOpacity: 0.5,
+            shadowRadius: 20,
+            elevation: 20,
+          }}
         >
-          <View style={{ flex: 1 }}>
+          <View className="flex-1">
             {/* Title row */}
-            <View style={styles.sheetTitleRow}>
-              <Text style={styles.sheetTitle}>
+            <View className="flex-row items-center justify-between border-b-[0.33px] border-border px-5 py-3.5">
+              <Text className="text-white text-[17px] font-bold">
                 {menu === "captions"
                   ? "Subtitles"
                   : menu === "audio"
@@ -130,10 +134,7 @@ export function PlayerDrawer({
                   setMenu(null);
                   reveal();
                 }}
-                style={({ pressed }: any) => [
-                  styles.sheetCloseBtn,
-                  pressed && { opacity: 0.7 },
-                ]}
+                className="h-8 w-8 rounded-[16px] bg-white/[0.12] items-center justify-center active:opacity-70"
                 accessibilityRole="button"
                 accessibilityLabel="Close menu"
               >
@@ -173,29 +174,29 @@ export function PlayerDrawer({
                           next(ep.fileId);
                         }
                       }}
-                      style={({ pressed }) => [
-                        styles.episodeItem,
-                        isCurrent && styles.episodeItemCurrent,
-                        pressed && { opacity: 0.75 },
-                      ]}
+                      className={cn(
+                        "flex-row items-center px-5 py-3 border-b-[0.33px] border-border active:opacity-[0.75]",
+                        isCurrent &&
+                          "bg-white/[0.08] border-l-[3px] border-l-white",
+                      )}
                       accessibilityRole="button"
                       accessibilityLabel={`${epLabel}, ${ep.name}${isCurrent ? ", currently playing" : ""}`}
                     >
-                      <View style={styles.episodeThumbContainer}>
+                      <View className="mr-3 h-[50px] w-[88px] overflow-hidden rounded-[6px] bg-white/[0.06]">
                         {ep.still || ep.backdrop || ep.poster ? (
                           <PosterImage
                             source={api.image(
                               ep.still || ep.backdrop || ep.poster,
                             )}
-                            style={styles.episodeThumb}
+                            style={{ width: 88, height: 50, borderRadius: 6 }}
                           />
                         ) : (
-                          <View style={styles.episodeThumbFallback}>
+                          <View className="h-[50px] w-[88px] items-center justify-center bg-white/[0.05]">
                             <Film size={18} color="rgba(255,255,255,0.3)" />
                           </View>
                         )}
                         {isCurrent && (
-                          <View style={styles.episodeThumbActiveOverlay}>
+                          <View className="absolute inset-0 bg-white/75 items-center justify-center">
                             <PlayIcon
                               size={14}
                               color="#000000"
@@ -204,41 +205,37 @@ export function PlayerDrawer({
                           </View>
                         )}
                       </View>
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
+                      <View className="flex-1 gap-[3px]">
+                        <View className="flex-row items-center gap-2">
                           <Text
-                            style={[
-                              styles.episodeBadge,
-                              isCurrent && styles.episodeBadgeCurrent,
-                            ]}
+                            className={cn(
+                              "text-[12px] font-bold tracking-[0.5px]",
+                              isCurrent ? "text-white" : "text-white/60",
+                            )}
                           >
                             {epLabel}
                           </Text>
                           {isCurrent && (
-                            <View style={styles.nowPlayingPill}>
-                              <Text style={styles.nowPlayingText}>
+                            <View className="bg-white rounded-[4px] px-1.5 py-0.5">
+                              <Text className="text-black text-[9px] font-archivo-bold tracking-[0.5px]">
                                 NOW PLAYING
                               </Text>
                             </View>
                           )}
                         </View>
                         <Text
-                          style={[
-                            styles.episodeItemTitle,
-                            isCurrent && styles.episodeItemTitleCurrent,
-                          ]}
+                          className={cn(
+                            "text-[14px]",
+                            isCurrent
+                              ? "text-white font-bold"
+                              : "text-white/90 font-semibold",
+                          )}
                           numberOfLines={2}
                         >
                           {ep.name || `Episode ${ep.episodeNumber ?? idx + 1}`}
                         </Text>
                         {ep.watch?.duration ? (
-                          <Text style={styles.episodeDuration}>
+                          <Text className="text-white/40 text-[12px]">
                             {timeLabel(ep.watch.duration)}
                           </Text>
                         ) : null}
@@ -246,11 +243,12 @@ export function PlayerDrawer({
                       <Pressable
                         onPress={() => void toggleDrawerEpWatched(ep)}
                         hitSlop={10}
-                        style={({ pressed }) => [
-                          styles.drawerEpWatchedBtn,
-                          isEpWatched && styles.drawerEpWatchedBtnActive,
-                          pressed && { opacity: 0.6 },
-                        ]}
+                        className={cn(
+                          "ml-2 h-9 w-9 rounded-full items-center justify-center active:opacity-60",
+                          isEpWatched
+                            ? "bg-[#22c55e]/[0.18]"
+                            : "bg-white/[0.08]",
+                        )}
                         accessibilityRole="button"
                         accessibilityLabel={
                           isEpWatched ? "Mark unwatched" : "Mark watched"
@@ -319,16 +317,16 @@ export function PlayerDrawer({
                             },
                           ]}
                         />
-                        <View style={styles.sheetStepper}>
+                        <View className="flex-row items-center justify-between px-5 pt-[18px]">
                           <View>
-                            <Text style={styles.sheetChipsLabel}>
+                            <Text className="text-white text-[14px] font-semibold">
                               Manual zoom
                             </Text>
-                            <Text style={styles.sheetStepperValue}>
+                            <Text className="text-white text-[18px] font-bold mt-1">
                               {Math.round(zoom * 100)}%
                             </Text>
                           </View>
-                          <View style={styles.sheetStepperButtons}>
+                          <View className="flex-row gap-2">
                             <Pressable
                               accessibilityRole="button"
                               accessibilityLabel="Decrease zoom by 5 percent"
@@ -336,10 +334,10 @@ export function PlayerDrawer({
                               onPress={() =>
                                 applyFit(fitMode, clampZoom(zoom - 0.05))
                               }
-                              style={[
-                                styles.sheetStepperButton,
-                                zoom <= MIN_ZOOM && { opacity: 0.4 },
-                              ]}
+                              className={cn(
+                                "w-10 h-10 rounded-full bg-white/10 items-center justify-center",
+                                zoom <= MIN_ZOOM && "opacity-40",
+                              )}
                             >
                               <Minus size={18} color="#fff" />
                             </Pressable>
@@ -350,10 +348,10 @@ export function PlayerDrawer({
                               onPress={() =>
                                 applyFit(fitMode, clampZoom(zoom + 0.05))
                               }
-                              style={[
-                                styles.sheetStepperButton,
-                                zoom >= MAX_ZOOM && { opacity: 0.4 },
-                              ]}
+                              className={cn(
+                                "w-10 h-10 rounded-full bg-white/10 items-center justify-center",
+                                zoom >= MAX_ZOOM && "opacity-40",
+                              )}
                             >
                               <Plus size={18} color="#fff" />
                             </Pressable>
@@ -420,7 +418,7 @@ export function PlayerDrawer({
                       ))}
                     </>
                   ) : (
-                    <Text style={styles.sheetEmpty}>
+                    <Text className="text-white/50 text-[14px] px-5 py-5">
                       This file has a single audio track.
                     </Text>
                   ))}
@@ -537,16 +535,16 @@ export function PlayerDrawer({
                           updatePreferences({ subtitleSize: size }),
                       }))}
                     />
-                    <View style={styles.sheetStepper}>
+                    <View className="flex-row items-center justify-between px-5 pt-[18px]">
                       <View>
-                        <Text style={styles.sheetChipsLabel}>
+                        <Text className="text-white text-[14px] font-semibold">
                           Vertical Position
                         </Text>
-                        <Text style={styles.sheetStepperValue}>
+                        <Text className="text-white text-[18px] font-bold mt-1">
                           {subVertical}%
                         </Text>
                       </View>
-                      <View style={styles.sheetStepperButtons}>
+                      <View className="flex-row gap-2">
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel="Move subtitles higher"
@@ -557,10 +555,7 @@ export function PlayerDrawer({
                               subtitlePosition: nextVal < 50 ? "top" : "bottom",
                             });
                           }}
-                          style={({ pressed }) => [
-                            styles.sheetStepperButton,
-                            pressed && { opacity: 0.6 },
-                          ]}
+                          className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
                         >
                           <Minus size={18} color="#ffffff" strokeWidth={2.4} />
                         </Pressable>
@@ -574,10 +569,7 @@ export function PlayerDrawer({
                               subtitlePosition: nextVal < 50 ? "top" : "bottom",
                             });
                           }}
-                          style={({ pressed }) => [
-                            styles.sheetStepperButton,
-                            pressed && { opacity: 0.6 },
-                          ]}
+                          className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
                         >
                           <Plus size={18} color="#ffffff" strokeWidth={2.4} />
                         </Pressable>
@@ -629,7 +621,7 @@ export function PlayerDrawer({
 
                 {/* Quality */}
                 {menu === "quality" && (
-                  <Text style={styles.sheetEmpty}>
+                  <Text className="text-white/50 text-[14px] px-5 py-5">
                     Original file quality. No video conversion.
                   </Text>
                 )}
@@ -642,171 +634,3 @@ export function PlayerDrawer({
   );
 }
 
-const styles = StyleSheet.create({
-sheetBackdrop: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-sheetContainer: {
-    backgroundColor: "#0d0e12",
-    width: "48%",
-    minWidth: 380,
-    maxWidth: 540,
-    height: "100%",
-    borderLeftWidth: 1,
-    borderLeftColor: "rgba(255,255,255,0.1)",
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-sheetTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-sheetTitle: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "700",
-  },
-sheetCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-sheetChipsLabel: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-sheetStepper: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 18,
-  },
-sheetStepperValue: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-sheetStepperButtons: {
-    flexDirection: "row",
-    gap: 8,
-  },
-sheetStepperButton: {
-    width: 40,
-    height: 40,
-    borderRadius: control.radius,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-sheetEmpty: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-episodeItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.08)",
-  },
-episodeItemCurrent: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderLeftWidth: 3,
-    borderLeftColor: "#ffffff",
-  },
-episodeBadge: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-episodeBadgeCurrent: {
-    color: "#ffffff",
-  },
-nowPlayingPill: {
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-nowPlayingText: {
-    color: "#000000",
-    fontSize: 9,
-    fontFamily: fonts.bold,
-    letterSpacing: 0.5,
-  },
-drawerEpWatchedBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-drawerEpWatchedBtnActive: {
-    backgroundColor: "rgba(34, 197, 94, 0.18)",
-  },
-episodeItemTitle: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-episodeItemTitleCurrent: {
-    color: "#ffffff",
-    fontWeight: "700",
-  },
-episodeDuration: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 12,
-  },
-episodeThumbContainer: {
-    width: 88,
-    height: 50,
-    borderRadius: 6,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    marginRight: 12,
-  },
-episodeThumb: {
-    width: 88,
-    height: 50,
-    borderRadius: 6,
-  },
-episodeThumbFallback: {
-    width: 88,
-    height: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
-  },
-episodeThumbActiveOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(255,255,255,0.75)",
-    alignItems: "center",
-    justifyContent: "center",
-  }
-});

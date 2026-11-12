@@ -6,7 +6,6 @@ Alert,
 Linking,
 Pressable,
 ScrollView,
-StyleSheet,
 Text,
 View,
 } from "react-native";
@@ -18,7 +17,8 @@ import { useResource } from "../../core/resources/use-resource";
 import { useOnline } from "../../shared/hooks/use-online";
 import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "../../shared/lib/haptics";
-import { colors,control,fonts } from "../../shared/theme";
+import { cn } from "../../shared/lib/cn";
+import { colors,control } from "../../shared/theme";
 import {
 ArrowLeft,
 Check,
@@ -174,16 +174,13 @@ export function TitleScreen({
   const selectedSeason = season ?? detail?.seasons?.[0]?.number;
   const hasEpisodes = Boolean(detail?.episodes?.length);
   return (
-    <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+    <View className="flex-1 bg-background">
       <TopFade />
       {/* Floating Back button pinned at top-left */}
       <Pressable
         onPress={back}
-        style={({ pressed }) => [
-          styles.detailBack,
-          { top: insets.top + 14 },
-          pressed && { opacity: 0.6 },
-        ]}
+        className="absolute left-4 z-[99] h-10 w-10 items-center justify-center rounded-full border border-white/[0.15] bg-black/[0.65] active:opacity-60"
+        style={{ top: insets.top + 14 }}
         hitSlop={14}
       >
         <ArrowLeft size={22} color="#fff" strokeWidth={2} />
@@ -193,17 +190,17 @@ export function TitleScreen({
         ref={detailScroll}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[
-          styles.detailContainer,
+          { paddingBottom: 48 },
           { paddingBottom: insets.bottom + 110 },
         ]}
         showsVerticalScrollIndicator={false}
       >
         {data.loading && !detail ? (
-          <View style={{ padding: 32 }}>
+          <View className="p-8">
             <Loading />
           </View>
         ) : data.error && !detail ? (
-          <View style={{ padding: 24 }}>
+          <View className="p-6">
             <Notice message={data.error} retry={data.retry} />
           </View>
         ) : (
@@ -227,13 +224,13 @@ export function TitleScreen({
                 }}
               />
 
-              <View style={[styles.detailBody]}>
+              <View className="gap-[18px] px-5 pt-5">
                 {!!actionError && <Notice message={actionError} />}
 
                 {/* If TV show with episodes, display Tab Selector: Episodes | Cast & Details */}
                 {hasEpisodes ? (
                   <>
-                    <View style={styles.detailTabBar}>
+                    <View className="mb-1.5 mt-1 flex-row gap-1.5 rounded-full bg-surface p-1">
                       <Pressable
                         accessibilityRole="tab"
                         accessibilityState={{
@@ -242,20 +239,18 @@ export function TitleScreen({
                         onPress={() => setDetailTab("episodes")}
                         onFocus={() => setTabFocus("episodes")}
                         onBlur={() => setTabFocus(null)}
-                        style={[
-                          styles.detailTabItem,
-                          detailTab === "episodes" &&
-                            styles.detailTabItemActive,
-                          tabFocus === "episodes" &&
-                            styles.detailTabItemFocusedTv,
-                        ]}
+                        className={cn(
+                          "min-h-11 flex-1 items-center justify-center rounded-full px-4 py-2.5",
+                          detailTab === "episodes" && "bg-foreground",
+                          tabFocus === "episodes" && "border-2 border-accent",
+                        )}
                       >
                         <Text
-                          style={[
-                            styles.detailTabItemText,
+                          className={cn(
+                            "font-archivo-medium text-[15px] text-muted",
                             detailTab === "episodes" &&
-                              styles.detailTabItemTextActive,
-                          ]}
+                              "font-archivo-bold text-background",
+                          )}
                         >
                           Episodes
                         </Text>
@@ -268,19 +263,18 @@ export function TitleScreen({
                         onPress={() => setDetailTab("details")}
                         onFocus={() => setTabFocus("details")}
                         onBlur={() => setTabFocus(null)}
-                        style={[
-                          styles.detailTabItem,
-                          detailTab === "details" && styles.detailTabItemActive,
-                          tabFocus === "details" &&
-                            styles.detailTabItemFocusedTv,
-                        ]}
+                        className={cn(
+                          "min-h-11 flex-1 items-center justify-center rounded-full px-4 py-2.5",
+                          detailTab === "details" && "bg-foreground",
+                          tabFocus === "details" && "border-2 border-accent",
+                        )}
                       >
                         <Text
-                          style={[
-                            styles.detailTabItemText,
+                          className={cn(
+                            "font-archivo-medium text-[15px] text-muted",
                             detailTab === "details" &&
-                              styles.detailTabItemTextActive,
-                          ]}
+                              "font-archivo-bold text-background",
+                          )}
                         >
                           Cast & Details
                         </Text>
@@ -294,7 +288,7 @@ export function TitleScreen({
                             horizontal
                             accessibilityRole="tablist"
                             showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.seasonTabs}
+                            contentContainerStyle={{ gap: 28, paddingBottom: 2 }}
                           >
                             {detail.seasons.map((s: any) => {
                               const active = selectedSeason === s.number;
@@ -314,19 +308,19 @@ export function TitleScreen({
                                   }}
                                   onFocus={() => setSeasonFocus(s.number)}
                                   onBlur={() => setSeasonFocus(null)}
-                                  style={({ pressed }) => [
-                                    styles.seasonTab,
-                                    active && styles.seasonTabActive,
+                                  className={cn(
+                                    "min-h-12 justify-center border-b-2 border-b-transparent py-3 active:opacity-65",
+                                    active && "border-b-foreground",
                                     seasonFocus === s.number &&
-                                      styles.seasonTabFocused,
-                                    pressed && { opacity: 0.65 },
-                                  ]}
+                                      "border-b-accent",
+                                  )}
                                 >
                                   <Text
-                                    style={[
-                                      styles.seasonTabText,
-                                      active && styles.seasonTabTextActive,
-                                    ]}
+                                    className={cn(
+                                      "font-archivo-medium text-[17px] text-muted",
+                                      active &&
+                                        "font-archivo-bold text-foreground",
+                                    )}
                                   >
                                     {label}
                                   </Text>
@@ -376,7 +370,7 @@ export function TitleScreen({
                     ) : (
                       <>
                         {/* Overview */}
-                        <Text style={styles.detailOverview}>
+                        <Text className="font-archivo-regular text-[14px] leading-[22px] text-[#f0f0f0]/[0.78]">
                           {detail.metadata?.overview ||
                             item.overview ||
                             "No synopsis is available."}
@@ -387,7 +381,7 @@ export function TitleScreen({
                           (detail.file.height ||
                             detail.file.videoCodec ||
                             detail.file.hdr) && (
-                            <Text style={styles.detailQuality}>
+                            <Text className="self-start rounded-lg bg-accent/20 px-3 py-2 font-archivo-medium text-[12px] tracking-[0.3px] text-accent">
                               {[
                                 detail.file.height
                                   ? `${detail.file.height >= 2160 ? "4K" : detail.file.height >= 720 ? "HD" : "SD"} · ${detail.file.height}p`
@@ -413,7 +407,7 @@ export function TitleScreen({
                 ) : (
                   <>
                     {/* Movie overview */}
-                    <Text style={styles.detailOverview}>
+                    <Text className="font-archivo-regular text-[14px] leading-[22px] text-[#f0f0f0]/[0.78]">
                       {detail.metadata?.overview ||
                         item.overview ||
                         "No synopsis is available."}
@@ -424,7 +418,7 @@ export function TitleScreen({
                       (detail.file.height ||
                         detail.file.videoCodec ||
                         detail.file.hdr) && (
-                        <Text style={styles.detailQuality}>
+                        <Text className="self-start rounded-lg bg-accent/20 px-3 py-2 font-archivo-medium text-[12px] tracking-[0.3px] text-accent">
                           {[
                             detail.file.height
                               ? `${detail.file.height >= 2160 ? "4K" : detail.file.height >= 720 ? "HD" : "SD"} · ${detail.file.height}p`
@@ -464,10 +458,8 @@ export function TitleScreen({
           <Pressable
             accessibilityLabel="More title actions"
             onPress={() => setMenuOpen(!menuOpen)}
-            style={[
-              styles.detailBack,
-              { left: undefined, right: 20, top: insets.top + 14 },
-            ]}
+            className="absolute right-5 z-[99] h-10 w-10 items-center justify-center rounded-full border border-white/[0.15] bg-black/[0.65]"
+            style={{ top: insets.top + 14 }}
           >
             <MoreHorizontal size={22} color={colors.ink} />
           </Pressable>
@@ -475,27 +467,13 @@ export function TitleScreen({
             <Pressable
               accessibilityLabel="Close title actions"
               onPress={() => setMenuOpen(false)}
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: "rgba(0,0,0,0.3)", zIndex: 100 },
-              ]}
+              className="absolute inset-0 z-[100] bg-black/30"
             />
           )}
           {menuOpen && (
             <View
-              style={{
-                position: "absolute",
-                right: 20,
-                top: insets.top + 66,
-                zIndex: 101,
-                width: 236,
-                borderWidth: 1,
-                borderColor: colors.line,
-                backgroundColor: colors.surface,
-                padding: 12,
-                borderRadius: 16,
-                gap: 8,
-              }}
+              className="absolute right-5 z-[101] w-[236px] gap-2 rounded-2xl border border-border bg-surface p-3"
+              style={{ top: insets.top + 66 }}
             >
               <TitleMenuAction
                 icon={Info}
@@ -544,13 +522,8 @@ export function TitleScreen({
             </View>
           )}
           <View
-            className="absolute bottom-0 left-0 right-0 flex-row gap-3 px-5 pt-3"
-            style={{
-              paddingBottom: Math.max(insets.bottom, 14),
-              backgroundColor: colors.canvas,
-              borderTopWidth: 1,
-              borderTopColor: colors.line,
-            }}
+            className="absolute bottom-0 left-0 right-0 flex-row gap-3 border-t border-t-border bg-background px-5 pt-3"
+            style={{ paddingBottom: Math.max(insets.bottom, 14) }}
           >
             <NativeButton
               className="flex-1 justify-center rounded-full bg-white px-5"
@@ -576,7 +549,7 @@ export function TitleScreen({
                 size="lg"
                 isIconOnly
                 accessibilityLabel="Watch trailer"
-                className="rounded-full bg-panel"
+                className="rounded-full bg-surface"
                 style={{ width: control.height, height: control.height }}
                 isDisabled={!online}
                 onPress={() => {
@@ -594,87 +567,3 @@ export function TitleScreen({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-detailContainer: {
-    paddingBottom: 48,
-  },
-detailBack: {
-    position: "absolute",
-    top: 14,
-    left: 16,
-    zIndex: 99,
-    width: 40,
-    height: 40,
-    borderRadius: control.radius,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-detailBody: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 18,
-  },
-detailOverview: {
-    fontFamily: fonts.regular,
-    fontSize: 14,
-    color: "rgba(240,240,240,0.78)",
-    lineHeight: 22,
-  },
-detailQuality: {
-    backgroundColor: colors.strong,
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    fontFamily: fonts.medium,
-    fontSize: 12,
-    color: colors.brandLight,
-    letterSpacing: 0.3,
-  },
-detailTabBar: {
-    flexDirection: "row",
-    gap: 6,
-    padding: 4,
-    backgroundColor: colors.surface,
-    borderRadius: control.radius,
-    marginTop: 4,
-    marginBottom: 6,
-  },
-detailTabItem: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: control.radius,
-  },
-detailTabItemActive: { backgroundColor: colors.ink },
-detailTabItemText: {
-    fontFamily: fonts.medium,
-    fontSize: 15,
-    color: colors.muted,
-  },
-detailTabItemTextActive: { fontFamily: fonts.bold, color: colors.canvas },
-detailTabItemFocusedTv: { borderWidth: 2, borderColor: colors.brandLight },
-seasonTabs: { gap: 28, paddingBottom: 2 },
-seasonTab: {
-    minHeight: 48,
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-seasonTabActive: { borderBottomColor: colors.ink },
-seasonTabText: {
-    fontFamily: fonts.medium,
-    fontSize: 17,
-    color: colors.muted,
-  },
-seasonTabTextActive: { fontFamily: fonts.bold, color: colors.ink },
-seasonTabFocused: { borderBottomColor: colors.brandLight }
-});

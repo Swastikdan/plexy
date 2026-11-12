@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Image,Pressable,StyleSheet,Text,View } from "react-native";
+import { Image,Pressable,Text,View } from "react-native";
 import type { ItemCard } from "../../../core/library/catalog-api";
-import { colors,control,fonts } from "../../../shared/theme";
+import { cn } from "../../../shared/lib/cn";
+import { colors } from "../../../shared/theme";
 import { Check,Play } from "../../../shared/ui/icons";
 
 export function EpisodeCard({
@@ -55,72 +56,72 @@ export function EpisodeCard({
       disabled={!ep.fileId}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={({ pressed }) => [styles.epCard, pressed && { opacity: 0.8 }]}
+      className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
     >
       {/* Thumbnail with centered play button */}
-      <View style={styles.epThumbWrap}>
+      <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
         {ep.poster ? (
           <Image
             source={api.image(ep.poster)}
-            style={styles.epThumb}
+            className="h-full w-full"
             resizeMode="cover"
           />
         ) : (
-          <View style={[styles.epThumb, styles.epThumbPlaceholder]} />
+          <View className="h-full w-full bg-surface-secondary" />
         )}
 
         {/* Center play icon button */}
-        <View style={[styles.epPlayOverlay]}>
+        <View className="absolute left-1/2 top-1/2 -ml-[19px] -mt-[19px] h-[38px] w-[38px] items-center justify-center rounded-full border-[1.5px] border-white/[0.85] bg-black/[0.55] pl-[2px]">
           <Play size={18} color={"#fff"} fill={"#fff"} />
         </View>
 
         {/* Duration badge */}
         {duration && (
-          <View style={styles.epDuration}>
-            <Text style={styles.epDurationText}>{duration}</Text>
+          <View className="absolute right-1.5 top-1.5 rounded-[5px] bg-black/[0.65] px-1.5 py-0.5">
+            <Text className="font-archivo-medium text-[10px] text-white">
+              {duration}
+            </Text>
           </View>
         )}
 
         {/* Progress bar on thumbnail */}
         {(progress !== null || watched) && (
-          <View style={styles.epProgressBar}>
+          <View className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/[0.18]">
             <View
-              style={[
-                styles.epProgressFill,
+              className={cn(
+                "h-full rounded-[2px] bg-accent",
+                watched && "w-full",
+              )}
+              style={
                 watched
-                  ? styles.epProgressWatched
-                  : { width: `${Math.round(progress! * 100)}%` },
-              ]}
+                  ? undefined
+                  : { width: `${Math.round(progress! * 100)}%` }
+              }
             />
           </View>
         )}
       </View>
 
       {/* Info: Title, 2-line description, and small Episode {number} at the bottom */}
-      <View style={styles.epInfo}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <Text style={[styles.epTitle, { flex: 1 }]} numberOfLines={1}>
+      <View className="flex-1 justify-center gap-1.5">
+        <View className="flex-row items-start justify-between gap-2">
+          <Text
+            className="flex-1 font-archivo-bold text-[14px] text-foreground"
+            numberOfLines={1}
+          >
             {epDisplayTitle}
           </Text>
 
           {/* Watched state */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View className="flex-row items-center gap-1.5">
             {onToggleWatched && (
               <Pressable
                 onPress={() => onToggleWatched(ep)}
                 hitSlop={10}
-                style={({ pressed }) => [
-                  styles.epWatchedBtn,
-                  watched && styles.epWatchedBtnActive,
-                  pressed && { opacity: 0.6 },
-                ]}
+                className={cn(
+                  "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-60",
+                  watched && "border-[#22c55e]/[0.4] bg-[#22c55e]/[0.15]",
+                )}
                 accessibilityRole="button"
                 accessibilityLabel={
                   watched
@@ -138,11 +139,11 @@ export function EpisodeCard({
           </View>
         </View>
 
-        <Text style={styles.epOverview} numberOfLines={2}>
+        <Text className="font-archivo-regular text-[12px] leading-[18px] text-muted" numberOfLines={2}>
           {ep.overview || "No description available."}
         </Text>
         {ep.episodeNumber != null && (
-          <Text style={styles.epNumberBottom}>
+          <Text className="mt-1 font-archivo-medium text-[11px] text-muted">
             {`Episode ${ep.episodeNumber}`}
           </Text>
         )}
@@ -150,110 +151,3 @@ export function EpisodeCard({
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-epCard: {
-    flexDirection: "row",
-    gap: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-  },
-epThumbWrap: {
-    width: 148,
-    aspectRatio: 16 / 9,
-    borderRadius: 8,
-    overflow: "hidden",
-    backgroundColor: colors.surface,
-    flexShrink: 0,
-  },
-epThumb: {
-    width: "100%",
-    height: "100%",
-  },
-epThumbPlaceholder: {
-    backgroundColor: colors.elevated,
-  },
-epDuration: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderRadius: 5,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-epDurationText: {
-    fontFamily: fonts.medium,
-    fontSize: 10,
-    color: "#fff",
-  },
-epProgressBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-epProgressFill: {
-    height: "100%",
-    backgroundColor: colors.brand,
-    borderRadius: 2,
-  },
-epProgressWatched: {
-    width: "100%",
-    backgroundColor: colors.brand,
-  },
-epInfo: {
-    flex: 1,
-    gap: 6,
-    justifyContent: "center",
-  },
-epTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 14,
-    color: colors.ink,
-  },
-epOverview: {
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: colors.muted,
-    lineHeight: 18,
-  },
-epPlayOverlay: {
-    position: "absolute",
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.85)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingLeft: 2,
-    top: "50%",
-    left: "50%",
-    marginTop: -19,
-    marginLeft: -19,
-  },
-epNumberBottom: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 4,
-  },
-epWatchedBtn: {
-    padding: 6,
-    borderRadius: control.radius,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-epWatchedBtnActive: {
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
-    borderColor: "rgba(34, 197, 94, 0.4)",
-  }
-});

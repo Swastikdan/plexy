@@ -3,12 +3,23 @@
 @import "heroui-native/styles";
 @source './src';
 
+/*
+ * Theme: the HeroUI Native default theme (light + dark variants) ships via
+ * the "heroui-native/styles" import above. Its @theme tokens are the ones
+ * from the HeroUI theming docs — background, surface, surface-secondary,
+ * surface-tertiary, overlay, muted, default, accent, border, separator,
+ * focus, link, field-*, success/warning/danger, segment — exposed as
+ * utilities: bg-background, bg-surface, text-foreground, text-muted,
+ * bg-accent, border-border, bg-overlay, text-danger, etc.
+ * The app runs dark-only (Uniwind.setTheme("dark") in app/_layout.tsx).
+ */
+
+/* App fonts exposed as font-family utilities. */
 @theme {
-  --color-canvas: #0b0c0e;
-  --color-panel: #16181c;
-  --color-ink: #f2f4f7;
-  --color-muted: #9598a1;
-  --color-plexy: #3b7df9;
+  --font-archivo-regular: "Archivo_400Regular";
+  --font-archivo-medium: "Archivo_500Medium";
+  --font-archivo-bold: "Archivo_700Bold";
+  --font-archivo-black: "Archivo_900Black";
 }
 
 /* heroui-native press highlight: the default accent-hover resolves to blue,
