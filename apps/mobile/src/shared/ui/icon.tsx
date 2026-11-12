@@ -1,4 +1,4 @@
-import { colors } from "../theme";
+import { colors } from "@/shared/theme";
 import {
 ArrowLeft,
 AudioLines,

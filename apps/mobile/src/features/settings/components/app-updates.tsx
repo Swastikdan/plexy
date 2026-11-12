@@ -1,16 +1,16 @@
 import { useEffect,useState } from "react";
 import { Text,View } from "react-native";
-import { useOnline } from "../../../shared/hooks/use-online";
-import { Button } from "../../../shared/ui/button";
-import { Notice } from "../../../shared/ui/notice";
-import { Label } from "../../../shared/ui/text";
+import { useOnline } from "@/shared/hooks/use-online";
+import { Button } from "@/shared/ui/button";
+import { Notice } from "@/shared/ui/notice";
+import { Label } from "@/shared/ui/text";
 import {
 checkForUpdate,
 downloadAndInstallUpdate,
 getInstalledAppInfo,
 type AppInfo,
 type UpdateInfo,
-} from "../lib/app-updater";
+} from "@/features/settings/lib/app-updater";
 export function Updates() {
   const online = useOnline();
   const [info, setInfo] = useState<AppInfo | null>(null);

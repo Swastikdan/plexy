@@ -1,6 +1,6 @@
 import { useEffect,useRef,useState } from "react";
 import { Image,type ImageStyle,type StyleProp } from "react-native";
-import { getCachedImageSync,resolveCachedImage } from "../lib/image-cache";
+import { getCachedImageSync,resolveCachedImage } from "@/shared/lib/image-cache";
 
 export function PosterImage({
   source,

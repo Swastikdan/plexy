@@ -1,14 +1,14 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { cn } from "../../../shared/lib/cn";
-import { control } from "../../../shared/theme";
-import { Hero } from "../../catalog/components/hero";
-import { HeroActions } from "../../catalog/components/hero-actions";
-import type { OpenTitle } from "../../catalog/types";
-import { useHeroTransition } from "../hooks/use-hero-transition";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { cn } from "@/shared/lib/cn";
+import { control } from "@/shared/theme";
+import { Hero } from "@/features/catalog/components/hero";
+import { HeroActions } from "@/features/catalog/components/hero-actions";
+import type { OpenTitle } from "@/features/catalog/types";
+import { useHeroTransition } from "@/features/home/hooks/use-hero-transition";
 
 const ACTION_BOTTOM = 28;
 
@@ -24,7 +24,6 @@ export function HeroCarousel({
   onHeroFocus?: () => void;
 }) {
   const { width } = useWindowDimensions();
-  const [focusedDot, setFocusedDot] = useState<number | null>(null);
   const { activeItem, activeIndex, changing, contentStyle, select, step } =
     useHeroTransition(items);
   const swipe = useMemo(
@@ -80,17 +79,12 @@ export function HeroCarousel({
             <Pressable
               key={item.publicId}
               onPress={() => select(index)}
-              onFocus={() => {
-                setFocusedDot(index);
-                select(index, false);
-                onHeroFocus?.();
-              }}
-              onBlur={() => setFocusedDot(null)}
               className={cn(
-                "h-[4px] max-w-[44px] flex-1 rounded-[2px] bg-white/28",
-                index === activeIndex && "bg-white",
-                focusedDot === index && "bg-white/65",
-                "active:bg-white/65",
+                "h-[4px] max-w-[44px] flex-1 rounded-[2px]",
+                // Mutually exclusive backgrounds — uniwind resolves
+                // conflicting bg-* classes by stylesheet order, not by
+                // className order, so a conditional override never wins.
+                index === activeIndex ? "bg-white" : "bg-white/28",
               )}
               hitSlop={{ top: 12, bottom: 12, left: 3, right: 3 }}
               accessibilityRole="button"

@@ -6,7 +6,7 @@ View,
 type StyleProp,
 type ViewStyle,
 } from "react-native";
-import { fonts } from "../theme";
+import { fonts } from "@/shared/theme";
 
 export function dicebearAvatarUrl(seed: string): string {
   const clean = encodeURIComponent((seed || "user").trim());

@@ -5,12 +5,12 @@ import {
 SafeAreaView,
 useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { localRuntime } from "../../core/library/local-runtime";
-import { LibraryAttention } from "../../features/catalog/components/library-attention";
-import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
-import { triggerHaptic } from "../../shared/lib/haptics";
-import { colors } from "../../shared/theme";
-import { Icon,type IconName } from "../../shared/ui/icon";
+import { localRuntime } from "@/core/library/local-runtime";
+import { LibraryAttention } from "@/features/catalog/components/library-attention";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { colors } from "@/shared/theme";
+import { Icon,type IconName } from "@/shared/ui/icon";
 const tabs: {
   name: string;
   title: string;
@@ -135,7 +135,7 @@ export default function TabLayout() {
   return (
     <SafeAreaView
       edges={isHome ? ["left", "right"] : ["top", "left", "right"]}
-      className="flex-1 bg-background"
+      style={{ flex: 1, backgroundColor: colors.canvas }}
     >
       {!isHome && <LibraryAttention />}
       <Tabs

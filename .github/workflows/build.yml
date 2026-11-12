@@ -70,7 +70,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Cache Bun packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
@@ -124,7 +124,7 @@ jobs:
           package-manager-cache: false
 
       - name: Cache Bun packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
@@ -136,7 +136,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Cache FFmpeg runtime
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules/node-av/binary
           key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs') }}
@@ -145,7 +145,7 @@ jobs:
         run: node scripts/install-macos-ffmpeg.mjs
 
       - name: Cache Electron downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/Library/Caches/electron
@@ -215,7 +215,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Cache Bun packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
@@ -228,7 +228,7 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Cache Android native compilation
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             apps/mobile/android/.gradle
@@ -270,7 +270,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Cache Bun packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}

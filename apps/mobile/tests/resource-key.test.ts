@@ -1,5 +1,5 @@
 import { expect,test } from "bun:test";
-import { resourceKey } from "../src/core/resources/resource-key";
+import { resourceKey } from "@/core/resources/resource-key";
 test("home and search resources cannot share differently shaped payloads", () => {
   const api = {};
   expect(resourceKey("search-results", [api, ""])).not.toBe(

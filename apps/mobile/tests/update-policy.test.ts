@@ -1,9 +1,9 @@
 import { expect,test } from "bun:test";
-import type { GitHubRelease } from "../src/features/settings/lib/app-updater";
+import type { GitHubRelease } from "@/features/settings/lib/app-updater";
 import {
 matchesTargetAsset,
 selectUpdate,
-} from "../src/features/settings/lib/update-policy";
+} from "@/features/settings/lib/update-policy";
 
 const release = (
   build: string,

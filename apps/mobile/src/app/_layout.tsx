@@ -3,7 +3,7 @@ import { HeroUINativeProvider } from "heroui-native/provider";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Uniwind } from "uniwind";
 import "../../global.css";
-import { MobileProvider } from "../core/mobile-provider";
+import { MobileProvider } from "@/core/mobile-provider";
 Uniwind.setTheme("dark");
 export const unstable_settings = { initialRouteName: "(tabs)" };
 export default function RootLayout() {

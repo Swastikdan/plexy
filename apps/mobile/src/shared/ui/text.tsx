@@ -1,6 +1,6 @@
 import React from "react";
 import { Text } from "react-native";
-import { cn } from "../lib/cn";
+import { cn } from "@/shared/lib/cn";
 
 export function Label({
   children,

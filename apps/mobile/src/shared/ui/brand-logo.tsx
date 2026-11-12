@@ -5,7 +5,7 @@ Path,
 Stop,
 LinearGradient as SvgGradient,
 } from "react-native-svg";
-import { fonts } from "../theme";
+import { fonts } from "@/shared/theme";
 
 export function PlexyMark({ size = 22 }: { size?: number }) {
   const height = (size * 277) / 256;

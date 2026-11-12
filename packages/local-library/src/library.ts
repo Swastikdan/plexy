@@ -137,8 +137,10 @@ export class LocalLibrary {
   issues: string[] = [];
   scanning = false;
   private listeners = new Set<() => void>();
-  private writes = Promise.resolve();
   private active: Promise<void> | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingSave: Promise<void> = Promise.resolve();
+  private currentDurable: Promise<void> = Promise.resolve();
   constructor(private io: LocalIO) {}
   async restore() {
     const saved = await this.io.load();
@@ -150,11 +152,32 @@ export class LocalLibrary {
   }
   subscribe(fn: () => void) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private changed() { for (const fn of this.listeners) fn(); }
-  private persist() {
-    // Snapshot before queuing so overlapping progress writes cannot save older state last.
-    const snapshot = JSON.parse(JSON.stringify(this.state)) as LocalState;
-    this.writes = this.writes.catch(() => {}).then(() => this.io.save(snapshot));
-    return this.writes;
+  private persist(): Promise<void> {
+    // Coalesce bursts of writes. A scan hydrates records one after another,
+    // each calling persist; serializing and rewriting the whole database for
+    // every record pins the JS thread and freezes the UI. One snapshot per
+    // short window keeps the UI responsive — but `await persist()` still
+    // only resolves once that window's write has actually landed, so
+    // durability is never lost.
+    if (this.saveTimer == null) {
+      let durableResolve!: () => void;
+      const durable = new Promise<void>((resolve) => {
+        durableResolve = resolve;
+      });
+      this.currentDurable = durable;
+      this.saveTimer = setTimeout(() => {
+        this.saveTimer = null;
+        // Snapshot at fire time so the write includes every mutation so far.
+        this.pendingSave = this.pendingSave
+          .catch(() => {})
+          .then(async () => {
+            const snapshot = JSON.parse(JSON.stringify(this.state)) as LocalState;
+            await this.io.save(snapshot);
+          })
+          .then(() => durableResolve(), () => durableResolve());
+      }, 250);
+    }
+    return this.currentDurable;
   }
   get metadataSettings(): MetadataSettings { return { ...defaultMetadataSettings, ...this.state.metadataSettings }; }
   async updateMetadataSettings(patch: Partial<MetadataSettings>) {
@@ -253,6 +276,8 @@ export class LocalLibrary {
         seasonNumber: parentId ? (records.length === 1 ? input.season : undefined) ?? r.card.seasonNumber ?? 1 : null,
         episodeNumber: parentId ? (records.length === 1 ? input.episode : undefined) ?? r.card.episodeNumber ?? 1 : null,
         matchStatus: "unmatched", poster: null, backdrop: null, overview: null, rating: null, runtime: null, genres: [] };
+      // A new identification is running: the previous failure no longer applies.
+      r.metadataError = undefined;
     }
     await this.persist(); this.changed();
     for (const r of records) await this.hydrate(r);

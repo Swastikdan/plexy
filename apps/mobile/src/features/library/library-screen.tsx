@@ -5,27 +5,28 @@ FlatList,
 Modal,
 PanResponder,
 Pressable,
-ScrollView,
 Text,
 useWindowDimensions,
 View,
 } from "react-native";
-import { useClient } from "../../core/client/client-provider";
-import type { ItemCard } from "../../core/library/catalog-api";
-import { localLibrary } from "../../core/library/local-runtime";
-import { useResource } from "../../core/resources/use-resource";
-import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
-import { triggerHaptic } from "../../shared/lib/haptics";
-import { colors,easings } from "../../shared/theme";
-import { cn } from "../../shared/lib/cn";
-import { Button } from "../../shared/ui/button";
-import { ArrowUpDown,Check,ChevronDown } from "../../shared/ui/icons";
-import { Loading } from "../../shared/ui/loading";
-import { Card } from "../../shared/ui/media-card";
-import { Notice } from "../../shared/ui/notice";
-import { PageHeader } from "../../shared/ui/page-header";
-import { TitleBrowser } from "../catalog/components/title-browser";
-import { OpenTitle } from "../catalog/types";
+import { useClient } from "@/core/client/client-provider";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { localLibrary } from "@/core/library/local-runtime";
+import { useResource } from "@/core/resources/use-resource";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { colors,easings } from "@/shared/theme";
+import { cn } from "@/shared/lib/cn";
+import { Button } from "@/shared/ui/button";
+import { Icon } from "@/shared/ui/icon";
+import { ArrowUpDown,Check,ChevronDown,ChevronRight } from "@/shared/ui/icons";
+import { Loading } from "@/shared/ui/loading";
+import { Card } from "@/shared/ui/media-card";
+import { Notice } from "@/shared/ui/notice";
+import { PageHeader } from "@/shared/ui/page-header";
+import { PosterImage } from "@/shared/ui/poster-image";
+import { TitleBrowser } from "@/features/catalog/components/title-browser";
+import { OpenTitle } from "@/features/catalog/types";
 
 // One pane per library tab: when the tab changes, the incoming content
 // slides in from the direction of the switch with a subtle fade. A hard cut
@@ -98,7 +99,7 @@ export function LibraryScreen({
 }) {
   const { api, platform } = useClient();
   const { width } = useWindowDimensions();
-  type LibraryTab = "movie" | "series" | "anime";
+  type LibraryTab = "movie" | "series" | "anime" | "collection";
   const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || kind);
   const [sort, setSort] = useState("added");
   const [unwatched, setUnwatched] = useState(false);
@@ -113,6 +114,29 @@ export function LibraryScreen({
   const [end, setEnd] = useState(false);
   const [, setFocusedId] = useState<number | null>(null);
   const ref = useRef<FlatList<ItemCard>>(null);
+  // Collections come from identified movies; the local library mutates
+  // outside React, so subscribe to re-render when they appear or change.
+  const [collectionsTick, updateCollections] = useState(0);
+  useEffect(() => localLibrary.subscribe(() => updateCollections((n) => n + 1)), []);
+  const collections = React.useMemo(() => {
+    const map = new Map<
+      number,
+      { id: number; name: string; count: number; poster: string | null }
+    >();
+    for (const r of localLibrary.state.records) {
+      if (r.card.kind !== "movie" || !r.collection) continue;
+      const entry = map.get(r.collection.id) ?? {
+        id: r.collection.id,
+        name: r.collection.name,
+        count: 0,
+        poster: null,
+      };
+      entry.count++;
+      entry.poster = entry.poster || r.card.poster || null;
+      map.set(r.collection.id, entry);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [collectionsTick]);
   // Probe movies, series, and anime to auto-hide empty tabs and set priority
   const movieProbe = useResource(
     (signal) => api.items("movie", 0, "name", signal),
@@ -131,6 +155,8 @@ export function LibraryScreen({
   const hasAnime = (animeProbe.value?.items?.length ?? 0) > 0;
   const probesDone = movieProbe.value != null && seriesProbe.value != null;
   React.useEffect(() => {
+    // Never auto-yank the user off the collections tab.
+    if (activeTab === "collection") return;
     if (probesDone) {
       // Priority when multiple exist: Movies -> TV Shows -> Anime
       if (hasMovies) {
@@ -146,7 +172,7 @@ export function LibraryScreen({
         }
       }
     }
-  }, [hasMovies, hasSeries, hasAnime, probesDone, defaultSubTab]);
+  }, [hasMovies, hasSeries, hasAnime, probesDone, defaultSubTab, activeTab]);
   const libraryTabs = React.useMemo(() => {
     const base: LibraryTab[] = [];
     if (!probesDone) {
@@ -158,6 +184,8 @@ export function LibraryScreen({
       if (hasAnime) base.push("anime");
       if (base.length === 0) base.push("movie", "series");
     }
+    // Collections live on their own tab instead of pills that shift layout.
+    if (collections.length) base.push("collection");
     return base;
   }, [
     defaultSubTab,
@@ -166,6 +194,7 @@ export function LibraryScreen({
     hasSeries,
     hasAnime,
     platform.local,
+    collections,
   ]);
   const showLibTabs = libraryTabs.length > 1;
   // Direction of the last library switch, so the pane can slide in from the
@@ -199,7 +228,10 @@ export function LibraryScreen({
     },
   });
   const data = useResource(
-    (signal) => api.items(activeTab, 0, sort, signal, unwatched),
+    (signal) =>
+      activeTab === "collection"
+        ? Promise.resolve({ items: [] as ItemCard[] })
+        : api.items(activeTab, 0, sort, signal, unwatched),
     [api, activeTab, sort, unwatched],
   );
   const items = [...(data.value?.items || []), ...extra];
@@ -225,6 +257,7 @@ export function LibraryScreen({
     setMore(true);
     setMoreError("");
     try {
+      if (activeTab === "collection") return;
       const result = await api.items(
         activeTab,
         items.length,
@@ -257,7 +290,8 @@ export function LibraryScreen({
       <PageHeader
         title="Libraries"
         right={
-          <Pressable
+          activeTab === "collection" ? undefined : (
+            <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}`}
             onPress={() => {
@@ -279,6 +313,7 @@ export function LibraryScreen({
             </Text>
             <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
           </Pressable>
+          )
         }
       />
 
@@ -298,43 +333,9 @@ export function LibraryScreen({
         close={() => setCollection(null)}
         open={open}
       />
-      {activeTab === "movie" &&
-        localLibrary.state.records.some((r) => r.collection) && (
-          <View className="pt-3 gap-2.5">
-            <Text className="px-5 text-muted font-archivo-medium text-[13px]">
-              Collections
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="grow-0"
-              contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
-            >
-              {[
-                ...new Map(
-                  localLibrary.state.records
-                    .filter((r) => r.collection)
-                    .map((r) => [r.collection!.id, r.collection!]),
-                ).values(),
-              ].map((group) => (
-                <Pressable
-                  key={group.id}
-                  accessibilityRole="button"
-                  onPress={() => setCollection(group)}
-                  className={cn(
-                    "px-4 py-3 rounded-full border border-border bg-surface",
-                    "active:bg-surface-hover",
-                  )}
-                >
-                  <Text className="text-foreground font-archivo-medium">
-                    {group.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-      {/* Movies | TV Shows | Anime — full-width segmented control with real touch targets */}
+      {/* Movies | TV Shows | Anime | Collections — full-width segmented
+       * control with real touch targets. Collections live on their own tab
+       * so switching never shifts layout. */}
       {showLibTabs && (
         <View className="px-5 pb-3">
           <View
@@ -350,7 +351,7 @@ export function LibraryScreen({
                     ? "TV Shows"
                     : tab === "anime"
                       ? "Anime"
-                      : "Anime";
+                      : "Collections";
               return (
                 <Pressable
                   key={tab}
@@ -368,8 +369,13 @@ export function LibraryScreen({
                 >
                   <Text
                     className={cn(
-                      "font-archivo-medium text-[14px] text-muted tracking-[0.1px]",
-                      active && "font-archivo-bold text-black",
+                      "text-[14px] tracking-[0.1px]",
+                      // Mutually exclusive text styles — uniwind resolves
+                      // conflicting text-* classes by stylesheet order, so a
+                      // conditional override of text-muted never wins.
+                      active
+                        ? "font-archivo-bold text-black"
+                        : "font-archivo-medium text-muted",
                     )}
                   >
                     {label}
@@ -382,7 +388,55 @@ export function LibraryScreen({
       )}
 
       <TabPane paneKey={activeTab} direction={tabDir} reduceMotion={reduceMotion}>
-        {data.loading ? (
+        {activeTab === "collection" ? (
+          <FlatList
+            data={collections}
+            keyExtractor={(c) => String(c.id)}
+            contentContainerStyle={{
+              gap: 10,
+              paddingHorizontal: 20,
+              paddingBottom: 24,
+              paddingTop: 12,
+            }}
+            renderItem={({ item }) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open collection ${item.name}`}
+                onPress={() => {
+                  triggerHaptic("light");
+                  setCollection(item);
+                }}
+                className="flex-row items-center gap-3 rounded-[18px] bg-surface p-3 active:opacity-70"
+              >
+                {item.poster ? (
+                  <PosterImage
+                    source={api.image(item.poster)}
+                    style={{ width: 44, height: 64, borderRadius: 8 }}
+                  />
+                ) : (
+                  <View className="h-[64px] w-[44px] items-center justify-center rounded-[8px] bg-surface-secondary">
+                    <Icon name="film" size={20} color={colors.quiet} />
+                  </View>
+                )}
+                <View className="flex-1 gap-0.5">
+                  <Text
+                    className="font-archivo-bold text-[15px] text-foreground"
+                    numberOfLines={1}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text className="font-archivo-regular text-[12px] text-muted">
+                    {item.count === 1 ? "1 movie" : `${item.count} movies`}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={colors.muted} strokeWidth={2} />
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              <Notice message="No collections yet. Identified movie collections appear here." />
+            }
+          />
+        ) : data.loading ? (
           <Loading />
         ) : data.error ? (
           <Notice message={data.error} retry={data.retry} />

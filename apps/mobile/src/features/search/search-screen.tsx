@@ -7,17 +7,17 @@ TextInput,
 useWindowDimensions,
 View,
 } from "react-native";
-import { useClient } from "../../core/client/client-provider";
-import type { ItemCard } from "../../core/library/catalog-api";
-import { useResource } from "../../core/resources/use-resource";
-import { colors } from "../../shared/theme";
-import { cn } from "../../shared/lib/cn";
-import { Search as SearchIcon,X } from "../../shared/ui/icons";
-import { Loading } from "../../shared/ui/loading";
-import { Notice } from "../../shared/ui/notice";
-import { PageHeader } from "../../shared/ui/page-header";
-import { CatalogRow } from "../catalog/components/catalog-row";
-import { OpenTitle } from "../catalog/types";
+import { useClient } from "@/core/client/client-provider";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { useResource } from "@/core/resources/use-resource";
+import { colors } from "@/shared/theme";
+import { cn } from "@/shared/lib/cn";
+import { Search as SearchIcon,X } from "@/shared/ui/icons";
+import { Loading } from "@/shared/ui/loading";
+import { Notice } from "@/shared/ui/notice";
+import { PageHeader } from "@/shared/ui/page-header";
+import { CatalogRow } from "@/features/catalog/components/catalog-row";
+import { OpenTitle } from "@/features/catalog/types";
 import { SearchGrid } from "./components/search-grid";
 
 export function SearchScreen({

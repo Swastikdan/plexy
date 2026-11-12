@@ -10,23 +10,23 @@ ScrollView,
 Text,
 View,
 } from "react-native";
-import type { LocalRoot } from "../../../../../packages/local-library/src/library";
-import { useClient } from "../../core/client/client-provider";
+import type { LocalRoot } from "@plexy/local-library/library";
+import { useClient } from "@/core/client/client-provider";
 import {
 bundledMetadata,
 displayName,
 localLibrary,
 localRuntime,
-} from "../../core/library/local-runtime";
-import { useOnline } from "../../shared/hooks/use-online";
-import { cn } from "../../shared/lib/cn";
-import { colors } from "../../shared/theme";
-import { Button } from "../../shared/ui/button";
-import { Icon } from "../../shared/ui/icon";
-import { Notice } from "../../shared/ui/notice";
-import { PageHeader } from "../../shared/ui/page-header";
-import { ToggleSwitch } from "../../shared/ui/toggle-switch";
-import { LibraryReportScreen } from "../library-report/library-report-screen";
+} from "@/core/library/local-runtime";
+import { useOnline } from "@/shared/hooks/use-online";
+import { cn } from "@/shared/lib/cn";
+import { colors } from "@/shared/theme";
+import { Button } from "@/shared/ui/button";
+import { Icon } from "@/shared/ui/icon";
+import { Notice } from "@/shared/ui/notice";
+import { PageHeader } from "@/shared/ui/page-header";
+import { ToggleSwitch } from "@/shared/ui/toggle-switch";
+import { LibraryReportScreen } from "@/features/library-report/library-report-screen";
 import { Updates } from "./components/app-updates";
 import { SettingsRow } from "./components/settings-row";
 import { useAppUpdates } from "./hooks/use-app-updates";
@@ -130,7 +130,7 @@ export function SettingsScreen() {
     (r) => r.card.matchStatus !== "matched" || r.metadataError,
   ).length;
   if (page === "report")
-    return <LibraryReportScreen back={() => setPage("settings")} />;
+    return <LibraryReportScreen />;
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -143,17 +143,6 @@ export function SettingsScreen() {
     >
       {!online && (
         <Notice message="Offline. Trailers, updates and metadata refresh are unavailable. Your saved library and markers still work." />
-      )}
-      {page !== "settings" && (
-        <Pressable
-          onPress={() => setPage("settings")}
-          accessibilityLabel="Back to Settings"
-          className="py-3"
-        >
-          <Text className="text-[15px] font-archivo-medium text-accent">
-            ‹ Settings
-          </Text>
-        </Pressable>
       )}
       <PageHeader
         title={

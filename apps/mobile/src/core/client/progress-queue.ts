@@ -1,4 +1,4 @@
-import type { LocalCatalog } from "../library/catalog-api";
+import type { LocalCatalog } from "@/core/library/catalog-api";
 export interface Progress {
   itemId: number;
   position: number;

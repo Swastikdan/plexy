@@ -5,7 +5,7 @@ downloadAndInstallUpdate,
 getInstalledAppInfo,
 type AppInfo,
 type UpdateInfo,
-} from "../lib/app-updater";
+} from "@/features/settings/lib/app-updater";
 export function useAppUpdates(online: boolean) {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(

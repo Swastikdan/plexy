@@ -9,9 +9,9 @@ import * as SplashScreen from "expo-splash-screen";
 import React,{ useEffect,useState } from "react";
 import { AppState,StatusBar,View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { colors } from "../shared/theme";
-import { Loading } from "../shared/ui/loading";
-import { Notice } from "../shared/ui/notice";
+import { colors } from "@/shared/theme";
+import { Loading } from "@/shared/ui/loading";
+import { Notice } from "@/shared/ui/notice";
 import {
 ClientProvider,
 useClient,

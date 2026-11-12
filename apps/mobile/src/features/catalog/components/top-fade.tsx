@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors } from "../../../shared/theme";
+import { colors } from "@/shared/theme";
 
 export function TopFade() {
   const insets = useSafeAreaInsets();

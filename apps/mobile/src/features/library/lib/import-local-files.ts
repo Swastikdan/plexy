@@ -1,6 +1,6 @@
 import { File } from "expo-file-system";
-import type { LocalRoot } from "../../../../../../packages/local-library/src/library";
-import { displayName,localLibrary } from "../../../core/library/local-runtime";
+import type { LocalRoot } from "@plexy/local-library/library";
+import { displayName,localLibrary } from "@/core/library/local-runtime";
 
 export async function addLocalFiles(kind: LocalRoot["kind"]) {
   const picked = await File.pickFileAsync({

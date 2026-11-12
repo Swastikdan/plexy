@@ -13,9 +13,9 @@ import {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { useReducedMotion } from "../../../shared/hooks/use-reduced-motion";
-import { motion } from "../../../shared/theme";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { motion } from "@/shared/theme";
 
 const easeOut = Easing.bezier(...motion.easeOut);
 
@@ -136,9 +136,16 @@ export function useHeroTransition(items: ItemCard[]) {
     items.find((item) => item.publicId === visible.id) ?? items[0];
   return {
     activeItem,
+    // While a transition is running, the dots jump to the requested slide
+    // right away — they answer the gesture immediately instead of trailing
+    // the fade by the full exit + enter duration.
     activeIndex: Math.max(
       0,
-      items.findIndex((item) => item.publicId === activeItem?.publicId),
+      items.findIndex(
+        (item) =>
+          item.publicId ===
+          (changing ? requestedId.current : activeItem?.publicId),
+      ),
     ),
     changing,
     contentStyle,

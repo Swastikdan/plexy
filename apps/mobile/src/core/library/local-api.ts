@@ -1,4 +1,4 @@
-import { LocalLibrary } from "../../../../../packages/local-library/src/library";
+import { LocalLibrary } from "@plexy/local-library/library";
 import { LocalCatalog,type Playability } from "./catalog-api";
 /** Implements the existing UI contract in process, without a network listener. */
 export class LocalApi extends LocalCatalog {

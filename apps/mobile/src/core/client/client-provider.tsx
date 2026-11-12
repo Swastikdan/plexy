@@ -7,7 +7,7 @@ useRef,
 useState,
 } from "react";
 import { AppState } from "react-native";
-import type { LocalCatalog } from "../library/catalog-api";
+import type { LocalCatalog } from "@/core/library/catalog-api";
 import {
 defaultPreferences,
 preferenceKey,
@@ -25,7 +25,7 @@ export interface MobileRuntimeBindings {
     pickSubtitle?(
       fileId: number,
     ): Promise<
-      | import("../../../../../packages/api-client/src/types").SubtitleTrack
+      | import("@plexy/api-client/types").SubtitleTrack
       | null
     >;
     getAttentionCount?(): number;

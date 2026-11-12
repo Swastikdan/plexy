@@ -2,10 +2,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useClient } from "../../../core/client/client-provider";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { colors } from "../../../shared/theme";
-import { PosterImage } from "../../../shared/ui/poster-image";
+import { useClient } from "@/core/client/client-provider";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { colors } from "@/shared/theme";
+import { PosterImage } from "@/shared/ui/poster-image";
 import { HeroActions } from "./hero-actions";
 
 export function Hero({

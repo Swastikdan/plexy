@@ -1,9 +1,9 @@
 import React from "react";
 import { Pressable,Text,View } from "react-native";
-import { cn } from "../../../shared/lib/cn";
-import { triggerHaptic } from "../../../shared/lib/haptics";
-import { colors } from "../../../shared/theme";
-import { Icon } from "../../../shared/ui/icon";
+import { cn } from "@/shared/lib/cn";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { colors } from "@/shared/theme";
+import { Icon } from "@/shared/ui/icon";
 
 export function SettingsRow({
   title,

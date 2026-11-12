@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Image,Pressable,Text,View } from "react-native";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { cn } from "../../../shared/lib/cn";
-import { colors } from "../../../shared/theme";
-import { Check,Play } from "../../../shared/ui/icons";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { cn } from "@/shared/lib/cn";
+import { colors } from "@/shared/theme";
+import { Check,Play } from "@/shared/ui/icons";
 
 export function EpisodeCard({
   ep,
@@ -70,9 +70,10 @@ export function EpisodeCard({
           <View className="h-full w-full bg-surface-secondary" />
         )}
 
-        {/* Center play icon button */}
-        <View className="absolute left-1/2 top-1/2 -ml-[19px] -mt-[19px] h-[38px] w-[38px] items-center justify-center rounded-full border-[1.5px] border-white/[0.85] bg-black/[0.55] pl-[2px]">
-          <Play size={18} color={"#fff"} fill={"#fff"} />
+        {/* Center play icon button: a solid white chip so the icon reads on
+         * any artwork — white background, black filled icon, no ring. */}
+        <View className="absolute left-1/2 top-1/2 -ml-[22px] -mt-[22px] h-[44px] w-[44px] items-center justify-center rounded-full bg-white">
+          <Play size={24} color={"#000"} fill={"#000"} />
         </View>
 
         {/* Duration badge */}

@@ -10,15 +10,15 @@ Text,
 View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useClient } from "../../core/client/client-provider";
-import type { ItemCard } from "../../core/library/catalog-api";
-import { localLibrary } from "../../core/library/local-runtime";
-import { useResource } from "../../core/resources/use-resource";
-import { useOnline } from "../../shared/hooks/use-online";
-import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
-import { triggerHaptic } from "../../shared/lib/haptics";
-import { cn } from "../../shared/lib/cn";
-import { colors,control } from "../../shared/theme";
+import { useClient } from "@/core/client/client-provider";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { localLibrary } from "@/core/library/local-runtime";
+import { useResource } from "@/core/resources/use-resource";
+import { useOnline } from "@/shared/hooks/use-online";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { cn } from "@/shared/lib/cn";
+import { colors,control } from "@/shared/theme";
 import {
 ArrowLeft,
 Check,
@@ -27,13 +27,13 @@ Info,
 MoreHorizontal,
 Play,
 Trash2,
-} from "../../shared/ui/icons";
-import { Loading } from "../../shared/ui/loading";
-import { Notice } from "../../shared/ui/notice";
-import { Hero } from "../catalog/components/hero";
-import { TitleBrowser } from "../catalog/components/title-browser";
-import { TopFade } from "../catalog/components/top-fade";
-import { playbackAction } from "../catalog/lib/playback-action";
+} from "@/shared/ui/icons";
+import { Loading } from "@/shared/ui/loading";
+import { Notice } from "@/shared/ui/notice";
+import { Hero } from "@/features/catalog/components/hero";
+import { TitleBrowser } from "@/features/catalog/components/title-browser";
+import { TopFade } from "@/features/catalog/components/top-fade";
+import { playbackAction } from "@/features/catalog/lib/playback-action";
 import { CastRow } from "./components/cast-row";
 import { EpisodeCard } from "./components/episode-card";
 import { TitleMenuAction } from "./components/title-menu-action";
@@ -241,15 +241,18 @@ export function TitleScreen({
                         onBlur={() => setTabFocus(null)}
                         className={cn(
                           "min-h-11 flex-1 items-center justify-center rounded-full px-4 py-2.5",
-                          detailTab === "episodes" && "bg-foreground",
+                          detailTab === "episodes"
+                            ? "bg-foreground"
+                            : "bg-transparent",
                           tabFocus === "episodes" && "border-2 border-accent",
                         )}
                       >
                         <Text
                           className={cn(
-                            "font-archivo-medium text-[15px] text-muted",
-                            detailTab === "episodes" &&
-                              "font-archivo-bold text-background",
+                            "text-[15px]",
+                            detailTab === "episodes"
+                              ? "font-archivo-bold text-black"
+                              : "font-archivo-medium text-muted",
                           )}
                         >
                           Episodes
@@ -265,15 +268,18 @@ export function TitleScreen({
                         onBlur={() => setTabFocus(null)}
                         className={cn(
                           "min-h-11 flex-1 items-center justify-center rounded-full px-4 py-2.5",
-                          detailTab === "details" && "bg-foreground",
+                          detailTab === "details"
+                            ? "bg-foreground"
+                            : "bg-transparent",
                           tabFocus === "details" && "border-2 border-accent",
                         )}
                       >
                         <Text
                           className={cn(
-                            "font-archivo-medium text-[15px] text-muted",
-                            detailTab === "details" &&
-                              "font-archivo-bold text-background",
+                            "text-[15px]",
+                            detailTab === "details"
+                              ? "font-archivo-bold text-black"
+                              : "font-archivo-medium text-muted",
                           )}
                         >
                           Cast & Details
@@ -309,17 +315,30 @@ export function TitleScreen({
                                   onFocus={() => setSeasonFocus(s.number)}
                                   onBlur={() => setSeasonFocus(null)}
                                   className={cn(
-                                    "min-h-12 justify-center border-b-2 border-b-transparent py-3 active:opacity-65",
-                                    active && "border-b-foreground",
-                                    seasonFocus === s.number &&
-                                      "border-b-accent",
+                                    "min-h-12 justify-center border-b-2 py-3 active:opacity-65",
+                                    // Mutually exclusive states: uniwind
+                                    // resolves conflicting border-b-*/text-*
+                                    // classes by stylesheet order, not
+                                    // className order. Border weight and
+                                    // padding never change, so the pill keeps
+                                    // its exact height.
+                                    active
+                                      ? "border-b-white"
+                                      : seasonFocus === s.number
+                                        ? "border-b-accent"
+                                        : "border-b-transparent",
                                   )}
                                 >
                                   <Text
                                     className={cn(
-                                      "font-archivo-medium text-[17px] text-muted",
-                                      active &&
-                                        "font-archivo-bold text-foreground",
+                                      // The pill is sized by its label, so
+                                      // the font weight must stay identical
+                                      // in both states — switching to bold
+                                      // widens the active label and shoves
+                                      // every following pill sideways. Only
+                                      // colour and the underline change.
+                                      "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
+                                      active ? "text-white" : "text-muted",
                                     )}
                                   >
                                     {label}
@@ -536,7 +555,7 @@ export function TitleScreen({
                 if (fileId) play(fileId);
               }}
             >
-              <Play size={20} color={colors.canvas} />
+              <Play size={22} color={colors.canvas} fill={colors.canvas} />
               <View style={{ alignItems: "center", flexShrink: 1 }}>
                 <NativeButton.Label className="text-black">
                   {detailAction.label}

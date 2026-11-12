@@ -5,7 +5,7 @@ Animated,
 Easing,
 View,
 } from "react-native";
-import { useReducedMotion } from "../hooks/use-reduced-motion";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { PlexyLogo } from "./brand-logo";
 
 export function Loading({

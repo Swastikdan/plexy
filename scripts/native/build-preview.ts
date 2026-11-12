@@ -7,8 +7,8 @@ import { generateIcons } from "../generate-icon";
 const root = resolve(import.meta.dir, "../..");
 /**
  * CI uses the workflow run number so version codes match the release tag.
- * Local builds reserve 1000+ and increment, which keeps them installable on
- * top of older CI previews instead of being rejected as a downgrade.
+ * Local builds reserve 2000+ and increment. When updating a newer CI preview,
+ * set PLEXY_INSTALLED_BUILD_NUMBER to the build shown in the installed app.
  */
 async function resolveBuildNumber() {
   const fromEnv = Number(
@@ -26,7 +26,11 @@ async function resolveBuildNumber() {
   } catch {
     // First local build.
   }
-  const next = Math.max(previous + 1, 2000);
+  const installed = Number(Bun.env.PLEXY_INSTALLED_BUILD_NUMBER || 0);
+  if (!Number.isSafeInteger(installed) || installed < 0) {
+    throw new Error("PLEXY_INSTALLED_BUILD_NUMBER must be a non-negative integer.");
+  }
+  const next = Math.max(previous + 1, installed + 1, 2000);
   await mkdir(stateDir, { recursive: true });
   await writeFile(stateFile, `${next}\n`);
   return next;
@@ -60,11 +64,8 @@ async function run(command: string[], cwd: string) {
   ).version as string;
   await run(["bun", "run", "prebuild"], cwd);
   const fixedKeystore = resolve(root, "scripts/native/debug.keystore");
-  try {
-    await copyFile(fixedKeystore, resolve(cwd, "android/app/debug.keystore"));
-  } catch (err) {
-    console.warn("Could not copy fixed debug.keystore", err);
-  }
+  // A different signing identity prevents this APK from updating existing installs.
+  await copyFile(fixedKeystore, resolve(cwd, "android/app/debug.keystore"));
   if (process.platform === "darwin") {
     await generateIcons();
   }

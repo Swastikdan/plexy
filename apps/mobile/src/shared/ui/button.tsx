@@ -1,8 +1,8 @@
 import { forwardRef } from "react";
 import type { StyleProp, View, ViewStyle } from "react-native";
 import { Button as NativeButton } from "heroui-native/button";
-import { triggerHaptic } from "../lib/haptics";
-import { cn } from "../lib/cn";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { cn } from "@/shared/lib/cn";
 import { Icon, IconName } from "./icon";
 
 /**

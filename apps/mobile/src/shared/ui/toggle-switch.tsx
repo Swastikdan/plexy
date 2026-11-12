@@ -1,5 +1,5 @@
 import { Switch as NativeSwitch } from "heroui-native/switch";
-import { triggerHaptic } from "../lib/haptics";
+import { triggerHaptic } from "@/shared/lib/haptics";
 
 /**
  * App toggle built on the HeroUI Native Switch so the thumb/track animation,

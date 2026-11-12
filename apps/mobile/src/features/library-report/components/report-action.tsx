@@ -1,5 +1,5 @@
 import { Pressable,Text } from "react-native";
-import { cn } from "../../../shared/lib/cn";
+import { cn } from "@/shared/lib/cn";
 
 export function ReportAction({
   label,

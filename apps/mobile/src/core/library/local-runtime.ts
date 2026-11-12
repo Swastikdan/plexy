@@ -2,16 +2,16 @@ import NetInfo from "@react-native-community/netinfo";
 import Constants from "expo-constants";
 import { Directory,File,Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
-import type { SubtitleTrack } from "../../../../../packages/api-client/src/types";
+import type { SubtitleTrack } from "@plexy/api-client/types";
 import {
 LocalLibrary,
 localSegments,
 type LocalFile,
 type LocalRecord,
 type LocalRoot,
-} from "../../../../../packages/local-library/src/library";
-import { fetchMetadata } from "../../../../../packages/local-library/src/metadata";
-import { invalidateLocalResources } from "../resources/use-resource";
+} from "@plexy/local-library/library";
+import { fetchMetadata } from "@plexy/local-library/metadata";
+import { invalidateLocalResources } from "@/core/resources/use-resource";
 import { loadLibrary,saveLibrary } from "./library-database";
 import { LocalApi } from "./local-api";
 const tokenKey = "plexy.local.tmdb-token";
@@ -44,6 +44,7 @@ async function walk(root: LocalRoot): Promise<LocalFile[]> {
   }
   const pending = [{ directory: new Directory(root.uri), path: "" }];
   const visited = new Set<string>();
+  let inspected = 0;
   while (pending.length) {
     const { directory, path } = pending.pop()!;
     if (visited.has(directory.uri)) continue;
@@ -57,6 +58,10 @@ async function walk(root: LocalRoot): Promise<LocalFile[]> {
         if (!/^(sample|extras?|trailers?|featurettes?)$/i.test(name))
           pending.push({ directory: entry, path: relativePath });
       } else {
+        // Yield inside huge folders too, so stat-ing thousands of files
+        // never blocks a frame.
+        if (++inspected % 40 === 0)
+          await new Promise((resolve) => setTimeout(resolve, 0));
         const info = entry.info();
         if (!info.exists) throw new Error(`Cannot read ${relativePath}`);
         files.push({
@@ -332,7 +337,17 @@ export const localApi = new LocalApi(
   (uri) => new File(uri).text(),
   subtitleTracks,
 );
-localLibrary.subscribe(invalidateLocalResources);
+// A scan announces progress many times per second's work (one `changed()` per
+// hydrated record). Invalidate at most once per window, on the trailing edge,
+// so screens refresh without a refetch storm that would freeze the UI.
+let invalidationTimer: ReturnType<typeof setTimeout> | null = null;
+localLibrary.subscribe(() => {
+  if (invalidationTimer != null) return;
+  invalidationTimer = setTimeout(() => {
+    invalidationTimer = null;
+    invalidateLocalResources();
+  }, 800);
+});
 let restored = false;
 export const localRuntime = {
   api: localApi,

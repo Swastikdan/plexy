@@ -1,5 +1,5 @@
 import { View } from "react-native";
-import { cn } from "../lib/cn";
+import { cn } from "@/shared/lib/cn";
 import { Button } from "./button";
 import { Label } from "./text";
 

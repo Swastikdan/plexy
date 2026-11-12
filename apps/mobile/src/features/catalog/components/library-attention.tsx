@@ -1,8 +1,8 @@
 import { useRouter,useSegments } from "expo-router";
 import { useEffect,useState } from "react";
 import { Pressable,Text,View } from "react-native";
-import { localRuntime } from "../../../core/library/local-runtime";
-import { Icon } from "../../../shared/ui/icon";
+import { localRuntime } from "@/core/library/local-runtime";
+import { Icon } from "@/shared/ui/icon";
 export function LibraryAttention() {
   const router = useRouter();
   const segments = useSegments();

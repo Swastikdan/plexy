@@ -2,7 +2,18 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "@plexy/api-client/*": [
+        "../../packages/api-client/src/*"
+      ],
+      "@plexy/local-library/*": [
+        "../../packages/local-library/src/*"
+      ]
+    }
   },
   "include": [
     "**/*.ts",

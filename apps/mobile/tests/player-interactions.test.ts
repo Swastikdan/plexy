@@ -4,7 +4,7 @@ clampZoom,
 doubleTapSeek,
 pinchZoom,
 SEEK_SECONDS,
-} from "../src/features/player/lib/player-interactions";
+} from "@/features/player/lib/player-interactions";
 
 test("double taps seek 30 seconds on their own side of the video", () => {
   expect(SEEK_SECONDS).toBe(30);
@@ -77,7 +77,7 @@ test("custom player controls stay enabled and native controls stay off", async (
 
 test("only the initial open uses a blocking spinner; seeking keeps controls", async () => {
   const { shouldShowPlayerLoading } =
-    await import("../src/features/player/lib/player-interactions");
+    await import("@/features/player/lib/player-interactions");
   expect(shouldShowPlayerLoading("loading", false, false)).toBe(true);
   expect(shouldShowPlayerLoading("loading", true, false)).toBe(false);
   expect(shouldShowPlayerLoading("loading", true, true)).toBe(false);

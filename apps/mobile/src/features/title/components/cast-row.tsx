@@ -2,7 +2,7 @@ import { Image,Pressable,ScrollView,Text,View } from "react-native";
 import type {
 LocalCatalog,
 TitleDetail,
-} from "../../../core/library/catalog-api";
+} from "@/core/library/catalog-api";
 export function CastRow({
   people,
   api,

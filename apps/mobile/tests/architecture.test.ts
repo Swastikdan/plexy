@@ -62,10 +62,12 @@ test("core and shared modules do not depend on feature implementations", async (
         )
           continue;
         const name = node.moduleSpecifier.text;
-        if (!name.startsWith(".")) continue;
+        if (!name.startsWith(".") && !name.startsWith("@/")) continue;
         const { dirname } = await import("node:path");
         expect(
-          resolve(dirname(file), name).startsWith(
+          (name.startsWith("@/")
+            ? resolve(sourceRoot, name.slice(2))
+            : resolve(dirname(file), name)).startsWith(
             resolve(sourceRoot, "features") + "/",
           ),
         ).toBe(false);
@@ -103,8 +105,11 @@ test("mobile runtime imports have no circular dependencies", async () => {
         clause.namedBindings.elements.every((element) => element.isTypeOnly)
       )
         continue;
-      if (!node.moduleSpecifier.text.startsWith(".")) continue;
-      const base = resolve(dirname(file), node.moduleSpecifier.text);
+      const name = node.moduleSpecifier.text;
+      if (!name.startsWith(".") && !name.startsWith("@/")) continue;
+      const base = name.startsWith("@/")
+        ? resolve(sourceRoot, name.slice(2))
+        : resolve(dirname(file), name);
       const target = [
         base + ".ts",
         base + ".tsx",

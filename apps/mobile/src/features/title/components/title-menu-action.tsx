@@ -1,7 +1,7 @@
 import { Pressable,Text } from "react-native";
-import { cn } from "../../../shared/lib/cn";
-import { colors } from "../../../shared/theme";
-import type { NativeIcon } from "../../../shared/ui/icons";
+import { cn } from "@/shared/lib/cn";
+import { colors } from "@/shared/theme";
+import type { NativeIcon } from "@/shared/ui/icons";
 export function TitleMenuAction({
   label,
   icon: Icon,

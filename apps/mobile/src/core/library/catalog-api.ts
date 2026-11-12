@@ -4,14 +4,14 @@ ItemCard,
 Playability,
 SkipSegments,
 TitleDetail,
-} from "../../../../../packages/api-client/src/types";
+} from "@plexy/api-client/types";
 export type {
 HomePayload,
 ItemCard,
 Playability,
 SkipSegments,
 TitleDetail
-} from "../../../../../packages/api-client/src/types";
+} from "@plexy/api-client/types";
 /** In-process catalog contract. Implementations never connect to a Plexy server. */
 export abstract class LocalCatalog {
   abstract request<T>(path: string, init?: RequestInit): Promise<T>;

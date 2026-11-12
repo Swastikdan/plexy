@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { Play } from "../../../shared/ui/icons";
-import { PosterImage } from "../../../shared/ui/poster-image";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { Play } from "@/shared/ui/icons";
+import { PosterImage } from "@/shared/ui/poster-image";
 
 export function ContinueWatchingCard({
   item,
@@ -82,9 +82,10 @@ export function ContinueWatchingCard({
           </View>
         )}
 
-        {/* Center play icon overlay */}
-        <View className="absolute h-[26px] w-[26px] items-center justify-center rounded-[13px] border-[1.5px] border-white/80 bg-black/55 pl-[2px]">
-          <Play size={16} color="#fff" fill="#fff" />
+        {/* Center play icon overlay: solid white chip, black filled icon —
+         * no outline ring, the icon is the content. */}
+        <View className="absolute left-1/2 top-1/2 -ml-[19px] -mt-[19px] h-[38px] w-[38px] items-center justify-center rounded-[19px] bg-white">
+          <Play size={20} color="#000" fill="#000" />
         </View>
 
         {/* Linear progress bar at the bottom */}

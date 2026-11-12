@@ -1,5 +1,5 @@
 import { expect,test } from "bun:test";
-import { playbackAction } from "../src/features/catalog/lib/playback-action";
+import { playbackAction } from "@/features/catalog/lib/playback-action";
 
 test("movie actions distinguish starting, resuming and replaying", () => {
   expect(playbackAction({}).label).toBe("Start watching");

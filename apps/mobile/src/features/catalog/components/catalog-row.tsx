@@ -1,9 +1,9 @@
 import { useRef } from "react";
 import { FlatList,Text,View } from "react-native";
-import { useClient } from "../../../core/client/client-provider";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { Card } from "../../../shared/ui/media-card";
-import { OpenTitle } from "../types";
+import { useClient } from "@/core/client/client-provider";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { Card } from "@/shared/ui/media-card";
+import { OpenTitle } from "@/features/catalog/types";
 import { ContinueWatchingCard } from "./continue-watching-card";
 
 export function CatalogRow({

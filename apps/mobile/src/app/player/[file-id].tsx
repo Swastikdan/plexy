@@ -1,7 +1,7 @@
 import { useLocalSearchParams,useRouter } from "expo-router";
-import { PlayerScreen } from "../../features/player/player-screen";
-import { useMediaNavigation } from "../../shared/navigation/use-media-navigation";
-import { Notice } from "../../shared/ui/notice";
+import { PlayerScreen } from "@/features/player/player-screen";
+import { useMediaNavigation } from "@/shared/navigation/use-media-navigation";
+import { Notice } from "@/shared/ui/notice";
 export default function PlayerRoute() {
   const { "file-id": fileId } = useLocalSearchParams<{
     "file-id": string;

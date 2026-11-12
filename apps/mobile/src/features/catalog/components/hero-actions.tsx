@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { ItemCard } from "../../../core/library/catalog-api";
-import { localLibrary } from "../../../core/library/local-runtime";
-import { cn } from "../../../shared/lib/cn";
-import { triggerHaptic } from "../../../shared/lib/haptics";
-import { Check, Film, Info, Play, Trash2 } from "../../../shared/ui/icons";
-import { playbackAction } from "../lib/playback-action";
+import type { ItemCard } from "@/core/library/catalog-api";
+import { localLibrary } from "@/core/library/local-runtime";
+import { cn } from "@/shared/lib/cn";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { Check, Film, InfoSolid, Play, Trash2 } from "@/shared/ui/icons";
+import { playbackAction } from "@/features/catalog/lib/playback-action";
 export interface HeroActionsProps {
   item: ItemCard;
   onOpen: () => void;
@@ -73,7 +73,7 @@ export function HeroActions({
           "active:opacity-78",
         )}
       >
-        <Play size={16} color={"#000"} fill={"#000"} />
+        <Play size={22} color={"#000"} fill={"#000"} />
         <View style={{ alignItems: "center", flexShrink: 1 }}>
           <Text className="font-archivo-bold text-[16px] tracking-[0.2px] text-black">
             {playLabel}
@@ -94,14 +94,17 @@ export function HeroActions({
           }}
           onBlur={() => setDetailFocus(false)}
           className={cn(
-            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-white/45 bg-white/12",
+            // Solid white chip with a black glyph — the same treatment as the
+            // play chips on the episode tiles. Opaque fill, no ring, and no
+            // translucent layer behind the icon.
+            "h-[52px] w-[52px] items-center justify-center rounded-full bg-white",
             "active:opacity-78",
           )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Details"
         >
-          <Info size={20} color="#fff" strokeWidth={2.2} />
+          <InfoSolid size={28} color="#000" />
         </Pressable>
       )}
 

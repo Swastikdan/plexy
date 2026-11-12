@@ -50,3 +50,5 @@ plexy-exact/
 /*.webm
 
 /plans/
+.cloud-attachments/
+.freebuff/

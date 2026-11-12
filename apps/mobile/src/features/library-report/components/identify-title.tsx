@@ -7,15 +7,15 @@ Text,
 TextInput,
 View,
 } from "react-native";
-import type { ItemCard } from "../../../../../../packages/api-client/src/types";
+import type { ItemCard } from "@plexy/api-client/types";
 import {
 localLibrary,
 searchTitles,
-} from "../../../core/library/local-runtime";
-import { useOnline } from "../../../shared/hooks/use-online";
-import { cn } from "../../../shared/lib/cn";
-import { colors } from "../../../shared/theme";
-import { Notice } from "../../../shared/ui/notice";
+} from "@/core/library/local-runtime";
+import { useOnline } from "@/shared/hooks/use-online";
+import { cn } from "@/shared/lib/cn";
+import { colors } from "@/shared/theme";
+import { Notice } from "@/shared/ui/notice";
 import { ReportAction } from "./report-action";
 
 export function IdentifyTitle({
@@ -102,15 +102,6 @@ export function IdentifyTitle({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: 40 }}
     >
-      <Pressable
-        onPress={close}
-        disabled={busy}
-        className="py-2.5"
-      >
-        <Text className="text-[15px] font-archivo-medium text-accent">
-          ‹ Library report
-        </Text>
-      </Pressable>
       <Text className="text-[28px] font-archivo-bold text-foreground tracking-[-0.6px]">
         Identify title
       </Text>

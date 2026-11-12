@@ -9,18 +9,18 @@ Text,
 View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { ItemCard } from "../../../../../packages/api-client/src/types";
-import type { LocalRoot } from "../../../../../packages/local-library/src/library";
-import { localLibrary } from "../../core/library/local-runtime";
-import { cn } from "../../shared/lib/cn";
-import { colors } from "../../shared/theme";
-import { Icon } from "../../shared/ui/icon";
-import { Notice } from "../../shared/ui/notice";
-import { addLocalFiles } from "../library/lib/import-local-files";
+import type { ItemCard } from "@plexy/api-client/types";
+import type { LocalRoot } from "@plexy/local-library/library";
+import { localLibrary } from "@/core/library/local-runtime";
+import { cn } from "@/shared/lib/cn";
+import { colors } from "@/shared/theme";
+import { Icon } from "@/shared/ui/icon";
+import { Notice } from "@/shared/ui/notice";
+import { addLocalFiles } from "@/features/library/lib/import-local-files";
 import { IdentifyTitle } from "./components/identify-title";
 import { ReportAction } from "./components/report-action";
 
-export function LibraryReportScreen({ back }: { back: () => void }) {
+export function LibraryReportScreen() {
   const [, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
   const [editing, setEditing] = useState<ItemCard | null>(null);
@@ -69,15 +69,6 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View className="mb-2 gap-3.5">
-            <Pressable
-              accessibilityLabel="Back to Settings"
-              onPress={back}
-              className="py-2"
-            >
-              <Text className="text-[15px] font-archivo-medium text-accent">
-                ‹ Settings
-              </Text>
-            </Pressable>
             <View className="flex-row items-center justify-between">
               <Text className="text-[28px] font-archivo-bold text-foreground tracking-[-0.6px]">
                 Library report
@@ -175,14 +166,20 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
                   <Text
                     className={cn(
                       "text-[12px] leading-[18px] font-archivo-regular",
-                      item.matchStatus !== "matched"
+                      // Warning only after identification has finished
+                      // without a match or failed outright. While a hydrate
+                      // is still running (metadataAt untouched) show a
+                      // neutral progress line instead of yellow text.
+                      item.matchStatus !== "matched" && record?.metadataAt
                         ? "text-warning"
                         : "text-muted",
                     )}
                   >
                     {item.matchStatus === "matched"
                       ? "Identified with TMDB"
-                      : "Choose the correct title"}
+                      : record && !record.metadataAt && !record.metadataError
+                        ? "Identifying…"
+                        : "Choose the correct title"}
                   </Text>
                   <Text
                     className="text-[11px] text-muted"
@@ -233,7 +230,7 @@ export function LibraryReportScreen({ back }: { back: () => void }) {
         animationType="slide"
         onRequestClose={() => setEditing(null)}
       >
-        <SafeAreaView className="flex-1 bg-background">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
           {editing && (
             <IdentifyTitle
               key={editing.id}
