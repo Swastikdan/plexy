@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@import "uniwind";
+@import "heroui-native/styles";
+@source './src';
+
+@theme {
+  --color-canvas: #0b0c0e;
+  --color-panel: #16181c;
+  --color-ink: #f2f4f7;
+  --color-muted: #9598a1;
+  --color-plexy: #3b7df9;
+}
+
+/* heroui-native press highlight: the default accent-hover resolves to blue,
+ * which flashes blue over every primary-variant button on press (the white
+ * Play pill especially). Override to a neutral dark so a press reads as a
+ * slight dim — the blue brand stays for focus rings, toggles and checkboxes.
+ * Unlayered rule: wins over heroui's @layer theme definition. */
+:root {
+  --color-accent-hover: #2e2e30;
+}

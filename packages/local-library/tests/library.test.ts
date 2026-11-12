@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { LocalLibrary, parseLocalName, localSegments, localFileKey, type LocalFile, type LocalIO, type LocalState } from "../src/library";
-import { LocalApi } from "../../../apps/mobile/src/lib/client/local-api";
+import { LocalApi } from "../../../apps/mobile/src/core/library/local-api";
 const file = (name = "Arrival.2016.mp4", size = 100): LocalFile => ({
   uri: `content://videos/${name}`, name, relativePath: name, size, modified: size,
 });

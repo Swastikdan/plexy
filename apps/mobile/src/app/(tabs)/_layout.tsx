@@ -1,14 +1,16 @@
-import { Tabs, usePathname } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { Tabs,usePathname } from "expo-router";
+import React,{ useEffect,useRef,useState } from "react";
+import { Animated,Pressable,StyleSheet,View } from "react-native";
 import {
-  SafeAreaView,
-  useSafeAreaInsets,
+SafeAreaView,
+useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { LibraryAttention } from "../../components/LibraryAttention";
-import { Icon, type IconName } from "../../components/ui";
-import { localRuntime } from "../../lib/local";
-import { fonts } from "../../ui/theme";
+import { localRuntime } from "../../core/library/local-runtime";
+import { LibraryAttention } from "../../features/catalog/components/library-attention";
+import { useReducedMotion } from "../../shared/hooks/use-reduced-motion";
+import { triggerHaptic } from "../../shared/lib/haptics";
+import { colors } from "../../shared/theme";
+import { Icon,type IconName } from "../../shared/ui/icon";
 const tabs: {
   name: string;
   title: string;
@@ -22,6 +24,46 @@ const tabs: {
 type TabBarProps = Parameters<
   NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
 >[0];
+// One tab icon: presses dip it toward the finger, selection springs it back.
+// Feedback lives on the press itself and animates from the current value, so
+// rapid tab-hopping never snaps.
+function TabIcon({
+  name,
+  focused,
+  filled,
+}: {
+  name: IconName;
+  focused: boolean;
+  filled: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  const scale = useRef(new Animated.Value(1)).current;
+  const wasFocused = useRef(focused);
+  useEffect(() => {
+    if (wasFocused.current === focused) return;
+    wasFocused.current = focused;
+    if (!focused || reduceMotion) return;
+    // Start from a slight press-in so the pop reads as the icon settling up.
+    scale.setValue(0.88);
+    Animated.spring(scale, {
+      toValue: 1,
+      bounciness: 7,
+      speed: 18,
+      useNativeDriver: true, // transform only — runs off the main thread
+    }).start();
+  }, [focused, reduceMotion, scale]);
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Icon
+        name={name}
+        size={29}
+        color={focused ? colors.ink : colors.quiet}
+        strokeWidth={focused ? 2.2 : 1.8}
+        filled={filled}
+      />
+    </Animated.View>
+  );
+}
 function MobileTabBar({
   state,
   navigation,
@@ -31,47 +73,13 @@ function MobileTabBar({
 }) {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, 10);
-  const tabScales = useRef(tabs.map(() => new Animated.Value(1))).current;
-  const tabActiveOpacities = useRef(
-    tabs.map((_, i) => new Animated.Value(i === state.index ? 1 : 0)),
-  ).current;
-
-  useEffect(() => {
-    tabs.forEach((_, i) => {
-      Animated.timing(tabActiveOpacities[i], {
-        toValue: state.index === i ? 1 : 0,
-        duration: 150,
-        easing: Easing.bezier(0.23, 1, 0.32, 1),
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [state.index]);
-
-  const handlePressIn = (i: number) => {
-    Animated.spring(tabScales[i]!, {
-      toValue: 0.90,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 400,
-      mass: 0.8,
-    }).start();
-  };
-  const handlePressOut = (i: number) => {
-    Animated.spring(tabScales[i]!, {
-      toValue: 1,
-      useNativeDriver: true,
-      damping: 18,
-      stiffness: 350,
-      mass: 0.8,
-    }).start();
-  };
   return (
     <View
       style={[
         styles.tabBar,
         {
           paddingBottom: bottomPadding,
-          height: 86 + bottomPadding,
+          height: 64 + bottomPadding,
         },
       ]}
     >
@@ -79,6 +87,9 @@ function MobileTabBar({
         const isFocused = state.index === index;
         const route = state.routes[index];
         const onPress = () => {
+          // Tab switches are the most frequent deliberate input — a
+          // selection tick, not an impact, matches their lightness.
+          triggerHaptic("selection");
           const event = navigation.emit({
             type: "tabPress",
             target: route.key,
@@ -92,48 +103,26 @@ function MobileTabBar({
           <Pressable
             key={tab.name}
             onPress={onPress}
-            onPressIn={() => handlePressIn(index)}
-            onPressOut={() => handlePressOut(index)}
-            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
-            style={styles.tabItem}
+            style={({ pressed }) => [
+              styles.tabItem,
+              // Scale toward the finger on touch-down, not opacity — keeps
+              // the icon present while answering the touch instantly.
+              pressed && { transform: [{ scale: 0.88 }], opacity: 0.8 },
+            ]}
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
             accessibilityLabel={tab.title}
           >
-            <Animated.View
-              style={[
-                styles.tabIconWrap,
-                { transform: [{ scale: tabScales[index]! }] },
-              ]}
-            >
-              {/* Animated pill background — fades in/out instead of switching */}
-              <Animated.View
-                style={[
-                  styles.tabIconWrapActive,
-                  StyleSheet.absoluteFill,
-                  { opacity: tabActiveOpacities[index]!, borderRadius: 9999 },
-                ]}
-              />
-              <Icon
+            <View style={styles.tabIconWrap}>
+              <TabIcon
                 name={tab.icon}
-                size={24}
-                color={isFocused ? "#000000" : "rgba(255, 255, 255, 0.45)"}
+                focused={isFocused}
+                filled={isFocused && tab.name === "index"}
               />
               {tab.name === "settings" && attention > 0 && (
                 <View style={styles.tabBadgeDot} />
               )}
-            </Animated.View>
-            <Text
-              style={[
-                styles.tabLabel,
-                {
-                  color: isFocused ? "#ffffff" : "rgba(255, 255, 255, 0.45)",
-                  fontFamily: isFocused ? fonts.bold : fonts.medium,
-                },
-              ]}
-            >
-              {tab.title}
-            </Text>
+            </View>
           </Pressable>
         );
       })}
@@ -151,7 +140,7 @@ export default function TabLayout() {
   return (
     <SafeAreaView
       edges={isHome ? ["left", "right"] : ["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: "#000000" }}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
     >
       {!isHome && <LibraryAttention />}
       <Tabs
@@ -159,7 +148,7 @@ export default function TabLayout() {
         tabBar={(props) => <MobileTabBar {...props} attention={attention} />}
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: "#000000" },
+          sceneStyle: { backgroundColor: colors.canvas },
         }}
       >
         {tabs.map((tab) => (
@@ -174,55 +163,32 @@ export default function TabLayout() {
   );
 }
 const styles = StyleSheet.create({
-  tabBar: {
+tabBar: {
     flexDirection: "row",
-    backgroundColor: "#000000",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: colors.canvas,
     alignItems: "center",
     justifyContent: "space-around",
-    paddingTop: 10,
-    paddingHorizontal: 8,
+    paddingTop: 4,
+    paddingHorizontal: 12,
   },
-  tabItem: {
+tabItem: {
     flex: 1,
-    minWidth: 68,
+    minHeight: 56,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
-    borderRadius: 24,
-    overflow: "hidden",
-    gap: 4,
   },
-  tabIconWrap: {
-    minWidth: 68,
-    height: 40,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 9999,
+tabIconWrap: {
+    width: 48,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
-  tabIconWrapActive: {
-    backgroundColor: "#ffffff",
-    borderRadius: 9999,
-    overflow: "hidden",
-  },
-  tabBadgeDot: {
+tabBadgeDot: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#f59e0b",
-    borderWidth: 1.5,
-    borderColor: "#000000",
-  },
-  tabLabel: {
-    fontSize: 12,
-    letterSpacing: 0.15,
-    textAlign: "center",
-  },
+    bottom: 0,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.amber,
+  }
 });

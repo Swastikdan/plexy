@@ -1,6 +1,9 @@
-import { expect, test } from "bun:test";
-import { ProgressQueue, type Progress } from "../src/lib/client/progress";
-import { parseVtt, subtitleText } from "../src/lib/client/vtt";
+import { expect,test } from "bun:test";
+import {
+ProgressQueue,
+type Progress,
+} from "../src/core/client/progress-queue";
+import { parseVtt,subtitleText } from "../src/features/player/lib/subtitles";
 
 test("a write arriving during a local progress flush is never lost", async () => {
   let stored: Progress[] = [];

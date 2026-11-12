@@ -1,5 +1,5 @@
-import { useMediaNavigation } from "../../navigation/useMediaNavigation";
-import { SearchScreen } from "../../screens/Catalog";
+import { SearchScreen } from "../../features/search/search-screen";
+import { useMediaNavigation } from "../../shared/navigation/use-media-navigation";
 export default function SearchRoute() {
   return <SearchScreen {...useMediaNavigation()} />;
 }

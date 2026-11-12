@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { bufferOptionsForDuration } from "../src/lib/client/player-buffer";
+import { expect,test } from "bun:test";
+import { bufferOptionsForDuration } from "../src/features/player/lib/player-buffer";
 
 test("read-ahead aims for 30 percent on short clips but bounds time and memory for movies", () => {
   expect(bufferOptionsForDuration(200).preferredForwardBufferDuration).toBe(60);

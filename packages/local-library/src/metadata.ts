@@ -19,7 +19,7 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
     if (parsed.year) query.set(tv ? "first_air_date_year" : "year", String(parsed.year));
     const result = await request(`/search/${kind}?${query}`);
     const matches = (result.results || []).filter((r: any) => [r.title, r.name, r.original_title, r.original_name].some(t => t && normalizedTitle(t) === normalizedTitle(title)));
-    if (matches.length !== 1) return { metadataAt: Date.now(), metadataVersion: 2, card: { ...record.card, matchStatus: "review" } };
+    if (matches.length !== 1) return { metadataAt: Date.now(), metadataVersion: 2, discoveryVersion: 1, card: { ...record.card, matchStatus: "review" } };
     id = matches[0].id;
   }
   const data = await request(`/${kind}/${id}?append_to_response=credits,videos,images,${tv ? "content_ratings" : "release_dates"}&include_image_language=${settings.language.split("-")[0]},en,null`);
@@ -46,10 +46,10 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
       poster: await image(seasonData?.poster_path || season.poster_path, "w500") });
   }
   const cast = [];
-  const people = (data.credits?.cast || []).slice(0,12);
+  const people = [...(data.credits?.cast || []).slice(0,12), ...(data.credits?.crew || []).filter((p: any) => ["Director", "Writer", "Screenplay", "Creator"].includes(p.job)).slice(0,6)];
   for (let offset = 0; offset < people.length; offset += 3) {
     cast.push(...await Promise.all(people.slice(offset, offset + 3).map(async (person: any) => ({
-      name: person.name, character: person.character || null, photo: await image(person.profile_path, "h632"),
+      name: person.name, character: person.character || person.job || null, photo: await image(person.profile_path, "h632"),
     }))));
   }
   const trailer = (data.videos?.results || []).filter((v: any) => v.site === "YouTube" && ["Trailer", "Teaser"].includes(v.type))
@@ -63,8 +63,9 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
     name: episode?.name || seriesMetadata.name!, parentTitle: tv ? data.name : null,
     overview: episode?.overview || data.overview || null, rating: episode?.vote_average ?? data.vote_average ?? null,
     runtime: episode?.runtime ?? data.runtime ?? null, poster: still || poster, backdrop: still || backdrop, matchStatus: "matched" },
+    collection: data.belongs_to_collection ? { id: data.belongs_to_collection.id, name: data.belongs_to_collection.name } : null,
     seriesMetadata: tv ? seriesMetadata : undefined, cast, tmdbId: id!, logo, seasons,
     tagline: data.tagline || null, certification: certification || null,
     trailer: trailer ? { provider: "youtube", key: trailer.key, name: trailer.name } : null,
-    metadataAt: missing ? 0 : Date.now(), metadataVersion: 2 };
+    metadataAt: missing ? 0 : Date.now(), metadataVersion: 2, discoveryVersion: 1 };
 }

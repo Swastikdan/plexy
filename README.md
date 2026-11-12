@@ -6,7 +6,7 @@ Plexy has three deliverables:
 - **Backend server** (`apps/server`): a standalone Bun executable with FFmpeg, migrations, and the built browser UI. Open its address in a browser, or disable UI serving with `--no-ui`.
 - **Mobile app** (`apps/mobile`): Expo Router app for files on the Android device. No Plexy server, account, pairing, remote playback, or server downloads. Metadata, artwork, community skip markers, and app updates can use their external services.
 
-`apps/web` is the frontend source embedded into desktop and backend releases. It is not a separate release artifact. `packages/api-client` contains browser API contracts/client logic; mobile reuses the data contracts. `packages/local-library` contains device indexing and metadata logic. Mobile-specific state, playback helpers, storage, and updates live in `apps/mobile/src/lib/client`.
+`apps/web` is the frontend source embedded into desktop and backend releases. It is not a separate release artifact. `packages/api-client` contains browser API contracts/client logic; mobile reuses the data contracts. `packages/local-library` contains device indexing and metadata logic. Mobile app infrastructure lives in `apps/mobile/src/core`, screen-specific UI and logic in `apps/mobile/src/features`, and reusable controls in `apps/mobile/src/shared`.
 
 ## Development
 

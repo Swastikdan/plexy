@@ -47,3 +47,19 @@ test("metadata settings reach title and season requests, poster downloads and re
  expect(f.paths.every(path=>path.includes("language=hi-IN") && path.includes("region=IN"))).toBe(true);
  expect(result.seriesMetadata?.poster).toContain("w500/poster.jpg"); expect(result.certification).toBe("U/A");
 });
+
+test("caches collection membership and key crew for local discovery", async () => {
+ const f = fixture();
+ const request = f.io.request;
+ f.io.request = async path => {
+  const data = await request(path);
+  if (!path.startsWith("/search")) {
+   data.belongs_to_collection = { id: 99, name: "Example Collection" };
+   data.credits.crew = [{ name: "Director", job: "Director", profile_path: null }];
+  }
+  return data;
+ };
+ const result = await fetchMetadata(record(), f.io);
+ expect(result.collection).toEqual({ id: 99, name: "Example Collection" });
+ expect(result.cast?.find(p => p.name === "Director")?.character).toBe("Director");
+});

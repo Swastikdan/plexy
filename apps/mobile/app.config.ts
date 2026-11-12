@@ -4,6 +4,17 @@ const rawBuild = Number(
   process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
 );
 const buildNumber = rawBuild < 2000 ? 2000 + rawBuild : rawBuild;
+const tmdbToken =
+  process.env.EXPO_PUBLIC_TMDB_TOKEN ||
+  process.env.TMDB_TOKEN ||
+  process.env.TMDB_ACCESS_TOKEN ||
+  process.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN ||
+  "";
+if (process.env.EAS_BUILD === "true" && !tmdbToken.trim()) {
+  throw new Error(
+    "EAS builds require TMDB_TOKEN or EXPO_PUBLIC_TMDB_TOKEN in their build environment.",
+  );
+}
 const config: ExpoConfig = {
   name: "Plexy",
   slug: "plexy-mobile",
@@ -31,14 +42,21 @@ const config: ExpoConfig = {
     ],
   },
   extra: {
-    tmdbToken: process.env.EXPO_PUBLIC_TMDB_TOKEN || process.env.TMDB_TOKEN || process.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN || "",
+    tmdbToken,
     buildNumber,
   },
   plugins: [
     "expo-router",
     "../../scripts/native/with-shared-build-inputs.cjs",
     "expo-sqlite",
-    ["expo-splash-screen", { image: "./assets/splash-icon.png", backgroundColor: "#000000", imageWidth: 132 }],
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/splash-icon.png",
+        backgroundColor: "#000000",
+        imageWidth: 132,
+      },
+    ],
     [
       "expo-video",
       { supportsPictureInPicture: true, supportsBackgroundPlayback: false },

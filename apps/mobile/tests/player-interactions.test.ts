@@ -1,10 +1,10 @@
-import { expect, test } from "bun:test";
+import { expect,test } from "bun:test";
 import {
-  clampZoom,
-  doubleTapSeek,
-  pinchZoom,
-  SEEK_SECONDS,
-} from "../src/lib/client/player-interactions";
+clampZoom,
+doubleTapSeek,
+pinchZoom,
+SEEK_SECONDS,
+} from "../src/features/player/lib/player-interactions";
 
 test("double taps seek 30 seconds on their own side of the video", () => {
   expect(SEEK_SECONDS).toBe(30);
@@ -34,16 +34,17 @@ test("a new pinch starts from the viewer's current manual zoom and stays within 
 test("custom player controls stay enabled and native controls stay off", async () => {
   const ts = await import("typescript");
   const source = await Bun.file(
-    new URL("../src/screens/Player.tsx", import.meta.url),
+    new URL("../src/features/player/playback-screen.tsx", import.meta.url),
   ).text();
   const file = ts.createSourceFile(
-    "Player.tsx",
+    "playback-screen.tsx",
     source,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
   let videoViews = 0;
+  let customControls = 0;
   const visit = (node: import("typescript").Node) => {
     if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
       const tag = node.tagName.getText(file);
@@ -59,7 +60,8 @@ test("custom player controls stay enabled and native controls stay off", async (
             controls.initializer.expression?.kind,
         ).toBe(ts.SyntaxKind.FalseKeyword);
       }
-      if (tag === "CircleBtn") {
+      if (tag === "PlayerControl") {
+        customControls++;
         const disabled = attributes.find(
           (attribute) => attribute.name.getText(file) === "disabled",
         );
@@ -70,12 +72,12 @@ test("custom player controls stay enabled and native controls stay off", async (
   };
   visit(file);
   expect(videoViews).toBe(1);
+  expect(customControls).toBeGreaterThan(0);
 });
 
 test("only the initial open uses a blocking spinner; seeking keeps controls", async () => {
-  const { shouldShowPlayerLoading } = await import(
-    "../src/lib/client/player-interactions"
-  );
+  const { shouldShowPlayerLoading } =
+    await import("../src/features/player/lib/player-interactions");
   expect(shouldShowPlayerLoading("loading", false, false)).toBe(true);
   expect(shouldShowPlayerLoading("loading", true, false)).toBe(false);
   expect(shouldShowPlayerLoading("loading", true, true)).toBe(false);

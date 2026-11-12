@@ -32,10 +32,13 @@ async function resolveBuildNumber() {
   return next;
 }
 
+const tmdbToken = Bun.env.EXPO_PUBLIC_TMDB_TOKEN || Bun.env.TMDB_TOKEN || Bun.env.TMDB_ACCESS_TOKEN || Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN;
+if (!tmdbToken?.trim()) throw new Error("Mobile release requires TMDB_TOKEN (or EXPO_PUBLIC_TMDB_TOKEN) for bundled metadata credentials.");
 const buildNumber = await resolveBuildNumber();
 const env = {
   ...Bun.env,
   NODE_ENV: "production",
+  EXPO_PUBLIC_TMDB_TOKEN: tmdbToken,
   PLEXY_BUILD_NUMBER: String(buildNumber),
 };
 

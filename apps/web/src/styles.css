@@ -1,9 +1,9 @@
-/* Plexy theme — T3 Code-inspired.
+/* Plexy theme — Driftboard true-dark aesthetic.
  *
- * - Matte true-black canvas; flat, zero-radius surfaces
+ * - Near-black shell canvas; charcoal surfaces with a cool blue-gray cast
  * - White is the single action color; no colored brand accent in chrome
  * - Geist Variable for all text — one family, two weights
- * - Hairline white/8% borders; no drop-shadows, no glow blobs
+ * - Soft off-white hairline borders; 18px card radius, calm grouped lists
  * - Amber reserved for ratings only
  */
 @import "tailwindcss";
@@ -67,12 +67,12 @@
   --font-display: var(--font-sans);
   --font-body: var(--font-sans);
 
-  /* Corner system: every radius derives from --radius (0 = sharp, T3-style geometry) */
+  /* Corner system: every radius derives from --radius (18px cards at lg) */
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) * 1.5);
   --radius-xl: calc(var(--radius) * 2);
-  --radius-2xl: calc(var(--radius) * 3);
+  --radius-2xl: calc(var(--radius) * 2);
   --radius-hero: calc(var(--radius) * 2);
   --radius-poster: calc(var(--radius) * 1.5);
 
@@ -256,55 +256,55 @@
 /* Dark is the default theme; the Settings toggle flips data-theme on <html>. */
 :root {
   color-scheme: dark;
-  --radius: 0rem;
+  --radius: 0.75rem;
 
-  /* Plexy tokens — T3 Code palette */
-  --canvas: #080808;
-  --surface: #111111;
-  --surface-2: #1a1a1a;
-  --surface-hover: #222222;
-  --ink: #f0f0f0;
-  --ink-muted: #777777;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.18);
+  /* Plexy tokens — Driftboard true-dark palette */
+  --canvas: #0b0c0e;
+  --surface: #16181c;
+  --surface-2: #1d2025;
+  --surface-hover: #22252b;
+  --ink: #f2f4f7;
+  --ink-muted: #9598a1;
+  --line: rgba(233, 239, 247, 0.07);
+  --line-strong: rgba(233, 239, 247, 0.16);
   /* White is the single action color — no colored accent in chrome */
   --brand: #f0f0f0;
   --brand-hover: #ffffff;
   --brand-active: #d4d4d4;
   --brand-text: #a0a0a0;
 
-  /* shadcn dark palette (base-nova) */
-  --background: oklch(0.08 0 0);
-  --foreground: oklch(0.95 0 0);
-  --card: oklch(0.12 0 0);
-  --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.14 0 0);
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.95 0 0);
-  --primary-foreground: oklch(0.08 0 0);
-  --secondary: oklch(0.18 0 0);
-  --secondary-foreground: oklch(0.85 0 0);
-  --muted: oklch(0.18 0 0);
-  --muted-foreground: oklch(0.48 0 0);
-  --accent: oklch(0.18 0 0);
-  --accent-foreground: oklch(0.95 0 0);
+  /* shadcn dark palette — kept in sync with the Driftboard tokens above */
+  --background: #0b0c0e;
+  --foreground: #f2f4f7;
+  --card: #16181c;
+  --card-foreground: #f2f4f7;
+  --popover: #1d2025;
+  --popover-foreground: #f2f4f7;
+  --primary: #f2f4f7;
+  --primary-foreground: #0b0c0e;
+  --secondary: #1d2025;
+  --secondary-foreground: #c9cdd4;
+  --muted: #1d2025;
+  --muted-foreground: #9598a1;
+  --accent: #22252b;
+  --accent-foreground: #f2f4f7;
   --destructive: oklch(0.63 0.2 25);
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.95 0 0);
+  --border: rgba(233, 239, 247, 0.07);
+  --input: rgba(233, 239, 247, 0.1);
+  --ring: #f2f4f7;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.10 0 0);
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.95 0 0);
-  --sidebar-primary-foreground: oklch(0.08 0 0);
-  --sidebar-accent: oklch(0.18 0 0);
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.95 0 0);
+  --sidebar: #0e1013;
+  --sidebar-foreground: #f2f4f7;
+  --sidebar-primary: #f2f4f7;
+  --sidebar-primary-foreground: #0b0c0e;
+  --sidebar-accent: #22252b;
+  --sidebar-accent-foreground: #f2f4f7;
+  --sidebar-border: rgba(233, 239, 247, 0.07);
+  --sidebar-ring: #f2f4f7;
 }
 
 /* One orchestrated entrance: hero and rows rise on first paint */

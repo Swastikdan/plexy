@@ -18,6 +18,8 @@ export interface LocalRecord {
   skips?: SkipSegments;
   skipsAt?: number;
   tmdbId?: number;
+  discoveryVersion?: number;
+  collection?: { id: number; name: string } | null;
   cast: TitleDetail["cast"];
   metadataVersion?: number;
   metadataError?: string;
@@ -244,7 +246,7 @@ export class LocalLibrary {
     for (const r of records) {
       r.identityRevision = (r.identityRevision || 0) + 1;
       r.skips = undefined; r.skipsAt = 0;
-      r.tmdbId = input.tmdbId; r.manualIdentity = true; r.metadataAt = 0; r.metadataVersion = 0;
+      r.collection = undefined; r.discoveryVersion = undefined; r.tmdbId = input.tmdbId; r.manualIdentity = true; r.metadataAt = 0; r.metadataVersion = 0;
       r.seriesMetadata = undefined; r.seasons = undefined; r.logo = null; r.trailer = null; r.cast = [];
       r.card = { ...r.card, kind: input.kind === "tv" ? "episode" : "movie", name: input.title.trim() || r.card.name,
         parentId, parentPublicId: parentId ? `local-${parentId}` : null, parentTitle: parentId ? input.title : null,
@@ -322,7 +324,7 @@ export class LocalLibrary {
       await this.persist();
       this.changed();
       for (const record of this.state.records) {
-        if (record.metadataVersion === 2 && Date.now() - record.metadataAt < 7 * 86400_000) continue;
+        if (record.metadataVersion === 2 && record.discoveryVersion === 1 && Date.now() - record.metadataAt < 7 * 86400_000) continue;
         await this.hydrate(record);
       }
       if (this.metadataSettings.markersEnabled) for (const record of [...this.state.records]) {
@@ -380,7 +382,7 @@ export class LocalLibrary {
       seasons: episodes ? [...new Set(episodes.map(e => e.seasonNumber ?? 1))].sort((a,b) => a-b).map(n => record.seasons?.find(s => s.number === n) || this.state.records.find(r => r.card.parentId === id && r.card.seasonNumber === n)?.seasons?.find(s => s.number === n) || { id: n, number: n, name: n === 0 ? "Specials" : `Season ${n}` }) : null,
       episodes, file: series ? null : { fileId: record.id, itemId: record.id, size: record.file.size,
         container: record.file.name.split(".").at(-1)!, duration: card.watch?.duration || null,
-        width: null, height: null, videoCodec: null, videoProfile: null, fps: null, hdr: null,
+        width: null, height: /(?:2160p|4k|uhd)/i.test(record.file.name) ? 2160 : /1080p/i.test(record.file.name) ? 1080 : /720p/i.test(record.file.name) ? 720 : null, videoCodec: null, videoProfile: null, fps: null, hdr: null,
         audio: [], subtitleCount: 0, analysisStatus: "local", analysisError: null,
         likelyPlayPath: "direct", likelyPlayReason: "Plays the original file on this device" },
       tmdbType: record.card.kind === "episode" ? "tv" : "movie", unmatched: card.matchStatus !== "matched", matchReason: record.metadataError || null };
