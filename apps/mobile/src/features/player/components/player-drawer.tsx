@@ -130,7 +130,20 @@ export function PlayerDrawer({
       onRequestClose={close}
       supportedOrientations={["landscape"]}
     >
-      <View className="flex-1 flex-row justify-end bg-black/60">
+      <View className="flex-1 flex-row justify-end">
+        <Animated.View
+          pointerEvents="none"
+          className="absolute inset-0 bg-black"
+          style={{
+            // Follow the panel in both directions instead of dropping the
+            // entire dimming layer only after the exit completes.
+            opacity: drawerAnim.interpolate({
+              inputRange: [0, 560],
+              outputRange: [0.6, 0],
+              extrapolate: "clamp",
+            }),
+          }}
+        />
         <Pressable
           className="absolute inset-0"
           focusable={false}
@@ -292,7 +305,7 @@ export function PlayerDrawer({
               </ScrollView>
             )}
 
-            {menu !== "episodes" && (
+            {renderedMenu !== "episodes" && (
               <ScrollView
                 contentContainerStyle={{
                   paddingBottom: Math.max(insets.bottom, 20),

@@ -1,6 +1,7 @@
-import React, { useRef, useState } from "react";
-import { Pressable, Text,View } from "react-native";
-import { useColors,timeLabel } from "@/shared/theme";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Pressable, Text, View } from "react-native";
+import { easings, useColors, timeLabel } from "@/shared/theme";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 
 interface TimelineBarProps {
   duration: number;
@@ -32,6 +33,26 @@ export function TimelineBar({
   bottom,
 }: TimelineBarProps) {
   const colors = useColors();
+  const reduceMotion = useReducedMotion();
+  const emphasis = useRef(new Animated.Value(scrubbing ? 1 : 0)).current;
+  useEffect(() => {
+    const animation = Animated.timing(emphasis, {
+      toValue: scrubbing ? 1 : 0,
+      duration: reduceMotion ? 0 : 140,
+      easing: easings.out,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [scrubbing, reduceMotion, emphasis]);
+  const trackScale = emphasis.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.5],
+  });
+  const thumbScale = emphasis.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 4 / 3],
+  });
   const width = useRef(1);
   const track = useRef<View>(null);
   const origin = useRef(0);
@@ -95,10 +116,10 @@ export function TimelineBar({
         className="flex-1 justify-center"
         style={{ height: 40 }}
       >
-        <View
+        <Animated.View
           pointerEvents="none"
           className="rounded-full bg-white/[0.22] overflow-visible"
-          style={{ height: scrubbing ? 6 : 4 }}
+          style={{ height: 4, transform: [{ scaleY: trackScale }] }}
         >
           {/* Buffered fill */}
           <View
@@ -115,24 +136,25 @@ export function TimelineBar({
               backgroundColor: colors.brand,
             }}
           />
-          {/* Thumb */}
-          <View
-            pointerEvents="none"
-            className="absolute top-1/2 rounded-full"
-            style={{
-              left: `${ratio * 100}%`,
-              width: scrubbing ? 24 : 18,
-              height: scrubbing ? 24 : 18,
-              marginTop: scrubbing ? -12 : -9,
-              marginLeft: scrubbing ? -12 : -9,
-              backgroundColor: colors.brand,
-              shadowColor: "#000",
-              shadowOpacity: 0.5,
-              shadowRadius: 4,
-              elevation: 4,
-            }}
-          />
-        </View>
+        </Animated.View>
+        {/* Keep the thumb outside the vertically scaled track so it stays round. */}
+        <Animated.View
+          pointerEvents="none"
+          className="absolute top-1/2 rounded-full"
+          style={{
+            left: `${ratio * 100}%`,
+            width: 18,
+            height: 18,
+            marginTop: -9,
+            marginLeft: -9,
+            transform: [{ scale: thumbScale }],
+            backgroundColor: colors.brand,
+            shadowColor: "#000",
+            shadowOpacity: 0.5,
+            shadowRadius: 4,
+            elevation: 4,
+          }}
+        />
       </View>
       {/* Remaining */}
       <Pressable onPress={() => setRemaining((v) => !v)} accessibilityRole="button" accessibilityLabel={remaining ? "Show episode duration" : "Show time remaining"} hitSlop={10}>
