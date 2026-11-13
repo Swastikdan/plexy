@@ -18,12 +18,12 @@ export function ReportAction({
       disabled={disabled}
       onPress={onPress}
       className={cn(
-        "min-h-[44px] items-center justify-center rounded-full px-4 py-3",
+        "min-h-[40px] min-w-[84px] items-center justify-center rounded-full px-5 py-2",
         subtle ? "bg-surface-secondary" : "bg-accent",
         "disabled:opacity-45 active:opacity-70",
       )}
     >
-      <Text className="text-[13px] font-archivo-medium text-foreground">
+      <Text className={cn("text-[13px] font-archivo-medium", subtle ? "text-foreground" : "text-white")}>
         {label}
       </Text>
     </Pressable>

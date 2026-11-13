@@ -80,3 +80,17 @@ test("opening a modal or starting a gesture cancels pending taps and double-tap 
   expect(p.seeks).toEqual([]);
   expect(p.visible).toBe(false);
 });
+
+
+test("each additional tap in a seek burst advances again without toggling controls", () => {
+  const p = player();
+  p.tap("right");
+  for (let i = 0; i < 5; i++) { p.advance(100); p.tap("right"); }
+  expect(p.seeks).toEqual([30, 30, 30, 30, 30]);
+  expect(p.toggles).toBe(0);
+  p.advance(350);
+  p.tap("left");
+  p.advance(100);
+  p.tap("left");
+  expect(p.seeks.at(-1)).toBe(-30);
+});

@@ -19,7 +19,10 @@ export function Loading({
   const shouldShowLogo = showLogo !== undefined ? showLogo : true;
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!shouldShowLogo) return;
+    if (!shouldShowLogo || reduceMotion) {
+      slide.setValue(0.5);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(slide, {

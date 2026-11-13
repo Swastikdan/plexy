@@ -106,7 +106,7 @@ export function EpisodeCard({
                 hitSlop={10}
                 className={cn(
                   "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-60",
-                  watched && "border-success/40 bg-success/15",
+                  watched && "border-accent/40 bg-accent/15",
                 )}
                 accessibilityRole="button"
                 accessibilityLabel={
@@ -117,7 +117,7 @@ export function EpisodeCard({
               >
                 <Check
                   size={14}
-                  color={watched ? colors.success : colors.muted}
+                  color={watched ? colors.brand : colors.muted}
                   strokeWidth={watched ? 2.6 : 2}
                 />
               </Pressable>

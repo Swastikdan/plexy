@@ -1,3 +1,6 @@
+import * as Linking from "expo-linking";
+import { fetchUpdateReleases } from "./lib/update-releases";
+import { selectUpdate } from "./lib/update-policy";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useUniwind } from "uniwind";
 import { Directory } from "expo-file-system";
@@ -39,6 +42,7 @@ export function SettingsScreen({ page = "settings" }: {
   const router = useRouter();
   const [, update] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const { api, runtime, preferences, updatePreferences } = useClient();
   const {
@@ -136,7 +140,7 @@ export function SettingsScreen({ page = "settings" }: {
             : page === "updates"
               ? "App updates"
               : page === "metadata"
-                ? "Metadata & episode markers"
+                ? "Metadata & markers"
                 : "Settings"
         }
         style={{
@@ -200,7 +204,7 @@ export function SettingsScreen({ page = "settings" }: {
               onPress={() => router.push("/settings/report")}
             />
             <SettingsRow
-              title="Metadata & episode markers"
+              title="Metadata & markers"
               subtitle="TMDB, artwork, intro, recap and credits"
               icon={Film}
               onPress={() => router.push("/settings/metadata")}
@@ -212,18 +216,11 @@ export function SettingsScreen({ page = "settings" }: {
               onPress={() => router.push("/settings/folders")}
             />
             <SettingsRow
-              title={
-                localLibrary.scanning
-                  ? "Updating your library…"
-                  : "Scan for changes"
-              }
-              subtitle="New files and artwork appear automatically"
+              title="Scan library"
+              subtitle="Choose folders and follow scan results"
               icon={Library}
-              onPress={
-                busy || localLibrary.scanning
-                  ? undefined
-                  : () => void action(() => localRuntime.refresh())
-              }
+              onPress={() => router.push("/settings/scan")}
+
             />
           </View>
           {localLibrary.issues.map((issue) => (
@@ -320,18 +317,15 @@ export function SettingsScreen({ page = "settings" }: {
               />
             </View>
             <SettingsRow
-              title="Update installation options"
-              subtitle="Allow installations or download the APK in your browser"
-              onPress={() => router.push("/settings/updates")}
+              title="Download from GitHub"
+              subtitle="Open the latest Android download"
+              onPress={() => void action(async () => {
+                const latest = selectUpdate(await fetchUpdateReleases(), "mobile", 0);
+                if (!latest) throw new Error("No Android download is available on GitHub yet.");
+                await Linking.openURL(latest.apkUrl);
+              })}
             />
-            <SettingsRow
-              title="Movie and TV information"
-              subtitle={
-                bundledMetadata
-                  ? "TMDB is ready to use. No setup needed."
-                  : "TMDB is unavailable in this build."
-              }
-            />
+
           </View>
           <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
             Videos stay in their original folders. Library data, artwork and
@@ -345,29 +339,12 @@ export function SettingsScreen({ page = "settings" }: {
       )}
       {page === "folders" && (
         <>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <SettingsRow
-              title="Add movie folder"
-              icon={Film}
-              onPress={
-                busy ? undefined : () => addFolder("movies")
-              }
-            />
-            <SettingsRow
-              title="Add TV show folder"
-              icon={Tv}
-              onPress={
-                busy ? undefined : () => addFolder("tv")
-              }
-            />
-            <SettingsRow
-              title="Add anime folder"
-              icon={Library}
-              onPress={
-                busy ? undefined : () => addFolder("anime")
-              }
-            />
-          </View>
+          <Button label="Add media folder" disabled={busy} onPress={() => showDialog("Add media folder", "Choose the type of videos in this folder.", [
+            { text: "Movies", onPress: () => addFolder("movies") },
+            { text: "TV shows", onPress: () => addFolder("tv") },
+            { text: "Anime", onPress: () => addFolder("anime") },
+            { text: "Cancel", style: "cancel" },
+          ])} />
           {localLibrary.state.roots
             .filter((r) => !r.singleFile)
             .map((root) => (
@@ -377,6 +354,7 @@ export function SettingsScreen({ page = "settings" }: {
               >
                 <SettingsRow
                   title={root.name || displayName(root.uri)}
+                  onPress={() => setExpandedFolder(current => current === root.uri ? null : root.uri)}
                   subtitle={
                     root.kind === "anime"
                       ? "Anime"
@@ -385,6 +363,12 @@ export function SettingsScreen({ page = "settings" }: {
                         : "Movies"
                   }
                 />
+                {expandedFolder === root.uri && <>
+                {localLibrary.state.records.filter(record => record.root === root.uri).map(record => (
+                  <SettingsRow key={record.id} title={record.card.name} subtitle={record.file.name} onPress={() => router.push({ pathname: "/item/[id]", params: { id: record.card.publicId } })} />
+                ))}
+                <SettingsRow title="Scan this folder" onPress={busy || localLibrary.scanning ? undefined : () => void action(() => localLibrary.scan([root.uri]))} />
+                <SettingsRow title="Add media folder" onPress={() => addFolder(root.kind)} />
                 <SettingsRow
                   title="Remove folder from library"
                   danger
@@ -406,6 +390,7 @@ export function SettingsScreen({ page = "settings" }: {
                     )
                   }
                 />
+                </>}
               </View>
             ))}
         </>
@@ -552,6 +537,10 @@ export function SettingsScreen({ page = "settings" }: {
         </>
       )}
       {page === "updates" && <Updates />}
+      <View className="mt-4 border-t border-border pt-5 gap-1">
+        <Text className="font-archivo-medium text-[13px] text-foreground">Plexy</Text>
+        <Text className="font-archivo-regular text-[12px] text-muted">Your library, on your device.</Text>
+      </View>
     </ScrollView>
   );
 }

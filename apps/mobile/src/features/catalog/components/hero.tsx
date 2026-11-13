@@ -4,7 +4,6 @@ import { Image, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
-import { useColors, withAlpha } from "@/shared/theme";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { HeroActions } from "./hero-actions";
 
@@ -43,7 +42,6 @@ export function Hero({
   preferred?: boolean;
   onHeroFocus?: () => void;
 }) {
-  const colors = useColors();
   const { api } = useClient();
   const insets = useSafeAreaInsets();
   // Build metadata line: Year, runtime, rating, episode info, and genres all in the same row
@@ -62,7 +60,7 @@ export function Hero({
     metaParts.push(
       <Text
         key="rating"
-        className="font-archivo-bold text-[11px] text-foreground/85"
+        className="font-archivo-bold text-[11px] text-white/85"
       >
         ★ {item.rating.toFixed(1)}
       </Text>,
@@ -92,7 +90,7 @@ export function Hero({
 
       {/* Bottom fade to canvas */}
       <LinearGradient
-        colors={[withAlpha(colors.canvas, 0), withAlpha(colors.canvas, 0.88), colors.canvas]}
+        colors={["rgba(8,10,14,0.04)", "rgba(8,10,14,0.80)", "rgba(8,10,14,0.98)"]}
         locations={[0.25, 0.72, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -113,7 +111,7 @@ export function Hero({
             />
           ) : (
             <Text
-              className="font-archivo-black text-[36px] leading-[42px] tracking-[-0.5px] text-foreground"
+              className="font-archivo-black text-[36px] leading-[42px] tracking-[-0.5px] text-white"
               numberOfLines={2}
               selectable={false}
             >
@@ -127,11 +125,11 @@ export function Hero({
               {metaParts.map((part, index) => (
                 <React.Fragment key={index}>
                   {index > 0 && (
-                    <Text className="text-[11px] text-foreground/50">·</Text>
+                    <Text className="text-[11px] text-white/50">·</Text>
                   )}
                   {typeof part === "string" ? (
                     <Text
-                      className="font-archivo-medium text-[11px] text-foreground/75"
+                      className="font-archivo-medium text-[11px] text-white/75"
                       selectable={false}
                     >
                       {part}
@@ -147,7 +145,7 @@ export function Hero({
           {/* 2-line synopsis / overview */}
           {showOverview && !!item.overview && (
             <Text
-              className="mt-1 font-archivo-regular text-[12px] leading-[18px] text-foreground/78"
+              className="mt-1 font-archivo-regular text-[12px] leading-[18px] text-white/78"
               numberOfLines={2}
               selectable={false}
             >

@@ -1,5 +1,5 @@
-import React, { useRef } from "react";
-import { Text,View } from "react-native";
+import React, { useRef, useState } from "react";
+import { Pressable, Text,View } from "react-native";
 import { useColors,timeLabel } from "@/shared/theme";
 
 interface TimelineBarProps {
@@ -18,7 +18,7 @@ interface TimelineBarProps {
 /**
  * Horizontal timeline along the bottom of the landscape player: 0:00 on the
  * left, the played fill (accent) grows rightward, elapsed time at the left
- * end and remaining time at the right end. Built on a plain responder View —
+ * end and episode duration (tap for remaining time) at the right end. Built on a plain responder View —
  * a Pressable here swallows the responder props and kills scrubbing.
  */
 export function TimelineBar({
@@ -33,6 +33,11 @@ export function TimelineBar({
 }: TimelineBarProps) {
   const colors = useColors();
   const width = useRef(1);
+  const track = useRef<View>(null);
+  const origin = useRef(0);
+  const target = useRef(value);
+  const [remaining, setRemaining] = useState(false);
+  const atPage = (x: number) => { target.current = timeAt(x - origin.current); return target.current; };
   const ratio =
     duration > 0 ? Math.min(1, Math.max(0, value / duration)) : 0;
   const bufferedRatio =
@@ -57,6 +62,7 @@ export function TimelineBar({
       </Text>
       {/* Track */}
       <View
+        ref={track}
         collapsable={false}
         accessibilityLabel="Playback position"
         accessibilityRole="adjustable"
@@ -78,12 +84,13 @@ export function TimelineBar({
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
         onResponderTerminationRequest={() => false}
-        onResponderTerminate={() => onCommit(value)}
-        onResponderGrant={(e) => onScrub(timeAt(e.nativeEvent.locationX))}
-        onResponderMove={(e) => onScrub(timeAt(e.nativeEvent.locationX))}
-        onResponderRelease={(e) => onCommit(timeAt(e.nativeEvent.locationX))}
+        onResponderTerminate={() => onCommit(target.current)}
+        onResponderGrant={(e) => onScrub(atPage(e.nativeEvent.pageX))}
+        onResponderMove={(e) => onScrub(atPage(e.nativeEvent.pageX))}
+        onResponderRelease={(e) => onCommit(atPage(e.nativeEvent.pageX))}
         onLayout={(e) => {
           width.current = Math.max(1, e.nativeEvent.layout.width);
+          track.current?.measureInWindow((left) => { origin.current = left; });
         }}
         className="flex-1 justify-center"
         style={{ height: 40 }}
@@ -128,9 +135,11 @@ export function TimelineBar({
         </View>
       </View>
       {/* Remaining */}
-      <Text className="w-[52px] text-right text-[12px] font-archivo-medium text-white/85">
-        {timeLabel(Math.max(0, duration - value))}
-      </Text>
+      <Pressable onPress={() => setRemaining((v) => !v)} accessibilityRole="button" accessibilityLabel={remaining ? "Show episode duration" : "Show time remaining"} hitSlop={10}>
+        <Text className="min-w-[52px] text-right text-[12px] font-archivo-medium text-white/85">
+          {remaining ? `-${timeLabel(Math.max(0, duration - value))}` : timeLabel(duration)}
+        </Text>
+      </Pressable>
     </View>
   );
 }

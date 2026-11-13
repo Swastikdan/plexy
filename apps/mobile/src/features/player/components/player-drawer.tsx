@@ -19,7 +19,7 @@ import type { PlayerMenu } from "../hooks/use-player-controls";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard, Playability } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
-import { timeLabel } from "@/shared/theme";
+import { timeLabel, easings } from "@/shared/theme";
 import { Film, Minus, Plus } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { SheetChips, SheetItem, SheetSection } from "./player-sheet";
@@ -64,9 +64,12 @@ export function PlayerDrawer({
   const { fitMode, applyFit, zoom } = picture;
   const { position: subVertical, setPosition: setSubVertical } = subtitles;
   const reduceMotion = useReducedMotion();
+  const [renderedMenu, setRenderedMenu] = useState(menu);
   const drawerAnim = useRef(new Animated.Value(560)).current;
   useEffect(() => {
+    drawerAnim.stopAnimation();
     if (menu != null) {
+      setRenderedMenu(menu);
       if (reduceMotion) {
         Animated.timing(drawerAnim, {
           toValue: 0,
@@ -86,10 +89,11 @@ export function PlayerDrawer({
       Animated.timing(drawerAnim, {
         toValue: 560,
         duration: reduceMotion ? 0 : 180,
-        easing: Easing.bezier(0.32, 0, 1, 1),
+        easing: easings.out,
         useNativeDriver: true,
-      }).start();
+      }).start(({ finished }) => { if (finished) setRenderedMenu(null); });
     }
+    return () => drawerAnim.stopAnimation();
   }, [menu, reduceMotion]);
   const episodesScrollRef = useRef<ScrollView>(null);
   const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<
@@ -123,9 +127,9 @@ export function PlayerDrawer({
   );
   return (
     <Modal
-      visible={menu != null}
+      visible={renderedMenu != null}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={close}
       supportedOrientations={["landscape"]}
     >
@@ -148,9 +152,9 @@ export function PlayerDrawer({
           <View className="flex-1">
             <View className="flex-row items-center justify-between border-b-[0.33px] border-border px-5 py-3.5">
               <Text className="text-foreground text-[17px] font-bold">
-                {menu === "quality"
+                {renderedMenu === "quality"
                   ? "Video quality"
-                  : menu === "episodes"
+                  : renderedMenu === "episodes"
                     ? `Episodes (${sortedEpisodes.length})`
                     : "Player settings"}
               </Text>
@@ -165,7 +169,7 @@ export function PlayerDrawer({
                 <X strokeWidth={2.2} size={18} color={colors.ink} />
               </Pressable>
             </View>
-            {menu === "episodes" && (
+            {renderedMenu === "episodes" && (
               <ScrollView
                 ref={episodesScrollRef}
                 contentContainerStyle={{
@@ -269,7 +273,7 @@ export function PlayerDrawer({
                         className={cn(
                           "ml-2 h-12 w-12 rounded-full items-center justify-center active:opacity-60",
                           isEpWatched
-                            ? "bg-success/20"
+                            ? "bg-accent/20"
                             : "bg-foreground/[0.08]",
                         )}
                         accessibilityRole="button"
@@ -281,7 +285,7 @@ export function PlayerDrawer({
                           strokeWidth={2.5}
                           size={16}
                           color={
-                            isEpWatched ? colors.success : colors.muted
+                            isEpWatched ? colors.brand : colors.muted
                           }
                         />
                       </Pressable>
@@ -298,7 +302,7 @@ export function PlayerDrawer({
                 }}
                 showsVerticalScrollIndicator={false}
               >
-                {menu === "settings" && (
+                {renderedMenu === "settings" && (
                   <>
                     <SheetSection label="Playback" />
                     <SheetChips
@@ -490,7 +494,7 @@ export function PlayerDrawer({
                     </>
                   </>
                 )}
-                {menu === "quality" && (
+                {renderedMenu === "quality" && (
                   <Text className="text-foreground/50 text-[14px] px-5 py-5">
                     Original file quality. No video conversion.
                   </Text>

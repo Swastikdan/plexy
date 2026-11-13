@@ -28,6 +28,9 @@ export function createPlayerTapController({
       if (seconds !== null) {
         reset();
         seekBy(seconds);
+        // Continue a same-side burst without requiring a new double tap.
+        previous = current;
+        timer = schedule(reset, DOUBLE_TAP_MS);
         return;
       }
       // Opposite-side taps are separate single taps, not a cancelled first tap.

@@ -266,3 +266,41 @@ test("catalog subtitle reads only a file's own tracks and respects cancellation"
   await expect(api.subtitle(id, uri, controller.signal)).rejects.toThrow("cancelled");
   expect(reads).toBe(1);
 });
+
+test("selected-folder scans preserve other folders and report discoveries", async () => {
+  const f = fixture();
+  const second = { ...root, uri: "content://other", name: "Other movies" };
+  f.library.state.roots = [root, second];
+  const walks: string[] = [];
+  f.io.walk = async folder => {
+    walks.push(folder.uri);
+    return [{ ...file(folder.uri === root.uri ? "Arrival.2016.mp4" : "Dune.2021.mp4"), uri: `${folder.uri}/video.mp4` }];
+  };
+  await f.library.scan();
+  expect(f.library.state.records).toHaveLength(2);
+  const otherId = f.library.state.records.find(r => r.root === second.uri)!.id;
+  walks.length = 0;
+  f.io.walk = async folder => { walks.push(folder.uri); return []; };
+  await f.library.scan([root.uri]);
+  expect(walks).toEqual([root.uri]);
+  expect(f.library.state.records.map(r => r.id)).toEqual([otherId]);
+  expect(f.library.scanProgress).toMatchObject({ phase: "Finished", folders: 1, found: 0, added: 0 });
+  await f.library.scan([]);
+  expect(f.library.state.records.map(r => r.id)).toEqual([otherId]);
+});
+
+test("All library view combines movie, television and anime with shared pagination", async () => {
+  const f = fixture();
+  f.library.state.roots = [root];
+  f.files([file("Arrival.2016.mp4"), file("Show.S01E01.mkv"), file("Anime.S01E01.mkv")]);
+  await f.library.scan();
+  const anime = f.library.state.records.find(r => r.card.name === "Anime")!;
+  anime.isAnime = true;
+  const api = new LocalApi(f.library, async () => "", async () => []);
+  const all = (await api.items("all", 0, "name")).items;
+  expect(all.map(c => c.name)).toEqual(["Anime", "Arrival", "Show"]);
+  expect((await api.items("movie")).items.map(c => c.name)).toEqual(["Arrival"]);
+  expect((await api.items("series")).items.map(c => c.name)).toEqual(["Show"]);
+  expect((await api.items("anime")).items.map(c => c.name)).toEqual(["Anime"]);
+  expect((await api.items("all", 1, "name")).items.map(c => c.name)).toEqual(["Arrival", "Show"]);
+});

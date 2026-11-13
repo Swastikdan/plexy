@@ -80,9 +80,9 @@ export class LocalApi extends LocalCatalog {
             ].filter((r) => r.items.length),
         };
     }
-    override async items(kind: "movie" | "series" | "anime", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
+    override async items(kind: "all" | "movie" | "series" | "anime", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
         this.checkSignal(signal);
-        let items = this.library.cards().filter((c) => kind === "anime" ? c.isAnime : c.kind === kind && !c.isAnime);
+        let items = this.library.cards().filter((c) => kind === "all" ? true : kind === "anime" ? c.isAnime : c.kind === kind && !c.isAnime);
         if (unwatched)
             items = items.filter((c) => !c.watch?.played);
         items.sort((a, b) => sort === "year" ? (b.year || 0) - (a.year || 0)

@@ -1,3 +1,5 @@
+import BadgeInfoIcon from "@hugeicons/core-free-icons/BadgeInfoIcon";
+import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useColors } from "@/shared/theme";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -5,7 +7,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { Check, Film, InfoSolid, Play, Trash2 } from "@/shared/ui/icons";
+import { Check, Film, Play, Trash2 } from "@/shared/ui/icons";
 import { playbackAction } from "@/features/catalog/lib/playback-action";
 export interface HeroActionsProps {
   item: ItemCard;
@@ -67,14 +69,14 @@ export function HeroActions({
         }}
         onBlur={() => setPlayFocus(false)}
         className={cn(
-          "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-foreground px-5 py-3.5",
+          "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-accent px-5 py-3.5",
           disabled && "opacity-40",
           "active:opacity-78",
         )}
       >
-        <Play size={22} color={colors.canvas} fill={colors.canvas} />
+        <Play size={22} color="#ffffff" fill="#ffffff" />
         <View style={{ alignItems: "center", flexShrink: 1 }}>
-          <Text className="font-archivo-bold text-[16px] tracking-[0.2px] text-background">
+          <Text className="font-archivo-bold text-[16px] tracking-[0.2px] text-white">
             {playLabel}
           </Text>
         </View>
@@ -91,14 +93,14 @@ export function HeroActions({
           }}
           onBlur={() => setDetailFocus(false)}
           className={cn(
-            "h-[52px] w-[52px] items-center justify-center rounded-full bg-foreground",
+            "h-[52px] w-[52px] items-center justify-center rounded-full bg-black/55 border border-white/30",
             "active:opacity-78",
           )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Details"
         >
-          <InfoSolid size={28} color={colors.canvas} />
+          <HugeiconsIcon icon={BadgeInfoIcon} size={28} color="#ffffff" />
         </Pressable>
       )}
       {onTrailer && (

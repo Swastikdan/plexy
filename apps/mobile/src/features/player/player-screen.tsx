@@ -1,3 +1,4 @@
+import { usePlayerOrientation } from "./hooks/use-player-orientation";
 import { useColors } from "@/shared/theme";
 import { View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
@@ -17,6 +18,7 @@ export function PlayerScreen({
   next: (id: number) => void;
 }) {
   const colors = useColors();
+  usePlayerOrientation(() => {});
   const { api, progress } = useClient();
   const resource = useResource(async () => {
     const manifest = await api.play(fileId);
@@ -34,7 +36,7 @@ export function PlayerScreen({
         }
       : manifest;
   }, [api, fileId]);
-  if (resource.loading) {
+  if (resource.loading || (resource.value && resource.value.fileId !== fileId)) {
     return (
       <View
         style={{

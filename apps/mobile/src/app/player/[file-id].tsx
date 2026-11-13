@@ -13,14 +13,10 @@ export default function PlayerRoute() {
     return <Notice message="This video is unavailable." />;
   return (
     <PlayerScreen
-      key={id}
       fileId={id}
       back={back}
       next={(next) =>
-        router.replace({
-          pathname: "/player/[file-id]",
-          params: { "file-id": String(next) },
-        })
+        router.setParams({ "file-id": String(next) })
       }
     />
   );

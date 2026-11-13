@@ -136,6 +136,7 @@ export class LocalLibrary {
   state: LocalState = { version: 1, nextId: 1, roots: [], records: [], series: {} };
   issues: string[] = [];
   scanning = false;
+  scanProgress = { phase: "idle", current: "", folders: 0, found: 0, added: 0 };
   private listeners = new Set<() => void>();
   private active: Promise<void> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -305,23 +306,32 @@ export class LocalLibrary {
     await this.persist();
     this.changed();
   }
-  scan(): Promise<void> {
+  scan(rootUris?: string[]): Promise<void> {
     if (this.active) return this.active;
-    this.active = this.runScan().finally(() => { this.active = null; });
+    this.active = this.runScan(rootUris).finally(() => { this.active = null; });
     return this.active;
   }
-  private async runScan() {
+  private async runScan(rootUris?: string[]) {
+    const selected = rootUris ? new Set(rootUris) : null;
+    const roots = this.state.roots.filter(root => !selected || selected.has(root.uri));
+    this.scanProgress = { phase: "Reading folders", current: "", folders: 0, found: 0, added: 0 };
     this.scanning = true;
     this.issues = [];
     this.changed();
     try {
-      for (const root of [...this.state.roots]) {
+      for (const root of roots) {
+        this.scanProgress.current = root.name;
+        this.changed();
         let files: LocalFile[];
         try { files = await this.io.walk(root); }
         catch { this.issues.push(`Cannot read ${root.name}. Grant folder access again; its saved library was kept.`); continue; }
+        this.scanProgress.folders++;
         const seen = new Set(files.map(f => localFileKey(f.uri)));
         const excluded = new Set((this.state.excluded || []).map(localFileKey));
         for (const file of files.filter(f => videos.test(f.name) && !excluded.has(localFileKey(f.uri)))) {
+          this.scanProgress.found++;
+          this.scanProgress.current = file.name;
+          this.changed();
           let record = this.state.records.find(r => localFileKey(r.file.uri) === localFileKey(file.uri));
           if (!record) {
             const isAnime = root.kind === "anime";
@@ -339,6 +349,7 @@ export class LocalLibrary {
               rating: null, runtime: null, genres: [], matchStatus: "unmatched", watch: null, isAnime,
             }};
             this.state.records.push(record);
+            this.scanProgress.added++;
           } else if (record.file.size !== file.size || record.file.modified !== file.modified) {
             record.file = file;
           }
@@ -348,14 +359,20 @@ export class LocalLibrary {
       // Make newly discovered files playable before any internet request finishes.
       await this.persist();
       this.changed();
-      for (const record of this.state.records) {
+      for (const record of this.state.records.filter(r => !selected || selected.has(r.root))) {
+        this.scanProgress.phase = "Matching titles";
+        this.scanProgress.current = record.file.name;
+        this.changed();
         if (record.metadataVersion === 2 && record.discoveryVersion === 1 && Date.now() - record.metadataAt < 7 * 86400_000) continue;
         await this.hydrate(record);
       }
-      if (this.metadataSettings.markersEnabled) for (const record of [...this.state.records]) {
+      if (this.metadataSettings.markersEnabled) for (const record of this.state.records.filter(r => !selected || selected.has(r.root))) {
+        this.scanProgress.phase = "Checking episode markers";
+        this.scanProgress.current = record.file.name;
+        this.changed();
         await this.getMarkers(record.id);
       }
-    } finally { this.scanning = false; this.changed(); }
+    } finally { this.scanning = false; this.scanProgress.phase = "Finished"; this.scanProgress.current = ""; this.changed(); }
   }
   cards(): ItemCard[] {
     const movies = this.state.records.filter(r => r.card.kind === "movie").map(r => ({

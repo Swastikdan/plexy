@@ -84,7 +84,7 @@ export function HeroCarousel({
                 // Mutually exclusive backgrounds — uniwind resolves
                 // conflicting bg-* classes by stylesheet order, not by
                 // className order, so a conditional override never wins.
-                index === activeIndex ? "bg-foreground" : "bg-foreground/28",
+                index === activeIndex ? "bg-white" : "bg-white/28",
               )}
               hitSlop={{ top: 12, bottom: 12, left: 3, right: 3 }}
               accessibilityRole="button"

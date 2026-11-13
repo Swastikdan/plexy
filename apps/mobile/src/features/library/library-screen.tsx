@@ -2,6 +2,7 @@ import React,{ useEffect,useRef,useState } from "react";
 import {
 Animated,
 FlatList,
+ScrollView,
 Modal,
 PanResponder,
 Pressable,
@@ -95,8 +96,8 @@ export function LibraryScreen({
   const colors = useColors();
   const { api, runtime } = useClient();
   const { width } = useWindowDimensions();
-  type LibraryTab = "movie" | "series" | "anime" | "collection";
-  const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || kind);
+  type LibraryTab = "all" | "movie" | "series" | "anime" | "collection";
+  const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || "all");
   const [sort, setSort] = useState("added");
   const [unwatched, setUnwatched] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -130,7 +131,7 @@ export function LibraryScreen({
   const hasAnime = (animeProbe.value?.items?.length ?? 0) > 0;
   const probesDone = movieProbe.value != null && seriesProbe.value != null;
   React.useEffect(() => {
-    if (activeTab === "collection") return;
+    if (activeTab === "collection" || activeTab === "all") return;
     if (probesDone) {
       if (hasMovies) {
         if (!hasSeries && !hasAnime && activeTab !== "movie")
@@ -147,7 +148,7 @@ export function LibraryScreen({
     }
   }, [hasMovies, hasSeries, hasAnime, probesDone, defaultSubTab, activeTab]);
   const libraryTabs = React.useMemo(() => {
-    const base: LibraryTab[] = [];
+    const base: LibraryTab[] = ["all"];
     if (!probesDone) {
       base.push("movie", "series");
       base.push("anime");
@@ -297,14 +298,17 @@ export function LibraryScreen({
       />
       {showLibTabs && (
         <View className="px-5 pb-3">
-          <View
-            className="flex-row h-[46px] p-[3px] rounded-full bg-surface border border-border"
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 1, padding: 3, gap: 2 }}
+            className="h-[46px] rounded-full bg-surface border border-border"
             accessibilityRole="tablist"
           >
             {libraryTabs.map((tab) => {
               const active = activeTab === tab;
               const label =
-                tab === "movie"
+                tab === "all"
+                  ? "All"
+                  : tab === "movie"
                   ? "Movies"
                   : tab === "series"
                     ? "TV Shows"
@@ -321,7 +325,7 @@ export function LibraryScreen({
                     switchTab(tab);
                   }}
                   className={cn(
-                    "flex-1 rounded-full items-center justify-center px-3",
+                    "min-w-[72px] flex-grow rounded-full items-center justify-center px-3",
                     active && "bg-foreground",
                     !active && "active:opacity-[0.65]",
                   )}
@@ -342,7 +346,7 @@ export function LibraryScreen({
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
       )}
 

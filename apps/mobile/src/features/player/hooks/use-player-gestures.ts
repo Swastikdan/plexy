@@ -1,3 +1,4 @@
+import { easings } from "@/shared/theme";
 import { createPlayerTapController } from "../lib/player-taps";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -10,7 +11,6 @@ import {
   clampZoom,
   DOUBLE_TAP_MS,
   pinchZoom,
-  SEEK_SECONDS,
   type PlayerTap,
 } from "../lib/player-interactions";
 export type FitMode = "contain" | "cover" | "fill";
@@ -46,7 +46,7 @@ export function usePlayerGestures({
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastScale = useRef(new Animated.Value(0.88)).current;
+  const toastScale = useRef(new Animated.Value(0.95)).current;
   const showFitToast = (label: string) => {
     setFitToast(label);
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
@@ -58,7 +58,7 @@ export function usePlayerGestures({
       toggleControls: () => callbacks.current.toggleControls(),
       seekBy: (seconds) => {
         callbacks.current.seekBy(seconds);
-        showFitToast(seconds > 0 ? `Forward ${SEEK_SECONDS} seconds` : `Back ${SEEK_SECONDS} seconds`);
+
       },
       schedule: (callback, delay) => setTimeout(callback, delay),
       cancel: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
@@ -69,21 +69,22 @@ export function usePlayerGestures({
     if (!enabled) cancelPendingTap();
   }, [enabled]);
   useEffect(() => () => cancelPendingTap(), []);
+  const toastVisible = fitToast != null;
   useEffect(() => {
-    if (fitToast) {
-      toastOpacity.setValue(0);
-      toastScale.setValue(0.88);
+    if (toastVisible) {
+      toastOpacity.stopAnimation();
+      toastScale.stopAnimation();
       Animated.parallel([
         Animated.timing(toastOpacity, {
           toValue: 1,
           duration: reduceMotion ? 0 : 160,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          easing: easings.out,
           useNativeDriver: true,
         }),
         Animated.timing(toastScale, {
           toValue: 1,
           duration: reduceMotion ? 0 : 160,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          easing: easings.out,
           useNativeDriver: true,
         }),
       ]).start();
@@ -91,11 +92,12 @@ export function usePlayerGestures({
       Animated.timing(toastOpacity, {
         toValue: 0,
         duration: reduceMotion ? 0 : 120,
-        easing: Easing.bezier(0.32, 0, 1, 1),
+        easing: easings.out,
         useNativeDriver: true,
       }).start();
     }
-  }, [fitToast, reduceMotion]);
+    return () => { toastOpacity.stopAnimation(); toastScale.stopAnimation(); };
+  }, [toastVisible, reduceMotion]);
   const applyFit = (mode: FitMode, scale: number) => {
     setFitMode(mode);
     const nextZoom = clampZoom(scale);

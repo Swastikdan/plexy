@@ -3,6 +3,8 @@ import { Image } from "expo-image";
 import { useEffect,useState } from "react";
 import {
 FlatList,
+PanResponder,
+ScrollView,
 Modal,
 Pressable,
 Text,
@@ -26,6 +28,15 @@ export function LibraryReportScreen() {
   const { api, runtime } = useClient();
   const [, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
+  const filters = ["all", "review", "files"] as const;
+  const swipe = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderRelease: (_, g) => {
+      if (Math.abs(g.dx) < 55 && !(Math.abs(g.dx) > 24 && Math.abs(g.vx) > 0.35)) return;
+      const next = filters[filters.indexOf(filter) + (g.dx < 0 ? 1 : -1)];
+      if (next) setFilter(next);
+    },
+  });
   const [editing, setEditing] = useState<ItemCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -51,7 +62,7 @@ export function LibraryReportScreen() {
     }
   }
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" {...swipe.panHandlers}>
       <FlatList
         data={items}
         keyExtractor={(item) => String(item.id)}
@@ -84,19 +95,21 @@ export function LibraryReportScreen() {
               Add videos, correct a match, or remove a title. Your original
               files stay untouched.
             </Text>
-            <View className="flex-row gap-2">
-              {(["all", "review", "files"] as const).map((f) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" className="h-[46px] rounded-full border border-border bg-surface" contentContainerStyle={{ flexGrow: 1, padding: 3 }}>
+              {filters.map((f) => (
                 <Pressable
                   key={f}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: filter === f }}
                   onPress={() => setFilter(f)}
                   className={cn(
-                    "rounded-full border px-4 py-2.5",
+                    "flex-grow rounded-full px-4 items-center justify-center",
                     filter === f
-                      ? "border-accent bg-accent/20"
-                      : "border-border bg-surface",
+                      ? "bg-foreground"
+                      : "bg-transparent",
                   )}
                 >
-                  <Text className="text-[13px] font-archivo-medium text-foreground">
+                  <Text className={cn("text-[13px] font-archivo-medium", filter === f ? "text-background" : "text-muted")}>
                     {f === "all"
                       ? `All titles (${all.length})`
                       : f === "files"
@@ -105,7 +118,7 @@ export function LibraryReportScreen() {
                   </Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
             {!!message && <Notice message={message} />}
           </View>
         }

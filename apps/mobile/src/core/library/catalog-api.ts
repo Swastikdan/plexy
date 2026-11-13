@@ -10,7 +10,7 @@ export interface TitleIdentity {
 /** In-process catalog contract. Implementations never connect to a Plexy server. */
 export abstract class LocalCatalog {
     abstract home(signal?: AbortSignal): Promise<HomePayload>;
-    abstract items(kind: "movie" | "series" | "anime", offset?: number, sort?: string, signal?: AbortSignal, unwatched?: boolean): Promise<{
+    abstract items(kind: "all" | "movie" | "series" | "anime", offset?: number, sort?: string, signal?: AbortSignal, unwatched?: boolean): Promise<{
         items: ItemCard[];
     }>;
     abstract detail(id: string | number, signal?: AbortSignal): Promise<TitleDetail>;

@@ -1,7 +1,7 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { ArrowLeft, Play, Pause, SlidersHorizontal } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
-import * as Orientation from "expo-screen-orientation";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -42,7 +42,6 @@ import { SpeedPanel } from "./components/speed-panel";
 import { TimelineBar } from "./components/timeline-bar";
 import { usePlayerControls } from "./hooks/use-player-controls";
 import { usePlayerGestures } from "./hooks/use-player-gestures";
-import { usePlayerOrientation } from "./hooks/use-player-orientation";
 import { bufferOptionsForDuration } from "./lib/player-buffer";
 import {
   SEEK_SECONDS,
@@ -198,7 +197,7 @@ export function PlaybackScreen({
     height: win.height,
     locked,
     reduceMotion,
-    seekBy: (seconds) => seek(currentPosition.current + seconds),
+    seekBy: (seconds) => seekWithFeedback(seconds),
     toggleControls,
     controlsVisible: visible,
     enabled: !locked && !resume && !menu && !speedPanel && !audioPanel,
@@ -251,6 +250,9 @@ export function PlaybackScreen({
   const video = useRef<VideoView>(null);
   const offset = useRef(0);
   const currentPosition = useRef(0);
+  const pendingSeek = useRef<{ target: number; until: number } | null>(null);
+  const scrubRef = useRef(scrub);
+  scrubRef.current = scrub;
   const durationRef = useRef(duration);
   durationRef.current = duration;
   const autoSkipEnd = useRef(-1);
@@ -308,6 +310,16 @@ export function PlaybackScreen({
     },
     [api, manifest.itemId, progress],
   );
+  const seekBurst = useRef({ seconds: 0, at: 0 });
+  const seekWithFeedback = (seconds: number) => {
+    const now = Date.now();
+    const previous = seekBurst.current;
+    const total = now - previous.at < 1200 && Math.sign(previous.seconds) === Math.sign(seconds)
+      ? previous.seconds + seconds : seconds;
+    seekBurst.current = { seconds: total, at: now };
+    seek(currentPosition.current + seconds);
+    showFitToast(`${total > 0 ? "Forward" : "Back"} ${Math.abs(total)} seconds`);
+  };
   const seek = (seconds: number) => {
     const target = Math.max(
       0,
@@ -318,6 +330,7 @@ export function PlaybackScreen({
     setCountdown(10);
     setAutoNextCancelled(false);
     reveal();
+    pendingSeek.current = { target, until: Date.now() + 2500 };
     player.currentTime = target;
     currentPosition.current = target;
     setPosition(target);
@@ -334,6 +347,10 @@ export function PlaybackScreen({
         if (!initialized.current) return;
         const value = offset.current + e.currentTime;
         setBufferedPosition(Math.max(0, e.bufferedPosition));
+        if (scrubRef.current != null) return;
+        const pending = pendingSeek.current;
+        if (pending && Date.now() < pending.until && Math.abs(value - pending.target) > 2) return;
+        pendingSeek.current = null;
         currentPosition.current = value;
         setPosition(value);
         if (Date.now() - lastSaved.current > 10000) {
@@ -504,17 +521,9 @@ export function PlaybackScreen({
     });
     return () => sub.remove();
   }, [player, save]);
-  usePlayerOrientation(() =>
-    setMessage("The device could not change screen orientation."),
-  );
   const exit = () => {
     save();
     player.pause();
-    {
-      void Orientation.lockAsync(Orientation.OrientationLock.PORTRAIT).catch(
-        () => {},
-      );
-    }
     back();
   };
   useEffect(() => {
@@ -735,7 +744,7 @@ export function PlaybackScreen({
               position: "absolute",
               left: "6%",
               right: "6%",
-              top: `${subVertical}%`,
+              top: `${show && subVertical > 60 ? Math.min(subVertical, 65) : subVertical}%`,
               alignItems: "center",
               transform: [{ translateY: subVertical > 50 ? -24 : 0 }],
             }}
@@ -763,6 +772,7 @@ export function PlaybackScreen({
           onTouchStart={() => { lastInteraction.current = Date.now(); }}
           onTouchEnd={() => { lastInteraction.current = Date.now(); }}
         >
+          <LinearGradient pointerEvents="none" colors={["transparent", "rgba(0,0,0,0.88)"]} style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 170 }} />
           {!openingVideo && !ended && !creditsPills && (
             <TimelineBar
               duration={duration}
@@ -888,7 +898,7 @@ export function PlaybackScreen({
             }
           >
             <PlayerControl
-              onPress={() => seek(currentPosition.current - SEEK_SECONDS)}
+              onPress={() => seekWithFeedback(-SEEK_SECONDS)}
               size={56}
               bg="transparent"
               accessibilityLabel={`Back ${SEEK_SECONDS} seconds`}
@@ -915,7 +925,7 @@ export function PlaybackScreen({
             </Pressable>
 
             <PlayerControl
-              onPress={() => seek(currentPosition.current + SEEK_SECONDS)}
+              onPress={() => seekWithFeedback(SEEK_SECONDS)}
               size={56}
               bg="transparent"
               accessibilityLabel={`Forward ${SEEK_SECONDS} seconds`}
@@ -1066,12 +1076,12 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
-              className="rounded-[14px] bg-foreground px-5 py-4 active:opacity-85"
+              className="rounded-[14px] bg-white px-5 py-4 active:opacity-85"
               style={({ pressed }) => ({
                 transform: [{ scale: pressed ? 0.97 : 1 }],
               })}
             >
-              <Text className="text-background font-archivo-bold text-[15px]">
+              <Text className="text-black font-archivo-bold text-[15px]">
                 Continue watching ({timeLabel(initialResume)})
               </Text>
             </Pressable>
@@ -1086,12 +1096,12 @@ export function PlaybackScreen({
               }}
               accessibilityRole="button"
               accessibilityLabel="Start from beginning"
-              className="rounded-[14px] bg-foreground/[0.14] border border-foreground/20 px-5 py-4 active:opacity-85"
+              className="rounded-[14px] bg-white/20 border border-white/40 px-5 py-4 active:opacity-85"
               style={({ pressed }) => ({
                 transform: [{ scale: pressed ? 0.97 : 1 }],
               })}
             >
-              <Text className="text-foreground/95 font-archivo-medium text-[15px]">
+              <Text className="text-white font-archivo-medium text-[15px]">
                 Start from beginning
               </Text>
             </Pressable>
