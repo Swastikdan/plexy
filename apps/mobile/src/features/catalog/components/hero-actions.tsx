@@ -1,3 +1,4 @@
+import { useTitleActions } from "../hooks/use-title-actions";
 import BadgeInfoIcon from "@hugeicons/core-free-icons/BadgeInfoIcon";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useColors } from "@/shared/theme";
@@ -7,7 +8,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { Check, Film, Play, Trash2 } from "@/shared/ui/icons";
+import { Check, Film, Play, Trash2, MoreHorizontal } from "@/shared/ui/icons";
 import { playbackAction } from "@/features/catalog/lib/playback-action";
 export interface HeroActionsProps {
   item: ItemCard;
@@ -38,6 +39,7 @@ export function HeroActions({
   hideActions = false,
 }: HeroActionsProps) {
   const colors = useColors();
+  const titleActions = useTitleActions();
   const { api } = useClient();
   const [, setPlayFocus] = useState(false);
   const [, setDetailFocus] = useState(false);
@@ -59,6 +61,8 @@ export function HeroActions({
           triggerHaptic("medium");
           onOpen();
         }}
+        onLongPress={() => titleActions(item, onOpen, playLabel.toLowerCase().includes("continue"))}
+        delayLongPress={1000}
         disabled={disabled || busy}
         accessibilityState={{ disabled: disabled || busy, busy }}
         accessibilityRole="button"
@@ -81,6 +85,7 @@ export function HeroActions({
           </Text>
         </View>
       </Pressable>
+      {playLabel.toLowerCase().includes("continue") && <Pressable accessibilityRole="button" accessibilityLabel="Continue watching actions" disabled={busy} onPress={() => titleActions(item, onOpen, true)} className="h-[52px] w-[52px] items-center justify-center rounded-full border border-border bg-surface active:opacity-78"><MoreHorizontal size={22} color={colors.ink} /></Pressable>}
       {onDetails && (
         <Pressable
           onPress={() => {

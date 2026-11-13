@@ -1,10 +1,11 @@
+import { SwipePager, usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
+import { PageHeader } from "@/shared/ui/page-header";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Image } from "expo-image";
 import { useEffect,useState } from "react";
 import {
 FlatList,
-PanResponder,
 ScrollView,
 Modal,
 Pressable,
@@ -24,26 +25,18 @@ import { IdentifyTitle } from "./components/identify-title";
 import { ReportAction } from "./components/report-action";
 
 export function LibraryReportScreen() {
+  const filterBoundary = usePagerGestureBoundary();
   const showDialog = useAppDialog();
   const colors = useColors();
   const { api, runtime } = useClient();
   const [, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
   const filters = ["all", "review", "files"] as const;
-  const swipe = PanResponder.create({
-    onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-    onPanResponderRelease: (_, g) => {
-      if (Math.abs(g.dx) < 55 && !(Math.abs(g.dx) > 24 && Math.abs(g.vx) > 0.35)) return;
-      const next = filters[filters.indexOf(filter) + (g.dx < 0 ? 1 : -1)];
-      if (next) { triggerHaptic("selection"); setFilter(next); }
-    },
-  });
   const [editing, setEditing] = useState<ItemCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
   const all = api.report("all");
-  const items = api.report(filter);
   async function add(kind: LocalRoot["kind"]) {
     setBusy(true);
     setMessage("");
@@ -63,12 +56,10 @@ export function LibraryReportScreen() {
     }
   }
   return (
-    <View className="flex-1 bg-background" {...swipe.panHandlers}>
+    <View className="flex-1 bg-background">
           <View className="px-5 pt-4 pb-3 gap-3.5">
             <View className="flex-row items-center justify-between">
-              <Text className="text-[28px] font-archivo-bold text-foreground tracking-[-0.6px]">
-                Library report
-              </Text>
+              <PageHeader title="Library report" style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, flex: 1 }} />
               <ReportAction
                 label={busy ? "Adding…" : "+ Add"}
                 disabled={busy}
@@ -89,7 +80,7 @@ export function LibraryReportScreen() {
             <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
               Manage videos and title matches.
             </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" className="h-[46px] rounded-full border border-border bg-surface" contentContainerStyle={{ flexGrow: 1, padding: 3 }}>
+            <ScrollView {...filterBoundary} horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" className="h-[46px] rounded-full border border-border bg-surface" contentContainerStyle={{ flexGrow: 1, padding: 3 }}>
               {filters.map((f) => (
                 <Pressable
                   key={f}
@@ -115,14 +106,14 @@ export function LibraryReportScreen() {
             </ScrollView>
             {!!message && <Notice message={message} />}
           </View>
-      <FlatList
-        data={items}
+      <SwipePager pageKeys={filters} index={filters.indexOf(filter)} onChange={index => { triggerHaptic("selection"); setFilter(filters[index]!); }} renderPage={index => <FlatList
+        data={api.report(filters[index]!)}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={{ padding: 20, paddingBottom: 30, gap: 12 }}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
-            {filter === "review"
+            {filters[index] === "review"
               ? "No titles need attention."
               : "No titles yet. Add a video here, or connect a folder in Settings."}
           </Text>
@@ -219,7 +210,7 @@ export function LibraryReportScreen() {
             </View>
           );
         }}
-      />
+      />} />
       <Modal
         visible={!!editing}
         animationType="slide"

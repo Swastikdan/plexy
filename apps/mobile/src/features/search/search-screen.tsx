@@ -119,7 +119,7 @@ export function SearchScreen({
         )}
       </View>
 
-      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32, gap: 14 }} showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingBottom: 32, gap: 14 }} showsVerticalScrollIndicator={false}>
       {/* States */}
       {debounced && data.loading ? (
         <Loading />
@@ -168,7 +168,7 @@ export function SearchScreen({
           </>
         )
       ) : !data.value?.titles.length && !data.value?.episodes.length ? (
-        <Notice message="No results. Try another title." />
+        <View className="flex-1 items-center justify-center px-6"><View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5"><Text className="text-center text-[14px] font-archivo-medium text-muted">No results. Try another one.</Text></View></View>
       ) : (
         <>
           {!!data.value?.titles.length && (

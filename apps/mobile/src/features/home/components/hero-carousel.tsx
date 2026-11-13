@@ -1,3 +1,5 @@
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
+import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { useMemo } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -23,6 +25,8 @@ export function HeroCarousel({
   open: OpenTitle;
   onHeroFocus?: () => void;
 }) {
+  const titleActions = useTitleActions();
+  const pagerBoundary = usePagerGestureBoundary();
   const { width } = useWindowDimensions();
   const { activeItem, activeIndex, changing, contentStyle, select, step } =
     useHeroTransition(items);
@@ -49,9 +53,9 @@ export function HeroCarousel({
   if (!activeItem) return null;
 
   return (
-    <View className="relative w-full">
+    <View {...pagerBoundary} className="relative w-full">
       <GestureDetector gesture={swipe}>
-        <View className="overflow-hidden">
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => open(activeItem.publicId)} onLongPress={() => titleActions(activeItem, () => onPlay(activeItem), Boolean(activeItem.watch?.position && !activeItem.watch?.played))} delayLongPress={1000} className="overflow-hidden">
           <Animated.View style={contentStyle} pointerEvents="none">
             <Hero
               key={activeItem.publicId}
@@ -62,7 +66,7 @@ export function HeroCarousel({
               onOpen={() => {}}
             />
           </Animated.View>
-        </View>
+        </Pressable>
       </GestureDetector>
       <View className="absolute left-5 right-5 bottom-[28px]">
         <HeroActions

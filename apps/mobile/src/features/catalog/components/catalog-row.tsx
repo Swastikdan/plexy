@@ -1,3 +1,5 @@
+import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
+import { useTitleActions } from "../hooks/use-title-actions";
 import { useRef } from "react";
 import { FlatList,Text,View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
@@ -25,7 +27,9 @@ export function CatalogRow({
   focused: (id: number) => void;
   onRowFocus?: () => void;
 }) {
+  const pagerBoundary = usePagerGestureBoundary();
   const { api } = useClient();
+  const titleActions = useTitleActions();
   const ref = useRef<FlatList<ItemCard>>(null);
   const cardWidth = isContinueWatching ? 220 : 150;
   return (
@@ -35,7 +39,7 @@ export function CatalogRow({
         <Text className="font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">{title}</Text>
       </View>
 
-      <FlatList
+      <FlatList {...pagerBoundary}
         ref={ref}
         horizontal
         data={items}
@@ -52,6 +56,7 @@ export function CatalogRow({
             <ContinueWatchingCard
               item={item}
               api={api}
+              onLongPress={() => titleActions(item, () => onPlay ? onPlay(item) : open(item.publicId), isContinueWatching)}
               onFocus={() => {
                 onRowFocus?.();
               }}
@@ -68,6 +73,7 @@ export function CatalogRow({
               width={cardWidth}
               item={item}
               api={api}
+              onLongPress={() => titleActions(item, () => onPlay ? onPlay(item) : open(item.publicId), isContinueWatching)}
               onFocus={() => {
                 onRowFocus?.();
               }}

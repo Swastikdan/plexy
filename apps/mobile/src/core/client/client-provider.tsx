@@ -45,6 +45,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
                 ...(await readJson<Partial<Preferences>>(PREFERENCE_KEY, {})),
             };
             saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
+            if (![5, 10, 15, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
             Uniwind.setTheme(saved.theme);
             preferencesRef.current = saved;
             if (live)

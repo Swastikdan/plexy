@@ -1,14 +1,10 @@
+import { SwipePager, usePagerDrag } from "@/shared/ui/swipe-pager";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
-import React,{ useRef,useState } from "react";
-import {
-Linking,
-Pressable,
-ScrollView,
-Text,
-View,
-} from "react-native";
+import React, { useRef, useState } from "react";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
@@ -17,15 +13,15 @@ import { useOnline } from "@/shared/hooks/use-online";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { cn } from "@/shared/lib/cn";
-import { useColors,control } from "@/shared/theme";
+import { useColors, control } from "@/shared/theme";
 import {
-ArrowLeft,
-Check,
-Film,
-Info,
-MoreHorizontal,
-Play,
-Trash2,
+  ArrowLeft,
+  Check,
+  Film,
+  Info,
+  MoreHorizontal,
+  Play,
+  Trash2,
 } from "@/shared/ui/icons";
 import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
@@ -47,6 +43,9 @@ export function TitleScreen({
   play: (fileId: number) => void;
 }) {
   const showDialog = useAppDialog();
+  const detailPager = usePagerDrag();
+  const seasonPager = usePagerDrag();
+  const titleActions = useTitleActions();
   const colors = useColors();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
@@ -54,6 +53,8 @@ export function TitleScreen({
   const router = useRouter();
   const online = useOnline();
   const detailScroll = useRef<ScrollView>(null);
+  const seasonStrip = useRef<ScrollView>(null);
+  const seasonLayouts = useRef<Record<number, number>>({});
   const reducedMotion = useReducedMotion();
   const [personName, setPersonName] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -70,7 +71,10 @@ export function TitleScreen({
   >({});
   const detail = data.value;
   const item = detail?.item;
-  const titlesByPerson = React.useMemo(() => api.titlesByPerson(), [api, detail]);
+  const titlesByPerson = React.useMemo(
+    () => api.titlesByPerson(),
+    [api, detail],
+  );
   const personTitles = (name: string) => titlesByPerson.get(name) ?? [];
   const isSeriesWatched = overrideWatched ?? Boolean(item?.watch?.played);
   async function watched() {
@@ -157,6 +161,13 @@ export function TitleScreen({
     return detail?.file?.fileId ?? detailAction.fileId;
   }
   const selectedSeason = season ?? detail?.seasons?.[0]?.number;
+  React.useEffect(() => {
+    if (selectedSeason != null)
+      seasonStrip.current?.scrollTo({
+        x: Math.max(0, (seasonLayouts.current[selectedSeason] ?? 0) - 16),
+        animated: !reducedMotion,
+      });
+  }, [selectedSeason, reducedMotion]);
   const hasEpisodes = Boolean(detail?.episodes?.length);
   return (
     <View className="flex-1 bg-background">
@@ -212,7 +223,10 @@ export function TitleScreen({
                 {!!actionError && <Notice message={actionError} />}
                 {hasEpisodes ? (
                   <>
-                    <View className="mb-1.5 mt-1 flex-row gap-1.5 rounded-full bg-surface p-1">
+                    <View
+                      {...detailPager.panHandlers}
+                      className="mb-1.5 mt-1 flex-row gap-1.5 rounded-full bg-surface p-1"
+                    >
                       <Pressable
                         accessibilityRole="tab"
                         accessibilityState={{
@@ -269,125 +283,194 @@ export function TitleScreen({
                       </Pressable>
                     </View>
 
-                    {detailTab === "episodes" ? (
-                      <>
-                        {!!detail.seasons?.length && (
-                          <ScrollView
-                            horizontal
-                            accessibilityRole="tablist"
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={{ gap: 28, paddingBottom: 2 }}
-                          >
-                            {detail.seasons.map((s: any) => {
-                              const active = selectedSeason === s.number;
-                              const label =
-                                s.number === 0
-                                  ? "Specials"
-                                  : `Season ${s.number}`;
-                              return (
-                                <Pressable
-                                  key={s.number}
-                                  accessibilityRole="tab"
-                                  accessibilityLabel={label}
-                                  accessibilityState={{ selected: active }}
-                                  onPress={() => {
-                                    triggerHaptic("selection");
-                                    setSeason(s.number);
-                                  }}
-                                  onFocus={() => setSeasonFocus(s.number)}
-                                  onBlur={() => setSeasonFocus(null)}
-                                  className={cn(
-                                    "min-h-12 justify-center border-b-2 py-3 active:opacity-65",
-                                    // Mutually exclusive states: uniwind
-                                    // resolves conflicting border-b-*/text-*
-                                    // classes by stylesheet order, not
-                                    // className order. Border weight and
-                                    // padding never change, so the pill keeps
-                                    // its exact height.
-                                    active
-                                      ? "border-b-foreground"
-                                      : seasonFocus === s.number
-                                        ? "border-b-accent"
-                                        : "border-b-transparent",
-                                  )}
-                                >
-                                  <Text
-                                    className={cn(
-                                      "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
-                                      active ? "text-foreground" : "text-muted",
-                                    )}
+                    <SwipePager
+                      controller={detailPager.controller}
+                      autoHeight
+                      pageKeys={["episodes", "details"]}
+                      index={detailTab === "episodes" ? 0 : 1}
+                      onChange={(index) => {
+                        triggerHaptic("selection");
+                        setDetailTab(index === 0 ? "episodes" : "details");
+                      }}
+                      renderPage={(page) => (
+                        <View className="gap-[18px]">
+                          {page === 0 ? (
+                            <>
+                              {!!detail.seasons?.length && (
+                                <View {...seasonPager.panHandlers}>
+                                  <ScrollView
+                                    ref={seasonStrip}
+                                    horizontal
+                                    accessibilityRole="tablist"
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={{
+                                      gap: 28,
+                                      paddingBottom: 2,
+                                    }}
                                   >
-                                    {label}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </ScrollView>
-                        )}
-                        {detail.episodes
-                          ?.filter(
-                            (e: any) =>
-                              selectedSeason == null ||
-                              e.seasonNumber === selectedSeason,
-                          )
-                          .map((ep: any) => {
-                            const isEpWatched =
-                              episodesWatchedOverride[ep.id] ??
-                              (progress.latest(ep.id)?.played ||
-                                Boolean(ep.watch?.played));
-                            return (
-                              <EpisodeCard
-                                key={ep.id}
-                                ep={{
-                                  ...ep,
-                                  watch: {
-                                    ...ep.watch,
-                                    played: isEpWatched,
-                                    position: isEpWatched
-                                      ? ep.watch?.duration ||
-                                        (ep.runtime ? ep.runtime * 60 : 3600)
-                                      : ep.watch?.position || 0,
-                                  },
+                                    {detail.seasons.map((s: any) => {
+                                      const active =
+                                        selectedSeason === s.number;
+                                      const label =
+                                        s.number === 0
+                                          ? "Specials"
+                                          : `Season ${s.number}`;
+                                      return (
+                                        <Pressable
+                                          key={s.number}
+                                          onLayout={(event) => {
+                                            seasonLayouts.current[s.number] =
+                                              event.nativeEvent.layout.x;
+                                          }}
+                                          accessibilityRole="tab"
+                                          accessibilityLabel={label}
+                                          accessibilityState={{
+                                            selected: active,
+                                          }}
+                                          onPress={() => {
+                                            triggerHaptic("selection");
+                                            setSeason(s.number);
+                                          }}
+                                          onFocus={() =>
+                                            setSeasonFocus(s.number)
+                                          }
+                                          onBlur={() => setSeasonFocus(null)}
+                                          className={cn(
+                                            "min-h-12 justify-center border-b-2 py-3 active:opacity-65",
+                                            // Mutually exclusive states: uniwind
+                                            // resolves conflicting border-b-*/text-*
+                                            // classes by stylesheet order, not
+                                            // className order. Border weight and
+                                            // padding never change, so the pill keeps
+                                            // its exact height.
+                                            active
+                                              ? "border-b-foreground"
+                                              : seasonFocus === s.number
+                                                ? "border-b-accent"
+                                                : "border-b-transparent",
+                                          )}
+                                        >
+                                          <Text
+                                            className={cn(
+                                              "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
+                                              active
+                                                ? "text-foreground"
+                                                : "text-muted",
+                                            )}
+                                          >
+                                            {label}
+                                          </Text>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </ScrollView>
+                                </View>
+                              )}
+                              <SwipePager
+                                controller={seasonPager.controller}
+                                scrollEnabled={false}
+                                autoHeight
+                                pageKeys={
+                                  detail.seasons?.length
+                                    ? detail.seasons.map((s) =>
+                                        String(s.number),
+                                      )
+                                    : ["all"]
+                                }
+                                index={Math.max(
+                                  0,
+                                  detail.seasons?.findIndex(
+                                    (s) => s.number === selectedSeason,
+                                  ) ?? 0,
+                                )}
+                                onChange={(index) => {
+                                  triggerHaptic("selection");
+                                  setSeason(
+                                    detail.seasons?.[index]?.number ?? null,
+                                  );
                                 }}
-                                api={api}
-                                play={play}
-                                item={item}
-                                onToggleWatched={toggleEpisodeWatched}
+                                renderPage={(seasonIndex) => (
+                                  <View className="gap-[18px] pt-3">
+                                    {detail.episodes
+                                      ?.filter(
+                                        (e: any) =>
+                                          !detail.seasons?.length ||
+                                          e.seasonNumber ===
+                                            detail.seasons?.[seasonIndex]
+                                              ?.number,
+                                      )
+                                      .map((ep: any) => {
+                                        const isEpWatched =
+                                          episodesWatchedOverride[ep.id] ??
+                                          (progress.latest(ep.id)?.played ||
+                                            Boolean(ep.watch?.played));
+                                        return (
+                                          <EpisodeCard
+                                            key={ep.id}
+                                            ep={{
+                                              ...ep,
+                                              watch: {
+                                                ...ep.watch,
+                                                played: isEpWatched,
+                                                position: isEpWatched
+                                                  ? ep.watch?.duration ||
+                                                    (ep.runtime
+                                                      ? ep.runtime * 60
+                                                      : 3600)
+                                                  : ep.watch?.position || 0,
+                                              },
+                                            }}
+                                            api={api}
+                                            play={play}
+                                            item={item}
+                                            onToggleWatched={
+                                              toggleEpisodeWatched
+                                            }
+                                          />
+                                        );
+                                      })}
+                                  </View>
+                                )}
                               />
-                            );
-                          })}
-                      </>
-                    ) : (
-                      <>
-                        <Text className="font-archivo-regular text-[14px] leading-[22px] text-foreground/80">
-                          {detail.metadata?.overview ||
-                            item.overview ||
-                            "No synopsis is available."}
-                        </Text>
-                        {detail.file &&
-                          (detail.file.height ||
-                            detail.file.videoCodec ||
-                            detail.file.hdr) && (
-                            <Text className="self-start rounded-lg bg-accent/20 px-3 py-2 font-archivo-medium text-[12px] tracking-[0.3px] text-accent">
-                              {[
-                                detail.file.height
-                                  ? `${detail.file.height >= 2160 ? "4K" : detail.file.height >= 720 ? "HD" : "SD"} · ${detail.file.height}p`
-                                  : null,
-                                (detail.file as any).videoCodec?.toUpperCase(),
-                                (detail.file as any).hdr,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text className="font-archivo-regular text-[14px] leading-[22px] text-foreground/80">
+                                {detail.metadata?.overview ||
+                                  item.overview ||
+                                  "No synopsis is available."}
+                              </Text>
+                              {detail.file &&
+                                (detail.file.height ||
+                                  detail.file.videoCodec ||
+                                  detail.file.hdr) && (
+                                  <Text className="self-start rounded-lg bg-accent/20 px-3 py-2 font-archivo-medium text-[12px] tracking-[0.3px] text-accent">
+                                    {[
+                                      detail.file.height
+                                        ? `${detail.file.height >= 2160 ? "4K" : detail.file.height >= 720 ? "HD" : "SD"} · ${detail.file.height}p`
+                                        : null,
+                                      (
+                                        detail.file as any
+                                      ).videoCodec?.toUpperCase(),
+                                      (detail.file as any).hdr,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </Text>
+                                )}
+                              <CastRow
+                                people={detail.cast ?? []}
+                                api={api}
+                                canOpen={(name) =>
+                                  personTitles(name).length > 0
+                                }
+                                onSelect={setPersonName}
+                              />
+                            </>
                           )}
-                        <CastRow
-                          people={detail.cast ?? []}
-                          api={api}
-                          canOpen={(name) => personTitles(name).length > 0}
-                          onSelect={setPersonName}
-                        />
-                      </>
-                    )}
+                        </View>
+                      )}
+                    />
                   </>
                 ) : (
                   <>
@@ -506,23 +589,55 @@ export function TitleScreen({
             style={{ paddingBottom: Math.max(insets.bottom, 14) }}
           >
             <NativeButton
-              className="flex-1 justify-center rounded-full bg-foreground px-5"
+              className="flex-1 justify-center rounded-full bg-accent px-5"
               style={{ height: control.height, minHeight: control.height }}
               size="lg"
               accessibilityLabel={detailAction.accessibilityLabel}
+              onLongPress={() =>
+                titleActions(
+                  item,
+                  () => {
+                    const fid = getFirstPlayableFileId();
+                    if (fid) play(fid);
+                  },
+                  true,
+                )
+              }
+              delayLongPress={1000}
               isDisabled={!getFirstPlayableFileId()}
               onPress={() => {
                 const fileId = getFirstPlayableFileId();
                 if (fileId) play(fileId);
               }}
             >
-              <Play size={22} color={colors.canvas} fill={colors.canvas} />
+              <Play size={22} color="#fff" fill="#fff" />
               <View style={{ alignItems: "center", flexShrink: 1 }}>
-                <NativeButton.Label className="text-background">
+                <NativeButton.Label className="text-white">
                   {detailAction.label}
                 </NativeButton.Label>
               </View>
             </NativeButton>
+            {detailAction.label === "Continue watching" && (
+              <NativeButton
+                isIconOnly
+                variant="secondary"
+                size="lg"
+                accessibilityLabel="Continue watching actions"
+                onPress={() =>
+                  titleActions(
+                    item,
+                    () => {
+                      const fid = getFirstPlayableFileId();
+                      if (fid) play(fid);
+                    },
+                    true,
+                  )
+                }
+                className="rounded-full"
+              >
+                <MoreHorizontal size={22} color={colors.ink} />
+              </NativeButton>
+            )}
             {detail.trailer?.provider?.toLowerCase() === "youtube" && (
               <NativeButton
                 variant="secondary"

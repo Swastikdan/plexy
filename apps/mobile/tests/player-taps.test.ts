@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createPlayerTapController } from "@/features/player/lib/player-taps";
 
-function player(visible = true) {
+function player(visible = true, seekSeconds = () => 10) {
   let now = 1000;
   let nextId = 0;
   let toggles = 0;
@@ -9,6 +9,7 @@ function player(visible = true) {
   const timers = new Map<number, { at: number; callback: () => void }>();
   const controller = createPlayerTapController({
     toggleControls: () => { visible = !visible; toggles++; },
+    seekSeconds,
     seekBy: (seconds) => seeks.push(seconds),
     schedule: (callback, delay) => {
       const id = ++nextId;
@@ -51,7 +52,7 @@ test("double taps seek without a delayed controls toggle, whether initially show
     p.advance(100);
     p.tap("right");
     p.advance(500);
-    expect(p.seeks).toEqual([30]);
+    expect(p.seeks).toEqual([10]);
     expect(p.visible).toBe(true);
     expect(p.toggles).toBe(visible ? 0 : 1);
   }
@@ -86,11 +87,23 @@ test("each additional tap in a seek burst advances again without toggling contro
   const p = player();
   p.tap("right");
   for (let i = 0; i < 5; i++) { p.advance(100); p.tap("right"); }
-  expect(p.seeks).toEqual([30, 30, 30, 30, 30]);
+  expect(p.seeks).toEqual([10, 10, 10, 10, 10]);
   expect(p.toggles).toBe(0);
   p.advance(350);
   p.tap("left");
   p.advance(100);
   p.tap("left");
-  expect(p.seeks.at(-1)).toBe(-30);
+  expect(p.seeks.at(-1)).toBe(-10);
+});
+
+
+test("the configured interval is read for each tap, including changes during a seek burst", () => {
+  let interval = 5;
+  const p = player(true, () => interval);
+  p.tap("right"); p.advance(100); p.tap("right");
+  interval = 60;
+  p.advance(100); p.tap("right");
+  p.advance(350); p.tap("left"); p.advance(100); p.tap("left");
+  expect(p.seeks).toEqual([5, 60, -60]);
+  expect(p.toggles).toBe(0);
 });

@@ -8,7 +8,7 @@ export default function HomeRoute() {
   const navigation = useMediaNavigation();
   const [, focused] = useState<number | null>(null);
   const active = useIsFocused();
-  if (runtime.needsSetup())
+  if (active && runtime.needsSetup())
     return (
       <Redirect href="/settings/folders" />
     );

@@ -233,6 +233,7 @@ export function HomeScreen({
               title={row.title}
               items={row.items}
               open={open}
+              onPlay={handlePlay}
               focused={focused}
             />
           </View>

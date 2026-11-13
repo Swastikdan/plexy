@@ -11,7 +11,7 @@ import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { useColors } from "@/shared/theme";
-import { ArrowLeft } from "@/shared/ui/icons";
+import { ChevronLeft } from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
 
 export function TitleBrowser({
@@ -45,9 +45,9 @@ export function TitleBrowser({
             accessibilityLabel="Back to library"
             onPress={close}
             hitSlop={8}
-            className="h-[44px] w-[44px] justify-center active:opacity-60"
+            className="h-[30px] w-[44px] items-center justify-center self-start active:opacity-60"
           >
-            <ArrowLeft size={24} color={colors.ink} />
+            <ChevronLeft size={24} color={colors.ink} />
           </Pressable>
           <View className="flex-1">
             <Text

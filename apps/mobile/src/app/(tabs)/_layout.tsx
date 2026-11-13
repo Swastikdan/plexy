@@ -1,4 +1,5 @@
-import { Tabs,usePathname } from "expo-router";
+import { SwipePager } from "@/shared/ui/swipe-pager";
+import { Tabs } from "expo-router";
 import React,{ useEffect,useRef,useState } from "react";
 import { Animated,Pressable,View } from "react-native";
 import {
@@ -68,7 +69,7 @@ function MobileTabBar({
   state,
   navigation,
   attention,
-}: TabBarProps & {
+}: Pick<TabBarProps, "state" | "navigation"> & {
   attention: number;
 }) {
   const insets = useSafeAreaInsets();
@@ -126,7 +127,6 @@ function MobileTabBar({
 }
 export default function TabLayout() {
   const colors = useColors();
-  const isHome = usePathname() === "/";
   const { runtime } = useClient();
   const [attention, setAttention] = useState(0);
   useEffect(() => {
@@ -136,13 +136,20 @@ export default function TabLayout() {
   }, [runtime]);
   return (
     <SafeAreaView
-      edges={isHome ? ["left", "right"] : ["top", "left", "right"]}
+      edges={["left", "right"]}
       style={{ flex: 1, backgroundColor: colors.canvas }}
     >
-      {!isHome && <LibraryAttention />}
       <Tabs
         backBehavior="initialRoute"
-        tabBar={(props) => <MobileTabBar {...props} attention={attention} />}
+        layout={({ state, navigation, descriptors }) => <View style={{ flex: 1 }}>
+          <SwipePager pageKeys={state.routes.map(route => route.key)} index={state.index}
+            onChange={index => { triggerHaptic("selection"); navigation.navigate(state.routes[index]!.name); }}
+            renderPage={index => <SafeAreaView edges={state.routes[index]!.name === "index" ? [] : ["top"]} style={{ flex: 1, backgroundColor: colors.canvas }}>
+              {state.routes[index]!.name !== "index" && <LibraryAttention />}
+              {descriptors[state.routes[index]!.key]!.render()}
+            </SafeAreaView>} />
+          <MobileTabBar state={state} navigation={navigation} attention={attention} />
+        </View>}
         screenOptions={{
           headerShown: false,
           sceneStyle: { backgroundColor: colors.canvas },

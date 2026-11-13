@@ -1,3 +1,5 @@
+import { applyTitleAction } from "../../../apps/mobile/src/features/catalog/lib/title-actions";
+import { ProgressQueue } from "../../../apps/mobile/src/core/client/progress-queue";
 import { describe, expect, test } from "bun:test";
 import { LocalLibrary, parseLocalName, localSegments, localFileKey, type LocalFile, type LocalIO, type LocalState } from "../src/library";
 import { LocalApi } from "../../../apps/mobile/src/core/library/local-api";
@@ -303,4 +305,33 @@ test("All library view combines movie, television and anime with shared paginati
   expect((await api.items("series")).items.map(c => c.name)).toEqual(["Show"]);
   expect((await api.items("anime")).items.map(c => c.name)).toEqual(["Anime"]);
   expect((await api.items("all", 1, "name")).items.map(c => c.name)).toEqual(["Arrival", "Show"]);
+});
+
+
+test("series menu actions clear pending playback, mark every episode finished and delete the actual files", async () => {
+  const f = fixture();
+  f.files([file("Show.S01E01.mkv"), file("Show.S01E02.mkv")]);
+  await f.library.addRoot({ ...root, kind: "tv" });
+  const api = new LocalApi(f.library, async () => "", async () => []);
+  const series = f.library.cards()[0]!;
+  const episodes = api.episodes(series.id);
+  const queue = new ProgressQueue({ load: async () => [], save: async () => {} });
+  for (const episode of episodes) await queue.record({ itemId: episode.id, position: 120, duration: 1200, played: false, updatedAt: 1 });
+  await applyTitleAction(api, queue, series.id, "remove");
+  await queue.flush(api);
+  expect((await api.home()).rows.some(row => row.key === "continue")).toBe(false);
+  for (const episode of episodes) {
+    expect(queue.latest(episode.id)).toBeUndefined();
+    expect(f.library.record(episode.id).card.watch).toBeNull();
+  }
+  await applyTitleAction(api, queue, series.id, "finished");
+  expect(f.library.cards()[0]!.watch?.played).toBe(true);
+  expect(episodes.every(episode => f.library.record(episode.id).card.watch?.played)).toBe(true);
+  const deleted: string[] = [];
+  f.io.deleteFile = async uri => { deleted.push(uri); };
+  const expectedFiles = episodes.map(episode => f.library.record(episode.id).file.uri);
+  await applyTitleAction(api, queue, series.id, "delete");
+  expect(deleted.sort()).toEqual(expectedFiles.sort());
+  expect(f.library.state.records).toHaveLength(0);
+  expect((await api.home()).rows).toHaveLength(0);
 });

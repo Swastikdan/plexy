@@ -74,9 +74,9 @@ export class LocalApi extends LocalCatalog {
             featured: all.find((c) => c.backdrop) || all[0] || null,
             rows: [
                 { key: "continue", title: "Continue watching", items: continuing },
-                { key: "movies", title: "Movies on this device", items: all.filter((c) => c.kind === "movie" && !c.isAnime) },
-                { key: "series", title: "Series on this device", items: all.filter((c) => c.kind === "series" && !c.isAnime) },
-                { key: "anime", title: "Anime on this device", items: all.filter((c) => c.isAnime) },
+                { key: "movies", title: "Movies", items: all.filter((c) => c.kind === "movie" && !c.isAnime) },
+                { key: "series", title: "Series", items: all.filter((c) => c.kind === "series" && !c.isAnime) },
+                { key: "anime", title: "Anime", items: all.filter((c) => c.isAnime) },
             ].filter((r) => r.items.length),
         };
     }

@@ -20,6 +20,7 @@ export function usePlayerGestures({
   locked,
   reduceMotion,
   seekBy,
+  seekSeconds,
   toggleControls,
   controlsVisible,
   enabled,
@@ -29,12 +30,13 @@ export function usePlayerGestures({
   locked: boolean;
   reduceMotion: boolean;
   seekBy: (seconds: number) => void;
+  seekSeconds: number;
   toggleControls: () => void;
   controlsVisible: boolean;
   enabled: boolean;
 }) {
-  const callbacks = useRef({ seekBy, toggleControls });
-  callbacks.current = { seekBy, toggleControls };
+  const callbacks = useRef({ seekBy, toggleControls, seekSeconds });
+  callbacks.current = { seekBy, toggleControls, seekSeconds };
   const [fitMode, setFitMode] = useState<FitMode>("contain");
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(zoom);
@@ -60,6 +62,7 @@ export function usePlayerGestures({
         callbacks.current.seekBy(seconds);
 
       },
+      seekSeconds: () => callbacks.current.seekSeconds,
       schedule: (callback, delay) => setTimeout(callback, delay),
       cancel: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
     });

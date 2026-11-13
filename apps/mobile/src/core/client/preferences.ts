@@ -18,6 +18,7 @@ export interface Preferences {
   subtitleSize: number;
   autoSkip: boolean;
   autoNext: boolean;
+  seekSeconds: 5 | 10 | 15 | 30 | 60;
   playbackRate: number;
 }
 export const defaultPreferences: Preferences = {
@@ -29,6 +30,7 @@ export const defaultPreferences: Preferences = {
   subtitleSize: 22,
   autoSkip: false,
   autoNext: true,
+  seekSeconds: 10,
   playbackRate: 1,
 };
 // Preserve the installed app's storage key when removing the old scope encoder.

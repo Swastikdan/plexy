@@ -1,4 +1,4 @@
-export const SEEK_SECONDS = 30;
+export const SEEK_SECONDS = 10;
 export const MIN_ZOOM = 0.75;
 export const MAX_ZOOM = 3;
 export const DOUBLE_TAP_MS = 300;
@@ -9,6 +9,7 @@ export interface PlayerTap {
 export function doubleTapSeek(
   previous: PlayerTap | null,
   current: PlayerTap,
+  seconds = SEEK_SECONDS,
 ): number | null {
   if (
     !previous ||
@@ -17,7 +18,7 @@ export function doubleTapSeek(
     current.time - previous.time > DOUBLE_TAP_MS
   )
     return null;
-  return current.side === "left" ? -SEEK_SECONDS : SEEK_SECONDS;
+  return current.side === "left" ? -seconds : seconds;
 }
 export function clampZoom(scale: number): number {
   return Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, scale)) * 100) / 100;

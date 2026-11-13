@@ -12,6 +12,7 @@ export function Card({
   item,
   api,
   onPress,
+  onLongPress,
   preferred,
   onFocus,
   width,
@@ -19,6 +20,7 @@ export function Card({
   item: ItemCard;
   api: LocalCatalog;
   onPress: () => void;
+  onLongPress?: () => void;
   preferred?: boolean;
   onFocus?: () => void;
   width?: number;
@@ -40,6 +42,8 @@ export function Card({
       }}
       onBlur={() => setFocus(false)}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={1000}
       style={{ width: cardWidth }}
       className="gap-2 active:opacity-90 active:scale-[0.97]"
     >

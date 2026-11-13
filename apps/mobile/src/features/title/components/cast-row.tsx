@@ -1,3 +1,4 @@
+import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { Image,Pressable,ScrollView,Text,View } from "react-native";
 import type {
 LocalCatalog,
@@ -14,13 +15,14 @@ export function CastRow({
   canOpen: (name: string) => boolean;
   onSelect: (name: string) => void;
 }) {
+  const pagerBoundary = usePagerGestureBoundary();
   if (!people.length) return null;
   return (
     <View className="gap-3">
       <Text className="font-archivo-bold text-[18px] tracking-[-0.2px] text-foreground">
         Cast & Crew
       </Text>
-      <ScrollView
+      <ScrollView {...pagerBoundary}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 14 }}

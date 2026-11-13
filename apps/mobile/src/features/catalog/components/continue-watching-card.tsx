@@ -9,12 +9,14 @@ export function ContinueWatchingCard({
   api,
   preferred,
   onPress,
+  onLongPress,
   onFocus,
 }: {
   item: ItemCard;
   api: any;
   preferred?: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
   onFocus?: () => void;
 }) {
   const position = item.watch?.position || 0;
@@ -50,6 +52,8 @@ export function ContinueWatchingCard({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={1000}
       onFocus={() => {
         setFocus(true);
         onFocus?.();

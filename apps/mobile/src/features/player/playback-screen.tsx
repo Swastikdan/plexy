@@ -44,7 +44,6 @@ import { usePlayerControls } from "./hooks/use-player-controls";
 import { usePlayerGestures } from "./hooks/use-player-gestures";
 import { bufferOptionsForDuration } from "./lib/player-buffer";
 import {
-  SEEK_SECONDS,
   shouldShowPlayerLoading,
 } from "./lib/player-interactions";
 import { usePlayerSubtitles } from "./hooks/use-player-subtitles";
@@ -198,6 +197,7 @@ export function PlaybackScreen({
     locked,
     reduceMotion,
     seekBy: (seconds) => seekWithFeedback(seconds),
+    seekSeconds: preferences.seekSeconds,
     toggleControls,
     controlsVisible: visible,
     enabled: !locked && !resume && !menu && !speedPanel && !audioPanel,
@@ -780,7 +780,7 @@ export function PlaybackScreen({
               value={previewTime}
               buffered={bufferedPosition}
               scrubbing={scrub != null}
-              seekStep={SEEK_SECONDS}
+              seekStep={preferences.seekSeconds}
               bottom={Math.max(insets.bottom, 8) + 52}
               onScrub={(target) => {
                 reveal();
@@ -910,12 +910,12 @@ export function PlaybackScreen({
             }
           >
             <PlayerControl
-              onPress={() => seekWithFeedback(-SEEK_SECONDS)}
+              onPress={() => seekWithFeedback(-preferences.seekSeconds)}
               size={56}
               bg="transparent"
-              accessibilityLabel={`Back ${SEEK_SECONDS} seconds`}
+              accessibilityLabel={`Back ${preferences.seekSeconds} seconds`}
             >
-              <IconSeekBack size={28} />
+              <IconSeekBack size={28} seconds={preferences.seekSeconds} />
             </PlayerControl>
 
             <Pressable
@@ -937,12 +937,12 @@ export function PlaybackScreen({
             </Pressable>
 
             <PlayerControl
-              onPress={() => seekWithFeedback(SEEK_SECONDS)}
+              onPress={() => seekWithFeedback(preferences.seekSeconds)}
               size={56}
               bg="transparent"
-              accessibilityLabel={`Forward ${SEEK_SECONDS} seconds`}
+              accessibilityLabel={`Forward ${preferences.seekSeconds} seconds`}
             >
-              <IconSeekForward size={28} />
+              <IconSeekForward size={28} seconds={preferences.seekSeconds} />
             </PlayerControl>
           </Animated.View>
           {!openingVideo && !ended && (

@@ -6,11 +6,13 @@ export function createPlayerTapController({
   seekBy,
   schedule,
   cancel,
+  seekSeconds,
 }: {
   toggleControls: () => void;
   seekBy: (seconds: number) => void;
   schedule: (callback: () => void, delay: number) => unknown;
   cancel: (timer: unknown) => void;
+  seekSeconds?: () => number;
 }) {
   let previous: PlayerTap | null = null;
   let timer: unknown = null;
@@ -24,7 +26,7 @@ export function createPlayerTapController({
   return {
     reset,
     tap(current: PlayerTap, visible: boolean) {
-      const seconds = doubleTapSeek(previous, current);
+      const seconds = doubleTapSeek(previous, current, seekSeconds?.());
       if (seconds !== null) {
         reset();
         seekBy(seconds);

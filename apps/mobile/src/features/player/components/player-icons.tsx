@@ -1,60 +1,64 @@
+import { HugeiconsIcon } from "@hugeicons/react-native";
+import GoForward5SecIcon from "@hugeicons/core-free-icons/GoForward5SecIcon";
+import GoForward10SecIcon from "@hugeicons/core-free-icons/GoForward10SecIcon";
+import GoForward15SecIcon from "@hugeicons/core-free-icons/GoForward15SecIcon";
+import GoForward30SecIcon from "@hugeicons/core-free-icons/GoForward30SecIcon";
+import GoForward60SecIcon from "@hugeicons/core-free-icons/GoForward60SecIcon";
+import GoBackward5SecIcon from "@hugeicons/core-free-icons/GoBackward5SecIcon";
+import GoBackward10SecIcon from "@hugeicons/core-free-icons/GoBackward10SecIcon";
+import GoBackward15SecIcon from "@hugeicons/core-free-icons/GoBackward15SecIcon";
+import GoBackward30SecIcon from "@hugeicons/core-free-icons/GoBackward30SecIcon";
+import GoBackward60SecIcon from "@hugeicons/core-free-icons/GoBackward60SecIcon";
 import { Text, View } from "react-native";
 import { Svg, Path, Rect } from "react-native-svg";
 import { useColors } from "@/shared/theme";
 import { Crop, Maximize, MoveHorizontal, ZoomIn } from "@/shared/ui/icons";
 import { SEEK_SECONDS } from "@/features/player/lib/player-interactions";
 
-/** Traditional seek-back button: two solid triangles pointing left with the
- * seek amount printed underneath. */
+const forwardIcons = {
+  5: GoForward5SecIcon,
+  10: GoForward10SecIcon,
+  15: GoForward15SecIcon,
+  30: GoForward30SecIcon,
+  60: GoForward60SecIcon,
+};
+const backwardIcons = {
+  5: GoBackward5SecIcon,
+  10: GoBackward10SecIcon,
+  15: GoBackward15SecIcon,
+  30: GoBackward30SecIcon,
+  60: GoBackward60SecIcon,
+};
+type SeekIconProps = { size?: number; color?: string; seconds?: number };
 export function IconSeekBack({
   size = 30,
   color = "#fff",
   seconds = SEEK_SECONDS,
-}: {
-  size?: number;
-  color?: string;
-  seconds?: number;
-}) {
+}: SeekIconProps) {
   return (
-    <View className="items-center justify-center" style={{ width: size + 10 }}>
-      <Svg width={size} height={Math.round(size * 0.7)} viewBox="0 0 30 21">
-        <Path d="M14 1.5 L2.5 10.5 L14 19.5 Z" fill={color} />
-        <Path d="M29 1.5 L17.5 10.5 L29 19.5 Z" fill={color} />
-      </Svg>
-      <Text
-        className="text-[10px] font-archivo-bold"
-        style={{ color, marginTop: 1 }}
-      >
-        {seconds}
-      </Text>
-    </View>
+    <HugeiconsIcon
+      icon={
+        backwardIcons[seconds as keyof typeof backwardIcons] ??
+        backwardIcons[10]
+      }
+      size={size}
+      color={color}
+    />
   );
 }
-
-/** Traditional seek-forward button: two solid triangles pointing right with
- * the seek amount printed underneath. */
 export function IconSeekForward({
   size = 30,
   color = "#fff",
   seconds = SEEK_SECONDS,
-}: {
-  size?: number;
-  color?: string;
-  seconds?: number;
-}) {
+}: SeekIconProps) {
   return (
-    <View className="items-center justify-center" style={{ width: size + 10 }}>
-      <Svg width={size} height={Math.round(size * 0.7)} viewBox="0 0 30 21">
-        <Path d="M16 1.5 L27.5 10.5 L16 19.5 Z" fill={color} />
-        <Path d="M1 1.5 L12.5 10.5 L1 19.5 Z" fill={color} />
-      </Svg>
-      <Text
-        className="text-[10px] font-archivo-bold"
-        style={{ color, marginTop: 1 }}
-      >
-        {seconds}
-      </Text>
-    </View>
+    <HugeiconsIcon
+      icon={
+        forwardIcons[seconds as keyof typeof forwardIcons] ?? forwardIcons[10]
+      }
+      size={size}
+      color={color}
+    />
   );
 }
 

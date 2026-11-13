@@ -1,33 +1,31 @@
-import { triggerHaptic } from "@/shared/lib/haptics";
 import * as Linking from "expo-linking";
 import { fetchUpdateReleases } from "./lib/update-releases";
 import { selectUpdate } from "./lib/update-policy";
 import { useAppDialog } from "@/shared/ui/app-dialog";
-import { useUniwind } from "uniwind";
 import { Directory } from "expo-file-system";
-import { useRouter } from "expo-router";
-import { useEffect,useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-Modal,
-PanResponder,
-Pressable,
-ScrollView,
-Text,
-View,
+  BackHandler,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 import type { LocalRoot } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import {
-bundledMetadata,
-displayName,
-localLibrary,
-localRuntime,
+  bundledMetadata,
+  displayName,
+  localLibrary,
+  localRuntime,
 } from "@/core/library/local-runtime";
 import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
-import { Download, Film, Library, Tv, RefreshCw } from "@/shared/ui/icons";
+import { Download, Film, Library, RefreshCw, X } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
@@ -35,29 +33,37 @@ import { Updates } from "./components/app-updates";
 import { SettingsRow } from "./components/settings-row";
 import { useAppUpdates } from "./hooks/use-app-updates";
 
-export function SettingsScreen({ page = "settings" }: {
+export function SettingsScreen({
+  page = "settings",
+}: {
   page?: "settings" | "folders" | "updates" | "metadata";
 }) {
   const showDialog = useAppDialog();
   const colors = useColors();
-  const folderTabs = ["all", "movies", "tv", "anime"] as const;
-  const [folderTab, setFolderTab] = useState<typeof folderTabs[number]>("all");
-  const selectFolderTab = (tab: typeof folderTabs[number]) => { if (tab !== folderTab) { triggerHaptic("selection"); setFolderTab(tab); } };
-  const folderSwipe = PanResponder.create({
-    onMoveShouldSetPanResponderCapture: (_, g) => page === "folders" && Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-    onPanResponderRelease: (_, g) => {
-      if (Math.abs(g.dx) < 55 && !(Math.abs(g.dx) > 24 && Math.abs(g.vx) > 0.35)) return;
-      const tab = folderTabs[folderTabs.indexOf(folderTab) + (g.dx < 0 ? 1 : -1)];
-      if (tab) selectFolderTab(tab);
-    },
-  });
-
-  const { theme } = useUniwind();
   const online = useOnline();
   const router = useRouter();
   const [, update] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState("");
+  const folderScroll = useRef<ScrollView>(null);
   const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
+  const [markerStatus, setMarkerStatus] = useState("");
+  const [refreshingMarkers, setRefreshingMarkers] = useState(false);
+  const [folderFiles, setFolderFiles] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!expandedFolder) return;
+      const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (folderFiles) setFolderFiles(false);
+        else setExpandedFolder(null);
+        return true;
+      });
+      return () => listener.remove();
+    }, [expandedFolder, folderFiles]),
+  );
+  useEffect(() => {
+    folderScroll.current?.scrollTo({ y: 0, animated: false });
+  }, [expandedFolder, folderFiles]);
   const [message, setMessage] = useState("");
   const { api, runtime, preferences, updatePreferences } = useClient();
   const {
@@ -71,9 +77,10 @@ export function SettingsScreen({ page = "settings" }: {
     handleDownloadAndInstall,
   } = useAppUpdates(online);
   useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
-  const action = async (fn: () => Promise<void>) => {
+  const action = async (fn: () => Promise<void>, key = "") => {
     if (busy) return;
     setBusy(true);
+    setActiveAction(key);
     setMessage("");
     try {
       await fn();
@@ -82,6 +89,7 @@ export function SettingsScreen({ page = "settings" }: {
         setMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+      setActiveAction("");
     }
   };
   const pickFolder = async (kind: LocalRoot["kind"]) => {
@@ -93,10 +101,17 @@ export function SettingsScreen({ page = "settings" }: {
     });
   };
   const addFolder = (kind: LocalRoot["kind"]) => {
-    showDialog("Add media folder", "Choose a folder in Android’s file picker, then allow Plexy to access its videos.", [
-      { text: "Choose folder", onPress: () => void action(() => pickFolder(kind)) },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    showDialog(
+      "Add media folder",
+      "Choose a folder in Android’s file picker, then allow Plexy to access its videos.",
+      [
+        {
+          text: "Choose folder",
+          onPress: () => void action(() => pickFolder(kind)),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
   };
   const metadata = localLibrary.metadataSettings;
   const [picker, setPicker] = useState<{
@@ -135,427 +150,603 @@ export function SettingsScreen({ page = "settings" }: {
   const label = (options: [string, string][], value: string) =>
     options.find((o) => o[0] === value)?.[1] || value;
   const { fileCount, reviewCount: review, markerCount } = api.libraryStatus();
+  const folderRecords = localLibrary.state.records.filter(
+    (record) => record.root === expandedFolder,
+  );
+  const folderTitles = [
+    ...new Map(
+      folderRecords.map((record) => [
+        record.card.parentId ?? record.id,
+        record,
+      ]),
+    ).values(),
+  ];
   return (
-    <View className="flex-1 bg-background" {...folderSwipe.panHandlers}>
+    <View className="flex-1 bg-background">
       <PageHeader
+        onBack={
+          expandedFolder
+            ? () => {
+                if (folderFiles) setFolderFiles(false);
+                else setExpandedFolder(null);
+              }
+            : undefined
+        }
+        subtitle={
+          expandedFolder
+            ? `${folderTitles.length} ${folderTitles.length === 1 ? "title" : "titles"} · ${folderRecords.length} files`
+            : undefined
+        }
         title={
-          page === "folders"
-            ? "Media folders"
-            : page === "updates"
-              ? "App updates"
-              : page === "metadata"
-                ? "Metadata & markers"
-                : "Settings"
+          expandedFolder
+            ? folderFiles
+              ? "Files"
+              : localLibrary.state.roots.find((r) => r.uri === expandedFolder)
+                  ?.name || "Media folder"
+            : page === "folders"
+              ? "Media folders"
+              : page === "updates"
+                ? "App updates"
+                : page === "metadata"
+                  ? "Metadata & markers"
+                  : "Settings"
         }
         style={{
           paddingHorizontal: 20,
         }}
       />
-    {page === "folders" && <View className="mx-5 mb-3 h-[46px] flex-row rounded-full border border-border bg-surface p-[3px]">
-      {folderTabs.map((tab, i) => <Pressable key={tab} accessibilityRole="tab" accessibilityState={{ selected: tab === folderTab }} onPress={() => selectFolderTab(tab)} className={cn("flex-1 items-center justify-center rounded-full", folderTab === tab && "bg-foreground")}>
-        <Text className={cn("text-[13px] font-archivo-medium", folderTab === tab ? "text-background" : "text-muted")}>{["All", "Movies", "TV Shows", "Anime"][i]}</Text>
-      </Pressable>)}
-    </View>}
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerStyle={{
-        paddingHorizontal: 20,
-        paddingTop: 4,
-        paddingBottom: 36,
-        gap: 14,
-      }}
-    >
-      {!online && (
-        <Notice message="Offline. Trailers, updates and metadata refresh are unavailable. Your saved library and markers still work." />
-      )}
-      <Modal
-        visible={!!picker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPicker(null)}
+      <ScrollView
+        ref={folderScroll}
+        className="flex-1 bg-background"
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 4,
+          paddingBottom: 36,
+          gap: 14,
+        }}
       >
-        <View className="flex-1 justify-center bg-black/70 p-6">
-          <View className="overflow-hidden rounded-[18px] bg-overlay">
-            <ScrollView style={{ maxHeight: 500 }}>
-              <SettingsRow title={picker?.title || ""} />
-              {picker?.options.map(([value, title]) => (
+        {!online && (
+          <Notice message="Offline. Trailers, updates and metadata refresh are unavailable. Your saved library and markers still work." />
+        )}
+        <Modal
+          visible={!!picker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPicker(null)}
+        >
+          <View className="flex-1 justify-center bg-black/70 p-6">
+            <Pressable
+              className="absolute inset-0"
+              accessible={false}
+              onPress={() => setPicker(null)}
+            />
+            <View
+              accessibilityViewIsModal
+              className="w-full max-w-[420px] max-h-full self-center overflow-hidden rounded-[18px] bg-overlay"
+            >
+              <View className="flex-row items-center gap-3 px-4 py-3 border-b border-border">
+                <Text
+                  accessibilityRole="header"
+                  className="flex-1 text-[22px] font-archivo-bold text-foreground"
+                >
+                  {picker?.title}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close choices"
+                  onPress={() => setPicker(null)}
+                  className="h-12 w-12 items-center justify-center rounded-full bg-default"
+                >
+                  <X size={22} color={colors.ink} />
+                </Pressable>
+              </View>
+              <ScrollView style={{ maxHeight: 420, flexShrink: 1 }}>
+                {picker?.options.map(([value, title]) => (
+                  <SettingsRow
+                    key={value}
+                    title={title}
+                    selected={metadata[picker.key] === value}
+                    onPress={() => {
+                      const key = picker.key;
+                      setPicker(null);
+                      void action(() =>
+                        localLibrary.updateMetadataSettings({ [key]: value }),
+                      );
+                    }}
+                  />
+                ))}
+                <SettingsRow title="Cancel" onPress={() => setPicker(null)} />
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+        {!!message && <Notice message={message} />}
+        {page === "settings" && (
+          <>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Appearance
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              {(["system", "dark", "light"] as const).map((value) => (
                 <SettingsRow
                   key={value}
-                  title={`${metadata[picker.key] === value ? "✓ " : ""}${title}`}
-                  onPress={() => {
-                    const key = picker.key;
-                    setPicker(null);
-                    void action(() =>
-                      localLibrary.updateMetadataSettings({ [key]: value }),
-                    );
-                  }}
+                  title={
+                    value === "system"
+                      ? "System"
+                      : value === "dark"
+                        ? "Dark mode"
+                        : "Light mode"
+                  }
+                  selected={preferences.theme === value}
+                  onPress={() => updatePreferences({ theme: value })}
                 />
               ))}
-              <SettingsRow title="Cancel" onPress={() => setPicker(null)} />
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-      {!!message && <Notice message={message} />}
-      {page === "settings" && (
-        <>
-          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-            Appearance
-          </Text>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <SettingsRow title="Dark mode" subtitle={theme === "dark" ? "Dark appearance" : "Light appearance"}>
-              <ToggleSwitch
-                accessibilityLabel="Dark mode"
-                value={theme === "dark"}
-                onValueChange={(value) => updatePreferences({ theme: value ? "dark" : "light" })}
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Library
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                navigation
+                title="Library report"
+                subtitle={`${fileCount} files, ${review ? `${review} need attention` : "all titles identified"}`}
+                icon={Library}
+                onPress={() => router.push("/settings/report")}
               />
-            </SettingsRow>
-          </View>
-          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-            Library
-          </Text>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <SettingsRow
-              title="Library report"
-              subtitle={`${fileCount} files, ${review ? `${review} need attention` : "all titles identified"}`}
-              icon={Library}
-              onPress={() => router.push("/settings/report")}
-            />
-            <SettingsRow
-              title="Metadata & markers"
-              subtitle="Artwork and skip markers"
-              icon={Film}
-              onPress={() => router.push("/settings/metadata")}
-            />
-            <SettingsRow
-              title="Media folders"
-              subtitle={`${localLibrary.state.roots.filter((r) => !r.singleFile).length} folders connected`}
-              icon={Film}
-              onPress={() => router.push("/settings/folders")}
-            />
-            <SettingsRow
-              title="Scan library"
-              subtitle="Scan connected folders"
-              icon={RefreshCw}
-              onPress={() => router.push("/settings/scan")}
-
-            />
-          </View>
-          {localLibrary.issues.map((issue) => (
-            <Notice key={issue} message={issue} />
-          ))}
-          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-            Playback
-          </Text>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <SettingsRow
-              title="Automatic subtitles"
-              subtitle="Use preferred track"
-            >
-              <ToggleSwitch
-                value={preferences.autoSubtitles}
-                onValueChange={(v) => updatePreferences({ autoSubtitles: v })}
+              <SettingsRow
+                navigation
+                title="Metadata & markers"
+                subtitle="Artwork and skip markers"
+                icon={Film}
+                onPress={() => router.push("/settings/metadata")}
               />
-            </SettingsRow>
-            <SettingsRow
-              title="Automatically skip marked sections"
-              subtitle="Skip intro, recap and credits"
-            >
-              <ToggleSwitch
-                value={preferences.autoSkip}
-                onValueChange={(v) => updatePreferences({ autoSkip: v })}
-                accessibilityLabel="Automatically skip marked sections"
+              <SettingsRow
+                navigation
+                title="Media folders"
+                subtitle={`${localLibrary.state.roots.filter((r) => !r.singleFile).length} folders connected`}
+                icon={Film}
+                onPress={() => router.push("/settings/folders")}
               />
-            </SettingsRow>
-            <SettingsRow
-              title="Play next episode"
-              subtitle="Continue automatically"
-            >
-              <ToggleSwitch
-                value={preferences.autoNext}
-                onValueChange={(v) => updatePreferences({ autoNext: v })}
-              />
-            </SettingsRow>
-          </View>
-          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-            About
-          </Text>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <View className="min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5">
-              <View className="w-6 items-center">
-                <Download size={20} color={colors.muted} />
-              </View>
-              <View className="flex-1 gap-1">
-                <Text className="text-[15px] font-archivo-medium text-foreground">
-                  App update
-                </Text>
-                <Text
-                  className={cn(
-                    "text-[12px] leading-[18px] font-archivo-regular",
-                    (updateDownloading || updateProgress !== null)
-                      ? "text-foreground"
-                      : "text-muted",
-                  )}
-                >
-                  {updateProgress !== null
-                    ? updateProgress === 100
-                      ? updateStatusText
-                      : `Downloading update… ${updateProgress}%`
-                    : updateStatusText ||
-                      (appInfo
-                        ? `Version ${appInfo.versionName} (build ${appInfo.buildNumber})`
-                        : "Version checking…")}
-                </Text>
-              </View>
-              <Button
-                label={
-                  availableUpdate
-                    ? updateDownloading
-                      ? updateProgress === 100 ? "Install…" : `${updateProgress ?? 0}%`
-                      : "Update now"
-                    : updateChecking
-                      ? "Checking…"
-                      : "Check"
+              <SettingsRow
+                title={localLibrary.scanning ? "Scanning…" : "Scan library"}
+                subtitle="Scan connected folders"
+                icon={RefreshCw}
+                onPress={
+                  busy || localLibrary.scanning
+                    ? undefined
+                    : () => void action(() => localLibrary.scan())
                 }
-                primary={Boolean(availableUpdate)}
-                disabled={!online || updateChecking || updateDownloading}
-                onPress={() =>
-                  void (availableUpdate
-                    ? handleDownloadAndInstall()
-                    : handleCheckUpdate())
-                }
-                style={{
-                  width: 120,
-                  flexShrink: 0,
-                  minHeight: 44,
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  opacity: online ? 1 : 0.4,
-                }}
               />
             </View>
-            <SettingsRow
-              title="Download from GitHub"
-              subtitle="Open the latest Android download"
-              onPress={() => void action(async () => {
-                const latest = selectUpdate(await fetchUpdateReleases(), "mobile", 0);
-                if (!latest) throw new Error("No Android download is available on GitHub yet.");
-                await Linking.openURL(latest.apkUrl);
-              })}
-            />
-
-          </View>
-          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-            Videos stay in their original folders. Library data, artwork and
-            saved scrub previews stay on this device.
-          </Text>
-          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-            This product uses the TMDB API but is not endorsed or certified by
-            TMDB.
-          </Text>
-        </>
-      )}
-      {page === "folders" && (
-        <>
-          <Button label="Add media folder" disabled={busy} onPress={() => showDialog("Add media folder", "Choose the type of videos in this folder.", [
-            { text: "Movies", onPress: () => addFolder("movies") },
-            { text: "TV shows", onPress: () => addFolder("tv") },
-            { text: "Anime", onPress: () => addFolder("anime") },
-            { text: "Cancel", style: "cancel" },
-          ])} />
-          {localLibrary.state.roots
-            .filter((r) => !r.singleFile && (folderTab === "all" || r.kind === folderTab))
-            .map((root) => (
-              <View
-                className="overflow-hidden rounded-[18px] bg-surface"
-                key={root.uri}
+            {localLibrary.issues.map((issue) => (
+              <Notice key={issue} message={issue} />
+            ))}
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Playback
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Skip forward & backward"
+                subtitle={`${preferences.seekSeconds} seconds`}
+                onPress={() =>
+                  showDialog(
+                    "Seek duration",
+                    "Choose the interval for both directions and double taps.",
+                    [
+                      ...([5, 10, 15, 30, 60] as const).map((value) => ({
+                        text: `${preferences.seekSeconds === value ? "✓ " : ""}${value} seconds`,
+                        onPress: () =>
+                          updatePreferences({ seekSeconds: value }),
+                      })),
+                      { text: "Cancel", style: "cancel" },
+                    ],
+                  )
+                }
+              />
+              <SettingsRow
+                title="Automatic subtitles"
+                subtitle="Use preferred track"
               >
-                <SettingsRow
-                  title={root.name || displayName(root.uri)}
-                  onPress={() => setExpandedFolder(current => current === root.uri ? null : root.uri)}
-                  subtitle={
-                    root.kind === "anime"
-                      ? "Anime"
-                      : root.kind === "tv"
-                        ? "TV shows"
-                        : "Movies"
-                  }
+                <ToggleSwitch
+                  value={preferences.autoSubtitles}
+                  onValueChange={(v) => updatePreferences({ autoSubtitles: v })}
                 />
-                {expandedFolder === root.uri && <>
-                {localLibrary.state.records.filter(record => record.root === root.uri).map(record => (
-                  <SettingsRow key={record.id} title={record.card.name} subtitle={record.file.name} onPress={() => router.push({ pathname: "/item/[id]", params: { id: record.card.publicId } })} />
-                ))}
-                <SettingsRow title="Scan this folder" onPress={busy || localLibrary.scanning ? undefined : () => void action(() => localLibrary.scan([root.uri]))} />
-                <SettingsRow title="Add media folder" onPress={() => addFolder(root.kind)} />
-                <SettingsRow
-                  title="Remove folder from library"
-                  danger
+              </SettingsRow>
+              <SettingsRow
+                title="Automatically skip marked sections"
+                subtitle="Skip intro, recap and credits"
+              >
+                <ToggleSwitch
+                  value={preferences.autoSkip}
+                  onValueChange={(v) => updatePreferences({ autoSkip: v })}
+                  accessibilityLabel="Automatically skip marked sections"
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="Play next episode"
+                subtitle="Continue automatically"
+              >
+                <ToggleSwitch
+                  value={preferences.autoNext}
+                  onValueChange={(v) => updatePreferences({ autoNext: v })}
+                />
+              </SettingsRow>
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              About
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <View className="min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5">
+                <View className="w-6 items-center">
+                  <Download size={20} color={colors.muted} />
+                </View>
+                <View className="flex-1 gap-1">
+                  <Text className="text-[15px] font-archivo-medium text-foreground">
+                    App update
+                  </Text>
+                  <Text
+                    className={cn(
+                      "text-[12px] leading-[18px] font-archivo-regular",
+                      updateDownloading || updateProgress !== null
+                        ? "text-foreground"
+                        : "text-muted",
+                    )}
+                  >
+                    {updateProgress !== null
+                      ? updateProgress === 100
+                        ? updateStatusText
+                        : `Downloading update… ${updateProgress}%`
+                      : updateStatusText ||
+                        (appInfo
+                          ? `Version ${appInfo.versionName} (build ${appInfo.buildNumber})`
+                          : "Version checking…")}
+                  </Text>
+                </View>
+                <Button
+                  label={
+                    availableUpdate
+                      ? updateDownloading
+                        ? updateProgress === 100
+                          ? "Install…"
+                          : `${updateProgress ?? 0}%`
+                        : "Update now"
+                      : updateChecking
+                        ? "Checking…"
+                        : "Check"
+                  }
+                  primary={Boolean(availableUpdate)}
+                  disabled={!online || updateChecking || updateDownloading}
+                  onPress={() =>
+                    void (availableUpdate
+                      ? handleDownloadAndInstall()
+                      : handleCheckUpdate())
+                  }
+                  style={{
+                    width: 120,
+                    flexShrink: 0,
+                    minHeight: 44,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    opacity: online ? 1 : 0.4,
+                  }}
+                />
+              </View>
+              <SettingsRow
+                title="Download from GitHub"
+                subtitle="Open the latest Android download"
+                onPress={() =>
+                  void action(async () => {
+                    const latest = selectUpdate(
+                      await fetchUpdateReleases(),
+                      "mobile",
+                      0,
+                    );
+                    if (!latest)
+                      throw new Error(
+                        "No Android download is available on GitHub yet.",
+                      );
+                    await Linking.openURL(latest.apkUrl);
+                  })
+                }
+              />
+            </View>
+            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
+              Videos stay in their original folders. Library data, artwork and
+              saved scrub previews stay on this device.
+            </Text>
+            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
+              This product uses the TMDB API but is not endorsed or certified by
+              TMDB.
+            </Text>
+          </>
+        )}
+        {page === "folders" && (
+          <>
+            {!expandedFolder ? (
+              <>
+                <Button
+                  label="Add media folder"
+                  disabled={busy}
                   onPress={() =>
                     showDialog(
-                      "Remove folder?",
-                      "Your original videos will stay untouched.",
+                      "Add media folder",
+                      "Choose the type of videos in this folder.",
                       [
-                        { text: "Cancel" },
-                        {
-                          text: "Remove",
-                          style: "destructive",
-                          onPress: () =>
-                            void action(() =>
-                              localLibrary.removeRoot(root.uri),
-                            ),
-                        },
+                        { text: "Movies", onPress: () => addFolder("movies") },
+                        { text: "TV shows", onPress: () => addFolder("tv") },
+                        { text: "Anime", onPress: () => addFolder("anime") },
+                        { text: "Cancel", style: "cancel" },
                       ],
                     )
                   }
                 />
-                </>}
-              </View>
-            ))}
-        </>
-      )}
-      {page === "metadata" && (
-        <>
-          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-            TMDB metadata
-          </Text>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <SettingsRow
-              title="TMDB connection"
-              subtitle={
-                bundledMetadata
-                  ? "Bundled with this app"
-                  : "Unavailable in this build"
-              }
-            />
-            <SettingsRow
-              title="Metadata language"
-              subtitle={label(languages, metadata.language)}
-              onPress={
-                busy
-                  ? undefined
-                  : () => choose("language", "Metadata language", languages)
-              }
-            />
-            <SettingsRow
-              title="Region"
-              subtitle={label(regions, metadata.region)}
-              onPress={
-                busy ? undefined : () => choose("region", "Region", regions)
-              }
-            />
-            <SettingsRow
-              title="Poster image size"
-              subtitle={label(sizes, metadata.posterSize)}
-              onPress={
-                busy
-                  ? undefined
-                  : () => choose("posterSize", "Poster image size", sizes)
-              }
-            />
-            <SettingsRow
-              title="Refresh metadata & artwork"
-              subtitle="Apply these settings to your saved titles"
-              onPress={
-                !online || busy || localLibrary.scanning
-                  ? undefined
-                  : () =>
-                      void action(async () => {
-                        await localRuntime.refreshMetadata();
-                        setMessage(
-                          "Metadata refreshed. Check Library report for any titles needing attention.",
-                        );
-                      })
-              }
-            />
-            <SettingsRow
-              title="Clear TMDB response cache"
-              subtitle="Keep your library, artwork and watch progress"
-              onPress={
-                busy
-                  ? undefined
-                  : () => {
-                      localRuntime.clearMetadataCache();
-                      setMessage("TMDB response cache cleared.");
-                    }
-              }
-            />
-            <SettingsRow
-              title="Test TMDB connection"
-              onPress={
-                !online || busy
-                  ? undefined
-                  : () =>
-                      void action(async () => {
-                        await localRuntime.testMetadata();
-                        setMessage("Connected to TMDB.");
-                      })
-              }
-            />
-          </View>
-          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-            Language, region and poster size apply on the next metadata refresh.
-            Larger posters use more storage.
-          </Text>
-          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-            Intro, recap & credits
-          </Text>
-          <View className="overflow-hidden rounded-[18px] bg-surface">
-            <SettingsRow
-              title="Community skip markers"
-              subtitle="Look up timings from IntroDB and save on this device"
-            >
-              <ToggleSwitch
-                accessibilityLabel="Enable community skip markers"
-                value={metadata.markersEnabled}
-                disabled={busy}
-                onValueChange={(v) =>
-                  void action(() =>
-                    localLibrary.updateMetadataSettings({ markersEnabled: v }),
-                  )
+                <View className="overflow-hidden rounded-[18px] bg-surface">
+                  {localLibrary.state.roots
+                    .filter((r) => !r.singleFile)
+                    .map((root) => {
+                      const records = localLibrary.state.records.filter(
+                        (r) => r.root === root.uri,
+                      );
+                      const count = new Set(
+                        records.map((r) => r.card.parentId ?? r.id),
+                      ).size;
+                      return (
+                        <SettingsRow
+                          key={root.uri}
+                          navigation
+                          title={root.name || displayName(root.uri)}
+                          subtitle={`${count} ${count === 1 ? "title" : "titles"} · ${records.length} files`}
+                          onPress={() => setExpandedFolder(root.uri)}
+                        />
+                      );
+                    })}
+                </View>
+              </>
+            ) : (
+              <>
+                {!folderFiles && (
+                  <View className="overflow-hidden rounded-[18px] bg-surface">
+                    <SettingsRow
+                      navigation
+                      title="All files"
+                      subtitle={`${folderRecords.length} videos in this folder`}
+                      onPress={() => setFolderFiles(true)}
+                    />
+                  </View>
+                )}
+                <View className="overflow-hidden rounded-[18px] bg-surface">
+                  {(folderFiles ? folderRecords : folderTitles).map(
+                    (record) => (
+                      <SettingsRow
+                        key={record.id}
+                        navigation
+                        title={
+                          folderFiles
+                            ? record.file.name
+                            : record.card.parentTitle || record.card.name
+                        }
+                        subtitle={folderFiles ? record.card.name : undefined}
+                        onPress={() =>
+                          router.push({
+                            pathname: "/item/[id]",
+                            params: {
+                              id: folderFiles
+                                ? record.card.publicId
+                                : record.card.parentPublicId ||
+                                  record.card.publicId,
+                            },
+                          })
+                        }
+                      />
+                    ),
+                  )}
+                </View>
+                {!folderFiles && (
+                  <>
+                    <Button
+                      label="Add media folder"
+                      disabled={busy}
+                      onPress={() =>
+                        addFolder(
+                          localLibrary.state.roots.find(
+                            (r) => r.uri === expandedFolder,
+                          )?.kind || "movies",
+                        )
+                      }
+                    />
+                    <Button
+                      label="Remove from the library"
+                      disabled={busy}
+                      onPress={() =>
+                        showDialog(
+                          "Remove folder?",
+                          "Your original videos will stay untouched.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Remove",
+                              style: "destructive",
+                              onPress: () =>
+                                void action(async () => {
+                                  await localLibrary.removeRoot(expandedFolder);
+                                  setExpandedFolder(null);
+                                }),
+                            },
+                          ],
+                        )
+                      }
+                    />
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {page === "metadata" && (
+          <>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              TMDB metadata
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="TMDB connection"
+                subtitle={
+                  bundledMetadata
+                    ? "Bundled with this app"
+                    : "Unavailable in this build"
                 }
               />
-            </SettingsRow>
-            <SettingsRow
-              title="Refresh markers now"
-              subtitle={`${markerCount} files have saved markers`}
-              onPress={
-                !online || busy || !metadata.markersEnabled
-                  ? undefined
-                  : () =>
-                      void action(async () => {
-                        const result = await localLibrary.refreshMarkers();
-                        setMessage(
-                          `Checked ${result.checked} titles; found markers for ${result.found}.`,
-                        );
-                      })
-              }
-            />
-            <SettingsRow
-              title="Automatically skip marked sections"
-              subtitle="Turn off to show a skip button instead"
-            >
-              <ToggleSwitch
-                accessibilityLabel="Automatically skip intro recap and credits"
-                value={preferences.autoSkip}
-                onValueChange={(v) => updatePreferences({ autoSkip: v })}
+              <SettingsRow
+                navigation
+                title="Metadata language"
+                subtitle={label(languages, metadata.language)}
+                onPress={
+                  busy
+                    ? undefined
+                    : () => choose("language", "Metadata language", languages)
+                }
               />
-            </SettingsRow>
-          </View>
-          <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-            When timings are available, the player offers Skip intro, Skip recap
-            or Skip credits. Saved markers work offline. Missing or stale
-            markers are checked during scans and playback; titles without
-            community timings play normally.
-          </Text>
-          {!!busy && (
+              <SettingsRow
+                navigation
+                title="Region"
+                subtitle={label(regions, metadata.region)}
+                onPress={
+                  busy ? undefined : () => choose("region", "Region", regions)
+                }
+              />
+              <SettingsRow
+                navigation
+                title="Poster image size"
+                subtitle={label(sizes, metadata.posterSize)}
+                onPress={
+                  busy
+                    ? undefined
+                    : () => choose("posterSize", "Poster image size", sizes)
+                }
+              />
+              <SettingsRow
+                title={
+                  activeAction === "metadata"
+                    ? "Refreshing metadata & artwork…"
+                    : "Refresh metadata & artwork"
+                }
+                subtitle="Apply these settings to your saved titles"
+                onPress={
+                  !online || busy || localLibrary.scanning
+                    ? undefined
+                    : () =>
+                        void action(async () => {
+                          await localRuntime.refreshMetadata();
+                          setMessage(
+                            "Metadata refreshed. Check Library report for any titles needing attention.",
+                          );
+                        }, "metadata")
+                }
+              />
+              <SettingsRow
+                title="Clear TMDB response cache"
+                subtitle="Keep your library, artwork and watch progress"
+                onPress={
+                  busy
+                    ? undefined
+                    : () => {
+                        localRuntime.clearMetadataCache();
+                        setMessage("TMDB response cache cleared.");
+                      }
+                }
+              />
+              <SettingsRow
+                title="Test TMDB connection"
+                onPress={
+                  !online || busy
+                    ? undefined
+                    : () =>
+                        void action(async () => {
+                          await localRuntime.testMetadata();
+                          setMessage("Connected to TMDB.");
+                        })
+                }
+              />
+            </View>
             <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-              Updating…
+              Language, region and poster size apply on the next metadata
+              refresh. Larger posters use more storage.
             </Text>
-          )}
-        </>
-      )}
-      {page === "updates" && <Updates />}
-    </ScrollView>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Intro, recap & credits
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Community skip markers"
+                subtitle="Look up timings from IntroDB and save on this device"
+              >
+                <ToggleSwitch
+                  accessibilityLabel="Enable community skip markers"
+                  value={metadata.markersEnabled}
+                  disabled={busy}
+                  onValueChange={(v) =>
+                    void action(() =>
+                      localLibrary.updateMetadataSettings({
+                        markersEnabled: v,
+                      }),
+                    )
+                  }
+                />
+              </SettingsRow>
+              <SettingsRow
+                title={
+                  refreshingMarkers
+                    ? "Refreshing markers…"
+                    : "Refresh markers now"
+                }
+                subtitle={
+                  markerStatus || `${markerCount} files have saved markers`
+                }
+                onPress={
+                  !online || busy || !metadata.markersEnabled
+                    ? undefined
+                    : () =>
+                        void action(async () => {
+                          setRefreshingMarkers(true);
+                          setMarkerStatus("Updating…");
+                          try {
+                            const result = await localLibrary.refreshMarkers();
+                            setMarkerStatus(
+                              `Checked ${result.checked} titles; found markers for ${result.found}.`,
+                            );
+                          } catch (error) {
+                            setMarkerStatus(
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            );
+                          } finally {
+                            setRefreshingMarkers(false);
+                          }
+                        })
+                }
+              />
+              <SettingsRow
+                title="Automatically skip marked sections"
+                subtitle="Turn off to show a skip button instead"
+              >
+                <ToggleSwitch
+                  accessibilityLabel="Automatically skip intro recap and credits"
+                  value={preferences.autoSkip}
+                  onValueChange={(v) => updatePreferences({ autoSkip: v })}
+                />
+              </SettingsRow>
+            </View>
+            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
+              When timings are available, the player offers Skip intro, Skip
+              recap or Skip credits. Saved markers work offline. Missing or
+              stale markers are checked during scans and playback; titles
+              without community timings play normally.
+            </Text>
+          </>
+        )}
+        {page === "updates" && <Updates />}
+      </ScrollView>
     </View>
   );
 }
