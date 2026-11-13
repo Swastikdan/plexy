@@ -35,7 +35,7 @@ const config: ExpoConfig = {
     adaptiveIcon: {
       foregroundImage: "../../build/icon.png",
       backgroundColor: "#f5f5f5",
-      monochromeImage: "../../build/icon.png",
+      monochromeImage: "./assets/adaptive-monochrome.png",
     },
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
