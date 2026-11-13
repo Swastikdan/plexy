@@ -974,7 +974,6 @@ export function PlaybackScreen({
   const videoViewProps = {
     ref: video,
     player,
-    nativeControls: false,
     surfaceType: "textureView" as const,
     fullscreenOptions: { enable: false },
     allowsPictureInPicture: true,
@@ -999,6 +998,7 @@ export function PlaybackScreen({
       >
         <VideoView
           {...videoViewProps}
+          nativeControls={false}
           style={[
             StyleSheet.absoluteFill,
             zoom !== 1 && { transform: [{ scale: zoom }] },
