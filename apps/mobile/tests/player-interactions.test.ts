@@ -6,14 +6,14 @@ pinchZoom,
 SEEK_SECONDS,
 } from "@/features/player/lib/player-interactions";
 
-test("double taps seek 10 seconds on their own side of the video", () => {
-  expect(SEEK_SECONDS).toBe(10);
+test("double taps seek 30 seconds on their own side of the video", () => {
+  expect(SEEK_SECONDS).toBe(30);
   expect(
     doubleTapSeek({ side: "left", time: 1000 }, { side: "left", time: 1200 }),
-  ).toBe(-10);
+  ).toBe(-30);
   expect(
     doubleTapSeek({ side: "right", time: 1000 }, { side: "right", time: 1200 }),
-  ).toBe(10);
+  ).toBe(30);
   expect(doubleTapSeek(null, { side: "right", time: 1000 })).toBeNull();
   expect(
     doubleTapSeek({ side: "left", time: 1000 }, { side: "right", time: 1200 }),
