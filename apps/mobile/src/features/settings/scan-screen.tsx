@@ -4,7 +4,7 @@ import { localLibrary } from "@/core/library/local-runtime";
 import { useClient } from "@/core/client/client-provider";
 import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/shared/ui/page-header";
-import { RotateCcw } from "@/shared/ui/icons";
+import { RefreshCw } from "@/shared/ui/icons";
 import { useColors } from "@/shared/theme";
 import { Notice } from "@/shared/ui/notice";
 import { SettingsRow } from "./components/settings-row";
@@ -40,7 +40,7 @@ export function ScanScreen() {
           onPress={() => void scan([root.uri])}
           className="h-11 w-11 items-center justify-center rounded-full bg-default active:opacity-65 disabled:opacity-40"
         >
-          <RotateCcw size={20} color={colors.ink} />
+          <RefreshCw size={20} color={colors.ink} />
         </Pressable>
       </SettingsRow>)}
     </View>

@@ -77,11 +77,7 @@ export function SearchScreen({
   const columns = 2;
   const cardWidth = Math.floor(available / columns) - 10;
   return (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
-      showsVerticalScrollIndicator={false}
-    >
+    <View className="flex-1 gap-3.5">
       <PageHeader title="Search" />
 
       {/* Compact search field with an explicit search affordance */}
@@ -123,6 +119,7 @@ export function SearchScreen({
         )}
       </View>
 
+      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32, gap: 14 }} showsVerticalScrollIndicator={false}>
       {/* States */}
       {debounced && data.loading ? (
         <Loading />
@@ -198,6 +195,7 @@ export function SearchScreen({
           )}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

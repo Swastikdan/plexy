@@ -23,7 +23,7 @@ export default function RootLayout() {
             <Stack.Screen name="item/[id]" />
             <Stack.Screen
               name="player/[file-id]"
-              options={{ animation: "none", gestureEnabled: false }}
+              options={{ animation: "none", gestureEnabled: false, contentStyle: { backgroundColor: "#000" } }}
             />
           </Stack>
           </AppDialogProvider>

@@ -1,11 +1,9 @@
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import { X, Check } from "@/shared/ui/icons";
-import { isPictureInPictureSupported } from "expo-video";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -22,7 +20,7 @@ import { cn } from "@/shared/lib/cn";
 import { timeLabel, easings } from "@/shared/theme";
 import { Film, Minus, Plus } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
-import { SheetChips, SheetItem, SheetSection } from "./player-sheet";
+import { SheetChips, SheetSection } from "./player-sheet";
 
 interface PlayerDrawerProps {
   menu: PlayerMenu;
@@ -61,7 +59,6 @@ export function PlayerDrawer({
     reveal();
   };
   const { api, preferences, updatePreferences, progress } = useClient();
-  const { fitMode, applyFit, zoom } = picture;
   const { position: subVertical, setPosition: setSubVertical } = subtitles;
   const reduceMotion = useReducedMotion();
   const [renderedMenu, setRenderedMenu] = useState(menu);
@@ -318,34 +315,6 @@ export function PlayerDrawer({
                     />
 
                     <>
-                      <SheetSection label="Picture" />
-                      <SheetChips
-                        label="Fit"
-                        options={[
-                          {
-                            key: "contain",
-                            label: "Best fit",
-                            active: fitMode === "contain",
-                            onPress: () => applyFit("contain", zoom),
-                          },
-                          {
-                            key: "cover",
-                            label: "Crop",
-                            active: fitMode === "cover",
-                            onPress: () => applyFit("cover", zoom),
-                          },
-                          {
-                            key: "fill",
-                            label: "Stretch",
-                            active: fitMode === "fill",
-                            onPress: () => applyFit("fill", zoom),
-                          },
-                        ]}
-                      />
-                      <Text className="text-foreground/45 text-[12px] px-5 pt-3 leading-[17px]">
-                        Pinch with two fingers on the video to zoom in or out.
-                      </Text>
-
                       <SheetSection label="Subtitles" />
                       <SheetChips
                         label={
@@ -394,7 +363,7 @@ export function PlayerDrawer({
                       <View className="flex-row items-center justify-between px-5 pt-[18px]">
                         <View>
                           <Text className="text-foreground text-[14px] font-semibold">
-                            Vertical Position
+                            Position
                           </Text>
                           <Text className="text-foreground text-[18px] font-bold mt-1">
                             {subVertical}%
@@ -440,11 +409,11 @@ export function PlayerDrawer({
                         </View>
                       </View>
                       <SheetChips
-                        label="Position Presets"
+                        label="Placement"
                         options={[
                           {
                             key: "top",
-                            label: "Top (12%)",
+                            label: "Top",
                             active: subVertical === 12,
                             onPress: () => {
                               setSubVertical(12);
@@ -453,7 +422,7 @@ export function PlayerDrawer({
                           },
                           {
                             key: "center",
-                            label: "Center (50%)",
+                            label: "Center",
                             active: subVertical === 50,
                             onPress: () => {
                               setSubVertical(50);
@@ -462,7 +431,7 @@ export function PlayerDrawer({
                           },
                           {
                             key: "lower",
-                            label: "Lower (75%)",
+                            label: "Lower",
                             active: subVertical === 75,
                             onPress: () => {
                               setSubVertical(75);
@@ -471,7 +440,7 @@ export function PlayerDrawer({
                           },
                           {
                             key: "bottom",
-                            label: "Bottom (88%)",
+                            label: "Bottom",
                             active: subVertical === 88,
                             onPress: () => {
                               setSubVertical(88);
@@ -481,16 +450,6 @@ export function PlayerDrawer({
                         ]}
                       />
 
-                      <SheetSection label="Player" />
-                      {isPictureInPictureSupported() && (
-                        <SheetItem
-                          label="Picture in picture"
-                          onPress={() => {
-                            setMenu(null);
-                            picture.startPictureInPicture();
-                          }}
-                        />
-                      )}
                     </>
                   </>
                 )}

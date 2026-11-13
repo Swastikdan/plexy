@@ -1,3 +1,4 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Image } from "expo-image";
 import { useEffect,useState } from "react";
@@ -30,11 +31,11 @@ export function LibraryReportScreen() {
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
   const filters = ["all", "review", "files"] as const;
   const swipe = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
     onPanResponderRelease: (_, g) => {
       if (Math.abs(g.dx) < 55 && !(Math.abs(g.dx) > 24 && Math.abs(g.vx) > 0.35)) return;
       const next = filters[filters.indexOf(filter) + (g.dx < 0 ? 1 : -1)];
-      if (next) setFilter(next);
+      if (next) { triggerHaptic("selection"); setFilter(next); }
     },
   });
   const [editing, setEditing] = useState<ItemCard | null>(null);
@@ -63,13 +64,7 @@ export function LibraryReportScreen() {
   }
   return (
     <View className="flex-1 bg-background" {...swipe.panHandlers}>
-      <FlatList
-        data={items}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={{ padding: 20, paddingBottom: 30, gap: 12 }}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={
-          <View className="mb-2 gap-3.5">
+          <View className="px-5 pt-4 pb-3 gap-3.5">
             <View className="flex-row items-center justify-between">
               <Text className="text-[28px] font-archivo-bold text-foreground tracking-[-0.6px]">
                 Library report
@@ -92,8 +87,7 @@ export function LibraryReportScreen() {
               />
             </View>
             <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
-              Add videos, correct a match, or remove a title. Your original
-              files stay untouched.
+              Manage videos and title matches.
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" className="h-[46px] rounded-full border border-border bg-surface" contentContainerStyle={{ flexGrow: 1, padding: 3 }}>
               {filters.map((f) => (
@@ -101,7 +95,7 @@ export function LibraryReportScreen() {
                   key={f}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: filter === f }}
-                  onPress={() => setFilter(f)}
+                  onPress={() => { triggerHaptic("selection"); setFilter(f); }}
                   className={cn(
                     "flex-grow rounded-full px-4 items-center justify-center",
                     filter === f
@@ -114,14 +108,18 @@ export function LibraryReportScreen() {
                       ? `All titles (${all.length})`
                       : f === "files"
                         ? "Files"
-                        : "Needs attention"}
+                        : "Review"}
                   </Text>
                 </Pressable>
               ))}
             </ScrollView>
             {!!message && <Notice message={message} />}
           </View>
-        }
+      <FlatList
+        data={items}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={{ padding: 20, paddingBottom: 30, gap: 12 }}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
             {filter === "review"

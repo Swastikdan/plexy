@@ -94,7 +94,7 @@ export function SheetChips({
             accessibilityState={{ selected: !!option.active }}
             onPress={() => { triggerHaptic("selection"); option.onPress(); }}
             className={cn(
-              "min-h-[48px] justify-center rounded-full border px-3 py-2 active:opacity-[0.72]",
+              "h-12 min-w-[64px] shrink-0 items-center justify-center rounded-full border px-3 active:opacity-[0.72]",
               option.active
                 ? "bg-foreground border-foreground"
                 : "bg-foreground/[0.08] border-foreground/10",

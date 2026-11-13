@@ -1,3 +1,4 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
 import * as Linking from "expo-linking";
 import { fetchUpdateReleases } from "./lib/update-releases";
 import { selectUpdate } from "./lib/update-policy";
@@ -8,6 +9,8 @@ import { useRouter } from "expo-router";
 import { useEffect,useState } from "react";
 import {
 Modal,
+PanResponder,
+Pressable,
 ScrollView,
 Text,
 View,
@@ -24,7 +27,7 @@ import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
-import { Download, Film, Library, Tv } from "@/shared/ui/icons";
+import { Download, Film, Library, Tv, RefreshCw } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
@@ -37,6 +40,18 @@ export function SettingsScreen({ page = "settings" }: {
 }) {
   const showDialog = useAppDialog();
   const colors = useColors();
+  const folderTabs = ["all", "movies", "tv", "anime"] as const;
+  const [folderTab, setFolderTab] = useState<typeof folderTabs[number]>("all");
+  const selectFolderTab = (tab: typeof folderTabs[number]) => { if (tab !== folderTab) { triggerHaptic("selection"); setFolderTab(tab); } };
+  const folderSwipe = PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, g) => page === "folders" && Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderRelease: (_, g) => {
+      if (Math.abs(g.dx) < 55 && !(Math.abs(g.dx) > 24 && Math.abs(g.vx) > 0.35)) return;
+      const tab = folderTabs[folderTabs.indexOf(folderTab) + (g.dx < 0 ? 1 : -1)];
+      if (tab) selectFolderTab(tab);
+    },
+  });
+
   const { theme } = useUniwind();
   const online = useOnline();
   const router = useRouter();
@@ -121,6 +136,26 @@ export function SettingsScreen({ page = "settings" }: {
     options.find((o) => o[0] === value)?.[1] || value;
   const { fileCount, reviewCount: review, markerCount } = api.libraryStatus();
   return (
+    <View className="flex-1 bg-background" {...folderSwipe.panHandlers}>
+      <PageHeader
+        title={
+          page === "folders"
+            ? "Media folders"
+            : page === "updates"
+              ? "App updates"
+              : page === "metadata"
+                ? "Metadata & markers"
+                : "Settings"
+        }
+        style={{
+          paddingHorizontal: 20,
+        }}
+      />
+    {page === "folders" && <View className="mx-5 mb-3 h-[46px] flex-row rounded-full border border-border bg-surface p-[3px]">
+      {folderTabs.map((tab, i) => <Pressable key={tab} accessibilityRole="tab" accessibilityState={{ selected: tab === folderTab }} onPress={() => selectFolderTab(tab)} className={cn("flex-1 items-center justify-center rounded-full", folderTab === tab && "bg-foreground")}>
+        <Text className={cn("text-[13px] font-archivo-medium", folderTab === tab ? "text-background" : "text-muted")}>{["All", "Movies", "TV Shows", "Anime"][i]}</Text>
+      </Pressable>)}
+    </View>}
     <ScrollView
       className="flex-1 bg-background"
       contentContainerStyle={{
@@ -133,23 +168,6 @@ export function SettingsScreen({ page = "settings" }: {
       {!online && (
         <Notice message="Offline. Trailers, updates and metadata refresh are unavailable. Your saved library and markers still work." />
       )}
-      <PageHeader
-        title={
-          page === "folders"
-            ? "Media folders"
-            : page === "updates"
-              ? "App updates"
-              : page === "metadata"
-                ? "Metadata & markers"
-                : "Settings"
-        }
-        style={{
-          paddingHorizontal: 0,
-          paddingTop: 0,
-          paddingBottom: 0,
-          minHeight: 0,
-        }}
-      />
       <Modal
         visible={!!picker}
         transparent
@@ -205,7 +223,7 @@ export function SettingsScreen({ page = "settings" }: {
             />
             <SettingsRow
               title="Metadata & markers"
-              subtitle="TMDB, artwork, intro, recap and credits"
+              subtitle="Artwork and skip markers"
               icon={Film}
               onPress={() => router.push("/settings/metadata")}
             />
@@ -217,8 +235,8 @@ export function SettingsScreen({ page = "settings" }: {
             />
             <SettingsRow
               title="Scan library"
-              subtitle="Choose folders and follow scan results"
-              icon={Library}
+              subtitle="Scan connected folders"
+              icon={RefreshCw}
               onPress={() => router.push("/settings/scan")}
 
             />
@@ -232,7 +250,7 @@ export function SettingsScreen({ page = "settings" }: {
           <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Automatic subtitles"
-              subtitle="Use your preferred subtitle track"
+              subtitle="Use preferred track"
             >
               <ToggleSwitch
                 value={preferences.autoSubtitles}
@@ -241,7 +259,7 @@ export function SettingsScreen({ page = "settings" }: {
             </SettingsRow>
             <SettingsRow
               title="Automatically skip marked sections"
-              subtitle="Intro, recap and credits when markers are enabled"
+              subtitle="Skip intro, recap and credits"
             >
               <ToggleSwitch
                 value={preferences.autoSkip}
@@ -251,7 +269,7 @@ export function SettingsScreen({ page = "settings" }: {
             </SettingsRow>
             <SettingsRow
               title="Play next episode"
-              subtitle="Continue the series automatically"
+              subtitle="Continue automatically"
             >
               <ToggleSwitch
                 value={preferences.autoNext}
@@ -346,7 +364,7 @@ export function SettingsScreen({ page = "settings" }: {
             { text: "Cancel", style: "cancel" },
           ])} />
           {localLibrary.state.roots
-            .filter((r) => !r.singleFile)
+            .filter((r) => !r.singleFile && (folderTab === "all" || r.kind === folderTab))
             .map((root) => (
               <View
                 className="overflow-hidden rounded-[18px] bg-surface"
@@ -538,5 +556,6 @@ export function SettingsScreen({ page = "settings" }: {
       )}
       {page === "updates" && <Updates />}
     </ScrollView>
+    </View>
   );
 }

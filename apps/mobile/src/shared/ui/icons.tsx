@@ -1,3 +1,4 @@
+import RefreshIcon from "@hugeicons/core-free-icons/RefreshIcon";
 import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
 import ArrowLeft01Icon from "@hugeicons/core-free-icons/ArrowLeft01Icon";
 import ArrowLeft02Icon from "@hugeicons/core-free-icons/ArrowLeft02Icon";
@@ -139,3 +140,5 @@ export const InfoSolid: NativeIcon = function InfoSolid({
     />
   );
 };
+
+export const RefreshCw = glyph(RefreshIcon);

@@ -63,7 +63,7 @@ export function SpeedPanel({
                 accessibilityState={{ selected: active }}
                 onPress={() => { triggerHaptic("selection"); onSelect(value); }}
                 className={cn(
-                  "min-h-[48px] flex-row items-center justify-between rounded-[12px] px-3.5 py-3 active:bg-foreground/10",
+                  "h-12 shrink-0 flex-row items-center justify-between rounded-[12px] px-3.5 py-3 active:bg-foreground/10",
                   active && "bg-foreground/[0.08]",
                 )}
               >

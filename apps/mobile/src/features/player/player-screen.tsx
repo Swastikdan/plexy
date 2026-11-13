@@ -1,5 +1,4 @@
 import { usePlayerOrientation } from "./hooks/use-player-orientation";
-import { useColors } from "@/shared/theme";
 import { View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import { useResource } from "@/core/resources/use-resource";
@@ -17,7 +16,6 @@ export function PlayerScreen({
   back: () => void;
   next: (id: number) => void;
 }) {
-  const colors = useColors();
   usePlayerOrientation(() => {});
   const { api, progress } = useClient();
   const resource = useResource(async () => {
@@ -41,7 +39,7 @@ export function PlayerScreen({
       <View
         style={{
           flex: 1,
-          backgroundColor: colors.canvas,
+          backgroundColor: "#000",
           justifyContent: "center",
           alignItems: "center",
         }}
@@ -52,7 +50,7 @@ export function PlayerScreen({
   }
   if (resource.error)
     return (
-      <View style={{ padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: "#000", padding: 24 }}>
         <Button label="Back" onPress={back} />
         <Notice message={resource.error} retry={resource.retry} />
       </View>

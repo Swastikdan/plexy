@@ -183,7 +183,7 @@ export function LibraryScreen({
     setMoreError("");
   }
   const swipe = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) =>
+    onMoveShouldSetPanResponderCapture: (_, g) =>
       g.numberActiveTouches === 1 &&
       Math.abs(g.dx) > 24 &&
       Math.abs(g.dx) > Math.abs(g.dy) * 1.5,

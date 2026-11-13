@@ -173,6 +173,7 @@
     "node-av",
   ],
   "patchedDependencies": {
+    "expo-video@57.0.5": "patches/expo-video@57.0.5.patch",
     "expo-modules-core@57.0.26": "patches/expo-modules-core@57.0.26.patch",
   },
   "packages": {

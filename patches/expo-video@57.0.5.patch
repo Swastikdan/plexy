@@ -1,0 +1,82 @@
+diff --git a/android/src/main/java/expo/modules/video/VideoModule.kt b/android/src/main/java/expo/modules/video/VideoModule.kt
+index 71b85013e3a69f4421a689e7dd76677e333d7581..e7eade769b4d3a7400c8cb006e4254e7b569f9a9 100644
+--- a/android/src/main/java/expo/modules/video/VideoModule.kt
++++ b/android/src/main/java/expo/modules/video/VideoModule.kt
+@@ -396,6 +396,9 @@ private inline fun <reified T : VideoView> ViewDefinitionBuilder<T>.VideoViewCom
+   Prop("player") { view: T, player: VideoPlayer? ->
+     view.videoPlayer = player
+   }
++  Prop("subtitleFontSize") { view: T, size: Float? ->
++    view.subtitleFontSize = size
++  }
+   Prop("nativeControls") { view: T, useNativeControls: Boolean ->
+     view.useNativeControls = useNativeControls
+   }
+diff --git a/android/src/main/java/expo/modules/video/VideoView.kt b/android/src/main/java/expo/modules/video/VideoView.kt
+index 58c8b10da87883f0f25b311957c51a0310f788cd..fa0e8d86b4a05b7a8b500e2145d06f2d501c9f4e 100644
+--- a/android/src/main/java/expo/modules/video/VideoView.kt
++++ b/android/src/main/java/expo/modules/video/VideoView.kt
+@@ -47,6 +47,12 @@ class TextureVideoView(context: Context, appContext: AppContext) : VideoView(con
+ open class VideoView(context: Context, appContext: AppContext, useTextureView: Boolean = false) : ExpoView(context, appContext), VideoPlayerListener {
+   val videoViewId: String = UUID.randomUUID().toString()
+   val playerView: PlayerView = LayoutInflater.from(context.applicationContext).inflate(getPlayerViewLayoutId(useTextureView), null) as PlayerView
++  var subtitleFontSize: Float? = null
++    set(value) {
++      field = value
++      playerView.setTag(android.R.id.custom, value)
++      SubtitleUtils.configureSubtitleView(playerView, context)
++    }
+   val onPictureInPictureStart by EventDispatcher<Unit>()
+   val onPictureInPictureStop by EventDispatcher<Unit>()
+   val onFullscreenEnter by EventDispatcher<Unit>()
+diff --git a/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt b/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt
+index 52bdcd8593f901bccbfb3ecef34b6cb59288ae65..6a9665282e811f33c6a63478d01e003426795356 100644
+--- a/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt
++++ b/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt
+@@ -17,6 +17,8 @@ object SubtitleUtils {
+       setApplyEmbeddedStyles(false)
+       setApplyEmbeddedFontSizes(false)
+ 
++      val appSize = playerView.getTag(android.R.id.custom) as? Float
++
+       // Apply system accessibility caption style but with reasonable base font size
+       val captioningManager = context.getSystemService(Context.CAPTIONING_SERVICE) as? CaptioningManager
+       val userStyle = captioningManager?.userStyle
+@@ -26,9 +28,10 @@ object SubtitleUtils {
+         setStyle(systemStyle)
+ 
+         val fontScale = captioningManager.fontScale
+-        val baseFontSize = 16f // Reasonable base size
++        val baseFontSize = appSize ?: 16f // Reasonable base size
+         setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, baseFontSize * fontScale)
+       }
++      if (appSize != null) setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, appSize)
+     }
+   }
+ 
+diff --git a/build/VideoView.types.d.ts b/build/VideoView.types.d.ts
+index 1e9cdeb2380f36d259ebf9115146ba6c8afcaded..6bdf29559119a77a9eef8eac684686e117d24e53 100644
+--- a/build/VideoView.types.d.ts
++++ b/build/VideoView.types.d.ts
+@@ -17,6 +17,8 @@ export type VideoContentFit = 'contain' | 'cover' | 'fill';
+  */
+ export type SurfaceType = 'textureView' | 'surfaceView';
+ export interface VideoViewProps extends ViewProps {
++  /** Plexy: embedded Android caption size in sp. */
++  subtitleFontSize?: number;
+     /**
+      * A video player instance. Use [`useVideoPlayer()`](#usevideoplayersource-setup) hook to create one.
+      */
+diff --git a/src/VideoView.types.ts b/src/VideoView.types.ts
+index 665adefa37834affc5ec88ddbd706b1477b0c288..e53d85f9985cb21588ae8d1ee15367a71b7663fc 100644
+--- a/src/VideoView.types.ts
++++ b/src/VideoView.types.ts
+@@ -21,6 +21,8 @@ export type VideoContentFit = 'contain' | 'cover' | 'fill';
+ export type SurfaceType = 'textureView' | 'surfaceView';
+ 
+ export interface VideoViewProps extends ViewProps {
++  /** Plexy: embedded Android caption size in sp. */
++  subtitleFontSize?: number;
+   /**
+    * A video player instance. Use [`useVideoPlayer()`](#usevideoplayersource-setup) hook to create one.
+    */

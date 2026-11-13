@@ -1,8 +1,8 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { ArrowLeft, Play, Pause, SlidersHorizontal } from "@/shared/ui/icons";
+import { ArrowLeft, Play, Pause, SlidersHorizontal, PictureInPicture, Maximize, Crop, MoveHorizontal } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { isPictureInPictureSupported, useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -643,6 +643,7 @@ export function PlaybackScreen({
       reveal();
     },
     contentFit: fitMode,
+    subtitleFontSize: preferences.subtitleSize,
   };
   return (
     <View className="flex-1 bg-black">
@@ -749,7 +750,7 @@ export function PlaybackScreen({
               transform: [{ translateY: subVertical > 50 ? -24 : 0 }],
             }}
           >
-            <Label
+            <Text
               style={{
                 fontSize: preferences.subtitleSize,
                 lineHeight: preferences.subtitleSize * 1.35,
@@ -760,7 +761,7 @@ export function PlaybackScreen({
               }}
             >
               {text}
-            </Label>
+            </Text>
           </View>
         )}
       </View>
@@ -860,12 +861,23 @@ export function PlaybackScreen({
             </PlayerControl>
           </View>
           <View
-            className="absolute"
+            className="absolute flex-row items-center gap-2"
             style={{
               right: Math.max(insets.right, 10) + 12,
               top: Math.max(insets.top, 10) + 8,
             }}
           >
+            <PlayerControl accessibilityLabel={`Video fit: ${fitMode}. Change fit`} size={48} bg="rgba(0,0,0,0.4)" onPress={() => {
+              const modes = ["contain", "cover", "fill"] as const;
+              const mode = modes[(modes.indexOf(fitMode) + 1) % modes.length]!;
+              applyFit(mode, 1);
+              showFitToast(mode === "contain" ? "Best fit" : mode === "cover" ? "Crop" : "Stretch");
+            }}>
+              {fitMode === "cover" ? <Crop size={22} color="#fff" /> : fitMode === "fill" ? <MoveHorizontal size={22} color="#fff" /> : <Maximize size={22} color="#fff" />}
+            </PlayerControl>
+            {isPictureInPictureSupported() && <PlayerControl accessibilityLabel="Picture in picture" size={48} bg="rgba(0,0,0,0.4)" onPress={() => {
+              void video.current?.startPictureInPicture().catch(() => setMessage("Picture in picture is unavailable on this device."));
+            }}><PictureInPicture size={22} color="#fff" /></PlayerControl>}
             <PlayerControl
               accessibilityLabel="Player settings"
               onPress={() => setMenu("settings")}
