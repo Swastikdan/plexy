@@ -1,3 +1,4 @@
+import { useClient } from "@/core/client/client-provider";
 import { Image } from "expo-image";
 import { useEffect,useState } from "react";
 import {
@@ -8,10 +9,6 @@ TextInput,
 View,
 } from "react-native";
 import type { ItemCard } from "@plexy/api-client/types";
-import {
-localLibrary,
-searchTitles,
-} from "@/core/library/local-runtime";
 import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
 import { colors } from "@/shared/theme";
@@ -26,18 +23,17 @@ export function IdentifyTitle({
   close: () => void;
 }) {
   const online = useOnline();
-  const record = localLibrary.state.records.find(
-    (r) => r.id === item.id || r.card.parentId === item.id,
-  )!;
+  const { api, runtime } = useClient();
+  const record = api.titleFile(item.id)!;
   const [kind, setKind] = useState<"movies" | "tv">(
     item.kind === "series" || item.kind === "episode" ? "tv" : "movies",
   );
   const [query, setQuery] = useState(
     item.kind === "episode" ? item.parentTitle || item.name : item.name,
   );
-  const [season, setSeason] = useState(String(record.card.seasonNumber ?? 1));
+  const [season, setSeason] = useState(String(record.seasonNumber ?? 1));
   const [episode, setEpisode] = useState(
-    String(record.card.episodeNumber ?? 1),
+    String(record.episodeNumber ?? 1),
   );
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,7 +50,7 @@ export function IdentifyTitle({
     setLoading(true);
     const timer = setTimeout(
       () =>
-        void searchTitles(query.trim(), kind)
+        void runtime.searchTitles(query.trim(), kind)
           .then((rows) => {
             if (live) setResults(rows);
           })
@@ -70,7 +66,7 @@ export function IdentifyTitle({
       live = false;
       clearTimeout(timer);
     };
-  }, [query, kind, online]);
+  }, [runtime, query, kind, online]);
   async function choose(result?: any) {
     if (result && !online) return;
     setBusy(true);
@@ -83,7 +79,7 @@ export function IdentifyTitle({
         throw new Error(
           "Enter a season number (0 for specials) and an episode number.",
         );
-      await localLibrary.identify(item.id, {
+      await api.identify(item.id, {
         kind,
         title: result?.title || result?.name || query,
         tmdbId: result?.id,

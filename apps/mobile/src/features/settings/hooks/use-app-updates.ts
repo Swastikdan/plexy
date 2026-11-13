@@ -47,12 +47,14 @@ export function useAppUpdates(online: boolean) {
     setUpdateDownloading(true);
     setUpdateProgress(0);
     try {
-      await downloadAndInstallUpdate(availableUpdate, (pct) =>
-        setUpdateProgress(pct),
+      const result = await downloadAndInstallUpdate(
+        availableUpdate,
+        setUpdateProgress,
+        () => setUpdateStatusText("Android installer opened. Confirm installation there."),
       );
-      setUpdateStatusText(
-        "Installing… Complete installation in Android prompt",
-      );
+      setUpdateStatusText(result === "installed"
+        ? "Update installed. Reopen Plexy."
+        : "Installation was not completed. Allow Plexy to install unknown apps, then tap Update now to retry.");
     } catch (e) {
       setUpdateStatusText(e instanceof Error ? e.message : String(e));
     } finally {

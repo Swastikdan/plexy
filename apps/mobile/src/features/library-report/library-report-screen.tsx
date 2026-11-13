@@ -11,37 +11,25 @@ View,
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ItemCard } from "@plexy/api-client/types";
 import type { LocalRoot } from "@plexy/local-library/library";
-import { localLibrary } from "@/core/library/local-runtime";
+import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
 import { colors } from "@/shared/theme";
-import { Icon } from "@/shared/ui/icon";
+import { Film, Tv } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { addLocalFiles } from "@/features/library/lib/import-local-files";
 import { IdentifyTitle } from "./components/identify-title";
 import { ReportAction } from "./components/report-action";
 
 export function LibraryReportScreen() {
+  const { api, runtime } = useClient();
   const [, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
   const [editing, setEditing] = useState<ItemCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  useEffect(() => localLibrary.subscribe(() => update((n) => n + 1)), []);
-  const all = localLibrary.cards();
-  const items =
-    filter === "files"
-      ? localLibrary.state.records.map((r) => r.card)
-      : filter === "review"
-        ? all.filter(
-            (c) =>
-              c.matchStatus !== "matched" ||
-              localLibrary.state.records.some(
-                (r) =>
-                  (r.id === c.id || r.card.parentId === c.id) &&
-                  r.metadataError,
-              ),
-          )
-        : all;
+  useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
+  const all = api.report("all");
+  const items = api.report(filter);
   async function add(kind: LocalRoot["kind"]) {
     setBusy(true);
     setMessage("");
@@ -55,7 +43,7 @@ export function LibraryReportScreen() {
   }
   async function remove(item: ItemCard) {
     try {
-      await localLibrary.removeTitle(item.id);
+      await api.removeTitle(item.id);
     } catch (e) {
       setMessage(String(e));
     }
@@ -127,9 +115,7 @@ export function LibraryReportScreen() {
           </Text>
         }
         renderItem={({ item }) => {
-          const record = localLibrary.state.records.find(
-            (r) => r.id === item.id || r.card.parentId === item.id,
-          );
+          const record = api.titleFile(item.id);
           return (
             <View className="gap-3 rounded-[12px] bg-surface p-3.5">
               <View className="flex-row gap-3.5">
@@ -141,11 +127,7 @@ export function LibraryReportScreen() {
                   />
                 ) : (
                   <View className="h-[90px] w-[60px] items-center justify-center rounded-[6px] bg-surface-secondary">
-                    <Icon
-                      name={item.kind === "series" ? "tv" : "film"}
-                      size={24}
-                      color={colors.quiet}
-                    />
+                    {item.kind === "series" ? <Tv size={24} color={colors.quiet} /> : <Film size={24} color={colors.quiet} />}
                   </View>
                 )}
                 <View className="flex-1 gap-1.5">
@@ -185,7 +167,7 @@ export function LibraryReportScreen() {
                     className="text-[11px] text-muted"
                     numberOfLines={1}
                   >
-                    {record?.file.name}
+                    {record?.name}
                   </Text>
                 </View>
               </View>

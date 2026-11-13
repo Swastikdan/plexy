@@ -120,3 +120,13 @@ test("detects newer version when installed version is older semver", () => {
   expect(update).not.toBeNull();
   expect(update?.tagName).toBe("v1.0.2-build.31");
 });
+
+
+test("installed Android versions retain current and legacy update comparisons", async () => {
+  const { encodeVersionCode, decodeVersionCode } = await import("@/shared/lib/build-version");
+  expect(decodeVersionCode(1001)).toBe(1001);
+  expect(decodeVersionCode(52032)).toBe(2032);
+  expect(encodeVersionCode(2033)).toBe(52033);
+  expect(selectUpdate([release("build.2033")], "mobile", decodeVersionCode(52032))?.buildNumber).toBe(2033);
+  expect(selectUpdate([release("build.2032")], "mobile", decodeVersionCode(52032))).toBeNull();
+});

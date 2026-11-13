@@ -3,19 +3,19 @@ import { Pressable,Text,View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { colors } from "@/shared/theme";
-import { Icon } from "@/shared/ui/icon";
+import type { NativeIcon } from "@/shared/ui/icons";
 
 export function SettingsRow({
   title,
   subtitle,
-  icon,
+  icon: Icon,
   onPress,
   children,
   danger,
 }: {
   title: string;
   subtitle?: string;
-  icon?: "library" | "settings" | "film" | "tv" | "download";
+  icon?: NativeIcon;
   onPress?: () => void;
   children?: React.ReactNode;
   danger?: boolean;
@@ -30,9 +30,9 @@ export function SettingsRow({
       disabled={!onPress}
       className="min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5 active:bg-surface-hover"
     >
-      {icon && (
+      {Icon && (
         <View className="w-6 items-center">
-          <Icon name={icon} size={20} color={colors.muted} />
+          <Icon size={20} color={colors.muted} />
         </View>
       )}
       <View className="flex-1 gap-1">

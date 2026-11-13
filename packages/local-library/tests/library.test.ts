@@ -224,3 +224,45 @@ test("local playback API fetches missing markers without requiring a scan", asyn
   const api = new LocalApi(f.library, async () => "", async () => []);
   expect((await api.skips(r.id)).intro?.end).toBe(35);
 });
+
+test("catalog discovery groups cast and collections, filters attention and unwatched movies", async () => {
+  const f = fixture();
+  f.files([file("Movie.A.2020.mp4"), file("Movie.B.2021.mp4")]);
+  await f.library.addRoot(root);
+  const [a, b] = f.library.state.records;
+  for (const record of [a!, b!]) {
+    record.cast = [{ name: "Shared actor", character: "Lead", photo: null }];
+    record.collection = { id: 9, name: "Movie collection" };
+    record.card.matchStatus = "matched";
+  }
+  a!.card.poster = "file:///poster.jpg";
+  b!.metadataError = "Artwork unavailable";
+  const api = new LocalApi(f.library, async () => "", async () => []);
+  expect(api.titlesByPerson().get("Shared actor")?.map((card) => card.id)).toEqual([a!.id, b!.id]);
+  expect(api.collections()).toEqual([{ id: 9, name: "Movie collection", count: 2, poster: "file:///poster.jpg" }]);
+  expect(api.collectionItems(9).map((card) => card.id)).toEqual([a!.id, b!.id]);
+  expect(api.report("review").map((card) => card.id)).toEqual([b!.id]);
+  expect(api.libraryStatus()).toEqual({ fileCount: 2, reviewCount: 1, markerCount: 0 });
+  await api.watched(a!.id, true);
+  expect((await api.items("movie", 0, "year", undefined, true)).items.map((card) => card.id)).toEqual([b!.id]);
+  const controller = new AbortController();
+  controller.abort();
+  await expect(api.items("movie", 0, "name", controller.signal)).rejects.toThrow("cancelled");
+  await api.removeTitle(b!.id);
+  expect(api.collectionItems(9).map((card) => card.id)).toEqual([a!.id]);
+});
+
+test("catalog subtitle reads only a file's own tracks and respects cancellation", async () => {
+  const f = fixture();
+  await f.library.addRoot(root);
+  const id = f.library.cards()[0]!.id;
+  const uri = "content://videos/subtitle%with space.srt";
+  let reads = 0;
+  const api = new LocalApi(f.library, async (path) => { reads++; return path; }, async () => [{ track: uri, kind: "sidecar", title: "English", language: "en" }]);
+  expect(await api.subtitle(id, uri)).toBe(uri);
+  await expect(api.subtitle(id, "content://other.srt")).rejects.toThrow("Subtitle not found");
+  const controller = new AbortController();
+  controller.abort();
+  await expect(api.subtitle(id, uri, controller.signal)).rejects.toThrow("cancelled");
+  expect(reads).toBe(1);
+});

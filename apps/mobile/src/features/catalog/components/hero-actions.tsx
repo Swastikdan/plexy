@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemCard } from "@/core/library/catalog-api";
-import { localLibrary } from "@/core/library/local-runtime";
+import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { Check, Film, InfoSolid, Play, Trash2 } from "@/shared/ui/icons";
@@ -34,6 +34,7 @@ export function HeroActions({
   onHeroFocus,
   hideActions = false,
 }: HeroActionsProps) {
+  const { api } = useClient();
   const [, setPlayFocus] = useState(false);
   const [, setDetailFocus] = useState(false);
   const [, setTrailerFocus] = useState(false);
@@ -41,11 +42,7 @@ export function HeroActions({
   const [, setDeleteFocus] = useState(false);
   const action = playbackAction(
     item,
-    item.kind === "series"
-      ? localLibrary.state.records
-          .filter((r) => r.card.parentId === item.id)
-          .map((r) => r.card)
-      : [],
+    item.kind === "series" ? api.episodes(item.id) : [],
   );
   const playLabel = actionLabel ?? action.label;
   return (
@@ -80,8 +77,6 @@ export function HeroActions({
           </Text>
         </View>
       </Pressable>
-
-      {/* Details button: larger icon button */}
       {onDetails && (
         <Pressable
           onPress={() => {
@@ -94,9 +89,6 @@ export function HeroActions({
           }}
           onBlur={() => setDetailFocus(false)}
           className={cn(
-            // Solid white chip with a black glyph — the same treatment as the
-            // play chips on the episode tiles. Opaque fill, no ring, and no
-            // translucent layer behind the icon.
             "h-[52px] w-[52px] items-center justify-center rounded-full bg-white",
             "active:opacity-78",
           )}
@@ -107,8 +99,6 @@ export function HeroActions({
           <InfoSolid size={28} color="#000" />
         </Pressable>
       )}
-
-      {/* Trailer link button: larger icon button */}
       {onTrailer && (
         <Pressable
           onPress={() => {
@@ -131,8 +121,6 @@ export function HeroActions({
           <Film size={20} color="#fff" strokeWidth={2.2} />
         </Pressable>
       )}
-
-      {/* Watched toggle button: larger icon button */}
       {onToggleWatched && (
         <Pressable
           onPress={() => {
@@ -160,9 +148,6 @@ export function HeroActions({
           />
         </Pressable>
       )}
-
-      {/* Download button for movies / single media */}
-      {/* Delete series / item button */}
       {onDelete && (
         <Pressable
           onPress={() => {

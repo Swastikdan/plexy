@@ -1,13 +1,10 @@
-import NetInfo from "@react-native-community/netinfo";
-import { useEffect,useState } from "react";
+import { useSyncExternalStore } from "react";
+import { connectivity } from "@/shared/lib/connectivity";
+
 export function useOnline() {
-  const [online, setOnline] = useState(false);
-  useEffect(
-    () =>
-      NetInfo.addEventListener((s) =>
-        setOnline(s.isConnected === true && s.isInternetReachable !== false),
-      ),
-    [],
-  );
-  return online;
+  return useSyncExternalStore(
+    connectivity.subscribe,
+    connectivity.getSnapshot,
+    connectivity.getSnapshot,
+  ) === true;
 }

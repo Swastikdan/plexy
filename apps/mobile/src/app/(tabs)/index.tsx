@@ -1,15 +1,16 @@
 import { Redirect,useIsFocused } from "expo-router";
 import { useState } from "react";
-import { localRuntime } from "@/core/library/local-runtime";
+import { useClient } from "@/core/client/client-provider";
 import { HomeScreen } from "@/features/home/home-screen";
 import { useMediaNavigation } from "@/shared/navigation/use-media-navigation";
 export default function HomeRoute() {
+  const { runtime } = useClient();
   const navigation = useMediaNavigation();
   const [, focused] = useState<number | null>(null);
   const active = useIsFocused();
-  if (localRuntime.needsSetup())
+  if (runtime.needsSetup())
     return (
-      <Redirect href={{ pathname: "/settings", params: { page: "folders" } }} />
+      <Redirect href="/settings/folders" />
     );
   return <HomeScreen {...navigation} focused={focused} active={active} />;
 }

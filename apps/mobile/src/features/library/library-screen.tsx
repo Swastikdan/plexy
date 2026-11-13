@@ -11,14 +11,13 @@ View,
 } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
-import { localLibrary } from "@/core/library/local-runtime";
 import { useResource } from "@/core/resources/use-resource";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { colors,easings } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
-import { Icon } from "@/shared/ui/icon";
+import { Film } from "@/shared/ui/icons";
 import { ArrowUpDown,Check,ChevronDown,ChevronRight } from "@/shared/ui/icons";
 import { Loading } from "@/shared/ui/loading";
 import { Card } from "@/shared/ui/media-card";
@@ -28,10 +27,6 @@ import { PosterImage } from "@/shared/ui/poster-image";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
 import { OpenTitle } from "@/features/catalog/types";
 
-// One pane per library tab: when the tab changes, the incoming content
-// slides in from the direction of the switch with a subtle fade. A hard cut
-// between lists reads as a glitch; a short directional slide reads as space.
-// Transform + opacity only, native driver, so it never costs a frame.
 function TabPane({
   paneKey,
   direction,
@@ -97,7 +92,7 @@ export function LibraryScreen({
   open: OpenTitle;
   defaultSubTab?: "movie" | "series" | "anime";
 }) {
-  const { api, platform } = useClient();
+  const { api, runtime } = useClient();
   const { width } = useWindowDimensions();
   type LibraryTab = "movie" | "series" | "anime" | "collection";
   const [activeTab, setActiveTab] = useState<LibraryTab>(defaultSubTab || kind);
@@ -114,30 +109,9 @@ export function LibraryScreen({
   const [end, setEnd] = useState(false);
   const [, setFocusedId] = useState<number | null>(null);
   const ref = useRef<FlatList<ItemCard>>(null);
-  // Collections come from identified movies; the local library mutates
-  // outside React, so subscribe to re-render when they appear or change.
   const [collectionsTick, updateCollections] = useState(0);
-  useEffect(() => localLibrary.subscribe(() => updateCollections((n) => n + 1)), []);
-  const collections = React.useMemo(() => {
-    const map = new Map<
-      number,
-      { id: number; name: string; count: number; poster: string | null }
-    >();
-    for (const r of localLibrary.state.records) {
-      if (r.card.kind !== "movie" || !r.collection) continue;
-      const entry = map.get(r.collection.id) ?? {
-        id: r.collection.id,
-        name: r.collection.name,
-        count: 0,
-        poster: null,
-      };
-      entry.count++;
-      entry.poster = entry.poster || r.card.poster || null;
-      map.set(r.collection.id, entry);
-    }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [collectionsTick]);
-  // Probe movies, series, and anime to auto-hide empty tabs and set priority
+  useEffect(() => runtime.subscribe(() => updateCollections((n) => n + 1)), [runtime]);
+  const collections = React.useMemo(() => api.collections(), [api, collectionsTick]);
   const movieProbe = useResource(
     (signal) => api.items("movie", 0, "name", signal),
     [api, defaultSubTab, "movie-probe"],
@@ -155,10 +129,8 @@ export function LibraryScreen({
   const hasAnime = (animeProbe.value?.items?.length ?? 0) > 0;
   const probesDone = movieProbe.value != null && seriesProbe.value != null;
   React.useEffect(() => {
-    // Never auto-yank the user off the collections tab.
     if (activeTab === "collection") return;
     if (probesDone) {
-      // Priority when multiple exist: Movies -> TV Shows -> Anime
       if (hasMovies) {
         if (!hasSeries && !hasAnime && activeTab !== "movie")
           switchTab("movie", false);
@@ -184,7 +156,6 @@ export function LibraryScreen({
       if (hasAnime) base.push("anime");
       if (base.length === 0) base.push("movie", "series");
     }
-    // Collections live on their own tab instead of pills that shift layout.
     if (collections.length) base.push("collection");
     return base;
   }, [
@@ -193,12 +164,10 @@ export function LibraryScreen({
     hasMovies,
     hasSeries,
     hasAnime,
-    platform.local,
+    runtime,
     collections,
   ]);
   const showLibTabs = libraryTabs.length > 1;
-  // Direction of the last library switch, so the pane can slide in from the
-  // side the user swiped from.
   const [tabDir, setTabDir] = useState(1);
   const reduceMotion = useReducedMotion();
   function switchTab(next: LibraryTab, haptic = true) {
@@ -320,22 +289,11 @@ export function LibraryScreen({
       <TitleBrowser
         title={collection?.name ?? null}
         items={
-          collection
-            ? localLibrary.state.records
-                .filter(
-                  (r) =>
-                    r.card.kind === "movie" &&
-                    r.collection?.id === collection.id,
-                )
-                .map((r) => r.card)
-            : []
+          collection ? api.collectionItems(collection.id) : []
         }
         close={() => setCollection(null)}
         open={open}
       />
-      {/* Movies | TV Shows | Anime | Collections — full-width segmented
-       * control with real touch targets. Collections live on their own tab
-       * so switching never shifts layout. */}
       {showLibTabs && (
         <View className="px-5 pb-3">
           <View
@@ -415,7 +373,7 @@ export function LibraryScreen({
                   />
                 ) : (
                   <View className="h-[64px] w-[44px] items-center justify-center rounded-[8px] bg-surface-secondary">
-                    <Icon name="film" size={20} color={colors.quiet} />
+                    <Film size={20} color={colors.quiet} />
                   </View>
                 )}
                 <View className="flex-1 gap-0.5">

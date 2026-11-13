@@ -251,8 +251,7 @@ export function HomeScreen({
               size="lg"
               onPress={() =>
                 homeRouter.push({
-                  pathname: "/settings",
-                  params: { page: "folders" },
+                  pathname: "/settings/folders",
                 })
               }
             >

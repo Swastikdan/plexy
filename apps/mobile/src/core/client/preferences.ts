@@ -1,8 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-const scopeKey = (scope: string) =>
-  Array.from(scope)
-    .map((c) => c.codePointAt(0)!.toString(16))
-    .join("_");
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
   try {
     const text = await AsyncStorage.getItem(key);
@@ -33,5 +29,5 @@ export const defaultPreferences: Preferences = {
   autoNext: true,
   playbackRate: 1,
 };
-export const preferenceKey = (scope: string) =>
-  `plexy.preferences.${scopeKey(scope)}`;
+// Preserve the installed app's storage key when removing the old scope encoder.
+export const PREFERENCE_KEY = "plexy.preferences.74_68_69_73_2d_64_65_76_69_63_65";

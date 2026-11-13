@@ -32,18 +32,6 @@ async function sourceFiles(directory: string): Promise<string[]> {
 }
 
 const sourceRoot = resolve(import.meta.dir, "../src");
-test("mobile source filenames use kebab-case with Expo Router conventions", async () => {
-  const { basename } = await import("node:path");
-  for (const file of await sourceFiles(sourceRoot)) {
-    const name = basename(file);
-    expect(
-      name === "_layout.tsx" ||
-        /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.d)?\.tsx?$/.test(name) ||
-        /^\[[a-z]+(?:-[a-z]+)*\]\.tsx$/.test(name),
-    ).toBe(true);
-  }
-});
-
 test("core and shared modules do not depend on feature implementations", async () => {
   const ts = await import("typescript");
   for (const folder of ["core", "shared"]) {

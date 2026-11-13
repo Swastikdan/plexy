@@ -12,7 +12,6 @@ View,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
-import { localLibrary } from "@/core/library/local-runtime";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
@@ -47,7 +46,7 @@ export function TitleScreen({
   back: () => void;
   play: (fileId: number) => void;
 }) {
-  const { api, platform, progress } = useClient();
+  const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
   const router = useRouter();
@@ -69,29 +68,13 @@ export function TitleScreen({
   >({});
   const detail = data.value;
   const item = detail?.item;
-  const titlesByPerson = React.useMemo(() => {
-    const cards = new Map(localLibrary.cards().map((card) => [card.id, card]));
-    const groups = new Map<string, Map<number, ItemCard>>();
-    for (const record of localLibrary.state.records) {
-      const card = cards.get(record.card.parentId ?? record.id);
-      if (!card) continue;
-      for (const person of record.cast) {
-        const titles = groups.get(person.name) ?? new Map<number, ItemCard>();
-        titles.set(card.id, card);
-        groups.set(person.name, titles);
-      }
-    }
-    return new Map(
-      [...groups].map(([name, titles]) => [name, [...titles.values()]]),
-    );
-  }, [detail]);
+  const titlesByPerson = React.useMemo(() => api.titlesByPerson(), [api, detail]);
   const personTitles = (name: string) => titlesByPerson.get(name) ?? [];
   const isSeriesWatched = overrideWatched ?? Boolean(item?.watch?.played);
   async function watched() {
     if (!item) return;
     const nextPlayed = !isSeriesWatched;
     setOverrideWatched(nextPlayed);
-    // Optimistically update all episodes to completed (or unwatched)
     const newOverrides: Record<number, boolean> = {};
     if (detail?.episodes) {
       detail.episodes.forEach((ep: any) => {
@@ -176,7 +159,6 @@ export function TitleScreen({
   return (
     <View className="flex-1 bg-background">
       <TopFade />
-      {/* Floating Back button pinned at top-left */}
       <Pressable
         onPress={back}
         className="absolute left-4 z-[99] h-10 w-10 items-center justify-center rounded-full border border-white/[0.15] bg-black/[0.65] active:opacity-60"
@@ -207,8 +189,8 @@ export function TitleScreen({
           detail &&
           item && (
             <>
-              {/* Hero section */}
               <Hero
+                showOverview={false}
                 hideActions
                 item={item}
                 logo={
@@ -226,8 +208,6 @@ export function TitleScreen({
 
               <View className="gap-[18px] px-5 pt-5">
                 {!!actionError && <Notice message={actionError} />}
-
-                {/* If TV show with episodes, display Tab Selector: Episodes | Cast & Details */}
                 {hasEpisodes ? (
                   <>
                     <View className="mb-1.5 mt-1 flex-row gap-1.5 rounded-full bg-surface p-1">
@@ -331,12 +311,6 @@ export function TitleScreen({
                                 >
                                   <Text
                                     className={cn(
-                                      // The pill is sized by its label, so
-                                      // the font weight must stay identical
-                                      // in both states — switching to bold
-                                      // widens the active label and shoves
-                                      // every following pill sideways. Only
-                                      // colour and the underline change.
                                       "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
                                       active ? "text-white" : "text-muted",
                                     )}
@@ -348,10 +322,6 @@ export function TitleScreen({
                             })}
                           </ScrollView>
                         )}
-
-                        {/* Download whole season button */}
-
-                        {/* Episodes list */}
                         {detail.episodes
                           ?.filter(
                             (e: any) =>
@@ -378,7 +348,6 @@ export function TitleScreen({
                                   },
                                 }}
                                 api={api}
-                                platform={platform}
                                 play={play}
                                 item={item}
                                 onToggleWatched={toggleEpisodeWatched}
@@ -388,14 +357,11 @@ export function TitleScreen({
                       </>
                     ) : (
                       <>
-                        {/* Overview */}
                         <Text className="font-archivo-regular text-[14px] leading-[22px] text-[#f0f0f0]/[0.78]">
                           {detail.metadata?.overview ||
                             item.overview ||
                             "No synopsis is available."}
                         </Text>
-
-                        {/* File quality info */}
                         {detail.file &&
                           (detail.file.height ||
                             detail.file.videoCodec ||
@@ -412,8 +378,6 @@ export function TitleScreen({
                                 .join(" · ")}
                             </Text>
                           )}
-
-                        {/* Cast */}
                         <CastRow
                           people={detail.cast ?? []}
                           api={api}
@@ -425,14 +389,11 @@ export function TitleScreen({
                   </>
                 ) : (
                   <>
-                    {/* Movie overview */}
                     <Text className="font-archivo-regular text-[14px] leading-[22px] text-[#f0f0f0]/[0.78]">
                       {detail.metadata?.overview ||
                         item.overview ||
                         "No synopsis is available."}
                     </Text>
-
-                    {/* File quality info */}
                     {detail.file &&
                       (detail.file.height ||
                         detail.file.videoCodec ||
@@ -449,8 +410,6 @@ export function TitleScreen({
                             .join(" · ")}
                         </Text>
                       )}
-
-                    {/* Movie Cast */}
                     <CastRow
                       people={detail.cast ?? []}
                       api={api}

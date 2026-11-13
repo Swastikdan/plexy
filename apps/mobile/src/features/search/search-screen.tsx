@@ -25,7 +25,7 @@ export function SearchScreen({
   play,
 }: {
   open: OpenTitle;
-  play?: (fileId: number) => void;
+  play: (fileId: number) => void;
 }) {
   const { api } = useClient();
   const { width } = useWindowDimensions();
@@ -155,6 +155,7 @@ export function SearchScreen({
                   title={row.title}
                   items={row.items}
                   open={open}
+                  play={play}
                   focused={focused}
                   cardWidth={cardWidth}
                   columns={columns}
@@ -177,6 +178,7 @@ export function SearchScreen({
               title="Movies & Shows"
               items={data.value.titles}
               open={open}
+              play={play}
               focused={focused}
               cardWidth={cardWidth}
               columns={columns}
@@ -187,6 +189,7 @@ export function SearchScreen({
               title="Episodes"
               items={data.value.episodes}
               open={open}
+              play={play}
               focused={focused}
               cardWidth={cardWidth}
               columns={columns}

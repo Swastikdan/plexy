@@ -8,14 +8,12 @@ import { Check,Play } from "@/shared/ui/icons";
 export function EpisodeCard({
   ep,
   api,
-  platform,
   play,
   item,
   onToggleWatched,
 }: {
   ep: any;
   api: any;
-  platform: any;
   play: (fileId: number) => void;
   item: ItemCard;
   onToggleWatched?: (ep: any) => void;
@@ -28,7 +26,6 @@ export function EpisodeCard({
     hasProgress && ep.watch?.duration
       ? Math.min(1, ep.watch.position / ep.watch.duration)
       : null;
-  // Clean redundant S01E01 / Season 1 Episode 1 prefixes
   const rawName = String(ep.name || "").trim();
   const cleanedTitle = rawName
     .replace(
@@ -36,7 +33,6 @@ export function EpisodeCard({
       "",
     )
     .trim();
-  // Show only the episode title; falls back to Episode {number} if name was empty
   const epDisplayTitle =
     cleanedTitle ||
     (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName);
@@ -58,7 +54,6 @@ export function EpisodeCard({
       onBlur={() => setFocused(false)}
       className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
     >
-      {/* Thumbnail with centered play button */}
       <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
         {ep.poster ? (
           <Image
@@ -69,14 +64,9 @@ export function EpisodeCard({
         ) : (
           <View className="h-full w-full bg-surface-secondary" />
         )}
-
-        {/* Center play icon button: a solid white chip so the icon reads on
-         * any artwork — white background, black filled icon, no ring. */}
         <View className="absolute left-1/2 top-1/2 -ml-[22px] -mt-[22px] h-[44px] w-[44px] items-center justify-center rounded-full bg-white">
           <Play size={24} color={"#000"} fill={"#000"} />
         </View>
-
-        {/* Duration badge */}
         {duration && (
           <View className="absolute right-1.5 top-1.5 rounded-[5px] bg-black/[0.65] px-1.5 py-0.5">
             <Text className="font-archivo-medium text-[10px] text-white">
@@ -84,8 +74,6 @@ export function EpisodeCard({
             </Text>
           </View>
         )}
-
-        {/* Progress bar on thumbnail */}
         {(progress !== null || watched) && (
           <View className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/[0.18]">
             <View
@@ -102,8 +90,6 @@ export function EpisodeCard({
           </View>
         )}
       </View>
-
-      {/* Info: Title, 2-line description, and small Episode {number} at the bottom */}
       <View className="flex-1 justify-center gap-1.5">
         <View className="flex-row items-start justify-between gap-2">
           <Text
@@ -112,8 +98,6 @@ export function EpisodeCard({
           >
             {epDisplayTitle}
           </Text>
-
-          {/* Watched state */}
           <View className="flex-row items-center gap-1.5">
             {onToggleWatched && (
               <Pressable

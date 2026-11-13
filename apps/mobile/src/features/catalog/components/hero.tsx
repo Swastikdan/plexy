@@ -23,9 +23,11 @@ export function Hero({
   preferred,
   onHeroFocus,
   hideActions = false,
+  showOverview = true,
   contentBottom,
 }: {
   hideActions?: boolean;
+  showOverview?: boolean;
   contentBottom?: number;
   item: ItemCard;
   logo?: string | null;
@@ -149,7 +151,7 @@ export function Hero({
           )}
 
           {/* 2-line synopsis / overview */}
-          {!!item.overview && (
+          {showOverview && !!item.overview && (
             <Text
               className="mt-1 font-archivo-regular text-[12px] leading-[18px] text-white/78"
               numberOfLines={2}

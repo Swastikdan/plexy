@@ -8,6 +8,7 @@ export function SearchGrid({
   title,
   items,
   open,
+  play,
   focusId,
   focused,
   cardWidth,
@@ -16,6 +17,7 @@ export function SearchGrid({
   title: string;
   items: ItemCard[];
   open: OpenTitle;
+  play: (fileId: number) => void;
   focusId?: number | null;
   focused: (id: number) => void;
   cardWidth: number;
@@ -37,7 +39,8 @@ export function SearchGrid({
             onFocus={() => focused(item.id)}
             onPress={() => {
               focused(item.id);
-              open(item.publicId);
+              if (item.kind === "episode" && item.fileId != null) play(item.fileId);
+              else open(item.publicId);
             }}
           />
         ))}

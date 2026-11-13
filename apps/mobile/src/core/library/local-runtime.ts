@@ -1,4 +1,3 @@
-import NetInfo from "@react-native-community/netinfo";
 import Constants from "expo-constants";
 import { Directory,File,Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
@@ -12,10 +11,10 @@ type LocalRoot,
 } from "@plexy/local-library/library";
 import { fetchMetadata } from "@plexy/local-library/metadata";
 import { invalidateLocalResources } from "@/core/resources/use-resource";
+import { connectivity } from "@/shared/lib/connectivity";
 import { loadLibrary,saveLibrary } from "./library-database";
 import { LocalApi } from "./local-api";
 const tokenKey = "plexy.local.tmdb-token";
-let online = true;
 const imageDirectory = new Directory(Paths.document, "library-artwork");
 const requests = new Map<string, Promise<any>>();
 export function displayName(uri: string) {
@@ -148,7 +147,7 @@ async function token() {
 async function metadata(
   record: LocalRecord,
 ): Promise<Partial<LocalRecord> | null> {
-  if (!online) return null;
+  if (connectivity.getSnapshot() !== true) return null;
   const key = await token();
   if (!key) throw new Error("This build has no TMDB configuration.");
   return fetchMetadata(record, {
@@ -157,7 +156,7 @@ async function metadata(
     settings: localLibrary.metadataSettings,
   });
 }
-export async function searchTitles(query: string, kind: "movies" | "tv") {
+async function searchTitles(query: string, kind: "movies" | "tv") {
   const key = await token();
   if (!key) throw new Error("TMDB is not configured in this build.");
   const trimmed = query.trim();
@@ -246,7 +245,7 @@ async function animeSkipMarkers(title: string, episodeNumber: number) {
   }
 }
 async function markers(record: LocalRecord) {
-  if (!online) return null;
+  if (connectivity.getSnapshot() !== true) return null;
   if (record.isAnime && record.card.episodeNumber != null) {
     const animeTitle = record.card.parentTitle || record.card.name;
     const animeMarkers = await animeSkipMarkers(
@@ -348,33 +347,32 @@ localLibrary.subscribe(() => {
     invalidateLocalResources();
   }, 800);
 });
-let restored = false;
+let restoration: Promise<void> | undefined;
 export const localRuntime = {
   api: localApi,
+  searchTitles,
   needsSetup: () => localLibrary.state.roots.length === 0,
-  async restore() {
-    if (restored) return;
-    await localLibrary.restore();
-    const connection = await NetInfo.fetch();
-    online =
-      connection.isConnected === true &&
-      connection.isInternetReachable !== false;
-    NetInfo.addEventListener((s) => {
-      const reconnect =
-        !online && s.isConnected === true && s.isInternetReachable !== false;
-      online = s.isConnected === true && s.isInternetReachable !== false;
-      if (reconnect) {
-        requests.clear();
-        void localLibrary.scan().catch(() => {});
-      }
+  restore() {
+    return restoration ??= (async () => {
+      await localLibrary.restore();
+      await connectivity.start();
+      let previous = connectivity.getSnapshot();
+      connectivity.subscribe(() => {
+        const current = connectivity.getSnapshot();
+        const reconnect = previous !== true && current === true;
+        previous = current;
+        if (reconnect) {
+          requests.clear();
+          void localLibrary.scan().catch(() => {});
+        }
+      });
+    })().catch((error) => {
+      restoration = undefined;
+      throw error;
     });
-    restored = true;
   },
   async refresh() {
-    const connection = await NetInfo.fetch();
-    online =
-      connection.isConnected === true &&
-      connection.isInternetReachable !== false;
+    await connectivity.refresh();
     requests.clear();
     await localLibrary.scan();
   },

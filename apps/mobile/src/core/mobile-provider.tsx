@@ -15,13 +15,9 @@ import { Notice } from "@/shared/ui/notice";
 import {
 ClientProvider,
 useClient,
-type MobileRuntimeBindings,
 } from "./client/client-provider";
 import { localRuntime } from "./library/local-runtime";
 void SplashScreen.preventAutoHideAsync().catch(() => {});
-const platform: MobileRuntimeBindings = {
-  local: localRuntime,
-};
 function Ready({ children }: React.PropsWithChildren) {
   const { ready, storageError } = useClient();
   if (!ready && !storageError) return <Loading />;
@@ -98,7 +94,7 @@ export function MobileProvider({ children }: React.PropsWithChildren) {
         ) : !booted || (!fonts && !fontError) ? (
           <Loading />
         ) : (
-          <ClientProvider platform={platform}>
+          <ClientProvider runtime={localRuntime}>
             <Ready>{children}</Ready>
           </ClientProvider>
         )}

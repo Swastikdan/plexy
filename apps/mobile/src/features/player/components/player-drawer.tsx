@@ -1,77 +1,117 @@
+import { X, Check } from "@/shared/ui/icons";
+import { isPictureInPictureSupported } from "expo-video";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-isPictureInPictureSupported,
-VideoView,
-type VideoPlayer,
-} from "expo-video";
-import React from "react";
-import {
-Animated,
-Modal,
-Pressable,
-ScrollView,
-Text,
-View,
+  Animated,
+  Easing,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 import type { EdgeInsets } from "react-native-safe-area-context";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import type { FitMode } from "../hooks/use-player-gestures";
+import type { PlayerMenu } from "../hooks/use-player-controls";
 import { useClient } from "@/core/client/client-provider";
-import type { ItemCard,Playability } from "@/core/library/catalog-api";
+import type { ItemCard, Playability } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
 import { timeLabel } from "@/shared/theme";
-import { Film,Minus,Plus } from "@/shared/ui/icons";
+import { Film, Minus, Plus } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
-import { IconCheck,IconClose } from "./player-icons";
-import { SheetChips,SheetItem,SheetSection } from "./player-sheet";
+import { SheetChips, SheetItem, SheetSection } from "./player-sheet";
 
 interface PlayerDrawerProps {
-  menu: "settings" | "quality" | "episodes" | null;
-  setMenu: React.Dispatch<
-    React.SetStateAction<
-      "settings" | "quality" | "episodes" | null
-    >
-  >;
-  drawerAnim: Animated.Value;
+  menu: PlayerMenu;
+  setMenu: React.Dispatch<React.SetStateAction<PlayerMenu>>;
   sortedEpisodes: ItemCard[];
   reveal: () => void;
-  episodesScrollRef: React.RefObject<ScrollView | null>;
   insets: EdgeInsets;
   manifest: Playability;
-  drawerWatchedOverride: Record<number, boolean>;
   next: (id: number) => void;
-  toggleDrawerEpWatched: (ep: ItemCard) => Promise<void>;
-  player: VideoPlayer;
-  fitMode: "fill" | "contain" | "cover";
-  applyFit: (mode: "fill" | "contain" | "cover", scale: number) => void;
-  zoom: number;
-  pip: React.RefObject<boolean>;
-  video: React.RefObject<VideoView | null>;
-  setMessage: React.Dispatch<React.SetStateAction<string>>;
-  subVertical: number;
-  setSubVertical: React.Dispatch<React.SetStateAction<number>>;
+  picture: {
+    fitMode: FitMode;
+    applyFit: (mode: FitMode, scale: number) => void;
+    zoom: number;
+    startPictureInPicture: () => void;
+  };
+  subtitles: { position: number; setPosition: (position: number) => void };
+  setPlaybackRate: (rate: number) => void;
 }
 
 export function PlayerDrawer({
   menu,
   setMenu,
-  drawerAnim,
   sortedEpisodes,
   reveal,
-  episodesScrollRef,
   insets,
   manifest,
-  drawerWatchedOverride,
   next,
-  toggleDrawerEpWatched,
-  player,
-  fitMode,
-  applyFit,
-  zoom,
-  pip,
-  video,
-  setMessage,
-  subVertical,
-  setSubVertical,
+  picture,
+  subtitles,
+  setPlaybackRate,
 }: PlayerDrawerProps) {
   const { api, preferences, updatePreferences, progress } = useClient();
+  const { fitMode, applyFit, zoom } = picture;
+  const { position: subVertical, setPosition: setSubVertical } = subtitles;
+  const reduceMotion = useReducedMotion();
+  const drawerAnim = useRef(new Animated.Value(560)).current;
+  useEffect(() => {
+    if (menu != null) {
+      if (reduceMotion) {
+        Animated.timing(drawerAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        Animated.spring(drawerAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 32,
+          stiffness: 320,
+          mass: 1,
+        }).start();
+      }
+    } else {
+      Animated.timing(drawerAnim, {
+        toValue: 560,
+        duration: reduceMotion ? 0 : 180,
+        easing: Easing.bezier(0.32, 0, 1, 1),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [menu, reduceMotion]);
+  const episodesScrollRef = useRef<ScrollView>(null);
+  const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<
+    Record<number, boolean>
+  >({});
+  const toggleDrawerEpWatched = useCallback(
+    async (ep: ItemCard) => {
+      const isPlayed =
+        drawerWatchedOverride[ep.id] ??
+        (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+      const nextPlayed = !isPlayed;
+      setDrawerWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
+      try {
+        if (nextPlayed) {
+          const dur = ep.runtime ? ep.runtime * 60 : ep.watch?.duration || 3600;
+          await progress.record({
+            itemId: ep.id,
+            position: dur,
+            duration: dur,
+            played: true,
+            updatedAt: Date.now(),
+          });
+        } else {
+          await progress.forget(ep.id);
+        }
+        await api.watched(ep.id, nextPlayed);
+      } catch {}
+    },
+    [api, progress, drawerWatchedOverride],
+  );
   return (
     <Modal
       visible={menu != null}
@@ -97,7 +137,6 @@ export function PlayerDrawer({
           }}
         >
           <View className="flex-1">
-            {/* Title row */}
             <View className="flex-row items-center justify-between border-b-[0.33px] border-border px-5 py-3.5">
               <Text className="text-white text-[17px] font-bold">
                 {menu === "quality"
@@ -116,11 +155,9 @@ export function PlayerDrawer({
                 accessibilityRole="button"
                 accessibilityLabel="Close menu"
               >
-                <IconClose size={18} color="#fff" />
+                <X strokeWidth={2.2} size={18} color="#fff" />
               </Pressable>
             </View>
-
-            {/* Episodes menu */}
             {menu === "episodes" && (
               <ScrollView
                 ref={episodesScrollRef}
@@ -146,6 +183,16 @@ export function PlayerDrawer({
                   return (
                     <Pressable
                       key={ep.id || `${ep.seasonNumber}-${ep.episodeNumber}`}
+                      onLayout={
+                        isCurrent
+                          ? (event) => {
+                              episodesScrollRef.current?.scrollTo({
+                                y: event.nativeEvent.layout.y,
+                                animated: false,
+                              });
+                            }
+                          : undefined
+                      }
                       onPress={() => {
                         if (ep.fileId) {
                           setMenu(null);
@@ -223,7 +270,8 @@ export function PlayerDrawer({
                           isEpWatched ? "Mark unwatched" : "Mark watched"
                         }
                       >
-                        <IconCheck
+                        <Check
+                          strokeWidth={2.5}
                           size={16}
                           color={
                             isEpWatched ? "#22c55e" : "rgba(255,255,255,0.4)"
@@ -243,7 +291,6 @@ export function PlayerDrawer({
                 }}
                 showsVerticalScrollIndicator={false}
               >
-                {/* Settings menu */}
                 {menu === "settings" && (
                   <>
                     <SheetSection label="Playback" />
@@ -254,8 +301,7 @@ export function PlayerDrawer({
                         label: `${rate}×`,
                         active: preferences.playbackRate === rate,
                         onPress: () => {
-                          player.playbackRate = rate;
-                          updatePreferences({ playbackRate: rate });
+                          setPlaybackRate(rate);
                         },
                       }))}
                     />
@@ -302,7 +348,8 @@ export function PlayerDrawer({
                             label: "−0.5s",
                             onPress: () =>
                               updatePreferences({
-                                subtitleOffset: preferences.subtitleOffset - 0.5,
+                                subtitleOffset:
+                                  preferences.subtitleOffset - 0.5,
                               }),
                           },
                           {
@@ -317,7 +364,8 @@ export function PlayerDrawer({
                             label: "+0.5s",
                             onPress: () =>
                               updatePreferences({
-                                subtitleOffset: preferences.subtitleOffset + 0.5,
+                                subtitleOffset:
+                                  preferences.subtitleOffset + 0.5,
                               }),
                           },
                         ]}
@@ -349,12 +397,17 @@ export function PlayerDrawer({
                               const nextVal = Math.max(8, subVertical - 6);
                               setSubVertical(nextVal);
                               updatePreferences({
-                                subtitlePosition: nextVal < 50 ? "top" : "bottom",
+                                subtitlePosition:
+                                  nextVal < 50 ? "top" : "bottom",
                               });
                             }}
                             className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
                           >
-                            <Minus size={18} color="#ffffff" strokeWidth={2.4} />
+                            <Minus
+                              size={18}
+                              color="#ffffff"
+                              strokeWidth={2.4}
+                            />
                           </Pressable>
                           <Pressable
                             accessibilityRole="button"
@@ -363,7 +416,8 @@ export function PlayerDrawer({
                               const nextVal = Math.min(92, subVertical + 6);
                               setSubVertical(nextVal);
                               updatePreferences({
-                                subtitlePosition: nextVal < 50 ? "top" : "bottom",
+                                subtitlePosition:
+                                  nextVal < 50 ? "top" : "bottom",
                               });
                             }}
                             className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
@@ -420,23 +474,13 @@ export function PlayerDrawer({
                           label="Picture in picture"
                           onPress={() => {
                             setMenu(null);
-                            pip.current = true;
-                            void video.current
-                              ?.startPictureInPicture()
-                              .catch(() => {
-                                pip.current = false;
-                                setMessage(
-                                  "Picture in picture is unavailable on this device.",
-                                );
-                              });
+                            picture.startPictureInPicture();
                           }}
                         />
                       )}
                     </>
                   </>
                 )}
-
-                {/* Quality */}
                 {menu === "quality" && (
                   <Text className="text-white/50 text-[14px] px-5 py-5">
                     Original file quality. No video conversion.
@@ -450,4 +494,3 @@ export function PlayerDrawer({
     </Modal>
   );
 }
-

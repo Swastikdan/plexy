@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { colors } from "@/shared/theme";
-import { Icon } from "./icon";
+import { Film, Tv } from "./icons";
 import { Check } from "./icons";
 import { PosterImage } from "./poster-image";
 import { Label } from "./text";
@@ -42,7 +42,6 @@ export function Card({
       style={{ width: cardWidth }}
       className="gap-2 active:opacity-90 active:scale-[0.97]"
     >
-      {/* Image container */}
       <View
         style={[
           { aspectRatio },
@@ -56,26 +55,15 @@ export function Card({
         ]}
         className="bg-surface-secondary rounded-lg overflow-hidden justify-center items-center"
       >
-        {/* Poster placeholder */}
         <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
-          <Icon
-            name={item.kind === "series" ? "tv" : "film"}
-            size={40}
-            color={colors.quiet}
-          />
+          {item.kind === "series" ? <Tv size={40} color={colors.quiet} /> : <Film size={40} color={colors.quiet} />}
         </View>
-        {/* Poster / thumbnail */}
         <PosterImage source={api.image(item.poster)} />
-        {/* White focus ring when selected */}
-
-        {/* Bottom gradient overlay */}
         <LinearGradient
           colors={["transparent", "rgba(0,0,0,0.85)"]}
           style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "55%" }}
           pointerEvents="none"
         />
-
-        {/* Episode badge: E1 and duration chip on top-left (as in reference screenshots) */}
         {isEpisode && (
           <View className="absolute top-2 left-2 flex-row gap-[5px] z-[2]">
             {item.episodeNumber != null && (
@@ -90,8 +78,6 @@ export function Card({
             )}
           </View>
         )}
-
-        {/* Title overlay at bottom */}
         <View className="absolute left-0 right-0 bottom-[18px] px-2.5" pointerEvents="none">
           <Text
             numberOfLines={2}
@@ -105,8 +91,6 @@ export function Card({
             {item.parentTitle ? `${item.parentTitle}: ${item.name}` : item.name}
           </Text>
         </View>
-
-        {/* Progress bar */}
         {hasProgress && (
           <View className="absolute left-0 right-0 bottom-0 h-[2px] bg-white/[0.15]">
             <View
@@ -115,16 +99,12 @@ export function Card({
             />
           </View>
         )}
-
-        {/* Watched badge */}
         {isWatched && (
           <View className="absolute top-[7px] right-[7px] w-5 h-5 rounded-full bg-accent items-center justify-center">
             <Check size={10} color="#fff" strokeWidth={2.5} />
           </View>
         )}
       </View>
-
-      {/* Below-image meta */}
       <Label
         muted
         numberOfLines={1}

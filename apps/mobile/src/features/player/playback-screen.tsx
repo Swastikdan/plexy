@@ -1,36 +1,32 @@
+import { ArrowLeft, Play, Pause, SlidersHorizontal } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
 import * as Orientation from "expo-screen-orientation";
+import { useVideoPlayer, VideoView } from "expo-video";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-useVideoPlayer,
-VideoView,
-} from "expo-video";
-import React,{ useCallback,useEffect,useRef,useState } from "react";
-import {
-Animated,
-AppState,
-BackHandler,
-Easing,
-PanResponder,
-Pressable,
-ScrollView,
-StatusBar,
-StyleSheet,
-Text,
-useWindowDimensions,
-View,
+  Animated,
+  AppState,
+  BackHandler,
+  Easing,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { localSegments } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import type {
-ItemCard,
-Playability,
-SkipSegments,
+  ItemCard,
+  Playability,
+  SkipSegments,
 } from "@/core/library/catalog-api";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { cn } from "@/shared/lib/cn";
 import { timeLabel } from "@/shared/theme";
-import { Lock,Unlock } from "@/shared/ui/icons";
+import { Lock, Unlock } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { Label } from "@/shared/ui/text";
 import { LocalThumbnail } from "./components/local-thumbnail";
@@ -39,29 +35,19 @@ import { BottomToolbar } from "./components/bottom-toolbar";
 import { PlayerControl } from "./components/player-control";
 import { PlayerDrawer } from "./components/player-drawer";
 import { PlayerGestureHud } from "./components/player-gesture-hud";
-import {
-IconBack,
-IconPause,
-IconPlay,
-IconSettings,
-IconSeekBack,
-IconSeekForward,
-} from "./components/player-icons";
+import { IconSeekBack, IconSeekForward } from "./components/player-icons";
 import { PlayerLoading } from "./components/player-loading";
 import { SpeedPanel } from "./components/speed-panel";
 import { TimelineBar } from "./components/timeline-bar";
+import { usePlayerControls } from "./hooks/use-player-controls";
+import { usePlayerGestures } from "./hooks/use-player-gestures";
 import { usePlayerOrientation } from "./hooks/use-player-orientation";
 import { bufferOptionsForDuration } from "./lib/player-buffer";
 import {
-clampZoom,
-DOUBLE_TAP_MS,
-doubleTapSeek,
-pinchZoom,
-SEEK_SECONDS,
-shouldShowPlayerLoading,
-type PlayerTap,
+  SEEK_SECONDS,
+  shouldShowPlayerLoading,
 } from "./lib/player-interactions";
-import { parseVtt,subtitleText,type Cue } from "./lib/subtitles";
+import { usePlayerSubtitles } from "./hooks/use-player-subtitles";
 
 interface SourceChoice {
   path: string;
@@ -72,7 +58,6 @@ interface SourceChoice {
   revision: number;
 }
 
-/** A rounded end-of-episode pill ("Next Episode", "Watch credits"). */
 function EndPill({
   label,
   onPress,
@@ -132,7 +117,7 @@ export function PlaybackScreen({
   next: (id: number) => void;
 }) {
   useKeepAwake();
-  const { api, platform, preferences, updatePreferences, progress } =
+  const { api, runtime, preferences, updatePreferences, progress } =
     useClient();
   const insets = useSafeAreaInsets();
   const win = useWindowDimensions();
@@ -165,42 +150,56 @@ export function PlaybackScreen({
     const t = setTimeout(() => setMessage(""), 4000);
     return () => clearTimeout(t);
   }, [message]);
-  const [visible, setVisible] = useState(true);
-  const [menu, setMenu] = useState<
-    "settings" | "quality" | "episodes" | null
-  >(null);
-  const [speedPanel, setSpeedPanel] = useState(false);
-  const [audioPanel, setAudioPanel] = useState(false);
-  const drawerAnim = useRef(new Animated.Value(560)).current;
   const resumeBackdropOpacity = useRef(new Animated.Value(0)).current;
   const resumeCardOpacity = useRef(new Animated.Value(0)).current;
   const resumeCardScale = useRef(new Animated.Value(0.94)).current;
-  useEffect(() => {
-    if (menu != null) {
-      if (reduceMotion) {
-        Animated.timing(drawerAnim, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }).start();
-      } else {
-        Animated.spring(drawerAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          damping: 32,
-          stiffness: 320,
-          mass: 1,
-        }).start();
-      }
-    } else {
-      Animated.timing(drawerAnim, {
-        toValue: 560,
-        duration: reduceMotion ? 0 : 180,
-        easing: Easing.bezier(0.32, 0, 1, 1),
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [menu, reduceMotion]);
+  const [skips, setSkips] = useState<SkipSegments>({
+    intro: null,
+    recap: null,
+    outro: null,
+  });
+  const [scrub, setScrub] = useState<number | null>(null);
+  const {
+    visible,
+    setVisible,
+    menu,
+    setMenu,
+    speedPanel,
+    setSpeedPanel,
+    audioPanel,
+    setAudioPanel,
+    locked,
+    lockedRef,
+    unlockHint,
+    reveal,
+    lockScreen,
+    unlockScreen,
+    showUnlockHint,
+    lastInteraction,
+    toggleControls,
+  } = usePlayerControls({ playing, status, scrub });
+  const {
+    fitMode,
+    zoom,
+    applyFit,
+    brightness,
+    volume,
+    adjusting,
+    videoGestures,
+    viewportWidth,
+    onTap,
+    fitToast,
+    toastOpacity,
+    toastScale,
+    showFitToast,
+  } = usePlayerGestures({
+    hasLoaded,
+    height: win.height,
+    locked,
+    reduceMotion,
+    seekBy: (seconds) => seek(currentPosition.current + seconds),
+    toggleControls,
+  });
   const isTvShow = Boolean(
     manifest.parentItemId ||
     manifest.seasonNumber != null ||
@@ -238,281 +237,12 @@ export function PlaybackScreen({
       return (a.episodeNumber ?? 1) - (b.episodeNumber ?? 1);
     });
   }, [episodesList]);
-  const currentEpIndex = sortedEpisodes.findIndex(
-    (ep) =>
-      ep.fileId === manifest.fileId ||
-      ep.id === manifest.itemId ||
-      (ep.seasonNumber === manifest.seasonNumber &&
-        ep.episodeNumber === manifest.episodeNumber),
-  );
-  const episodesScrollRef = useRef<ScrollView>(null);
-  useEffect(() => {
-    if (menu === "episodes" && currentEpIndex > 0) {
-      const timer = setTimeout(() => {
-        episodesScrollRef.current?.scrollTo({
-          y: Math.max(0, currentEpIndex * 68),
-          animated: false,
-        });
-      }, 80);
-      return () => clearTimeout(timer);
-    }
-  }, [menu, currentEpIndex]);
-  const [subtitle, setSubtitle] = useState<string | null>(() =>
-    preferences.autoSubtitles
-      ? initial.tracks?.find((t) => t.language === preferences.subtitleLanguage)
-          ?.track ||
-        initial.tracks?.find((t) => t.isDefault)?.track ||
-        null
-      : null,
-  );
-  const [cues, setCues] = useState<Cue[]>([]);
-  const [skips, setSkips] = useState<SkipSegments>({
-    intro: null,
-    recap: null,
-    outro: null,
-  });
-  const [scrub, setScrub] = useState<number | null>(null);
-  type FitMode = "contain" | "cover" | "fill";
-  const [fitMode, setFitMode] = useState<FitMode>("contain");
-  const [zoom, setZoom] = useState(1);
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
-  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTap = useRef<PlayerTap | null>(null);
-  const gestureBlockedUntil = useRef(0);
-  const viewportWidth = useRef(1);
-  const cancelPendingTap = () => {
-    if (tapTimer.current) clearTimeout(tapTimer.current);
-    tapTimer.current = null;
-    lastTap.current = null;
-  };
-  useEffect(
-    () => () => {
-      if (tapTimer.current) clearTimeout(tapTimer.current);
-    },
-    [],
-  );
-  const [fitToast, setFitToast] = useState<string | null>(null);
-  const toastTimeout = useRef<any>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastScale = useRef(new Animated.Value(0.88)).current;
-  // Screen lock: controls ignore input until the viewer unlocks.
-  const [locked, setLocked] = useState(false);
-  const [unlockHint, setUnlockHint] = useState(false);
-  const lockedRef = useRef(false);
-  lockedRef.current = locked;
-  const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showFitToast = (label: string) => {
-    setFitToast(label);
-    if (toastTimeout.current) clearTimeout(toastTimeout.current);
-    toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
-  };
-  useEffect(() => {
-    if (fitToast) {
-      toastOpacity.setValue(0);
-      toastScale.setValue(0.88);
-      Animated.parallel([
-        Animated.timing(toastOpacity, {
-          toValue: 1,
-          duration: reduceMotion ? 0 : 160,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
-          useNativeDriver: true,
-        }),
-        Animated.timing(toastScale, {
-          toValue: 1,
-          duration: reduceMotion ? 0 : 160,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      Animated.timing(toastOpacity, {
-        toValue: 0,
-        duration: reduceMotion ? 0 : 120,
-        easing: Easing.bezier(0.32, 0, 1, 1),
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [fitToast, reduceMotion]);
-  const applyFit = (mode: FitMode, scale: number) => {
-    setFitMode(mode);
-    const nextZoom = clampZoom(scale);
-    zoomRef.current = nextZoom;
-    setZoom(nextZoom);
-    showFitToast(
-      scale === 1
-        ? mode === "contain"
-          ? "Best fit"
-          : mode === "cover"
-            ? "Crop to fill"
-            : "Stretch to fill"
-        : `${Math.round(scale * 100)}% zoom`,
-    );
-  };
-  // Zoom is a plain two-finger pinch on the video; brightness and volume are
-  // vertical drags on the left / right half of the screen.
-  const [brightness, setBrightness] = useState(1);
-  const [volume, setVolume] = useState(1);
-  const [adjusting, setAdjusting] = useState<
-    "brightness" | "volume" | null
-  >(null);
-  const brightnessRef = useRef(brightness);
-  brightnessRef.current = brightness;
-  const volumeRef = useRef(volume);
-  volumeRef.current = volume;
-  const hasLoadedRef = useRef(hasLoaded);
-  hasLoadedRef.current = hasLoaded;
-  const screenRef = useRef({ w: win.width, h: win.height });
-  screenRef.current = { w: win.width, h: win.height };
-  const initialPinchDist = useRef<number | null>(null);
-  const initialZoom = useRef(1);
-  const gestureMode = useRef<"pinch" | "av" | null>(null);
-  const avCandidate = useRef<{ x: number; y: number } | null>(null);
-  const avStart = useRef<{
-    side: "left" | "right";
-    y: number;
-    level: number;
-  } | null>(null);
-  const finishGesture = () => {
-    gestureMode.current = null;
-    avCandidate.current = null;
-    avStart.current = null;
-    initialPinchDist.current = null;
-    gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
-    setAdjusting(null);
-  };
-  const videoGestures = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: (evt) =>
-        evt.nativeEvent.touches.length >= 2,
-      onMoveShouldSetPanResponder: (evt) => {
-        const touches = evt.nativeEvent.touches;
-        if (touches.length >= 2) return true;
-        if (touches.length !== 1) return false;
-        // Brightness/volume drags need a loaded video.
-        if (!hasLoadedRef.current) return false;
-        const touch = touches[0]!;
-        if (!avCandidate.current) {
-          avCandidate.current = { x: touch.pageX, y: touch.pageY };
-          return false;
-        }
-        const dx = touch.pageX - avCandidate.current.x;
-        const dy = touch.pageY - avCandidate.current.y;
-        if (Math.hypot(dx, dy) < 16) return false;
-        if (Math.abs(dy) <= Math.abs(dx) * 1.2) {
-          // Not a vertical drag: forget this origin so the next drag starts fresh.
-          avCandidate.current = null;
-          return false;
-        }
-        return true;
-      },
-      onPanResponderGrant: (evt) => {
-        cancelPendingTap();
-        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
-        const touches = evt.nativeEvent.touches;
-        if (touches.length >= 2) {
-          gestureMode.current = "pinch";
-          const t0 = touches[0]!;
-          const t1 = touches[1]!;
-          const dx = t0.pageX - t1.pageX;
-          const dy = t0.pageY - t1.pageY;
-          initialPinchDist.current = Math.hypot(dx, dy);
-          initialZoom.current = zoomRef.current;
-          return;
-        }
-        const touch = touches[0]!;
-        const side =
-          evt.nativeEvent.locationX < viewportWidth.current / 2
-            ? "left"
-            : "right";
-        gestureMode.current = "av";
-        avStart.current = {
-          side,
-          y: touch.pageY,
-          level: side === "left" ? brightnessRef.current : volumeRef.current,
-        };
-        setAdjusting(side === "left" ? "brightness" : "volume");
-      },
-      onPanResponderMove: (evt) => {
-        const touches = evt.nativeEvent.touches;
-        if (gestureMode.current === "pinch") {
-          if (
-            touches.length >= 2 &&
-            initialPinchDist.current &&
-            initialPinchDist.current > 0
-          ) {
-            const t0 = touches[0]!;
-            const t1 = touches[1]!;
-            const dx = t0.pageX - t1.pageX;
-            const dy = t0.pageY - t1.pageY;
-            const currentDist = Math.hypot(dx, dy);
-            const newZoom = pinchZoom(
-              initialZoom.current,
-              initialPinchDist.current,
-              currentDist,
-            );
-            zoomRef.current = newZoom;
-            setZoom(newZoom);
-            showFitToast(`${Math.round(newZoom * 100)}% zoom`);
-          }
-          return;
-        }
-        if (gestureMode.current === "av" && avStart.current && touches.length === 1) {
-          const dy = avStart.current.y - touches[0]!.pageY;
-          const delta = dy / (screenRef.current.h * 0.55);
-          if (avStart.current.side === "left") {
-            setBrightness(
-              Math.min(1, Math.max(0.2, avStart.current.level + delta)),
-            );
-          } else {
-            setVolume(Math.min(1, Math.max(0, avStart.current.level + delta)));
-          }
-        }
-      },
-      onPanResponderRelease: finishGesture,
-      onPanResponderTerminate: finishGesture,
-    }),
-  ).current;
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [autoNextCancelled, setAutoNextCancelled] = useState(false);
-  const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<
-    Record<number, boolean>
-  >({});
-  const toggleDrawerEpWatched = useCallback(
-    async (ep: any) => {
-      const isPlayed =
-        drawerWatchedOverride[ep.id] ??
-        (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
-      const nextPlayed = !isPlayed;
-      setDrawerWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
-      try {
-        if (nextPlayed) {
-          const dur = ep.runtime ? ep.runtime * 60 : ep.watch?.duration || 3600;
-          await progress.record({
-            itemId: ep.id,
-            position: dur,
-            duration: dur,
-            played: true,
-            updatedAt: Date.now(),
-          });
-        } else {
-          await progress.forget(ep.id);
-        }
-        await api.watched(ep.id, nextPlayed);
-      } catch {}
-    },
-    [api, progress, drawerWatchedOverride],
-  );
   const [nativeAudio, setNativeAudio] = useState<
     typeof player.availableAudioTracks
   >([]);
-  const [nativeSubtitles, setNativeSubtitles] = useState<
-    typeof player.availableSubtitleTracks
-  >([]);
-  const [subVertical, setSubVertical] = useState<number>(
-    preferences.subtitlePosition === "top" ? 12 : 88,
-  );
   const expectedUri = useRef("");
 
   const video = useRef<VideoView>(null);
@@ -525,20 +255,30 @@ export function PlaybackScreen({
   const pip = useRef(false);
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
-  const playingRef = useRef(false);
   const lastSaved = useRef(0);
-  const lastInteraction = useRef(Date.now());
   const chosenStart = useRef(0);
   const initialized = useRef(false);
-  const scrubTargetRef = useRef<number | null>(null);
-  const scrubCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const controlsOpacity = useRef(new Animated.Value(1)).current;
   const chromeIn = useRef(new Animated.Value(1)).current;
   const player = useVideoPlayer(null, (instance) => {
     instance.bufferOptions = bufferOptionsForDuration(initial.duration || 0);
     instance.timeUpdateEventInterval = 0.5;
     instance.staysActiveInBackground = false;
     instance.keepScreenOnWhilePlaying = true;
+  });
+  const {
+    subtitle,
+    setSubtitle,
+    nativeSubtitles,
+    subVertical,
+    setSubVertical,
+    loadSubtitleTracks,
+    text,
+  } = usePlayerSubtitles({
+    initial,
+    fileId: manifest.fileId,
+    player,
+    position,
+    onError: setMessage,
   });
   useEffect(() => {
     player.bufferOptions = bufferOptionsForDuration(duration);
@@ -565,33 +305,7 @@ export function PlaybackScreen({
     },
     [api, manifest.itemId, progress],
   );
-  const reveal = () => {
-    if (lockedRef.current) return;
-    lastInteraction.current = Date.now();
-    setVisible(true);
-  };
-  const lockScreen = () => {
-    setMenu(null);
-    setSpeedPanel(false);
-    setAudioPanel(false);
-    setVisible(false);
-    setUnlockHint(false);
-    setLocked(true);
-  };
-  const unlockScreen = () => {
-    setLocked(false);
-    setUnlockHint(false);
-    lastInteraction.current = Date.now();
-    setVisible(true);
-  };
-  const showUnlockHint = () => {
-    if (unlockTimer.current) clearTimeout(unlockTimer.current);
-    setUnlockHint(true);
-    unlockTimer.current = setTimeout(() => setUnlockHint(false), 2600);
-  };
   const seek = (seconds: number) => {
-    if (scrubCommitTimer.current) clearTimeout(scrubCommitTimer.current);
-    scrubTargetRef.current = null;
     const target = Math.max(
       0,
       Math.min(duration || Number.MAX_SAFE_INTEGER, seconds),
@@ -609,8 +323,6 @@ export function PlaybackScreen({
     mounted.current = true;
     return () => {
       mounted.current = false;
-      if (unlockTimer.current) clearTimeout(unlockTimer.current);
-      if (toastTimeout.current) clearTimeout(toastTimeout.current);
     };
   }, []);
   useEffect(() => {
@@ -628,7 +340,6 @@ export function PlaybackScreen({
       }),
       player.addListener("playingChange", (e) => {
         setPlaying(e.isPlaying);
-        playingRef.current = e.isPlaying;
         if (!e.isPlaying) save();
       }),
       player.addListener("statusChange", (e) => {
@@ -652,18 +363,8 @@ export function PlaybackScreen({
         )
           return;
         setHasLoaded(true);
-        player.subtitleTrack = null;
         setNativeAudio(e.availableAudioTracks);
-        setNativeSubtitles(e.availableSubtitleTracks);
-        if (preferencesRef.current.autoSubtitles && !initial.tracks?.length) {
-          const track = e.availableSubtitleTracks.find(
-            (t) => t.language === preferencesRef.current.subtitleLanguage,
-          );
-          if (track) {
-            player.subtitleTrack = track;
-            setSubtitle(`native:${track.id}`);
-          }
-        }
+        loadSubtitleTracks(e.availableSubtitleTracks);
         const value = Math.max(0, chosenStart.current - offset.current);
         player.currentTime = value;
         currentPosition.current = chosenStart.current;
@@ -731,39 +432,6 @@ export function PlaybackScreen({
       live = false;
     };
   }, [api, manifest.fileId]);
-  useEffect(() => {
-    const controller = new AbortController();
-    setCues([]);
-    {
-      player.subtitleTrack = subtitle?.startsWith("native:")
-        ? nativeSubtitles.find((t) => `native:${t.id}` === subtitle) || null
-        : null;
-      if (subtitle?.startsWith("native:")) return;
-    }
-    if (!subtitle) return;
-    const encoded = encodeURIComponent(subtitle);
-    api
-      .text(`/api/subtitles/${manifest.fileId}/${encoded}`, controller.signal)
-      .then((text) => {
-        const parsed = parseVtt(text);
-        setCues(parsed);
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        api
-          .text(
-            `/api/subtitles/${manifest.fileId}/${subtitle}`,
-            controller.signal,
-          )
-          .then((text) => setCues(parseVtt(text)))
-          .catch(() => {
-            if (!controller.signal.aborted) {
-              setMessage("Subtitle track could not be loaded.");
-            }
-          });
-      });
-    return () => controller.abort();
-  }, [api, manifest.fileId, subtitle, nativeSubtitles]);
   const validatedSkips = localSegments(skips, duration || null);
   useEffect(() => {
     const active = Object.values(validatedSkips).find(
@@ -825,21 +493,6 @@ export function PlaybackScreen({
     countdown,
   ]);
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (
-        playingRef.current &&
-        status !== "loading" &&
-        !menu &&
-        !speedPanel &&
-        !audioPanel &&
-        scrub == null &&
-        Date.now() - lastInteraction.current > 6000
-      )
-        setVisible(false);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [menu, speedPanel, audioPanel, scrub, status]);
-  useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
         save();
@@ -891,17 +544,13 @@ export function PlaybackScreen({
   };
   const previewTime = scrub ?? position;
 
-  const text = subtitleText(cues, position, preferences.subtitleOffset);
   const show =
     visible || !!menu || speedPanel || audioPanel || resume || ended || !!error;
-  // Progress ratio helpers
   const openingVideo = shouldShowPlayerLoading(
     status,
     hasLoaded,
     scrub != null,
   );
-  const bufferedRatio = duration ? Math.min(1, bufferedPosition / duration) : 0;
-  const progressRatio = duration ? Math.min(1, previewTime / duration) : 0;
   // Track geometry of TimelineBar (row inset 24 + 52px labels + 12px gaps) so
   // the scrub preview can track the thumb position.
   const trackLeft = 24 + 52 + 12;
@@ -956,7 +605,6 @@ export function PlaybackScreen({
       ]).start();
     }
   }, [resume, reduceMotion]);
-  // Fade the full chrome in the moment playback becomes live.
   useEffect(() => {
     if (hasLoaded) {
       chromeIn.setValue(0);
@@ -968,9 +616,6 @@ export function PlaybackScreen({
       }).start();
     }
   }, [hasLoaded, reduceMotion]);
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
   const videoViewProps = {
     ref: video,
     player,
@@ -990,8 +635,6 @@ export function PlaybackScreen({
   return (
     <View className="flex-1 bg-black">
       <StatusBar hidden barStyle="light-content" />
-
-      {/* ── Video ── */}
       <View
         className="absolute inset-0"
         {...(!locked ? videoGestures.panHandlers : {})}
@@ -1004,8 +647,6 @@ export function PlaybackScreen({
             zoom !== 1 && { transform: [{ scale: zoom }] },
           ]}
         />
-
-        {/* In-app brightness dimming (left-half drag) */}
         <View
           pointerEvents="none"
           className="absolute inset-0 bg-black"
@@ -1013,8 +654,6 @@ export function PlaybackScreen({
         />
 
         {openingVideo && <PlayerLoading />}
-
-        {/* Fit mode HUD Toast */}
         <Animated.View
           pointerEvents="none"
           style={{
@@ -1041,53 +680,17 @@ export function PlaybackScreen({
             {fitToast ?? ""}
           </Text>
         </Animated.View>
-
-        {/* Single tap toggles controls; double tap seeks without changing fit or zoom. */}
-        <View
-          className="absolute inset-0"
-          collapsable={false}
-        >
+        <View className="absolute inset-0" collapsable={false}>
           <Pressable
             accessible={false}
             focusable={false}
             onLayout={(event) => {
               viewportWidth.current = event.nativeEvent.layout.width;
             }}
-            onPress={(event) => {
-              const now = Date.now();
-              if (now < gestureBlockedUntil.current || locked) return;
-              const tap: PlayerTap = {
-                time: now,
-                side:
-                  event.nativeEvent.locationX < viewportWidth.current / 2
-                    ? "left"
-                    : "right",
-              };
-              const seconds = doubleTapSeek(lastTap.current, tap);
-              if (seconds !== null) {
-                cancelPendingTap();
-                seek(currentPosition.current + seconds);
-                showFitToast(
-                  seconds > 0
-                    ? `Forward ${SEEK_SECONDS} seconds`
-                    : `Back ${SEEK_SECONDS} seconds`,
-                );
-                return;
-              }
-              cancelPendingTap();
-              lastTap.current = tap;
-              tapTimer.current = setTimeout(() => {
-                lastTap.current = null;
-                tapTimer.current = null;
-                lastInteraction.current = Date.now();
-                setVisible((current) => !current);
-              }, DOUBLE_TAP_MS);
-            }}
+            onPress={onTap}
             className="absolute inset-0"
           />
         </View>
-
-        {/* Screen lock: swallow every touch until the viewer unlocks */}
         {locked && (
           <>
             <Pressable
@@ -1097,7 +700,10 @@ export function PlaybackScreen({
               accessibilityLabel="Screen locked. Tap to show the unlock button."
             />
             {unlockHint && (
-              <View className="absolute inset-0 items-center justify-center" pointerEvents="box-none">
+              <View
+                className="absolute inset-0 items-center justify-center"
+                pointerEvents="box-none"
+              >
                 <Pressable
                   onPress={unlockScreen}
                   accessibilityRole="button"
@@ -1105,7 +711,9 @@ export function PlaybackScreen({
                   className="flex-row items-center gap-2 rounded-full bg-white/[0.94] px-5 py-3 active:opacity-80"
                 >
                   <Unlock size={18} color="#000000" strokeWidth={2.4} />
-                  <Text className="text-black text-[15px] font-bold">Tap to unlock</Text>
+                  <Text className="text-black text-[15px] font-bold">
+                    Tap to unlock
+                  </Text>
                 </Pressable>
               </View>
             )}
@@ -1117,8 +725,6 @@ export function PlaybackScreen({
             </View>
           </>
         )}
-
-        {/* Subtitle overlay */}
         {!!text && (
           <View
             pointerEvents="none"
@@ -1146,15 +752,12 @@ export function PlaybackScreen({
           </View>
         )}
       </View>
-
-      {/* ── Player chrome (landscape only) ── */}
       {show && !locked && (
         <Animated.View
           className="absolute inset-0"
           pointerEvents="box-none"
           style={{ opacity: chromeIn }}
         >
-          {/* Bottom seek bar (hidden while loading or the end pills show) */}
           {!openingVideo && !ended && !creditsPills && (
             <TimelineBar
               duration={duration}
@@ -1170,8 +773,6 @@ export function PlaybackScreen({
               onCommit={(target) => seek(target)}
             />
           )}
-
-          {/* Trick-play scrub preview above the seek bar, tracking the thumb */}
           {!openingVideo && scrub != null && !ended && !creditsPills && (
             <View
               pointerEvents="none"
@@ -1203,8 +804,6 @@ export function PlaybackScreen({
               </View>
             </View>
           )}
-
-          {/* Bottom toolbar: Speed / Lock / Episodes / Audio & Subtitles / Next Ep. */}
           {!openingVideo && !ended && !creditsPills && (
             <BottomToolbar
               speed={preferences.playbackRate}
@@ -1220,8 +819,6 @@ export function PlaybackScreen({
               }}
             />
           )}
-
-          {/* Title, top-center */}
           {!openingVideo && !ended && (
             <View
               pointerEvents="none"
@@ -1236,8 +833,6 @@ export function PlaybackScreen({
               </Text>
             </View>
           )}
-
-          {/* Back — top-left (available while loading too) */}
           <View
             className="absolute"
             style={{
@@ -1246,11 +841,9 @@ export function PlaybackScreen({
             }}
           >
             <PlayerControl onPress={exit} size={42} bg="rgba(0,0,0,0.4)">
-              <IconBack size={20} />
+              <ArrowLeft strokeWidth={2.2} color="#ffffff" size={20} />
             </PlayerControl>
           </View>
-
-          {/* Player settings — top-right */}
           <View
             className="absolute"
             style={{
@@ -1265,7 +858,8 @@ export function PlaybackScreen({
               active={menu === "settings"}
             >
               {({ focused }) => (
-                <IconSettings
+                <SlidersHorizontal
+                  strokeWidth={2}
                   size={20}
                   color={
                     menu === "settings"
@@ -1278,11 +872,9 @@ export function PlaybackScreen({
               )}
             </PlayerControl>
           </View>
-
-          {/* Center transport: seek back / play-pause / seek forward */}
           <Animated.View
             className="absolute left-0 right-0 flex-row items-center justify-center gap-10"
-            style={{ top: 0, bottom: 0, opacity: controlsOpacity }}
+            style={{ top: 0, bottom: 0 }}
             pointerEvents={openingVideo || ended ? "none" : "box-none"}
             accessibilityElementsHidden={openingVideo || ended}
             importantForAccessibility={
@@ -1310,9 +902,9 @@ export function PlaybackScreen({
               })}
             >
               {playing ? (
-                <IconPause size={44} color="#ffffff" />
+                <Pause fill="#ffffff" size={44} color="#ffffff" />
               ) : (
-                <IconPlay size={46} color="#ffffff" />
+                <Play fill="#ffffff" size={46} color="#ffffff" />
               )}
             </Pressable>
 
@@ -1325,8 +917,6 @@ export function PlaybackScreen({
               <IconSeekForward size={28} />
             </PlayerControl>
           </Animated.View>
-
-          {/* Brightness / volume edge indicators — only while adjusting */}
           {!openingVideo && !ended && (
             <PlayerGestureHud
               brightness={brightness}
@@ -1334,8 +924,6 @@ export function PlaybackScreen({
               adjusting={adjusting}
             />
           )}
-
-          {/* Error / message strips */}
           {(!!error || choice.path === "unsupported") && (
             <View
               className="absolute left-16 right-16 items-center"
@@ -1365,13 +953,8 @@ export function PlaybackScreen({
               </Text>
             </View>
           )}
-
-          {/* Close removed: exit is the back button (top-left); player
-              settings live at the top-right. */}
         </Animated.View>
       )}
-
-      {/* End-of-episode pills, bottom-right: Watch credits / Play again + Next Episode */}
       {(ended || creditsPills) && (
         <View
           className="absolute flex-row items-end gap-3"
@@ -1418,8 +1001,6 @@ export function PlaybackScreen({
             )}
         </View>
       )}
-
-      {/* Skip segment pill — right side, above the bottom rows */}
       {!locked &&
         activeSkip &&
         !creditsPills &&
@@ -1452,8 +1033,6 @@ export function PlaybackScreen({
             </Pressable>
           </View>
         )}
-
-      {/* ── Resume prompt ── */}
       {resume && (
         <Animated.View
           className="absolute inset-0 items-center justify-center bg-black/[0.72] p-6 z-[100]"
@@ -1509,32 +1088,32 @@ export function PlaybackScreen({
           </Animated.View>
         </Animated.View>
       )}
-
-      {/* ── Right-side drawer (settings / episodes) ── */}
       <PlayerDrawer
         menu={menu}
         setMenu={setMenu}
-        drawerAnim={drawerAnim}
         sortedEpisodes={sortedEpisodes}
         reveal={reveal}
-        episodesScrollRef={episodesScrollRef}
         insets={insets}
         manifest={manifest}
-        drawerWatchedOverride={drawerWatchedOverride}
         next={next}
-        toggleDrawerEpWatched={toggleDrawerEpWatched}
-        player={player}
-        fitMode={fitMode}
-        applyFit={applyFit}
-        zoom={zoom}
-        pip={pip}
-        video={video}
-        setMessage={setMessage}
-        subVertical={subVertical}
-        setSubVertical={setSubVertical}
+        picture={{
+          fitMode,
+          applyFit,
+          zoom,
+          startPictureInPicture: () => {
+            pip.current = true;
+            void video.current?.startPictureInPicture().catch(() => {
+              pip.current = false;
+              setMessage("Picture in picture is unavailable on this device.");
+            });
+          },
+        }}
+        subtitles={{ position: subVertical, setPosition: setSubVertical }}
+        setPlaybackRate={(rate) => {
+          player.playbackRate = rate;
+          updatePreferences({ playbackRate: rate });
+        }}
       />
-
-      {/* ── Speed picker ── */}
       <SpeedPanel
         visible={speedPanel && !locked}
         rate={preferences.playbackRate}
@@ -1546,8 +1125,6 @@ export function PlaybackScreen({
           showFitToast(`${rate}× speed`);
         }}
       />
-
-      {/* ── Audio & Subtitles picker ── */}
       <AudioPanel
         visible={audioPanel && !locked}
         onClose={() => setAudioPanel(false)}
@@ -1556,7 +1133,7 @@ export function PlaybackScreen({
         subtitle={subtitle}
         serverTracks={manifest.tracks}
         nativeSubtitles={nativeSubtitles}
-        canAddSubtitleFile={Boolean(platform.local?.pickSubtitle)}
+        canAddSubtitleFile={Boolean(runtime.pickSubtitle)}
         onPickAudio={(track) => {
           player.audioTrack = track;
           setAudioPanel(false);
@@ -1575,8 +1152,7 @@ export function PlaybackScreen({
           setAudioPanel(false);
         }}
         onAddSubtitleFile={() => {
-          void platform
-            .local!.pickSubtitle!(manifest.fileId)
+          void runtime.pickSubtitle!(manifest.fileId)
             .then((track) => {
               if (!track) return;
               setManifest((current) => ({

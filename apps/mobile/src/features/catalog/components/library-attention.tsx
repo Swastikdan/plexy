@@ -1,22 +1,23 @@
 import { useRouter,useSegments } from "expo-router";
 import { useEffect,useState } from "react";
 import { Pressable,Text,View } from "react-native";
-import { localRuntime } from "@/core/library/local-runtime";
-import { Icon } from "@/shared/ui/icon";
+import { useClient } from "@/core/client/client-provider";
+import { X } from "@/shared/ui/icons";
 export function LibraryAttention() {
   const router = useRouter();
   const segments = useSegments();
+  const { runtime } = useClient();
   const [attention, setAttention] = useState({ count: 0, fingerprint: "" });
   const [dismissed, setDismissed] = useState<string | null>(null);
   useEffect(() => {
     const update = () =>
       setAttention({
-        count: localRuntime.getAttentionCount?.() ?? 0,
-        fingerprint: localRuntime.getAttentionFingerprint?.() ?? "",
+        count: runtime.getAttentionCount(),
+        fingerprint: runtime.getAttentionFingerprint(),
       });
     update();
-    return localRuntime.subscribe?.(update);
-  }, []);
+    return runtime.subscribe(update);
+  }, [runtime]);
   if (
     !attention.count ||
     attention.fingerprint === dismissed ||
@@ -40,7 +41,7 @@ export function LibraryAttention() {
         hitSlop={10}
         onPress={() => setDismissed(attention.fingerprint)}
       >
-        <Icon name="close" color="#fff" size={16} />
+        <X color="#fff" size={16} />
       </Pressable>
     </View>
   );

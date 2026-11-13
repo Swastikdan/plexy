@@ -5,21 +5,21 @@ import {
 SafeAreaView,
 useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { localRuntime } from "@/core/library/local-runtime";
+import { useClient } from "@/core/client/client-provider";
 import { LibraryAttention } from "@/features/catalog/components/library-attention";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { colors } from "@/shared/theme";
-import { Icon,type IconName } from "@/shared/ui/icon";
+import { Home, Library, Search, Settings, type NativeIcon } from "@/shared/ui/icons";
 const tabs: {
   name: string;
   title: string;
-  icon: IconName;
+  icon: NativeIcon;
 }[] = [
-  { name: "index", title: "Home", icon: "home" },
-  { name: "libraries", title: "Libraries", icon: "library" },
-  { name: "search", title: "Search", icon: "search" },
-  { name: "settings", title: "Settings", icon: "settings" },
+  { name: "index", title: "Home", icon: Home },
+  { name: "libraries", title: "Libraries", icon: Library },
+  { name: "search", title: "Search", icon: Search },
+  { name: "settings", title: "Settings", icon: Settings },
 ];
 type TabBarProps = Parameters<
   NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
@@ -28,11 +28,11 @@ type TabBarProps = Parameters<
 // Feedback lives on the press itself and animates from the current value, so
 // rapid tab-hopping never snaps.
 function TabIcon({
-  name,
+  icon: Icon,
   focused,
   filled,
 }: {
-  name: IconName;
+  icon: NativeIcon;
   focused: boolean;
   filled: boolean;
 }) {
@@ -55,11 +55,10 @@ function TabIcon({
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <Icon
-        name={name}
         size={29}
         color={focused ? colors.ink : colors.quiet}
         strokeWidth={focused ? 2.2 : 1.8}
-        filled={filled}
+        fill={filled ? (focused ? colors.ink : colors.quiet) : "none"}
       />
     </Animated.View>
   );
@@ -110,7 +109,7 @@ function MobileTabBar({
           >
             <View className="w-12 h-12 items-center justify-center">
               <TabIcon
-                name={tab.icon}
+                icon={tab.icon}
                 focused={isFocused}
                 filled={isFocused && tab.name === "index"}
               />
@@ -126,12 +125,13 @@ function MobileTabBar({
 }
 export default function TabLayout() {
   const isHome = usePathname() === "/";
+  const { runtime } = useClient();
   const [attention, setAttention] = useState(0);
   useEffect(() => {
-    const update = () => setAttention(localRuntime.getAttentionCount?.() ?? 0);
+    const update = () => setAttention(runtime.getAttentionCount());
     update();
-    return localRuntime.subscribe?.(update);
-  }, []);
+    return runtime.subscribe(update);
+  }, [runtime]);
   return (
     <SafeAreaView
       edges={isHome ? ["left", "right"] : ["top", "left", "right"]}

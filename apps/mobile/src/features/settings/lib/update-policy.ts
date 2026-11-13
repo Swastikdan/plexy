@@ -12,10 +12,10 @@ export function parseSemver(v: string): [number, number, number, number] {
   const [major = 0, minor = 0, patch = 0] = (core || "")
     .split(".")
     .map((n) => parseInt(n, 10) || 0);
-  let preRank = 1; // 1 = stable (no prerelease suffix)
+  let preRank = 1;
   let preNum = 0;
   if (pre && !pre.startsWith("build.")) {
-    preRank = 0; // prerelease is lower than stable
+    preRank = 0;
     const match = pre.match(/(\d+)/);
     if (match) preNum = parseInt(match[1], 10) || 0;
   }
@@ -29,7 +29,6 @@ export function compareSemver(a: string, b: string): number {
   if (aPat !== bPat) return aPat - bPat;
   return aPre - bPre;
 }
-/** Only releases with a comparable build and the requested platform asset qualify. */
 export function selectUpdate(
   releases: GitHubRelease[],
   target: UpdateTarget,

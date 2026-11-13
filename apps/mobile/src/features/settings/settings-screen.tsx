@@ -1,11 +1,9 @@
 import { Directory } from "expo-file-system";
-import { useIsFocused,useLocalSearchParams,useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useEffect,useState } from "react";
 import {
 Alert,
-BackHandler,
 Modal,
-Pressable,
 ScrollView,
 Text,
 View,
@@ -22,41 +20,23 @@ import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
 import { colors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
-import { Icon } from "@/shared/ui/icon";
+import { Download, Film, Library, Tv } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
-import { LibraryReportScreen } from "@/features/library-report/library-report-screen";
 import { Updates } from "./components/app-updates";
 import { SettingsRow } from "./components/settings-row";
 import { useAppUpdates } from "./hooks/use-app-updates";
 
-export function SettingsScreen() {
+export function SettingsScreen({ page = "settings" }: {
+  page?: "settings" | "folders" | "updates" | "metadata";
+}) {
   const online = useOnline();
-  const params = useLocalSearchParams<{ page?: string }>();
-  const focused = useIsFocused();
   const router = useRouter();
   const [, update] = useState(0);
-  const [page, setPage] = useState<
-    "settings" | "report" | "folders" | "updates" | "metadata"
-  >(params.page === "folders" ? "folders" : "settings");
-  useEffect(() => {
-    if (!focused || page === "settings") return;
-    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
-      setPage("settings");
-      return true;
-    });
-    return () => listener.remove();
-  }, [focused, page]);
-  useEffect(() => {
-    if (focused && params.page === "folders") {
-      setPage("folders");
-      router.setParams({ page: undefined });
-    }
-  }, [focused, params.page, router]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const { preferences, updatePreferences } = useClient();
+  const { api, runtime, preferences, updatePreferences } = useClient();
   const {
     appInfo,
     availableUpdate,
@@ -67,7 +47,7 @@ export function SettingsScreen() {
     handleCheckUpdate,
     handleDownloadAndInstall,
   } = useAppUpdates(online);
-  useEffect(() => localLibrary.subscribe(() => update((n) => n + 1)), []);
+  useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
   const action = async (fn: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -125,12 +105,7 @@ export function SettingsScreen() {
   ];
   const label = (options: [string, string][], value: string) =>
     options.find((o) => o[0] === value)?.[1] || value;
-  const records = localLibrary.state.records;
-  const review = records.filter(
-    (r) => r.card.matchStatus !== "matched" || r.metadataError,
-  ).length;
-  if (page === "report")
-    return <LibraryReportScreen />;
+  const { fileCount, reviewCount: review, markerCount } = api.libraryStatus();
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -198,21 +173,21 @@ export function SettingsScreen() {
           <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Library report"
-              subtitle={`${records.length} files, ${review ? `${review} need attention` : "all titles identified"}`}
-              icon="library"
-              onPress={() => setPage("report")}
+              subtitle={`${fileCount} files, ${review ? `${review} need attention` : "all titles identified"}`}
+              icon={Library}
+              onPress={() => router.push("/settings/report")}
             />
             <SettingsRow
               title="Metadata & episode markers"
               subtitle="TMDB, artwork, intro, recap and credits"
-              icon="film"
-              onPress={() => setPage("metadata")}
+              icon={Film}
+              onPress={() => router.push("/settings/metadata")}
             />
             <SettingsRow
               title="Media folders"
               subtitle={`${localLibrary.state.roots.filter((r) => !r.singleFile).length} folders connected`}
-              icon="film"
-              onPress={() => setPage("folders")}
+              icon={Film}
+              onPress={() => router.push("/settings/folders")}
             />
             <SettingsRow
               title={
@@ -221,7 +196,7 @@ export function SettingsScreen() {
                   : "Scan for changes"
               }
               subtitle="New files and artwork appear automatically"
-              icon="library"
+              icon={Library}
               onPress={
                 busy || localLibrary.scanning
                   ? undefined
@@ -271,7 +246,7 @@ export function SettingsScreen() {
           <View className="overflow-hidden rounded-[18px] bg-surface">
             <View className="min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5">
               <View className="w-6 items-center">
-                <Icon name="download" size={20} color={colors.muted} />
+                <Download size={20} color={colors.muted} />
               </View>
               <View className="flex-1 gap-1">
                 <Text className="text-[15px] font-archivo-medium text-foreground">
@@ -286,7 +261,9 @@ export function SettingsScreen() {
                   )}
                 >
                   {updateProgress !== null
-                    ? `Downloading update… ${updateProgress}%`
+                    ? updateProgress === 100
+                      ? updateStatusText
+                      : `Downloading update… ${updateProgress}%`
                     : updateStatusText ||
                       (appInfo
                         ? `Version ${appInfo.versionName} (build ${appInfo.buildNumber})`
@@ -297,7 +274,7 @@ export function SettingsScreen() {
                 label={
                   availableUpdate
                     ? updateDownloading
-                      ? `${updateProgress ?? 0}%`
+                      ? updateProgress === 100 ? "Install…" : `${updateProgress ?? 0}%`
                       : "Update now"
                     : updateChecking
                       ? "Checking…"
@@ -311,6 +288,8 @@ export function SettingsScreen() {
                     : handleCheckUpdate())
                 }
                 style={{
+                  width: 120,
+                  flexShrink: 0,
                   minHeight: 44,
                   paddingHorizontal: 14,
                   paddingVertical: 10,
@@ -318,6 +297,11 @@ export function SettingsScreen() {
                 }}
               />
             </View>
+            <SettingsRow
+              title="Update installation options"
+              subtitle="Allow installations or download the APK in your browser"
+              onPress={() => router.push("/settings/updates")}
+            />
             <SettingsRow
               title="Movie and TV information"
               subtitle={
@@ -342,21 +326,21 @@ export function SettingsScreen() {
           <View className="overflow-hidden rounded-[18px] bg-surface">
             <SettingsRow
               title="Add movie folder"
-              icon="film"
+              icon={Film}
               onPress={
                 busy ? undefined : () => void action(() => addFolder("movies"))
               }
             />
             <SettingsRow
               title="Add TV show folder"
-              icon="tv"
+              icon={Tv}
               onPress={
                 busy ? undefined : () => void action(() => addFolder("tv"))
               }
             />
             <SettingsRow
               title="Add anime folder"
-              icon="library"
+              icon={Library}
               onPress={
                 busy ? undefined : () => void action(() => addFolder("anime"))
               }
@@ -508,7 +492,7 @@ export function SettingsScreen() {
             </SettingsRow>
             <SettingsRow
               title="Refresh markers now"
-              subtitle={`${records.filter((r) => Object.values(r.skips || {}).some(Boolean)).length} files have saved markers`}
+              subtitle={`${markerCount} files have saved markers`}
               onPress={
                 !online || busy || !metadata.markersEnabled
                   ? undefined

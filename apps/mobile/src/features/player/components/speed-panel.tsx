@@ -1,8 +1,8 @@
+import { Check } from "@/shared/ui/icons";
 import React from "react";
-import { Modal,Pressable,Text,View } from "react-native";
+import { Modal, Pressable, Text, View } from "react-native";
 import { colors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
-import { IconCheck } from "./player-icons";
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -63,12 +63,16 @@ export function SpeedPanel({
                 <Text
                   className={cn(
                     "text-[15px]",
-                    active ? "font-bold text-white" : "font-medium text-white/85",
+                    active
+                      ? "font-bold text-white"
+                      : "font-medium text-white/85",
                   )}
                 >
                   {value}×
                 </Text>
-                {active && <IconCheck size={16} color={colors.brand} />}
+                {active && (
+                  <Check strokeWidth={2.5} size={16} color={colors.brand} />
+                )}
               </Pressable>
             );
           })}

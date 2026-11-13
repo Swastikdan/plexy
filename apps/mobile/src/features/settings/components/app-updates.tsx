@@ -1,5 +1,5 @@
 import { useEffect,useState } from "react";
-import { Text,View } from "react-native";
+import { Linking,Text,View } from "react-native";
 import { useOnline } from "@/shared/hooks/use-online";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
@@ -8,6 +8,7 @@ import {
 checkForUpdate,
 downloadAndInstallUpdate,
 getInstalledAppInfo,
+openUnknownAppsSettings,
 type AppInfo,
 type UpdateInfo,
 } from "@/features/settings/lib/app-updater";
@@ -45,10 +46,12 @@ export function Updates() {
     setBusy(true);
     setMessage("");
     try {
-      await downloadAndInstallUpdate(update, setProgress);
-      setMessage(
-        "Complete installation in the Android installer, then reopen Plexy.",
+      const result = await downloadAndInstallUpdate(update, setProgress, () =>
+        setMessage("Android installer opened. Confirm installation there."),
       );
+      setMessage(result === "installed"
+        ? "Update installed. Reopen Plexy."
+        : "Installation was not completed. Allow Plexy to install unknown apps, then retry.");
     } catch (e) {
       setMessage(String(e));
     } finally {
@@ -71,13 +74,24 @@ export function Updates() {
           <Label>Available: {update.tagName}</Label>
           <Button
             primary
-            label={progress !== null ? `${progress}%` : "Update now"}
+            style={{ width: 120, flexShrink: 0 }}
+            label={progress === 100 ? "Install…" : progress !== null ? `${progress}%` : "Update now"}
             disabled={!online || busy}
             onPress={() => void install()}
           />
+          <Button
+            label="Allow installations"
+            disabled={busy}
+            onPress={() => void openUnknownAppsSettings().catch((error) => setMessage(String(error)))}
+          />
+          <Button
+            label="Download in browser"
+            disabled={busy || !online}
+            onPress={() => void Linking.openURL(update.apkUrl).catch((error) => setMessage(String(error)))}
+          />
         </>
       )}
-      {progress !== null && (
+      {progress !== null && progress < 100 && (
         <Text className="text-white">Downloading: {progress}%</Text>
       )}
       {!!message && <Notice message={message} />}

@@ -1,10 +1,10 @@
-import { Directory,File,Paths } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import { Image } from "expo-image";
-import { ImageManipulator,SaveFormat } from "expo-image-manipulator";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import type { VideoPlayer } from "expo-video";
-import { useEffect,useRef,useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
-import { localLibrary } from "@/core/library/local-runtime";
+import { useClient } from "@/core/client/client-provider";
 // Only visited timestamps are decoded. JPEGs survive app restarts in private storage.
 const directory = new Directory(Paths.document, "trickplay");
 const pending = new Map<string, Promise<string>>();
@@ -12,10 +12,9 @@ let queue = Promise.resolve();
 async function preview(
   player: VideoPlayer,
   second: number,
-  fileId: number,
+  sourceVersion: string,
 ): Promise<string> {
-  const record = localLibrary.record(fileId);
-  const prefix = `${fileId}-${record.file.size}-${record.file.modified}-`;
+  const prefix = `${sourceVersion}-`;
   directory.create({ intermediates: true, idempotent: true });
   const destination = new File(directory, `${prefix}${second}.jpg`);
   if (destination.exists && destination.size) return destination.uri;
@@ -80,6 +79,8 @@ export function LocalThumbnail({
   width?: number;
   height?: number;
 }) {
+  const { api } = useClient();
+  const sourceVersion = api.fileVersion(fileId);
   const [uri, setUri] = useState<string | null>(null);
   const wanted = useRef(0);
   const busy = useRef(false);
@@ -103,7 +104,7 @@ export function LocalThumbnail({
         const target = wanted.current;
         previous = target;
         try {
-          const image = await preview(player, target, fileId);
+          const image = await preview(player, target, sourceVersion);
           if (alive.current) setUri(image);
         } catch {
           /* Keep the last useful preview if this timestamp cannot decode. */
@@ -112,7 +113,7 @@ export function LocalThumbnail({
     })().finally(() => {
       busy.current = false;
     });
-  }, [player, second, fileId]);
+  }, [player, second, sourceVersion]);
   return uri ? (
     <View
       className="overflow-hidden rounded-[10px] border-[1.5px] border-white/40 bg-black"

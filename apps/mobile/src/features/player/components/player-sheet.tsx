@@ -1,7 +1,7 @@
+import { Check } from "@/shared/ui/icons";
 import { useState } from "react";
-import { Pressable,Text,View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
-import { IconCheck } from "./player-icons";
 
 export function SheetItem({
   label,
@@ -49,7 +49,7 @@ export function SheetItem({
       )}
       {selected ? (
         <View className="w-6 h-6 rounded-[12px] bg-white items-center justify-center">
-          <IconCheck size={15} color="#000000" />
+          <Check strokeWidth={2.5} size={15} color="#000000" />
         </View>
       ) : null}
     </Pressable>
@@ -92,7 +92,9 @@ export function SheetChips({
             onPress={option.onPress}
             className={cn(
               "rounded-full border px-2.5 py-[7px] active:opacity-[0.72]",
-              option.active ? "bg-white border-white" : "bg-white/[0.08] border-white/10",
+              option.active
+                ? "bg-white border-white"
+                : "bg-white/[0.08] border-white/10",
             )}
           >
             <Text

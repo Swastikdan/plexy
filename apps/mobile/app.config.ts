@@ -1,4 +1,5 @@
 import type { ExpoConfig } from "expo/config";
+import { encodeVersionCode } from "./src/shared/lib/build-version.ts";
 import packageInfo from "./package.json";
 const rawBuild = Number(
   process.env.PLEXY_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || 1,
@@ -28,8 +29,9 @@ const config: ExpoConfig = {
   orientation: "default",
   android: {
     package: "app.plexy.mobile",
-    versionCode: 50000 + buildNumber,
+    versionCode: encodeVersionCode(buildNumber),
     allowBackup: false,
+    permissions: ["android.permission.REQUEST_INSTALL_PACKAGES"],
     adaptiveIcon: {
       foregroundImage: "../../build/icon.png",
       backgroundColor: "#080808",

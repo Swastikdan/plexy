@@ -3,18 +3,11 @@ import type { StyleProp, View, ViewStyle } from "react-native";
 import { Button as NativeButton } from "heroui-native/button";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { cn } from "@/shared/lib/cn";
-import { Icon, IconName } from "./icon";
 
-/**
- * App button built on the HeroUI Native Button so press feedback (scale +
- * highlight), reduce-motion handling and theme tokens come from the library
- * instead of hand-rolled styles. Metrics keep the app's pill shape.
- */
 export const Button = forwardRef<
   View,
   {
     label: string;
-    icon?: IconName;
     onPress: () => void;
     primary?: boolean;
     selected?: boolean;
@@ -27,7 +20,6 @@ export const Button = forwardRef<
 >(function Button(
   {
     label,
-    icon,
     onPress,
     primary,
     selected,
@@ -47,7 +39,6 @@ export const Button = forwardRef<
       variant={isFilled ? "primary" : "secondary"}
       isDisabled={disabled}
       onPress={() => {
-        // Every button press is a commit — confirm it with a light tap.
         if (!disabled) triggerHaptic("light");
         onPress();
       }}
@@ -64,7 +55,6 @@ export const Button = forwardRef<
         "focus:border-2 focus:border-white",
       )}
     >
-      {icon && <Icon name={icon} size={compact ? 18 : 20} color="#fff" />}
       {!compact && (
         <NativeButton.Label className="text-[15px] font-archivo-medium text-white">
           {label}

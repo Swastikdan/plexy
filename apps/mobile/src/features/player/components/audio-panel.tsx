@@ -1,14 +1,10 @@
-import type {
-AudioTrack,
-SubtitleTrack,
-VideoPlayer,
-} from "expo-video";
+import { Check } from "@/shared/ui/icons";
+import type { AudioTrack, SubtitleTrack, VideoPlayer } from "expo-video";
 import React from "react";
-import { Modal,Pressable,ScrollView,Text,View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import type { Playability } from "@/core/library/catalog-api";
 import { colors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
-import { IconCheck } from "./player-icons";
 
 interface TrackRow {
   key: string;
@@ -37,7 +33,9 @@ function Row({ row }: { row: TrackRow }) {
       >
         {row.label}
       </Text>
-      {row.selected && <IconCheck size={15} color={colors.brand} />}
+      {row.selected && (
+        <Check strokeWidth={2.5} size={15} color={colors.brand} />
+      )}
     </Pressable>
   );
 }
