@@ -537,10 +537,6 @@ export function SettingsScreen({ page = "settings" }: {
         </>
       )}
       {page === "updates" && <Updates />}
-      <View className="mt-4 border-t border-border pt-5 gap-1">
-        <Text className="font-archivo-medium text-[13px] text-foreground">Plexy</Text>
-        <Text className="font-archivo-regular text-[12px] text-muted">Your library, on your device.</Text>
-      </View>
     </ScrollView>
   );
 }

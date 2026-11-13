@@ -93,14 +93,14 @@ export function HeroActions({
           }}
           onBlur={() => setDetailFocus(false)}
           className={cn(
-            "h-[52px] w-[52px] items-center justify-center rounded-full bg-black/55 border border-white/30",
+            "h-[52px] w-[52px] items-center justify-center rounded-full bg-surface border border-border",
             "active:opacity-78",
           )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Details"
         >
-          <HugeiconsIcon icon={BadgeInfoIcon} size={28} color="#ffffff" />
+          <HugeiconsIcon icon={BadgeInfoIcon} size={28} color={colors.ink} />
         </Pressable>
       )}
       {onTrailer && (
