@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Switch } from "@heroui/react";
 
 /** This preference belongs to the desktop process, including when no API is running. */
 export function DesktopServerSettings() {
@@ -15,26 +16,26 @@ export function DesktopServerSettings() {
   if (!desktop?.setLocalServerEnabled) return null;
   return (
     <div className="my-4 space-y-2 border border-border p-4">
-      <label className="flex items-center gap-3 text-sm text-foreground">
-        <input
-          type="checkbox"
-          checked={enabled === true}
-          disabled={busy || enabled === null}
-          onChange={async (event) => {
-            const next = event.target.checked;
-            setBusy(true);
-            setError("");
-            try {
-              await desktop.setLocalServerEnabled(next);
-              setEnabled(next);
-            } catch {
-              setError("Could not change server mode.");
-              setBusy(false);
-            }
-          }}
-        />
-        Run local server
-      </label>
+      <Switch
+        isSelected={enabled === true}
+        isDisabled={busy || enabled === null}
+        onChange={async (isSelected) => {
+          setBusy(true);
+          setError("");
+          try {
+            await desktop.setLocalServerEnabled(isSelected);
+            setEnabled(isSelected);
+          } catch {
+            setError("Could not change server mode.");
+            setBusy(false);
+          }
+        }}
+      >
+        <Switch.Content>Run local server</Switch.Content>
+        <Switch.Control>
+          <Switch.Thumb />
+        </Switch.Control>
+      </Switch>
       <p className="text-xs text-muted">
         Use the bundled library server on this computer. Turn it off to connect
         to another server. Changing this reopens the Plexy window.

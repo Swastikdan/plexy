@@ -10,13 +10,11 @@ import {
   type AccountUser,
   type PairingCode,
 } from "../auth";
-import { Button, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { Button, Input, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "../lib/use-theme";
 import type { ThemePreference } from "../theme";
 
-const input =
-  "mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm";
 
 const THEME_CHOICES: Array<{
   value: ThemePreference;
@@ -111,13 +109,14 @@ function AccountRoute() {
         >
           <label className="block text-sm">
             Confirm your password
-            <input
+            <Input
               required
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={input}
+              fullWidth
+              className="mt-2"
             />
           </label>
           <Button isDisabled={busy} type="submit">
@@ -189,18 +188,19 @@ function AccountRoute() {
         >
           <label className="block text-sm">
             Current password
-            <input
+            <Input
               required
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={input}
+              fullWidth
+              className="mt-2"
             />
           </label>
           <label className="block text-sm">
             New password
-            <input
+            <Input
               required
               minLength={12}
               maxLength={128}
@@ -208,7 +208,8 @@ function AccountRoute() {
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className={input}
+              fullWidth
+              className="mt-2"
             />
           </label>
           <p className="text-xs text-muted">

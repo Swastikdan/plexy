@@ -1,5 +1,5 @@
-/// Direct-play guarantees: the standalone apps never convert, and the
-/// optimizer only prepares files that cannot play as-is.
+/// Playback fallbacks: conversion is available (direct-first, not direct-only),
+/// and the optimizer prepares only files that cannot play as-is.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { buildApp } from "../src/app";
 import { q, run, runMigrations } from "../src/db";
@@ -11,30 +11,25 @@ import {
   stopOptimizer,
 } from "../src/optimize";
 
-const previous = process.env.PLEXY_DIRECT_PLAY_ONLY;
+describe("playback conversion routes", () => {
+  const app = buildApp();
 
-describe("standalone direct-play mode", () => {
   beforeAll(async () => {
-    process.env.PLEXY_DIRECT_PLAY_ONLY = "1";
     await runMigrations();
     await initConfig();
   });
-  afterAll(() => {
-    if (previous == null) delete process.env.PLEXY_DIRECT_PLAY_ONLY;
-    else process.env.PLEXY_DIRECT_PLAY_ONLY = previous;
-  });
 
-  test("rejects conversion routes before any media work starts", async () => {
-    const app = buildApp();
+  test("does not block remux or transcode before media work starts", async () => {
     for (const path of ["/stream/1/remux", "/stream/1/transcode"]) {
       const response = await app.handle(new Request(`http://localhost/api${path}`));
-      expect(response.status).toBe(409);
-      expect((await response.json()).error).toContain("conversion is disabled");
+      // The file does not exist here; what matters is that the request is not
+      // rejected by a "conversion is disabled" guard (409).
+      expect(response.status).not.toBe(409);
+      expect(response.status).toBe(404);
     }
   });
 
   test("has no adaptive stream route left to serve", async () => {
-    const app = buildApp();
     const response = await app.handle(
       new Request("http://localhost/api/stream/1/hls/master.m3u8"),
     );
@@ -42,23 +37,15 @@ describe("standalone direct-play mode", () => {
   });
 
   test("downloads the original file instead of a quality variant", async () => {
-    const app = buildApp();
-    // The old quality cap is gone, so this is no longer a conversion request:
-    // the route simply looks up the (here missing) file and answers 404.
     const response = await app.handle(
       new Request("http://localhost/api/download/999999?maxHeight=720"),
     );
     expect(response.status).toBe(404);
   });
-
-  test("never queues video preparation", async () => {
-    expect(await enqueueMissingOptimizations({ includeFailed: true })).toBe(0);
-  });
 });
 
 describe("optimizer scope", () => {
   beforeAll(async () => {
-    delete process.env.PLEXY_DIRECT_PLAY_ONLY;
     await runMigrations();
     await initConfig();
     await save({ autoOptimize: true });

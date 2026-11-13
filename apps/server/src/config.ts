@@ -23,7 +23,8 @@ const ConfigSchema = z.object({
   imageQuality: z.enum(["w342", "w500", "w780", "original"]).default("w780"),
   // Keep new installs quiet until the owner opts into library-wide background
   // preparation. Manual "Prepare Now" remains available.
-  autoOptimize: z.boolean().default(false),
+  /** Prepare files that cannot play directly as soon as they are probed. */
+  autoOptimize: z.boolean().default(true),
   /** Fetch community intro, recap, and credit markers during playback. */
   skipSegmentsEnabled: z.boolean().default(false),
   /** 0 = use all available space. Otherwise prune the oldest prepared copies. */
@@ -73,7 +74,7 @@ export async function initConfig(): Promise<Config> {
 }
 
 export async function getConfig(): Promise<Config> {
-  if (cache) return process.env.PLEXY_LOCAL_ONLY ? { ...cache, bindAddress: "127.0.0.1", autoOptimize: false } : cache;
+  if (cache) return process.env.PLEXY_LOCAL_ONLY ? { ...cache, bindAddress: "127.0.0.1" } : cache;
   return initConfig();
 }
 
@@ -96,7 +97,8 @@ export function redactedView(cfg: Config) {
   return {
     ...settings,
     localOnly: process.env.PLEXY_LOCAL_ONLY === "1",
-    directPlayOnly: process.env.PLEXY_DIRECT_PLAY_ONLY === "1",
+    // Conversion is always available now; kept false for older clients.
+    directPlayOnly: false,
     version: cfg.version ?? APP_VERSION,
     hasTmdbToken: tmdbToken.length > 0,
     tokenSource: envToken && tmdbToken === envToken ? "env" : "settings",

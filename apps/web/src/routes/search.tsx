@@ -2,7 +2,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Search, X } from "lucide-react";
+import { SearchField } from "@heroui/react";
 import { queries } from "../queries";
 import { SearchResultCard } from "../components/search-result-card";
 import { PageHeader } from "../components/page-header";
@@ -64,35 +64,27 @@ function SearchRoute() {
       {/* Sticky under the app header so the search field keeps its nav context
           while results scroll. */}
       <div className="sticky top-12 z-20 -mx-4 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-md sm:top-14 sm:-mx-8 sm:px-8">
-        <label className="flex h-11 items-center gap-3 border border-border bg-surface px-3.5 transition-colors focus-within:border-separator">
-          <Search size={16} className="shrink-0 text-muted" aria-hidden />
-          <input
-            autoFocus
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search your films and shows"
-            aria-label="Search your films and shows"
-            className="w-full bg-transparent text-[15px] text-foreground placeholder:text-muted/70 outline-none"
-          />
-          {q && (
-            <button
-              type="button"
-              onClick={() => setQ("")}
-              aria-label="Clear search"
-              title="Clear"
-              className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2"
-            >
-              <X size={14} />
-            </button>
-          )}
-          {isFetching && (
-            <span
-              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-separator border-t-foreground"
-              role="status"
-              aria-label="Searching"
-            />
-          )}
-        </label>
+        <SearchField
+          autoFocus
+          value={q}
+          onChange={setQ}
+          aria-label="Search your films and shows"
+          fullWidth
+        >
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="Search your films and shows" />
+            {isFetching ? (
+              <span
+                className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-separator border-t-foreground"
+                role="status"
+                aria-label="Searching"
+              />
+            ) : (
+              <SearchField.ClearButton aria-label="Clear search" />
+            )}
+          </SearchField.Group>
+        </SearchField>
       </div>
 
       {!hasQuery && (

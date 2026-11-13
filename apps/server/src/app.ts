@@ -1,4 +1,3 @@
-import { directPlayOnly } from "./runtime";
 import { isDirectLoopbackContext } from "./essentials";
 /// The Elysia application (PRD 4, 9).
 ///
@@ -146,19 +145,6 @@ export function buildApp(
             code: "HTTPS_REQUIRED",
           },
           { status: 426 },
-        );
-      }
-    })
-    .onRequest(({ request }) => {
-      if (!directPlayOnly()) return;
-      const url = new URL(request.url);
-      if (/^\/api\/stream\/[^/]+\/(remux|transcode)(?:\/|$)/.test(url.pathname)) {
-        return Response.json(
-          {
-            error:
-              "This app plays original files only. Video conversion is disabled.",
-          },
-          { status: 409 },
         );
       }
     })

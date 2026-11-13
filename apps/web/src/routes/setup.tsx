@@ -7,7 +7,7 @@ import { accountRequest, type AccountUser, type SetupState } from "../auth";
 import { api } from "../client";
 import { queries } from "../queries";
 import { LibraryFolderForm } from "../components/library-folder-form";
-import { Button } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 
 function SetupRoute() {
   const setup = useQuery({
@@ -285,12 +285,13 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
             .
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <input
+            <Input
               type="password"
               value={tokenInput}
               onChange={(event) => setTokenInput(event.target.value)}
               placeholder="TMDB Read-Access Token"
-              className="h-10 flex-1 rounded-sm border border-border bg-surface-secondary px-4 text-sm text-foreground placeholder:text-muted/70 outline-none focus:border-separator"
+              fullWidth
+              className="flex-1"
             />
             <Button
               isDisabled={save.isPending || (!tokenInput.trim() && !configured)}
@@ -364,7 +365,7 @@ function OwnerStep() {
       >
         <label className="block text-sm">
           Username
-          <input
+          <Input
             required
             minLength={3}
             maxLength={40}
@@ -372,12 +373,13 @@ function OwnerStep() {
             pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,39}"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
+            fullWidth
+            className="mt-2"
           />
         </label>
         <label className="block text-sm">
           Password
-          <input
+          <Input
             required
             minLength={12}
             maxLength={128}
@@ -385,7 +387,8 @@ function OwnerStep() {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
+            fullWidth
+            className="mt-2"
           />
           <span className="mt-1 block text-xs text-muted">
             Use at least 12 characters.
@@ -393,13 +396,14 @@ function OwnerStep() {
         </label>
         <label className="block text-sm">
           Confirm password
-          <input
+          <Input
             required
             type="password"
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
+            fullWidth
+            className="mt-2"
           />
         </label>
         {error && (

@@ -2,10 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { accountRequest, type AccountUser } from "../auth";
 import { queries } from "../queries";
-import { Button } from "@heroui/react";
-
-const input =
-  "mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm";
+import { Button, Input, ListBox, Select, Switch } from "@heroui/react";
 
 export function UserManagement() {
   const me = useQuery({
@@ -56,17 +53,18 @@ function Users() {
       >
         <label className="block text-sm">
           New username
-          <input
+          <Input
             required
             autoComplete="off"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className={input}
+            fullWidth
+            className="mt-2"
           />
         </label>
         <label className="block text-sm">
           Initial password
-          <input
+          <Input
             required
             minLength={12}
             maxLength={128}
@@ -74,7 +72,8 @@ function Users() {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={input}
+            fullWidth
+            className="mt-2"
           />
         </label>
         <Button isDisabled={busy} type="submit">
@@ -160,61 +159,90 @@ function UserEditor({ user }: { user: AccountUser }) {
       >
         <label className="block text-sm">
           Role
-          <select
-            className={input}
-            value={settings.role}
-            onChange={(e) =>
+          <Select
+            aria-label="Role"
+            selectedKey={settings.role}
+            onSelectionChange={(key) =>
               setSettings({
                 ...settings,
-                role: e.target.value as AccountUser["role"],
+                role: String(key) as AccountUser["role"],
               })
             }
+            className="mt-2 w-full"
           >
-            <option value="user">User</option>
-            <option value="admin">Administrator</option>
-          </select>
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="user" textValue="User">
+                  User
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item id="admin" textValue="Administrator">
+                  Administrator
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
         </label>
-        <label className="flex gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={settings.disabled}
-            onChange={(e) =>
-              setSettings({ ...settings, disabled: e.target.checked })
-            }
-          />
-          Disable account
-        </label>
+        <Switch
+          isSelected={settings.disabled}
+          onChange={(isSelected) =>
+            setSettings({ ...settings, disabled: isSelected })
+          }
+        >
+          <Switch.Content>Disable account</Switch.Content>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch>
         <label className="block text-sm">
           Maximum maturity age
-          <select
-            className={input}
-            value={settings.maxAge ?? "none"}
-            onChange={(e) =>
+          <Select
+            aria-label="Maximum maturity age"
+            selectedKey={settings.maxAge == null ? "none" : String(settings.maxAge)}
+            onSelectionChange={(key) =>
               setSettings({
                 ...settings,
-                maxAge:
-                  e.target.value === "none" ? null : Number(e.target.value),
+                maxAge: String(key) === "none" ? null : Number(key),
               })
             }
+            className="mt-2 w-full"
           >
-            <option value="none">No maturity limit</option>
-            {[0, 6, 7, 9, 10, 12, 13, 14, 15, 16, 17, 18, 21].map((age) => (
-              <option key={age} value={age}>
-                {age} and below
-              </option>
-            ))}
-          </select>
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="none" textValue="No maturity limit">
+                  No maturity limit
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                {[0, 6, 7, 9, 10, 12, 13, 14, 15, 16, 17, 18, 21].map((age) => (
+                  <ListBox.Item key={age} id={String(age)} textValue={`${age} and below`}>
+                    {age} and below
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
         </label>
-        <label className="flex gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={settings.blockUnrated}
-            onChange={(e) =>
-              setSettings({ ...settings, blockUnrated: e.target.checked })
-            }
-          />
-          Block unrated titles when a maturity limit is set
-        </label>
+        <Switch
+          isSelected={settings.blockUnrated}
+          onChange={(isSelected) =>
+            setSettings({ ...settings, blockUnrated: isSelected })
+          }
+        >
+          <Switch.Content>Block unrated titles when a maturity limit is set</Switch.Content>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch>
         <p className="text-xs text-muted">
           Choose a library, folder, or title from the suggestions, or paste the
           ID from a title link. Exclusions override grants; maturity
@@ -245,29 +273,44 @@ function UserEditor({ user }: { user: AccountUser }) {
         </datalist>
         {shown.map((rule, index) => (
           <div key={index} className="flex flex-wrap gap-2">
-            <select
+            <Select
               aria-label="Permission scope"
-              value={rule.scope}
-              className="h-10 rounded border border-border bg-surface px-2"
-              onChange={(e) =>
+              selectedKey={rule.scope}
+              onSelectionChange={(key) =>
                 setRules(
                   shown.map((r, i) =>
                     i === index
-                      ? { ...r, scope: e.target.value as Rule["scope"] }
+                      ? { ...r, scope: String(key) as Rule["scope"] }
                       : r,
                   ),
                 )
               }
+              className="w-32 shrink-0"
             >
-              <option value="library">Library</option>
-              <option value="folder">Folder</option>
-              <option value="item">Title</option>
-            </select>
-            <input
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {[
+                    { id: "library", label: "Library" },
+                    { id: "folder", label: "Folder" },
+                    { id: "item", label: "Title" },
+                  ].map((option) => (
+                    <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                      {option.label}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+            <Input
               list={`${rule.scope === "library" ? "libraries" : rule.scope === "folder" ? "folders" : "items"}-${user.id}`}
               aria-label="Permission target"
               required
-              className="h-10 min-w-0 flex-1 rounded border border-border bg-surface px-2 text-sm"
+              className="min-w-0 flex-1"
               value={rule.target}
               onChange={(e) =>
                 setRules(
@@ -277,37 +320,50 @@ function UserEditor({ user }: { user: AccountUser }) {
                 )
               }
             />
-            <select
+            <Select
               aria-label="Access"
-              className="h-10 rounded border border-border bg-surface px-2"
-              value={rule.allowed ? "allow" : "deny"}
-              onChange={(e) =>
+              selectedKey={rule.allowed ? "allow" : "deny"}
+              onSelectionChange={(key) =>
                 setRules(
                   shown.map((r, i) =>
-                    i === index
-                      ? { ...r, allowed: e.target.value === "allow" }
-                      : r,
+                    i === index ? { ...r, allowed: String(key) === "allow" } : r,
                   ),
                 )
               }
+              className="w-28 shrink-0"
             >
-              <option value="allow">Allow</option>
-              <option value="deny">Exclude</option>
-            </select>
-            <button
-              type="button"
-              className="text-xs underline"
-              onClick={() => setRules(shown.filter((_, i) => i !== index))}
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="allow" textValue="Allow">
+                    Allow
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                  <ListBox.Item id="deny" textValue="Exclude">
+                    Exclude
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onPress={() => setRules(shown.filter((_, i) => i !== index))}
             >
               Remove
-            </button>
+            </Button>
           </div>
         ))}
-        <button
-          type="button"
-          className="block text-sm underline"
-          disabled={existing.isLoading}
-          onClick={() =>
+        <Button
+          variant="secondary"
+          size="sm"
+          isDisabled={existing.isLoading}
+          onPress={() =>
             setRules([
               ...shown,
               { scope: "library", target: "", allowed: true },
@@ -315,7 +371,7 @@ function UserEditor({ user }: { user: AccountUser }) {
           }
         >
           Add permission
-        </button>
+        </Button>
         {error && (
           <p role="alert" className="text-danger-soft-foreground">
             {error}

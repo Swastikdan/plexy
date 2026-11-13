@@ -20,6 +20,3 @@ export function setLiveBinding(next: LiveBinding): void {
 export function getLiveBinding(): LiveBinding {
   return live;
 }
-
-/** Standalone apps never prepare or convert video; headless server behavior is retained. */
-export const directPlayOnly = () => process.env.PLEXY_DIRECT_PLAY_ONLY === "1";

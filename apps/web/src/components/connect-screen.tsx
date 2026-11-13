@@ -12,7 +12,7 @@ import {
   ShieldAlert,
   Wifi,
 } from "lucide-react";
-import { Button } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 import { BackButton } from "./back-button";
 import { isElectronMac } from "../lib/platform";
 import {
@@ -143,7 +143,7 @@ export function ConnectScreen({
 
       <section className="relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-sm border border-border bg-surface">
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface">
             <img src="/icon.svg" alt="" className="h-8 w-8" />
           </div>
           <h1 className="font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -202,7 +202,7 @@ export function ConnectScreen({
                 <Server size={13} />
                 Server address
               </span>
-              <input
+              <Input
                 id="plexy-server-url"
                 type="text"
                 inputMode="url"
@@ -217,7 +217,7 @@ export function ConnectScreen({
                   if (error) setError(null);
                 }}
                 placeholder="http://192.168.1.20:8765"
-                className="h-10 w-full rounded-sm border border-border bg-surface-secondary px-3.5 text-sm text-foreground placeholder:text-muted/50 outline-none transition-colors focus:border-separator disabled:opacity-50"
+                fullWidth
               />
             </label>
 

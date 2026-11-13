@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 import { login, pairDevice } from "../auth";
 
 export function PairScreen({
@@ -68,31 +68,33 @@ export function PairScreen({
           <>
             <label className="block text-sm">
               Username
-              <input
+              <Input
                 required
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
+                fullWidth
+                className="mt-2"
               />
             </label>
             <label className="block text-sm">
               Password
-              <input
+              <Input
                 required
                 type="password"
                 autoComplete="current-password"
                 maxLength={128}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
+                fullWidth
+                className="mt-2"
               />
             </label>
           </>
         ) : (
           <label className="block text-sm">
             Your pairing code
-            <input
+            <Input
               required
               autoComplete="one-time-code"
               inputMode="numeric"
@@ -102,7 +104,8 @@ export function PairScreen({
               spellCheck={false}
               value={key}
               onChange={(e) => setKey(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
-              className="mt-2 w-full rounded-lg border border-border bg-surface p-3 font-mono text-center text-2xl tracking-[0.3em] tabular-nums"
+              fullWidth
+              className="mt-2 text-center font-mono text-2xl tracking-[0.3em] tabular-nums"
             />
             <span className="mt-2 block text-xs text-muted">
               Create a six-digit code in My account on a device where you are signed in.

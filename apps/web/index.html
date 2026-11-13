@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark" data-shell="web">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -19,7 +19,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <!-- Theme + shell run before first paint so there is no light/dark flash
-         and desktop corners are square from the first frame. `plexy.theme`
+         and the resolved theme is stored before the app mounts. `plexy.theme`
          holds "light", "dark", or is absent for "follow the system". -->
     <script>
       (function () {
@@ -33,7 +33,6 @@
           : "dark";
         var theme = stored === "light" || stored === "dark" ? stored : system;
         root.dataset.theme = theme;
-        root.dataset.shell = /Electron/i.test(navigator.userAgent) ? "desktop" : "web";
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) {
           meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#060607");

@@ -56,7 +56,7 @@ function HomeRoute() {
     <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 sm:px-8">
       {empty ? (
         <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-4 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-sm bg-surface border border-border text-muted">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-surface border border-border text-muted">
             <Plus size={28} />
           </div>
           <h2 className="font-sans text-2xl font-bold text-foreground">{administrator ? "Your library is ready" : "No titles shared yet"}</h2>

@@ -8,9 +8,8 @@
  *   --font-sans     Archivo, to match the native app
  *   --field-radius  HeroUI Native's taller input radius
  *
- * Desktop (`navigator.userAgent` contains Electron) sets `data-shell="desktop"`
- * before first paint, which collapses --radius to 0 so every corner is square.
- * The web build keeps HeroUI's radii.
+ * Corners follow HeroUI's radii everywhere, matching the native app; there is
+ * no per-shell geometry override.
  */
 @import "@heroui/styles";
 @import "@fontsource-variable/archivo";
@@ -200,13 +199,6 @@
 
   /* Shared page gutter for poster scrollers (3 == px-3). */
   --row-inset: calc(var(--spacing) * 3);
-}
-
-/* Everything square in the desktop shell. Only intrinsic circles (person
- * photos, progress rings, spinners) use rounded-full. */
-html[data-shell="desktop"] {
-  --radius: 0px;
-  --field-radius: 0px;
 }
 
 @keyframes rise {

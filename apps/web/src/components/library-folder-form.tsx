@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { api } from "../client";
 import { queries } from "../queries";
-import { Button, ListBox, Select } from "@heroui/react";
+import { Button, Input, ListBox, Select } from "@heroui/react";
 import { cx } from "../lib/cx";
 
 export function LibraryFolderForm({
@@ -130,12 +130,13 @@ export function LibraryFolderForm({
 
         <div>
           <label className="text-xs font-medium text-muted">Library Name</label>
-          <input
+          <Input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Movies, TV Shows, 4K Cinema"
-            className="mt-1 h-10 w-full rounded-sm border border-border bg-surface-secondary px-4 text-sm text-foreground placeholder:text-muted/70 outline-none focus:border-separator"
+            fullWidth
+            className="mt-1"
           />
         </div>
       </div>
@@ -197,7 +198,7 @@ export function LibraryFolderForm({
 
         {/* Direct Path Input */}
         <div className="flex gap-2">
-          <input
+          <Input
             type="text"
             value={customInputPath}
             onChange={(e) => setCustomInputPath(e.target.value)}
@@ -208,7 +209,8 @@ export function LibraryFolderForm({
               }
             }}
             placeholder="Enter or paste folder path (e.g. /Users/swastik/Movies)"
-            className="h-10 flex-1 rounded-sm border border-border bg-surface-secondary px-3.5 text-xs text-foreground placeholder:text-muted/70 outline-none focus:border-separator"
+            fullWidth
+            className="flex-1"
           />
           <Button
             variant="secondary"

@@ -244,7 +244,7 @@ function DetailView({
 
   return (
     <div className="space-y-10">
-      <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-sm sm:rounded-sm bg-surface flex flex-col justify-end">
+      <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-2xl sm:rounded-sm bg-surface flex flex-col justify-end">
         <img
           src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
           alt={item.name}
@@ -271,7 +271,7 @@ function DetailView({
             <Link
               to="/title/$itemId"
               params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
-              className="mb-4 inline-flex items-center gap-1.5 rounded-sm bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
+              className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
             >
               <ArrowLeft size={13} />
               Back to {item.parentTitle || "Series"}
@@ -279,7 +279,7 @@ function DetailView({
           )}
 
           {unmatched && item.kind !== "episode" && (
-            <div className="mb-5 flex items-center gap-3 rounded-sm border border-warning/25 bg-warning/8 px-4 py-2 text-sm text-warning-soft-foreground">
+            <div className="mb-5 flex items-center gap-3 rounded-lg border border-warning/25 bg-warning/8 px-4 py-2 text-sm text-warning-soft-foreground">
               <Sparkles size={16} className="shrink-0" />
               <span className="text-xs sm:text-sm">
                 Not identified yet{matchReason ? `: ${matchReason}` : ""}.
@@ -315,7 +315,7 @@ function DetailView({
                   onPointerEnter={() => prefetchPlay(primaryFileId)}
                   onFocus={() => prefetchPlay(primaryFileId)}
                   className={cx(
-                    "group relative overflow-hidden inline-flex items-center justify-center rounded-sm h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
+                    "group relative overflow-hidden inline-flex items-center justify-center rounded-lg h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
                     "border border-white/20 font-semibold transition-all duration-150 ease-out shadow-lg active:scale-[0.98]",
                     hasResume ? "bg-[#353538] hover:bg-[#404044]" : isPlayed ? "bg-white/15 hover:bg-white/25 text-white" : "bg-white hover:bg-white/90 text-black",
                   )}
@@ -354,68 +354,68 @@ function DetailView({
               )}
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
-                  disabled={watchMutation.isPending || clearWatchMutation.isPending}
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  onPress={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
+                  isDisabled={watchMutation.isPending || clearWatchMutation.isPending}
                   aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-                  title={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95 disabled:opacity-50"
+                  className="rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white"
                 >
                   {isPlayed ? <CheckCircle2 size={16} className="text-accent" /> : <Eye size={16} />}
-                </button>
+                </Button>
 
-                <button
-                  type="button"
-                  onClick={toggleWatchlist}
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  onPress={toggleWatchlist}
                   aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
-                  title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
                   className={cx(
-                    "inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95",
+                    "rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white",
                     inWatchlist && "text-accent bg-white/20",
                   )}
                 >
                   <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
-                </button>
+                </Button>
 
-                <button
-                  type="button"
-                  onClick={toggleFavorite}
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  onPress={toggleFavorite}
                   aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                  title={isFavorite ? "Remove from favorites" : "Add to favorites"}
                   className={cx(
-                    "inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95",
+                    "rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white",
                     isFavorite && "text-warning bg-white/20",
                   )}
                 >
                   <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
-                </button>
+                </Button>
 
                 {trailer ? (
-                  <button
-                    type="button"
-                    onClick={() => setTrailerOpen(true)}
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    onPress={() => setTrailerOpen(true)}
                     aria-label="Watch trailer"
-                    title="Watch trailer"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                    className="rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white"
                   >
                     <Video size={16} />
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    type="button"
+                  <Button
+                    isIconOnly
+                    variant="ghost"
                     aria-label="Collection"
-                    title="Collection"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                    className="rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white"
                   >
                     <FolderPlus size={16} />
-                  </button>
+                  </Button>
                 )}
 
                 <Dropdown>
                   <Dropdown.Trigger
                     aria-label="More options"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/15 bg-white/10 text-white/80 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white active:scale-95"
                   >
                     <MoreHorizontal size={16} />
                   </Dropdown.Trigger>
@@ -640,13 +640,13 @@ function DetailView({
                             )}
 
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-2xs transition-opacity duration-150 group-hover:opacity-100">
-                              <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md bg-white text-black shadow-md transition-transform duration-150 group-hover:scale-105 active:scale-95">
+                              <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white text-black shadow-md transition-transform duration-150 group-hover:scale-105 active:scale-95">
                                 <Play size={14} className="ml-0.5" fill="currentColor" />
                               </div>
                             </div>
 
                             {ep.runtime && (
-                              <div className="absolute bottom-1 right-1 rounded-sm bg-black/80 px-1 py-0.2 text-[9px] font-semibold text-white/90">
+                              <div className="absolute bottom-1 right-1 rounded-md bg-black/80 px-1 py-0.2 text-[9px] font-semibold text-white/90">
                                 {ep.runtime}m
                               </div>
                             )}

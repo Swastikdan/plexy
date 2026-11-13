@@ -36,6 +36,7 @@ jobs:
   plan:
     name: Determine build targets
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       build_desktop: ${{ steps.targets.outputs.build_desktop }}
       build_mobile: ${{ steps.targets.outputs.build_mobile }}
@@ -64,6 +65,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.any_build == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -104,6 +106,9 @@ jobs:
     name: macOS app (Apple Silicon)
     needs: [plan, checks]
     runs-on: macos-15
+    # A missing Apple Silicon runner must never hold the release hostage.
+    continue-on-error: true
+    timeout-minutes: 75
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
@@ -163,42 +168,54 @@ jobs:
           path: dist/web
 
       - name: Build macOS app
+        id: build
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           PLEXY_REUSE_WEB_BUILD: "true"
         run: bun run package:mac
 
       - name: Show artifacts
+        if: steps.build.outcome == 'success'
         run: ls -lh dist/mac
 
       - name: Verify desktop release version
+        if: steps.build.outcome == 'success'
         run: |
           expected="$(node -p "require('./package.json').version")"
           actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'dist/mac/mac-arm64/Plexy Beta.app/Contents/Info.plist')"
           test "$actual" = "$expected" || { echo "Desktop version $actual does not match release $expected"; exit 1; }
 
       - name: Verify app signature
+        if: steps.build.outcome == 'success'
         run: codesign --verify --deep --strict --verbose=2 "dist/mac/mac-arm64/Plexy Beta.app"
 
       - name: Upload macOS artifacts
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: plexy-macos
           path: |
             dist/mac/*.dmg
             dist/mac/*.zip
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       # The release job no longer waits for macOS runners (GitHub's arm64 pool
       # can stay queued for a long time). This step attaches the app to the same
       # tag as soon as the build finishes, creating the release first if needed.
       - name: Publish macOS assets to the release
+        if: steps.build.outcome == 'success'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/mac/*.dmg dist/mac/*.zip)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::warning::macOS build produced no DMG/ZIP; publishing the release without it."
+            exit 0
+          fi
           version="$(node -p "require('./package.json').version")"
           build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
           tag="v${version}-build.${build_num}"
@@ -216,7 +233,7 @@ jobs:
               $prerelease_flag \
               --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
           fi
-          gh release upload "$tag" dist/mac/*.dmg dist/mac/*.zip --clobber
+          gh release upload "$tag" "${assets[@]}" --clobber
           echo "Attached macOS assets to $tag"
 
   mac-fallback:
@@ -225,11 +242,16 @@ jobs:
     runs-on: macos-14
     # GitHub occasionally cannot hand out a macos-15 arm64 runner within the
     # acquisition window. Try the other arm64 image once before giving up.
+    continue-on-error: true
+    timeout-minutes: 75
     if: |
-      failure() &&
+      always() &&
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.build_desktop == 'true'
+      needs.plan.result == 'success' &&
+      needs.checks.result == 'success' &&
+      needs.plan.outputs.build_desktop == 'true' &&
+      needs.mac.result != 'success'
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -276,36 +298,47 @@ jobs:
           path: dist/web
 
       - name: Build macOS app
+        id: build
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           PLEXY_REUSE_WEB_BUILD: "true"
         run: bun run package:mac
 
       - name: Verify desktop release version
+        if: steps.build.outcome == 'success'
         run: |
           expected="$(node -p "require('./package.json').version")"
           actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'dist/mac/mac-arm64/Plexy Beta.app/Contents/Info.plist')"
           test "$actual" = "$expected" || { echo "Desktop version $actual does not match release $expected"; exit 1; }
 
       - name: Verify app signature
+        if: steps.build.outcome == 'success'
         run: codesign --verify --deep --strict --verbose=2 "dist/mac/mac-arm64/Plexy Beta.app"
 
       - name: Upload macOS artifacts
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: plexy-macos
           path: |
             dist/mac/*.dmg
             dist/mac/*.zip
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Publish macOS assets to the release
+        if: steps.build.outcome == 'success'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/mac/*.dmg dist/mac/*.zip)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::warning::macOS build produced no DMG/ZIP; publishing the release without it."
+            exit 0
+          fi
           version="$(node -p "require('./package.json').version")"
           build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
           tag="v${version}-build.${build_num}"
@@ -323,13 +356,16 @@ jobs:
               $prerelease_flag \
               --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
           fi
-          gh release upload "$tag" dist/mac/*.dmg dist/mac/*.zip --clobber
+          gh release upload "$tag" "${assets[@]}" --clobber
           echo "Attached macOS assets to $tag"
 
   android:
     name: Android mobile APK
     needs: [plan, checks]
     runs-on: ubuntu-24.04
+    # A device build that fails or stalls is skipped, not a release blocker.
+    continue-on-error: true
+    timeout-minutes: 60
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
@@ -382,11 +418,14 @@ jobs:
           name: plexy-android-mobile
           path: |
             .build/native/Plexy-*.apk
-          if-no-files-found: error
+          if-no-files-found: warn
 
   server:
     name: Backend (${{ matrix.platform }})
     needs: [plan, checks]
+    # Publish whatever platforms build; one bad target does not block the rest.
+    continue-on-error: true
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -428,33 +467,41 @@ jobs:
         with:
           name: plexy-server-${{ matrix.platform }}
           path: dist/plexy-server-*.tar.gz
-          if-no-files-found: error
+          if-no-files-found: warn
 
   release:
     name: Publish GitHub release
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - plan
       - checks
       - android
       - server
+    # Artifact builds (macOS/Android/backend) are best-effort: the release still
+    # publishes whatever succeeded. Only planning and verification must pass.
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
       needs.plan.outputs.any_build == 'true' &&
-      !contains(needs.*.result, 'failure') &&
-      !contains(needs.*.result, 'cancelled')
+      needs.plan.result == 'success' &&
+      needs.checks.result == 'success' &&
+      !cancelled()
     steps:
       - name: Check out
         uses: actions/checkout@v7
 
       - name: Download release artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           pattern: plexy-*
           merge-multiple: true
           path: release
+
+      - name: Ensure release folder exists
+        run: mkdir -p release
 
       - name: Verify selected release artifacts
         env:
@@ -464,19 +511,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          require_asset() { compgen -G "release/$1" >/dev/null || { echo "Missing release asset: $1"; exit 1; }; }
+          warn_missing() { echo "::warning::Missing release asset: $1 — publishing without it."; }
+          have_asset() { compgen -G "release/$1" >/dev/null; }
           if [ "$BUILD_DESKTOP" = true ]; then
             version="$(node -p "require('./package.json').version")"
-            if compgen -G "release/Plexy Beta-${version}-arm64.dmg" >/dev/null; then
-              require_asset "Plexy Beta-${version}-arm64.zip"
+            if have_asset "Plexy Beta-${version}-arm64.dmg"; then
+              have_asset "Plexy Beta-${version}-arm64.zip" || warn_missing "Plexy Beta-${version}-arm64.zip"
             else
-              echo "::warning::macOS assets are not ready; the macOS job attaches them to this release when it finishes."
+              echo "::warning::macOS assets are not available for this run; the release is published without them."
             fi
           fi
-          if [ "$BUILD_MOBILE" = true ]; then require_asset 'Plexy-mobile-*.apk'; fi
+          if [ "$BUILD_MOBILE" = true ] && ! have_asset 'Plexy-mobile-*.apk'; then
+            warn_missing 'Plexy-mobile-*.apk'
+          fi
           if [ "$BUILD_SERVER" = true ]; then
-            require_asset 'plexy-server-linux-x64.tar.gz'
-            require_asset 'plexy-server-macos-arm64.tar.gz'
+            have_asset 'plexy-server-linux-x64.tar.gz' || warn_missing 'plexy-server-linux-x64.tar.gz'
+            have_asset 'plexy-server-macos-arm64.tar.gz' || warn_missing 'plexy-server-macos-arm64.tar.gz'
           fi
 
       - name: Create update checksums
@@ -517,7 +567,7 @@ jobs:
           if compgen -G "release/Plexy Beta-"*.dmg >/dev/null; then
             mac_paragraph="**Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**."
           else
-            mac_paragraph="_The macOS app is still being produced on GitHub's Apple Silicon runners. It is attached to this release automatically as soon as a runner is available._"
+            mac_paragraph="_The macOS app is not attached to this run because an Apple Silicon runner was unavailable. Every other component below is complete; a macOS build may still attach itself here if one becomes available._"
           fi
 
           cat > release-notes.md <<EOF

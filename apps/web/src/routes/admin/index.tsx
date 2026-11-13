@@ -34,7 +34,7 @@ import { api, type LibraryItem, type ReviewEntry } from "../../client";
 import { getApiBase, hasServerOverride } from "../../server-config";
 import { createPairingCode, listDevices, removeRevokedDevice, revokeDevice } from "../../auth";
 import { queries } from "../../queries";
-import { Button, ListBox, Modal, Select } from "@heroui/react";
+import { Button, Input, ListBox, Modal, SearchField, Select, Switch } from "@heroui/react";
 import { cx } from "../../lib/cx";
 import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
 import { PageLoader } from "../../components/page-loader";
@@ -389,7 +389,7 @@ function Review() {
               <span>{f.label}</span>
               {counts && (
                 <span className={cx(
-                  "rounded-sm px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
+                  "rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
                   filter === f.key ? "bg-black/10 text-background" : "bg-surface-secondary text-muted",
                 )}>
                   {f.key === "attention" ? counts.attention : f.key === "matched" ? counts.matched : counts.all}
@@ -399,16 +399,18 @@ function Review() {
           ))}
         </div>
 
-        <label className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm text-muted transition-colors focus-within:border-accent/70 lg:w-80">
-          <Search size={15} className="shrink-0" aria-hidden />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search title or file name…"
-            aria-label="Search titles and file names"
-            className="w-full min-w-0 bg-transparent text-foreground placeholder:text-muted/70 outline-none"
-          />
-        </label>
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          aria-label="Search titles and file names"
+          className="w-full lg:w-80"
+        >
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="Search title or file name…" />
+            <SearchField.ClearButton aria-label="Clear search" />
+          </SearchField.Group>
+        </SearchField>
       </div>
 
       <p className="text-xs leading-relaxed text-muted">
@@ -442,7 +444,7 @@ function Review() {
       <div className={cx("space-y-3 transition-opacity duration-150", isFetching && "opacity-70")}>
         {items.map((entry) => (
           <div key={entry.id} className="flex items-center gap-4 rounded-xl border border-border bg-surface px-4 py-3">
-            <div className="h-16 w-11 shrink-0 overflow-hidden rounded-sm bg-surface-secondary">
+            <div className="h-16 w-11 shrink-0 overflow-hidden rounded-lg bg-surface-secondary">
               {entry.poster ? (
                 <img src={entry.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
               ) : (
@@ -506,7 +508,7 @@ function MatchBadge({ status }: { status: string }) {
       : "border-border bg-surface-secondary text-muted";
   const label = status === "matched" ? "Matched" : status === "review" ? "Needs review" : "Unmatched";
   return (
-    <span className={cx("rounded-sm border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", style)}>
+    <span className={cx("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", style)}>
       {label}
     </span>
   );
@@ -582,20 +584,20 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
         onSubmit={(e) => { e.preventDefault(); if (query.trim()) search.mutate(query.trim()); }}
         className="flex flex-wrap gap-2"
       >
-        <input
+        <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search TMDB title…"
           aria-label="TMDB search title"
-          className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent/70"
+          className="min-w-0 flex-1"
         />
-        <input
+        <Input
           value={year}
           onChange={(e) => setYear(e.target.value.replace(/\D/g, ""))}
           placeholder="Year"
           aria-label="Year"
           inputMode="numeric"
-          className="h-9 w-20 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent/70"
+          className="w-20"
         />
         <Button variant="secondary" isDisabled={search.isPending || !query.trim()}>
           {search.isPending ? "Searching…" : "Search"}
@@ -615,7 +617,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
               disabled={apply.isPending}
               className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary disabled:opacity-50"
             >
-              {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded-sm object-cover" loading="lazy" />}
+              {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded-lg object-cover" loading="lazy" />}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{r.title}</span>
                 <span className="block text-[13px] text-muted">{r.year} · {r.overview?.slice(0, 90) ?? ""}</span>
@@ -767,12 +769,12 @@ function Settings() {
           </div>
           <div className="shrink-0 self-start sm:self-auto">
             {s.hasTmdbToken ? (
-              <span className="inline-flex items-center gap-1.5 rounded-sm bg-success/10 border border-success/25 px-2.5 py-1 text-xs font-semibold text-success-soft-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 border border-success/25 px-2.5 py-1 text-xs font-semibold text-success-soft-foreground">
                 <Check size={13} />
                 Connected ({s.tokenSource})
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-sm bg-warning/10 border border-warning/25 px-2.5 py-1 text-xs font-semibold text-warning-soft-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 border border-warning/25 px-2.5 py-1 text-xs font-semibold text-warning-soft-foreground">
                 Token Required
               </span>
             )}
@@ -899,12 +901,12 @@ function Settings() {
           }}
           className="flex flex-col sm:flex-row gap-2 pt-1"
         >
-          <input
+          <Input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder={s.hasTmdbToken ? "Replace TMDB token…" : "Paste TMDB Read-Access Token…"}
-            className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground placeholder:text-muted/70 outline-none focus:border-accent/70"
+            className="min-w-0 flex-1"
           />
           <Button
             variant="secondary"
@@ -938,15 +940,15 @@ function Settings() {
             Look up episode markers from IntroDB while playing. Plexy uses the show’s IMDb ID and episode numbers; when a marker is available, the player offers a skip button. Lookup is off until enabled.
           </p>
         </div>
-        <label className="flex items-start gap-2.5 text-sm text-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={s.skipSegmentsEnabled}
-            onChange={(e) => save.mutate({ skipSegmentsEnabled: e.target.checked })}
-            className="mt-0.5 h-4 w-4 rounded-sm accent-accent"
-          />
-          <span>Enable community skip markers (IntroDB)</span>
-        </label>
+        <Switch
+          isSelected={s.skipSegmentsEnabled}
+          onChange={(isSelected) => save.mutate({ skipSegmentsEnabled: isSelected })}
+        >
+          <Switch.Content>Enable community skip markers (IntroDB)</Switch.Content>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch>
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="secondary"
@@ -1118,19 +1120,24 @@ function Settings() {
             <p className="mt-1 text-xs text-muted">
               Server v{status.data?.version ?? "—"} · client {window.location.origin} · API {getApiBase()}
             </p>
-            <label className="mt-2 flex items-start gap-2 text-xs text-muted">
-              <input
-                type="checkbox"
-                checked={diagnosticsEnabled}
-                onChange={(event) => {
-                  const enabled = event.target.checked;
+            <div className="mt-2 space-y-1">
+              <Switch
+                size="sm"
+                isSelected={diagnosticsEnabled}
+                onChange={(enabled) => {
                   setDiagnosticsEnabled(enabled);
                   setPlaybackDiagnosticsEnabled(enabled);
                 }}
-                className="mt-0.5 accent-muted"
-              />
-              <span>Share startup, rebuffer, and error details from this device with this server. The server keeps the latest 100 events in memory.</span>
-            </label>
+              >
+                <Switch.Content>Share playback diagnostics</Switch.Content>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+              </Switch>
+              <p className="text-xs text-muted">
+                Shares startup, rebuffer, and error details from this device with this server. The server keeps the latest 100 events in memory.
+              </p>
+            </div>
           </div>
           {playbackDiagnostics.data?.events.filter((event) => event.kind !== "startup").length ? (
             <ul className="space-y-1.5">
@@ -1206,10 +1213,16 @@ function Settings() {
           <label className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
             <span className="block text-xs font-semibold text-muted">Automatically turn on subtitles</span>
             <p className="text-xs text-muted">When playback starts, select a subtitle track in your preferred language when one is available.</p>
-            <span className="flex items-center gap-2 pt-1 text-sm text-foreground">
-              <input type="checkbox" checked={playbackPrefs.autoSubtitles} onChange={(e) => updatePlaybackPrefs({ autoSubtitles: e.target.checked })} className="h-4 w-4 rounded-sm accent-accent" />
-              Turn on subtitles automatically
-            </span>
+            <Switch
+              size="sm"
+              isSelected={playbackPrefs.autoSubtitles}
+              onChange={(isSelected) => updatePlaybackPrefs({ autoSubtitles: isSelected })}
+            >
+              <Switch.Content>Turn on subtitles automatically</Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch>
           </label>
           <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
             <span className="block text-xs font-semibold text-muted">Preferred subtitle language</span>
@@ -1324,11 +1337,11 @@ function Settings() {
                   </p>
                   <label className="mt-5 block space-y-1.5">
                     <span className="text-xs font-semibold text-muted">Type RESET to continue</span>
-                    <input
+                    <Input
                       autoFocus
                       value={resetPhrase}
                       onChange={(event) => setResetPhrase(event.target.value)}
-                      className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-danger/60"
+                      fullWidth
                     />
                   </label>
                 </Modal.Body>
@@ -1454,7 +1467,7 @@ function DesktopUpdateSettings() {
             {progressPercent !== null && <span className="tabular-nums text-muted">{progressPercent}%</span>}
           </div>
           <div
-            className="mt-3 h-2 overflow-hidden rounded-sm bg-border"
+            className="mt-3 h-2 overflow-hidden rounded-full bg-border"
             role="progressbar"
             aria-label={progressLabel}
             aria-valuemin={0}
@@ -1462,7 +1475,7 @@ function DesktopUpdateSettings() {
             aria-valuenow={progressPercent ?? undefined}
           >
             <div
-              className={`h-full rounded-sm bg-accent transition-[width] duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
+              className={`h-full rounded-full bg-accent transition-[width] duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
               style={progressPercent === null ? undefined : { width: `${progressPercent}%` }}
             />
           </div>
@@ -1538,7 +1551,7 @@ function NumberSetting({
       <span className="block text-xs font-semibold text-muted">{label}</span>
       <span className="block text-xs leading-relaxed text-muted">{hint}</span>
       <span className="flex items-center gap-2 pt-1">
-        <input
+        <Input
           type="number"
           min={min}
           max={max}
@@ -1550,7 +1563,7 @@ function NumberSetting({
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();
           }}
-          className="h-9 w-24 rounded-lg border border-border bg-surface px-2 text-sm text-foreground outline-none focus:border-accent/70"
+          className="w-24"
         />
         {suffix && <span className="text-xs text-muted">{suffix}</span>}
       </span>
@@ -1776,7 +1789,16 @@ function SecuritySettings() {
             Generate a six-digit code for your own account, then enter it on the other device. Each
             code works once and expires after 10 minutes.
           </p>
-          <label className="block text-xs">Confirm your password<input type="password" autoComplete="current-password" value={pairPassword} onChange={event => setPairPassword(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-border bg-surface px-3" /></label>
+          <label className="block space-y-1 text-xs">
+            Confirm your password
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={pairPassword}
+              onChange={(event) => setPairPassword(event.target.value)}
+              fullWidth
+            />
+          </label>
           <Button
             variant="secondary"
             isDisabled={mint.isPending || !pairPassword}
@@ -1976,9 +1998,9 @@ function OptimizerSettings() {
             <span>Overall completion</span>
             <span>{percent}%</span>
           </div>
-          <div className="w-full bg-surface-secondary rounded-sm h-2 overflow-hidden border border-border/40">
+          <div className="w-full bg-surface-secondary rounded-full h-2 overflow-hidden border border-border/40">
             <div
-              className="bg-accent h-full rounded-sm transition-all duration-300"
+              className="bg-accent h-full rounded-full transition-all duration-300"
               style={{ width: `${percent}%` }}
             />
           </div>
@@ -2042,27 +2064,22 @@ function OptimizerSettings() {
         </div>
       )}
 
-      {/* Background preparation is opt-in to keep idle machines quiet. */}
-      <label className="flex items-center gap-2.5 text-xs sm:text-sm text-foreground cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={data.enabled}
-          onChange={(e) => save.mutate({ autoOptimize: e.target.checked })}
-          className="h-4 w-4 rounded-sm accent-accent"
-        />
-        <span>Prepare only files that cannot play directly</span>
-      </label>
+      <p className="text-xs leading-relaxed text-muted">
+        Files that cannot play directly are prepared automatically when they are
+        scanned, or the first time playback identifies them. Files that already
+        play directly are never copied or re-encoded.
+      </p>
 
       <div className="flex flex-col sm:flex-row sm:items-end gap-3 pt-2">
         <div className="space-y-1">
           <span className="text-xs text-muted font-medium">Cache limit (GB, 0 = unlimited)</span>
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="number"
               min={0}
               value={cap}
               onChange={(e) => setCap(e.target.value)}
-              className="h-9 w-28 rounded-lg border border-border bg-surface-secondary px-3 text-xs sm:text-sm text-foreground outline-none focus:border-accent/70"
+              className="w-28"
             />
             <Button
               variant="secondary"
@@ -2247,25 +2264,18 @@ function Logs() {
     <div className="space-y-4">
       <div className="rounded-2xl border border-border/70 bg-surface p-3.5 sm:p-4 space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-secondary px-3 text-xs sm:text-sm text-muted transition-colors focus-within:border-accent/70">
-            <Search size={14} className="shrink-0 text-muted/80" aria-hidden />
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Search log messages…"
-              aria-label="Filter log lines"
-              className="w-full min-w-0 bg-transparent text-foreground placeholder:text-muted/70 outline-none"
-            />
-            {filter && (
-              <button
-                type="button"
-                onClick={() => setFilter("")}
-                className="text-muted hover:text-foreground"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </label>
+          <SearchField
+            value={filter}
+            onChange={setFilter}
+            aria-label="Filter log lines"
+            className="min-w-0 flex-1"
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="Search log messages…" />
+              <SearchField.ClearButton aria-label="Clear log filter" />
+            </SearchField.Group>
+          </SearchField>
 
           <div className="flex items-center gap-2 shrink-0">
             <Select
@@ -2345,7 +2355,7 @@ function Logs() {
               >
                 <span>{l}</span>
                 <span className={cx(
-                  "tabular-nums text-[10px] px-1 py-0.2 rounded-sm font-bold",
+                  "tabular-nums text-[10px] px-1 py-0.2 rounded-full font-bold",
                   level === l ? "bg-black/10 text-background" : "text-muted/70",
                 )}>
                   {l === "all" ? allEntries.length : levelCounts[l] ?? 0}
@@ -2354,19 +2364,24 @@ function Logs() {
             ))}
           </div>
 
-          <label className="inline-flex items-center gap-2 text-xs text-muted cursor-pointer select-none">
-            <span className={cx(
-              "h-2 w-2 rounded-sm transition-colors",
-              follow ? "bg-success animate-pulse" : "bg-default",
-            )} />
-            <input
-              type="checkbox"
-              checked={follow}
-              onChange={(e) => setFollow(e.target.checked)}
-              className="h-3.5 w-3.5 rounded-sm accent-accent"
-            />
-            <span>Follow newest</span>
-          </label>
+          <Switch
+            size="sm"
+            isSelected={follow}
+            onChange={setFollow}
+          >
+            <Switch.Content>
+              <span className="inline-flex items-center gap-2">
+                <span className={cx(
+                  "h-2 w-2 rounded-full transition-colors",
+                  follow ? "bg-success animate-pulse" : "bg-default",
+                )} />
+                Follow newest
+              </span>
+            </Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch>
         </div>
       </div>
 
@@ -2417,7 +2432,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
           {logTime(entry)}
         </span>
         <span className={cx(
-          "rounded-sm px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
+          "rounded-full px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
           LEVEL_STYLE[entry.level] ?? "bg-surface-secondary text-muted",
         )}>
           {entry.level}
@@ -2443,7 +2458,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <span className={cx(
-              "rounded-sm px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
+              "rounded-full px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
               LEVEL_STYLE[entry.level] ?? "bg-surface-secondary text-muted",
             )}>
               {entry.level}

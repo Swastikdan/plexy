@@ -1,4 +1,3 @@
-import { directPlayOnly } from "./runtime";
 import { canAccessFile } from "./access";
 import { requestUser } from "./auth";
 /// Media routes (PRD 5.8, 9).
@@ -28,7 +27,7 @@ import {
   rangeResponse, rowPlayabilityFacts, type BrowserCaps,
 } from "./playback";
 import {
-  optimizationView, usableOptimizedPath, pauseOptimizer, resumeOptimizer,
+  enqueueOptimization, optimizationView, usableOptimizedPath, pauseOptimizer, resumeOptimizer,
 } from "./optimize";
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { resolveFfmpeg } from "./ffmpeg";
@@ -498,16 +497,17 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
     // A prepared copy is a plain fast-start MP4: the browser can play and seek
     // it natively, so the "likely" path from probe facts no longer applies.
-    const prepared = !directPlayOnly() && !selectedAudioNeedsConversion ? await usableOptimizedPath(row) : null;
+    const prepared = !selectedAudioNeedsConversion ? await usableOptimizedPath(row) : null;
     if (prepared) {
       verdict = { path: "direct", reason: "Prepared for instant playback and seeking" };
     }
-    if (!directPlayOnly() && verdict.path === "direct" && !prepared && audioTracks.length > 1) {
+    if (verdict.path === "direct" && !prepared && audioTracks.length > 1) {
       verdict = { path: "remux", reason: "Remuxing with selected audio track" };
     }
-
-    if (directPlayOnly() && verdict.path !== "direct") {
-      verdict = { path: "unsupported", reason: "This player cannot directly decode this file. Video conversion is disabled for this app." };
+    // Identify the fallback immediately and prepare it in the background so the
+    // next play is direct. This never blocks the current request.
+    if (!prepared && (verdict.path === "remux" || verdict.path === "transcode")) {
+      enqueueOptimization(Number(row.id));
     }
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
 
@@ -550,9 +550,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       ...verdict,
       fileId: Number(row.id),
       itemId: row.item_id as number | null,
-      directPlayOnly: directPlayOnly(),
-      audioTracks: directPlayOnly() ? audioTracks.slice(0, 1) : audioTracks,
-      selectedAudioIndex: directPlayOnly() ? 0 : selectedAudioIndex,
+      directPlayOnly: false,
+      audioTracks,
+      selectedAudioIndex,
       versions,
       title: context.title,
       subtitle: context.subtitle,
@@ -595,8 +595,8 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     row = await ensureFileProbed(row);
     let verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
 
-    if (directPlayOnly() && verdict.path !== "direct") {
-      verdict = { path: "unsupported", reason: "This player cannot directly decode this file. Video conversion is disabled for this app." };
+    if (verdict.path === "remux" || verdict.path === "transcode") {
+      enqueueOptimization(Number(row.id));
     }
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
     return {
@@ -615,7 +615,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const row = await openableFile(Number(ctx.params.fileId));
     if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
     const path = String(row.path);
-    const prepared = directPlayOnly() ? null : await usableOptimizedPath(row);
+    const prepared = await usableOptimizedPath(row);
     const servePath = prepared ?? path;
     const st = await stat(servePath);
     const container = String(row.container ?? "").toLowerCase();

@@ -43,7 +43,7 @@ function LibraryRoute() {
               <div
                 data-testid="scan-indicator"
                 role="status"
-                className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-sm border border-border bg-surface px-3 text-xs text-muted"
+                className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full border border-border bg-surface px-3 text-xs text-muted"
               >
                 <span
                   aria-hidden
