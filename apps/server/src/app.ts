@@ -152,13 +152,7 @@ export function buildApp(
     .onRequest(({ request }) => {
       if (!directPlayOnly()) return;
       const url = new URL(request.url);
-      if (
-        /^\/api\/stream\/[^/]+\/(remux|transcode|hls)(?:\/|$)/.test(
-          url.pathname,
-        ) ||
-        (/^\/api\/download\/[^/]+$/.test(url.pathname) &&
-          url.searchParams.has("maxHeight"))
-      ) {
+      if (/^\/api\/stream\/[^/]+\/(remux|transcode)(?:\/|$)/.test(url.pathname)) {
         return Response.json(
           {
             error:

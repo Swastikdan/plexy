@@ -279,7 +279,7 @@ async function requestJson(pathAndQuery: string, endpoint: string, ttlMs: number
     } catch (err) {
       const stale = await cacheGetStale(key);
       if (stale) {
-        log.info("tmdb", `serving offline cached response for ${endpoint}`);
+        log.debug("tmdb", `serving offline cached response for ${endpoint}`);
         return JSON.parse(stale);
       }
       throw err;

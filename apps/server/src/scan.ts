@@ -19,7 +19,6 @@ import { storeProbeFacts } from "./media-facts";
 import { enqueueMissingOptimizations, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { cacheEmbeddedSubtitles } from "./subtitles";
 import { resolveOptimizedDir, resolveTrickplayDir } from "./paths";
-import { enqueueConfiguredStreamPreparations } from "./hls-preparation";
 import { hydrateItemMetadata, hydrateEpisodeItem, hydrateMissingEpisodes } from "./hydrate";
 import { refreshMissingSkipSegments } from "./skip-segments";
 
@@ -314,10 +313,6 @@ async function runScan(libraryIds: number[]): Promise<void> {
     resumeOptimizer("scan");
     void enqueueMissingOptimizations().catch((err) =>
       log.warn("optimizer", "could not queue preparation after scan", {
-        message: err instanceof Error ? err.message : String(err),
-      }));
-    void enqueueConfiguredStreamPreparations().catch((err) =>
-      log.warn("media", "could not queue configured quality streams after scan", {
         message: err instanceof Error ? err.message : String(err),
       }));
     void import("./artwork").then(({ cacheMissingArtwork }) => cacheMissingArtwork()).catch((err) =>
@@ -760,7 +755,7 @@ async function matchItemOnce(
       result.best.tmdbType, result.best.tmdbId, result.best.score, result.matchedBy, result.best.reason, new Date().toISOString(), itemId,
     );
     storeCandidates(itemId, []); // clear stale review candidates
-    log.info("matcher", "matched", { itemId, title: result.best.title, score: result.best.score, reason: result.best.reason });
+    log.debug("matcher", "matched", { itemId, title: result.best.title, score: result.best.score, reason: result.best.reason });
     void hydrateMetadata(itemId, result.best.tmdbType, result.best.tmdbId, kind === "series" ? seriesDirFor(path) : dirname(path)).catch((e) =>
       log.warn("tmdb", "hydrating metadata failed", { itemId, message: String(e) }));
   } else if (result.status === "review") {
@@ -769,7 +764,7 @@ async function matchItemOnce(
       result.best?.score ?? null, result.matchedBy, result.best ? `candidate: ${result.best.reason}` : "ambiguous candidates", itemId,
     );
     storeCandidates(itemId, result.candidates);
-    log.info("matcher", "review queue", { itemId, count: result.candidates.length });
+    log.debug("matcher", "review queue", { itemId, count: result.candidates.length });
   } else {
     run(
       `UPDATE items SET match_status='unmatched', score=NULL, tmdb_type=NULL, tmdb_id=NULL, reason=? WHERE id=?`,
@@ -780,7 +775,7 @@ async function matchItemOnce(
           : "no search results",
       itemId,
     );
-    log.info("matcher", "unmatched", { itemId, reason: "below threshold" });
+    log.debug("matcher", "unmatched", { itemId, reason: "below threshold" });
   }
 }
 

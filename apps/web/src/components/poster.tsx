@@ -4,21 +4,14 @@
 /// top of the artwork, and hovering any poster quietly prefetches its detail
 /// page so opening a title is instant.
 import { useRef, useEffect, useState } from "react";
-import clsx, { type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle, Star } from "lucide-react";
+import { Dropdown } from "@heroui/react";
 import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
-import { prefetchAssets } from "../lib/asset-prefetch";
-import { prefetchTriggerEnabled } from "../lib/prefetch-config";
 import { artworkUrl } from "../lib/artwork-url";
-import { Menu } from "./ui/menu";
-
-export function cx(...parts: ClassValue[]) {
-  return twMerge(clsx(parts));
-}
+import { cx } from "../lib/cx";
 
 const BROWSER_CAPS = typeof document === "undefined" ? "" : JSON.stringify(probeBrowserCaps());
 
@@ -105,11 +98,6 @@ export function Poster({
       } else {
         void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
       }
-      // Only artwork this card actually renders is warmed; trickplay needs real
-      // file/play metadata and is never invented from a catalog card.
-      if (prefetchTriggerEnabled("hover")) {
-        prefetchAssets([item.poster, item.backdrop]);
-      }
     }, 100);
   };
 
@@ -133,7 +121,7 @@ export function Poster({
   return (
     <div
       className={cx(
-        "min-w-0 overflow-hidden rounded-[var(--radius-poster)]",
+        "min-w-0 overflow-hidden rounded-lg",
         !wide && "inline-block align-top",
         wide && "flex flex-col",
         className,
@@ -141,13 +129,13 @@ export function Poster({
     >
       <div
         className={cx(
-          "group relative block h-full overflow-hidden rounded-[var(--radius-poster)]",
-          "bg-surface border border-line/40",
-          "transition-[transform,border-color] duration-200 ease-out hover:z-20 hover:scale-[1.03] hover:border-line-strong",
+          "group relative block h-full overflow-hidden rounded-lg",
+          "bg-surface border border-border/40",
+          "transition-[transform,border-color] duration-200 ease-out hover:z-20 hover:scale-[1.03] hover:border-separator",
           "focus-within:ring-2 focus-within:ring-white/20",
           // Freeze the zoom while the menu is open (covers hover-out), and stay
           // above neighboring cards even when the pointer isn't on us.
-          menuOpen && "z-30 scale-[1.03] border-line-strong",
+          menuOpen && "z-30 scale-[1.03] border-separator",
           className,
         )}
       >
@@ -165,7 +153,7 @@ export function Poster({
       {showKind && <KindChip kind={item.kind} />}
       {item.rating != null && !wide && (
         <span
-          className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-amber"
+          className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-warning"
           aria-label={`Rated ${item.rating.toFixed(1)} out of 10`}
         >
           <Star size={10} fill="currentColor" />
@@ -181,7 +169,7 @@ export function Poster({
           className="h-full w-full object-cover transition-transform duration-300 ease-out pointer-events-none"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-surface-2 text-ink-muted pointer-events-none">
+        <div className="flex h-full w-full items-center justify-center bg-surface-secondary text-muted pointer-events-none">
           {item.kind === "series" ? <Tv size={24} /> : <Film size={24} />}
         </div>
       )}
@@ -195,7 +183,7 @@ export function Poster({
             <p className="truncate text-xs font-semibold text-white">{item.name}</p>
             <div className="mt-1 flex items-center gap-2 text-[11px] text-white/70">
               {item.year && <span>{item.year}</span>}
-              {item.rating != null && <span className="text-amber">★ {item.rating.toFixed(1)}</span>}
+              {item.rating != null && <span className="text-warning">★ {item.rating.toFixed(1)}</span>}
             </div>
           </div>
         </div>
@@ -208,7 +196,7 @@ export function Poster({
           aria-hidden
         >
           <div
-            className="h-full bg-[#3b7df9] transition-all"
+            className="h-full bg-accent transition-all"
             style={{ width: `${Math.min(100, Math.max(2, item.watch.percent))}%` }}
           />
         </div>
@@ -224,67 +212,64 @@ export function Poster({
               : "opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100",
           )}
         >
-          <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-            <Menu.Trigger
+          <Dropdown isOpen={menuOpen} onOpenChange={setMenuOpen}>
+            <Dropdown.Trigger
               type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
               }}
               aria-label={`Options for ${item.name}`}
-              title="More options"
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/75 backdrop-blur-md text-white/90 border border-white/20 hover:bg-black/95 hover:text-white hover:scale-105 active:scale-95 transition-all shadow-lg"
+              className="flex size-7 items-center justify-center rounded-md border border-white/20 bg-black/75 text-white/90 shadow-lg backdrop-blur-md transition-all hover:scale-105 hover:bg-black/95 hover:text-white active:scale-95"
             >
               <MoreVertical size={13} />
-            </Menu.Trigger>
-            <Menu.Positioner align="end" side="bottom" sideOffset={6}>
-              {canPlayDirect && (
-                <Menu.Item
-                  onClick={(e) => {
-                    e.stopPropagation();
+            </Dropdown.Trigger>
+            <Dropdown.Popover placement="bottom end">
+              <Dropdown.Menu
+                onAction={(key) => {
+                  if (key === "resume" && item.fileId != null) {
                     void navigate({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } });
-                  }}
-                >
-                  <Play size={13} className="shrink-0 text-brand-text" />
-                  <span>Resume playback</span>
-                </Menu.Item>
-              )}
-              <Menu.Item
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void navigate({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } });
+                  } else if (key === "details") {
+                    void navigate({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } });
+                  } else if (key === "watched") {
+                    updateWatch(api.setWatched(item.id, true));
+                  } else if (key === "remove") {
+                    updateWatch(api.clearWatch(item.id));
+                  }
                 }}
               >
-                <Info size={13} className="shrink-0 text-ink-muted" />
-                <span>View Details</span>
-              </Menu.Item>
-              <Menu.Item
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateWatch(api.setWatched(item.id, true));
-                }}
-              >
-                <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
-                <span>Mark as Watched</span>
-              </Menu.Item>
-              <Menu.Separator />
-              <Menu.Item
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateWatch(api.clearWatch(item.id));
-                }}
-                className="text-red-400 data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-300"
-              >
-                <XCircle size={13} className="shrink-0" />
-                <span>Remove from Continue Watching</span>
-              </Menu.Item>
-            </Menu.Positioner>
-          </Menu.Root>
+                {canPlayDirect && (
+                  <Dropdown.Item id="resume" textValue="Resume playback">
+                    <Play size={13} className="shrink-0 text-muted" />
+                    <span>Resume playback</span>
+                  </Dropdown.Item>
+                )}
+                <Dropdown.Item id="details" textValue="View Details">
+                  <Info size={13} className="shrink-0 text-muted" />
+                  <span>View Details</span>
+                </Dropdown.Item>
+                <Dropdown.Item id="watched" textValue="Mark as Watched">
+                  <CheckCircle2 size={13} className="shrink-0 text-success-soft-foreground" />
+                  <span>Mark as Watched</span>
+                </Dropdown.Item>
+                <Dropdown.Section>
+                  <Dropdown.Item
+                    id="remove"
+                    textValue="Remove from Continue Watching"
+                    className="text-danger-soft-foreground"
+                  >
+                    <XCircle size={13} className="shrink-0" />
+                    <span>Remove from Continue Watching</span>
+                  </Dropdown.Item>
+                </Dropdown.Section>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
         </div>
       )}
       </div>
       {showTitleBelow && (
-        <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-ink" title={item.name}>
+        <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-foreground" title={item.name}>
           {item.name}
         </p>
       )}

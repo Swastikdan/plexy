@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { queries } from "../queries";
 import { Row } from "../components/row";
-import { Button } from "../components/ui/button";
+import { Button } from "@heroui/react";
 import { PageLoader } from "../components/page-loader";
 
 function HomeRoute() {
@@ -31,10 +31,10 @@ function HomeRoute() {
     return (
       <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-12 sm:px-8">
         <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-          <h2 className="font-sans text-xl font-bold text-ink">Home failed to load</h2>
-          <p className="text-sm text-ink-muted">The server didn't answer. Is Plexy running?</p>
+          <h2 className="font-sans text-xl font-bold text-foreground">Home failed to load</h2>
+          <p className="text-sm text-muted">The server didn't answer. Is Plexy running?</p>
           <Link to="/connect">
-            <Button variant="primary" className="mt-4">
+            <Button className="mt-4">
               Choose a server
             </Button>
           </Link>
@@ -56,15 +56,15 @@ function HomeRoute() {
     <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 sm:px-8">
       {empty ? (
         <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-4 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-sm bg-surface border border-line text-ink-muted">
+          <div className="flex h-14 w-14 items-center justify-center rounded-sm bg-surface border border-border text-muted">
             <Plus size={28} />
           </div>
-          <h2 className="font-sans text-2xl font-bold text-ink">{administrator ? "Your library is ready" : "No titles shared yet"}</h2>
-          <p className="text-sm text-ink-muted leading-relaxed">
+          <h2 className="font-sans text-2xl font-bold text-foreground">{administrator ? "Your library is ready" : "No titles shared yet"}</h2>
+          <p className="text-sm text-muted leading-relaxed">
             {administrator ? "Add a movie or TV folder and Plexy will organize your media with posters, metadata, and watch progress." : "Your administrator can share libraries, folders, or individual titles with your account."}
           </p>
           {administrator && <Link to="/add-library">
-            <Button variant="primary" className="mt-2 h-10 px-6 text-sm font-semibold">
+            <Button className="mt-2 h-10 px-6 text-sm font-semibold">
               Add a Library
             </Button>
           </Link>}

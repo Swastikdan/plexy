@@ -12,7 +12,7 @@ import {
   ShieldAlert,
   Wifi,
 } from "lucide-react";
-import { Button } from "./ui/button";
+import { Button } from "@heroui/react";
 import { BackButton } from "./back-button";
 import { isElectronMac } from "../lib/platform";
 import {
@@ -143,20 +143,20 @@ export function ConnectScreen({
 
       <section className="relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-sm border border-line bg-surface">
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-sm border border-border bg-surface">
             <img src="/icon.svg" alt="" className="h-8 w-8" />
           </div>
-          <h1 className="font-sans text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+          <h1 className="font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             Choose a server
           </h1>
-          <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">
+          <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
             Point this client at the Mac or home server that holds your film and
             TV library.
           </p>
         </div>
 
         <DesktopServerSettings />
-        <div className="border border-line bg-surface p-5 sm:p-7">
+        <div className="border border-border bg-surface p-5 sm:p-7">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -182,23 +182,23 @@ export function ConnectScreen({
                   type="button"
                   key={server.id}
                   onClick={() => setValue(server.url)}
-                  className="block w-full rounded-lg border border-line p-3 text-left"
+                  className="block w-full rounded-lg border border-border p-3 text-left"
                 >
                   <span className="block text-sm font-semibold">
                     {server.name}
                   </span>
-                  <span className="text-xs text-ink-muted">{server.url}</span>
+                  <span className="text-xs text-muted">{server.url}</span>
                 </button>
               ))}
               {!window.electronAPI?.discoverServers && (
-                <p className="text-xs text-ink-muted">
+                <p className="text-xs text-muted">
                   Open your server’s client link or enter its address. Automatic
                   network discovery is available in the desktop app.
                 </p>
               )}
             </div>
             <label htmlFor="plexy-server-url" className="block space-y-2">
-              <span className="flex items-center gap-2 text-xs font-medium text-ink-muted">
+              <span className="flex items-center gap-2 text-xs font-medium text-muted">
                 <Server size={13} />
                 Server address
               </span>
@@ -217,14 +217,13 @@ export function ConnectScreen({
                   if (error) setError(null);
                 }}
                 placeholder="http://192.168.1.20:8765"
-                className="h-10 w-full rounded-sm border border-line bg-surface-2 px-3.5 text-sm text-ink placeholder:text-ink-muted/50 outline-none transition-colors focus:border-line-strong disabled:opacity-50"
+                className="h-10 w-full rounded-sm border border-border bg-surface-secondary px-3.5 text-sm text-foreground placeholder:text-muted/50 outline-none transition-colors focus:border-separator disabled:opacity-50"
               />
             </label>
 
             <Button
               type="submit"
-              variant="primary"
-              disabled={busy || !value.trim() || Boolean(connectedVersion)}
+              isDisabled={busy || !value.trim() || Boolean(connectedVersion)}
               className="h-10 w-full px-5 text-sm font-semibold"
             >
               {connectedVersion ? (
@@ -247,21 +246,21 @@ export function ConnectScreen({
           </form>
 
           {error && !mixedContentRisk && (
-            <div className="mt-3 flex items-start gap-2.5 border border-red-500/20 bg-red-500/8 p-3 text-xs leading-relaxed text-red-400">
+            <div className="mt-3 flex items-start gap-2.5 border border-danger/20 bg-danger/8 p-3 text-xs leading-relaxed text-danger-soft-foreground">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {connectedVersion && (
-            <div className="mt-3 flex items-center gap-2 border border-white/10 bg-white/5 p-3 text-xs font-medium text-ink">
-              <CheckCircle2 size={14} className="shrink-0 text-ink-muted" />
+            <div className="mt-3 flex items-center gap-2 border border-border bg-surface-secondary p-3 text-xs font-medium text-foreground">
+              <CheckCircle2 size={14} className="shrink-0 text-muted" />
               Connected to Plexy v{connectedVersion}. Opening your library…
             </div>
           )}
 
           {mixedContentRisk && (
-            <div className="mt-3 flex items-start gap-2.5 border border-amber-500/20 bg-amber-500/8 p-3 text-xs leading-relaxed text-amber-300">
+            <div className="mt-3 flex items-start gap-2.5 border border-warning/20 bg-warning/8 p-3 text-xs leading-relaxed text-warning-soft-foreground">
               <ShieldAlert size={14} className="mt-0.5 shrink-0" />
               <div className="min-w-0 space-y-2">
                 <p>
@@ -272,7 +271,7 @@ export function ConnectScreen({
                 <button
                   type="button"
                   onClick={() => window.location.assign(normalized)}
-                  className="inline-flex max-w-full items-center gap-1.5 border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20 focus-visible:outline-2 focus-visible:outline-amber-300 focus-visible:outline-offset-2"
+                  className="inline-flex max-w-full items-center gap-1.5 border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs font-semibold text-warning-soft-foreground transition-colors hover:bg-warning/20 focus-visible:outline-2 focus-visible:outline-warning-soft-foreground focus-visible:outline-offset-2"
                 >
                   <span className="truncate">Open {normalized}</span>
                   <ArrowRight size={13} className="shrink-0" />
@@ -285,27 +284,27 @@ export function ConnectScreen({
             <button
               type="button"
               onClick={useOrigin}
-              className="mt-3 flex w-full items-center justify-between gap-3 border border-line bg-surface-2 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover"
+              className="mt-3 flex w-full items-center justify-between gap-3 border border-border bg-surface-secondary px-3.5 py-3 text-left transition-colors hover:bg-surface-tertiary"
             >
               <span className="flex min-w-0 items-center gap-2.5">
-                <Wifi size={14} className="shrink-0 text-ink-muted" />
+                <Wifi size={14} className="shrink-0 text-muted" />
                 <span className="min-w-0">
-                  <span className="block text-xs font-semibold text-ink">
+                  <span className="block text-xs font-semibold text-foreground">
                     Use the server serving this page
                   </span>
-                  <span className="block truncate text-[11px] text-ink-muted">
+                  <span className="block truncate text-[11px] text-muted">
                     {originUrl}
                   </span>
                 </span>
               </span>
-              <ArrowRight size={14} className="shrink-0 text-ink-muted" />
+              <ArrowRight size={14} className="shrink-0 text-muted" />
             </button>
           )}
 
-          <div className="mt-5 space-y-2.5 border-t border-line pt-4 text-xs leading-relaxed text-ink-muted">
+          <div className="mt-5 space-y-2.5 border-t border-border pt-4 text-xs leading-relaxed text-muted">
             {showAttempted && (
               <p>
-                Tried <span className="font-medium text-ink">{attempted}</span>
+                Tried <span className="font-medium text-foreground">{attempted}</span>
                 {getServerOverride()
                   ? " from the address saved on this device."
                   : "."}
@@ -313,11 +312,11 @@ export function ConnectScreen({
             )}
             <p>
               On your Mac, open{" "}
-              <span className="font-medium text-ink">
+              <span className="font-medium text-foreground">
                 Plexy → Settings → Network &amp; Access
               </span>{" "}
               to see the server address. On Wi-Fi it usually looks like{" "}
-              <span className="whitespace-nowrap font-medium text-ink">
+              <span className="whitespace-nowrap font-medium text-foreground">
                 http://192.168.1.20:8765
               </span>
               .
@@ -334,7 +333,7 @@ export function ConnectScreen({
               <p className="flex items-start gap-2">
                 <ShieldAlert
                   size={13}
-                  className="mt-0.5 shrink-0 text-amber-400/80"
+                  className="mt-0.5 shrink-0 text-warning-soft-foreground/80"
                 />
                 A hosted HTTPS page can only call an HTTPS server. Plain HTTP
                 works when you open Plexy directly on your own network.
@@ -343,7 +342,7 @@ export function ConnectScreen({
           </div>
         </div>
 
-        <p className="mt-4 text-center text-[11px] text-ink-muted/60">
+        <p className="mt-4 text-center text-[11px] text-muted/60">
           The address is saved on this device only.
         </p>
       </section>

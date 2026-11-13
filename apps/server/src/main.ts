@@ -12,7 +12,6 @@ import { prepareLogDir, log, closeLog, setLogLevel } from "./logger";
 import { buildApp } from "./app";
 import { shutdownWorker } from "./worker-host";
 import { startOptimizer, stopOptimizer } from "./optimize";
-import { startStreamPreparation } from "./hls-preparation";
 import { resetInterruptedTrickplay, shutdownTrickplay } from "./trickplay";
 import type { Level } from "./logger";
 import { networkInterfaces } from "node:os";
@@ -226,14 +225,6 @@ async function main(): Promise<void> {
   setTimeout(() => {
     void startOptimizer().catch((err) =>
       log.warn("optimizer", "could not resume preparation queue", {
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
-  }, 3000);
-
-  setTimeout(() => {
-    void startStreamPreparation().catch((err) =>
-      log.warn("media", "could not resume adaptive stream preparation", {
         message: err instanceof Error ? err.message : String(err),
       }),
     );

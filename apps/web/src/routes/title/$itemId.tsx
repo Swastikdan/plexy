@@ -1,5 +1,5 @@
 /// Title Detail (PRD 10.3): movie & series detail, seasons, episodes, trailer, playability specs, cast & fix match.
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createFileRoute, useParams, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -22,16 +22,11 @@ import {
 } from "lucide-react";
 import { queries } from "../../queries";
 import { api, probeBrowserCaps, type TitleDetail } from "../../client";
-import { Button } from "../../components/ui/button";
-import { Select } from "../../components/ui/select";
-import { Menu } from "../../components/ui/menu";
+import { Button, Dropdown, ListBox, Modal, Select } from "@heroui/react";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
-import { Dialog } from "../../components/ui/dialog";
-import { cx } from "../../components/ui/button";
+import { cx } from "../../lib/cx";
 import { PageLoader } from "../../components/page-loader";
-import { prefetchAssets } from "../../lib/asset-prefetch";
-import { prefetchTriggerEnabled } from "../../lib/prefetch-config";
 import { artworkUrl } from "../../lib/artwork-url";
 import { useStoredFlag } from "../../lib/use-stored-flag";
 
@@ -94,10 +89,10 @@ function TitleRoute() {
     return (
       <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-16 sm:px-8">
         <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-          <h2 className="font-display text-xl font-bold text-ink">Title not found</h2>
-          <p className="text-sm text-ink-muted">The requested title could not be loaded from Plexy.</p>
+          <h2 className="font-display text-xl font-bold text-foreground">Title not found</h2>
+          <p className="text-sm text-muted">The requested title could not be loaded from Plexy.</p>
           <Link to="/">
-            <Button variant="brand" className="mt-4">
+            <Button className="mt-4">
               Back to Home
             </Button>
           </Link>
@@ -139,7 +134,6 @@ function DetailView({
     seasonList[0].number,
   );
   const [castExpanded, setCastExpanded] = useState(false);
-  const episodesRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (seasonList.length > 0 && !seasonList.some((s) => s.number === selectedSeason)) {
@@ -232,30 +226,6 @@ function DetailView({
     void queryClient.prefetchQuery(queries.play(fileId, BROWSER_CAPS));
   };
 
-  // Warm episode artwork as cards approach the viewport. The observer is torn
-  // down when the season or title changes, and only artwork present on the
-  // card is fetched — the detail payload carries no trickplay data to warm.
-  useEffect(() => {
-    const root = episodesRef.current;
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const cards = Array.from(root.querySelectorAll<HTMLElement>("[data-episode-art]"));
-    if (cards.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          observer.unobserve(entry.target);
-          if (!prefetchTriggerEnabled("scroll")) continue;
-          const card = entry.target as HTMLElement;
-          prefetchAssets([card.dataset.poster, card.dataset.backdrop]);
-        }
-      },
-      { rootMargin: "300px 0px" },
-    );
-    for (const card of cards) observer.observe(card);
-    return () => observer.disconnect();
-  }, [episodes, selectedSeason]);
-
   const primaryFileId = (() => {
     if (item.kind === "series" && episodes && episodes.length > 0) {
       const targetEp = filteredEpisodes.find((e) => !e.watch?.played)
@@ -288,15 +258,15 @@ function DetailView({
         />
 
         <div
-          className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/85 via-35% via-canvas/30 to-black/10 pointer-events-none"
+          className="absolute inset-0 bg-gradient-to-t from-background via-background/85 via-35% via-background/30 to-black/10 pointer-events-none"
           aria-hidden
         />
         <div
-          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-canvas/90 via-canvas/65 via-45% to-transparent pointer-events-none"
+          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-background/90 via-background/65 via-45% to-transparent pointer-events-none"
           aria-hidden
         />
 
-        <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12 animate-in fade-in duration-300">
+        <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12 page-enter">
           {item.kind === "episode" && item.parentId && (
             <Link
               to="/title/$itemId"
@@ -309,14 +279,14 @@ function DetailView({
           )}
 
           {unmatched && item.kind !== "episode" && (
-            <div className="mb-5 flex items-center gap-3 rounded-sm border border-amber-500/25 bg-amber-500/8 px-4 py-2 text-sm text-amber-300">
+            <div className="mb-5 flex items-center gap-3 rounded-sm border border-warning/25 bg-warning/8 px-4 py-2 text-sm text-warning-soft-foreground">
               <Sparkles size={16} className="shrink-0" />
               <span className="text-xs sm:text-sm">
                 Not identified yet{matchReason ? `: ${matchReason}` : ""}.
               </span>
               <Button
-                variant="surface"
-                onClick={() => setFixMatchOpen(true)}
+                variant="secondary"
+                onPress={() => setFixMatchOpen(true)}
                 className="ml-auto h-7 px-3 text-xs font-semibold"
               >
                 Fix Match
@@ -392,7 +362,7 @@ function DetailView({
                   title={isPlayed ? "Mark as unwatched" : "Mark as watched"}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95 disabled:opacity-50"
                 >
-                  {isPlayed ? <CheckCircle2 size={16} className="text-[#3b7df9]" /> : <Eye size={16} />}
+                  {isPlayed ? <CheckCircle2 size={16} className="text-accent" /> : <Eye size={16} />}
                 </button>
 
                 <button
@@ -402,7 +372,7 @@ function DetailView({
                   title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
                   className={cx(
                     "inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95",
-                    inWatchlist && "text-[#3b7df9] bg-white/20",
+                    inWatchlist && "text-accent bg-white/20",
                   )}
                 >
                   <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
@@ -415,7 +385,7 @@ function DetailView({
                   title={isFavorite ? "Remove from favorites" : "Add to favorites"}
                   className={cx(
                     "inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95",
-                    isFavorite && "text-amber bg-white/20",
+                    isFavorite && "text-warning bg-white/20",
                   )}
                 >
                   <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
@@ -442,39 +412,59 @@ function DetailView({
                   </button>
                 )}
 
-                <Menu.Root>
-                  <Menu.Trigger
-                    type="button"
+                <Dropdown>
+                  <Dropdown.Trigger
                     aria-label="More options"
-                    title="More options"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 border border-white/15 backdrop-blur-md text-white/80 transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/15 bg-white/10 text-white/80 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white active:scale-95"
                   >
                     <MoreHorizontal size={16} />
-                  </Menu.Trigger>
-                  <Menu.Positioner align="start" side="bottom" sideOffset={6}>
-                    {item.kind !== "episode" && (
-                      <Menu.Item onClick={() => setFixMatchOpen(true)}>
-                        <Wrench size={14} className="shrink-0 text-ink-muted" />
-                        <span>Fix TMDB match</span>
-                      </Menu.Item>
-                    )}
-                    <Menu.Item onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending || unmatched}>
-                      <RotateCw size={14} className={cx("shrink-0 text-ink-muted", refreshMutation.isPending && "animate-spin")} />
-                      <span>Refresh metadata</span>
-                    </Menu.Item>
-                    {item.watch && (
-                      <Menu.Item onClick={() => clearWatchMutation.mutate(item.id)} disabled={clearWatchMutation.isPending}>
-                        <Trash2 size={14} className="shrink-0 text-red-400" />
-                        <span>Clear watch progress</span>
-                      </Menu.Item>
-                    )}
-                    <Menu.Separator />
-                    <Menu.Item onClick={() => setDeleteOpen(true)} className="text-red-400 data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-300">
-                      <Trash2 size={14} className="shrink-0" />
-                      <span>Delete title and files</span>
-                    </Menu.Item>
-                  </Menu.Positioner>
-                </Menu.Root>
+                  </Dropdown.Trigger>
+                  <Dropdown.Popover placement="bottom start">
+                    <Dropdown.Menu
+                      onAction={(key) => {
+                        if (key === "fix-match") setFixMatchOpen(true);
+                        else if (key === "refresh") refreshMutation.mutate();
+                        else if (key === "clear-watch") clearWatchMutation.mutate(item.id);
+                        else if (key === "delete") setDeleteOpen(true);
+                      }}
+                    >
+                      {item.kind !== "episode" && (
+                        <Dropdown.Item id="fix-match" textValue="Fix TMDB match">
+                          <Wrench size={14} className="shrink-0 text-muted" />
+                          <span>Fix TMDB match</span>
+                        </Dropdown.Item>
+                      )}
+                      <Dropdown.Item
+                        id="refresh"
+                        textValue="Refresh metadata"
+                        isDisabled={refreshMutation.isPending || unmatched}
+                      >
+                        <RotateCw size={14} className={cx("shrink-0 text-muted", refreshMutation.isPending && "animate-spin")} />
+                        <span>Refresh metadata</span>
+                      </Dropdown.Item>
+                      {item.watch && (
+                        <Dropdown.Item
+                          id="clear-watch"
+                          textValue="Clear watch progress"
+                          isDisabled={clearWatchMutation.isPending}
+                        >
+                          <Trash2 size={14} className="shrink-0 text-danger-soft-foreground" />
+                          <span>Clear watch progress</span>
+                        </Dropdown.Item>
+                      )}
+                      <Dropdown.Section>
+                        <Dropdown.Item
+                          id="delete"
+                          textValue="Delete title and files"
+                          className="text-danger-soft-foreground"
+                        >
+                          <Trash2 size={14} className="shrink-0" />
+                          <span>Delete title and files</span>
+                        </Dropdown.Item>
+                      </Dropdown.Section>
+                    </Dropdown.Menu>
+                  </Dropdown.Popover>
+                </Dropdown>
               </div>
             </div>
 
@@ -502,11 +492,11 @@ function DetailView({
                   <span className="text-white/75">{displayDate}</span>
                 )}
                 {displayCert && (
-                  <span className="rounded-[2px] border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-white/90">
+                  <span className="rounded-xs border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-white/90">
                     {displayCert}
                   </span>
                 )}
-                <span className="rounded-[2px] border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/90">
+                <span className="rounded-xs border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/90">
                   {resolutionBadge}
                 </span>
                 {displayGenres && (
@@ -523,7 +513,7 @@ function DetailView({
               {/* TMDB user score, the only rating the server actually stores. */}
               {tmdbScore !== null && (
                 <div className="flex items-center gap-1.5 font-bold text-xs" title="TMDB User Score">
-                  <span className="rounded-[2px] bg-[#01b4e4] px-1 py-0.5 text-[9px] font-black uppercase text-black leading-none">
+                  <span className="rounded-xs bg-[#01b4e4] px-1 py-0.5 text-[9px] font-black uppercase text-black leading-none">
                     TMDB
                   </span>
                   <span className="text-white/90 tabular-nums">{tmdbScore}%</span>
@@ -533,10 +523,10 @@ function DetailView({
           </div>
 
           {refreshMutation.isError && (
-            <p className="mt-2.5 text-xs text-red-400">{refreshMutation.error.message}</p>
+            <p className="mt-2.5 text-xs text-danger-soft-foreground">{refreshMutation.error.message}</p>
           )}
           {refreshMutation.isSuccess && (
-            <p className="mt-2.5 text-xs text-emerald-400">Metadata refreshed from TMDB.</p>
+            <p className="mt-2.5 text-xs text-success-soft-foreground">Metadata refreshed from TMDB.</p>
           )}
         </div>
       </section>
@@ -545,10 +535,10 @@ function DetailView({
         <div className="min-w-0 space-y-10">
           {item.overview && (
             <div>
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider text-ink-muted">
+              <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted">
                 Synopsis
               </h2>
-              <p className="mt-3 max-w-[75ch] text-base leading-relaxed text-ink-muted">
+              <p className="mt-3 max-w-[75ch] text-base leading-relaxed text-muted">
                 {item.overview}
               </p>
             </div>
@@ -557,40 +547,45 @@ function DetailView({
           {/* Series: seasons & episodes (PRD 10.3) */}
           {item.kind === "series" && (
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
                 <div className="flex items-center gap-3">
-                  <h2 className="font-display text-2xl font-bold text-ink">Episodes</h2>
-                  <span className="text-xs text-ink-muted">
+                  <h2 className="font-display text-2xl font-bold text-foreground">Episodes</h2>
+                  <span className="text-xs text-muted">
                     {filteredEpisodes.length} {filteredEpisodes.length === 1 ? "episode" : "episodes"}
                   </span>
                 </div>
 
                 {seasonList.length > 1 && (
-                  <Select.Root
-                    value={String(selectedSeason)}
-                    onValueChange={(v) => setSelectedSeason(Number(v))}
-                    items={seasonList.map((s) => ({
-                      value: String(s.number),
-                      label: s.name || `Season ${s.number}`,
-                    }))}
+                  <Select
+                    aria-label="Season"
+                    selectedKey={String(selectedSeason)}
+                    onSelectionChange={(key) => setSelectedSeason(Number(key))}
+                    className="min-w-40"
                   >
-                    <Select.Trigger aria-label="Season" className="min-w-40">
+                    <Select.Trigger>
                       <Select.Value />
-                      <Select.Icon />
+                      <Select.Indicator />
                     </Select.Trigger>
-                    <Select.Positioner>
-                      {seasonList.map((s) => (
-                        <Select.Item key={s.number} value={String(s.number)}>
-                          <Select.ItemText>{s.name || `Season ${s.number}`}</Select.ItemText>
-                        </Select.Item>
-                      ))}
-                    </Select.Positioner>
-                  </Select.Root>
+                    <Select.Popover>
+                      <ListBox>
+                        {seasonList.map((s) => (
+                          <ListBox.Item
+                            key={s.number}
+                            id={String(s.number)}
+                            textValue={s.name || `Season ${s.number}`}
+                          >
+                            {s.name || `Season ${s.number}`}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
                 )}
               </div>
 
               {filteredEpisodes.length > 0 ? (
-                <div ref={episodesRef} className="space-y-2.5">
+                <div className="space-y-2.5">
                   {filteredEpisodes.map((ep, idx) => {
                     const epNum = ep.episodeNumber ?? idx + 1;
                     const displayTitle = episodeDisplayTitle(ep.name, epNum);
@@ -608,8 +603,8 @@ function DetailView({
                         data-backdrop={ep.backdrop ?? undefined}
                         className={cx(
                           "group relative flex w-full items-center justify-between gap-2.5 rounded-xl border bg-surface p-2 sm:p-2.5 sm:gap-3.5",
-                          "transition-all duration-150 ease-out hover:border-line hover:bg-surface-hover/80 active:scale-[0.99]",
-                          played ? "border-line/40 opacity-80 hover:opacity-100" : "border-line/70",
+                          "transition-all duration-150 ease-out hover:border-border hover:bg-surface-tertiary/80 active:scale-[0.99]",
+                          played ? "border-border/40 opacity-80 hover:opacity-100" : "border-border/70",
                         )}
                       >
                         <button
@@ -623,13 +618,13 @@ function DetailView({
                               state: { playerFromTitle: true },
                             });
                           }}
-                          className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3.5 text-left focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2 rounded-lg"
+                          className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3.5 text-left focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 rounded-lg"
                         >
-                          <div className="hidden sm:flex w-6 shrink-0 justify-center font-display text-xs font-semibold tabular-nums text-ink-muted/70 transition-colors group-hover:text-ink">
+                          <div className="hidden sm:flex w-6 shrink-0 justify-center font-display text-xs font-semibold tabular-nums text-muted/70 transition-colors group-hover:text-foreground">
                             {String(epNum).padStart(2, "0")}
                           </div>
 
-                          <div className="relative aspect-video w-24 min-[400px]:w-32 sm:w-40 md:w-44 shrink-0 overflow-hidden rounded-lg bg-surface-2 border border-line/50">
+                          <div className="relative aspect-video w-24 min-[400px]:w-32 sm:w-40 md:w-44 shrink-0 overflow-hidden rounded-lg bg-surface-secondary border border-border/50">
                             {ep.poster || ep.backdrop ? (
                               <img
                                 src={artworkUrl(ep.poster ?? ep.backdrop) ?? ""}
@@ -639,13 +634,13 @@ function DetailView({
                                 className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
                               />
                             ) : (
-                              <div className="flex h-full w-full flex-col items-center justify-center p-2 font-display text-[10px] text-ink-muted text-center bg-gradient-to-t from-black/60 to-transparent">
+                              <div className="flex h-full w-full flex-col items-center justify-center p-2 font-display text-[10px] text-muted text-center bg-gradient-to-t from-black/60 to-transparent">
                                 <span className="line-clamp-2">{displayTitle}</span>
                               </div>
                             )}
 
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-2xs transition-opacity duration-150 group-hover:opacity-100">
-                              <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white text-black shadow-md transition-transform duration-150 group-hover:scale-105 active:scale-95">
+                              <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md bg-white text-black shadow-md transition-transform duration-150 group-hover:scale-105 active:scale-95">
                                 <Play size={14} className="ml-0.5" fill="currentColor" />
                               </div>
                             </div>
@@ -659,7 +654,7 @@ function DetailView({
                             {ep.watch && ep.watch.percent > 0 && (
                               <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden">
                                 <div
-                                  className="h-full bg-[#3b7df9]"
+                                  className="h-full bg-accent"
                                   style={{ width: `${Math.min(100, Math.max(2, ep.watch.percent))}%` }}
                                 />
                               </div>
@@ -668,27 +663,27 @@ function DetailView({
 
                           <div className="min-w-0 flex-1 py-0.5">
                             <div className="flex items-center gap-2">
-                              <h3 className="truncate text-xs sm:text-sm font-semibold text-ink transition-colors group-hover:text-white">
+                              <h3 className="truncate text-xs sm:text-sm font-semibold text-foreground transition-colors group-hover:text-white">
                                 {displayTitle}
                               </h3>
                               {ep.runtime && (
-                                <span className="hidden sm:inline-block shrink-0 text-[11px] font-medium text-ink-muted/80">
+                                <span className="hidden sm:inline-block shrink-0 text-[11px] font-medium text-muted/80">
                                   · {ep.runtime} min
                                 </span>
                               )}
                             </div>
 
                             {ep.overview ? (
-                              <p className="mt-1 line-clamp-1 min-[420px]:line-clamp-2 text-[11px] sm:text-xs leading-relaxed text-ink-muted">
+                              <p className="mt-1 line-clamp-1 min-[420px]:line-clamp-2 text-[11px] sm:text-xs leading-relaxed text-muted">
                                 {ep.overview}
                               </p>
                             ) : (
-                              <p className="mt-1 text-[11px] text-ink-muted/60 italic">
+                              <p className="mt-1 text-[11px] text-muted/60 italic">
                                 No description available.
                               </p>
                             )}
 
-                            <div className="mt-1 text-[11px] font-medium text-ink-muted">
+                            <div className="mt-1 text-[11px] font-medium text-muted">
                               Episode {epNum}
                             </div>
                           </div>
@@ -704,8 +699,8 @@ function DetailView({
                             className={cx(
                               "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all active:scale-95 disabled:opacity-50",
                               played
-                                ? "text-brand-text hover:bg-brand/10"
-                                : "text-ink-muted hover:text-ink hover:bg-surface-2",
+                                ? "text-muted hover:bg-accent/10"
+                                : "text-muted hover:text-foreground hover:bg-surface-secondary",
                             )}
                           >
                             {played ? <CheckCircle2 size={16} /> : <Circle size={16} />}
@@ -717,7 +712,7 @@ function DetailView({
                               disabled={clearWatchMutation.isPending}
                               aria-label={`Remove progress for ${displayTitle}`}
                               title="Remove progress"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-all hover:bg-red-500/10 hover:text-red-400 active:scale-95 disabled:opacity-50"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-all hover:bg-danger/10 hover:text-danger-soft-foreground active:scale-95 disabled:opacity-50"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -728,7 +723,7 @@ function DetailView({
                   })}
                 </div>
               ) : (
-                <p className="py-4 text-sm text-ink-muted">
+                <p className="py-4 text-sm text-muted">
                   No individual episode records indexed for this season yet.
                 </p>
               )}
@@ -740,15 +735,15 @@ function DetailView({
         {(cast?.length || file) && (
           <aside className="h-fit space-y-6">
             {cast && cast.length > 0 && (
-              <section className="space-y-4 rounded-2xl border border-line bg-surface p-5 sm:p-6">
+              <section className="space-y-4 rounded-2xl border border-border bg-surface p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-display text-sm font-bold uppercase tracking-wider text-ink-muted">
+                  <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted">
                     Top Cast
                   </h2>
                   {cast.length > 6 && (
                     <button
                       onClick={() => setCastExpanded((v) => !v)}
-                      className="shrink-0 text-xs text-ink-muted transition-colors hover:text-ink"
+                      className="shrink-0 text-xs text-muted transition-colors hover:text-foreground"
                     >
                       {castExpanded ? "Show Less" : `View All (${cast.length})`}
                     </button>
@@ -757,46 +752,48 @@ function DetailView({
 
                 <div className="grid grid-cols-1 gap-2.5">
                   {(castExpanded ? cast : cast.slice(0, 6)).map((c) => (
-                    <div
-                      key={c.name}
-                      className="flex min-w-0 items-center gap-3 rounded-xl border border-line/60 bg-canvas/50 p-2.5"
+                    <Link
+                      key={c.id}
+                      to="/person/$personId"
+                      params={{ personId: String(c.id) }}
+                      className="flex min-w-0 items-center gap-3 rounded-xl border border-border/60 bg-background/50 p-2.5 transition-colors hover:border-border hover:bg-surface-secondary"
                     >
-                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-surface-2">
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-surface-secondary">
                         {c.photo ? (
                           <img
-                            src={c.photo}
+                            src={artworkUrl(c.photo) ?? ""}
                             alt={c.name}
                             loading="lazy"
                             className="h-full w-full object-cover"
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-ink-muted">
+                          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-muted">
                             {c.name[0]}
                           </div>
                         )}
                       </div>
                       <div className="min-w-0 inline-block align-top">
-                        <p className="truncate text-xs font-semibold text-ink">{c.name}</p>
+                        <p className="truncate text-xs font-semibold text-foreground">{c.name}</p>
                         {c.character && (
-                          <p className="truncate text-[11px] text-ink-muted">{c.character}</p>
+                          <p className="truncate text-[11px] text-muted">{c.character}</p>
                         )}
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </section>
             )}
 
-            {file && <section className="h-fit space-y-6 rounded-2xl border border-line bg-surface p-5 sm:p-6">
-            <div className="border-t border-line pt-4 first:border-t-0 first:pt-0">
-              <h3 className="mb-3 font-display text-xs font-bold uppercase tracking-widest text-ink-muted">
+            {file && <section className="h-fit space-y-6 rounded-2xl border border-border bg-surface p-5 sm:p-6">
+            <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
+              <h3 className="mb-3 font-display text-xs font-bold uppercase tracking-widest text-muted">
                 Media Details
               </h3>
               <dl className="space-y-2.5 text-xs">
                 {file.width && file.height && (
                   <div className="flex justify-between">
-                    <dt className="text-ink-muted">Resolution</dt>
-                    <dd className="font-medium text-ink">
+                    <dt className="text-muted">Resolution</dt>
+                    <dd className="font-medium text-foreground">
                       {file.height >= 2160
                         ? "4K UHD"
                         : file.height >= 1080
@@ -808,8 +805,8 @@ function DetailView({
 
                 {file.videoCodec && (
                   <div className="flex justify-between">
-                    <dt className="text-ink-muted">Video Codec</dt>
-                    <dd className="font-medium uppercase text-ink">
+                    <dt className="text-muted">Video Codec</dt>
+                    <dd className="font-medium uppercase text-foreground">
                       {file.videoCodec} {file.videoProfile ? `(${file.videoProfile})` : ""}
                     </dd>
                   </div>
@@ -817,15 +814,15 @@ function DetailView({
 
                 {file.container && (
                   <div className="flex justify-between">
-                    <dt className="text-ink-muted">Container</dt>
-                    <dd className="font-medium uppercase text-ink">{file.container}</dd>
+                    <dt className="text-muted">Container</dt>
+                    <dd className="font-medium uppercase text-foreground">{file.container}</dd>
                   </div>
                 )}
 
                 {file.audio && file.audio.length > 0 && (
                   <div className="flex items-baseline justify-between gap-6">
-                    <dt className="shrink-0 text-ink-muted">Audio</dt>
-                    <dd className="text-right font-medium text-ink">
+                    <dt className="shrink-0 text-muted">Audio</dt>
+                    <dd className="text-right font-medium text-foreground">
                       {file.audio
                         .map((a) => [a.codec.toUpperCase(), a.language].filter(Boolean).join(" · "))
                         .join(", ")}
@@ -835,15 +832,15 @@ function DetailView({
 
                 {file.subtitleCount > 0 && (
                   <div className="flex justify-between">
-                    <dt className="text-ink-muted">Subtitles</dt>
-                    <dd className="font-medium text-ink">{file.subtitleCount} tracks</dd>
+                    <dt className="text-muted">Subtitles</dt>
+                    <dd className="font-medium text-foreground">{file.subtitleCount} tracks</dd>
                   </div>
                 )}
 
                 {file.size > 0 && (
                   <div className="flex justify-between">
-                    <dt className="text-ink-muted">File Size</dt>
-                    <dd className="font-medium tabular-nums text-ink">
+                    <dt className="text-muted">File Size</dt>
+                    <dd className="font-medium tabular-nums text-foreground">
                       {(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB
                     </dd>
                   </div>
@@ -851,8 +848,8 @@ function DetailView({
 
                 {file.duration && (
                   <div className="flex justify-between">
-                    <dt className="text-ink-muted">Duration</dt>
-                    <dd className="font-medium tabular-nums text-ink">{Math.round(file.duration / 60)} min</dd>
+                    <dt className="text-muted">Duration</dt>
+                    <dd className="font-medium tabular-nums text-foreground">{Math.round(file.duration / 60)} min</dd>
                   </div>
                 )}
               </dl>
@@ -877,25 +874,42 @@ function DetailView({
         kind={item.kind}
       />
 
-      <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <Dialog.Portal>
-          <Dialog.Backdrop />
-          <Dialog.Popup>
-            <Dialog.Title>Delete “{item.name}” and its video files?</Dialog.Title>
-            <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-              This permanently deletes the original video files from disk and removes the title from Plexy.
-              {item.kind === "series" ? " The files for its episodes will also be deleted." : ""}
-            </p>
-            {deleteMutation.isError && <p role="alert" className="mt-3 text-sm text-red-400">{deleteMutation.error.message}</p>}
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDeleteOpen(false)} disabled={deleteMutation.isPending}>Cancel</Button>
-              <Button variant="danger" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
-                {deleteMutation.isPending ? "Deleting…" : "Delete title and files"}
-              </Button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <Modal isOpen={deleteOpen} onOpenChange={setDeleteOpen}>
+        <Modal.Backdrop>
+          <Modal.Container>
+            <Modal.Dialog className="w-[min(94vw,520px)]">
+              <Modal.Header>
+                <Modal.Heading>Delete “{item.name}” and its video files?</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
+                <p className="text-sm leading-relaxed text-muted">
+                  This permanently deletes the original video files from disk and removes the title from Plexy.
+                  {item.kind === "series" ? " The files for its episodes will also be deleted." : ""}
+                </p>
+                {deleteMutation.isError && (
+                  <p role="alert" className="mt-3 text-sm text-danger-soft-foreground">{deleteMutation.error.message}</p>
+                )}
+              </Modal.Body>
+              <Modal.Footer className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onPress={() => setDeleteOpen(false)}
+                  isDisabled={deleteMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onPress={() => deleteMutation.mutate()}
+                  isDisabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? "Deleting…" : "Delete title and files"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </div>
   );
 }

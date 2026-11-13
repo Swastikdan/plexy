@@ -10,10 +10,24 @@ import {
   type AccountUser,
   type PairingCode,
 } from "../auth";
-import { Button } from "../components/ui/button";
+import { Button, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { Monitor, Moon, Sun } from "lucide-react";
+import { useTheme } from "../lib/use-theme";
+import type { ThemePreference } from "../theme";
 
 const input =
-  "mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm";
+  "mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm";
+
+const THEME_CHOICES: Array<{
+  value: ThemePreference;
+  label: string;
+  icon: typeof Sun;
+}> = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "System", icon: Monitor },
+];
+
 function AccountRoute() {
   const me = useQuery({
     queryKey: ["account"],
@@ -46,14 +60,14 @@ function AccountRoute() {
     <main className="mx-auto max-w-3xl space-y-8 px-5 py-10">
       <header>
         <h1 className="text-3xl font-bold">My account</h1>
-        <p className="mt-2 text-sm text-ink-muted">
+        <p className="mt-2 text-sm text-muted">
           {me.data?.user.username} · {me.data?.user.role}
         </p>
       </header>
       {certificate.data?.fingerprint && (
-        <section className="rounded-xl border border-line p-5">
+        <section className="rounded-xl border border-border p-5">
           <h2 className="text-lg font-bold">Server certificate</h2>
-          <p className="mt-2 text-sm text-ink-muted">
+          <p className="mt-2 text-sm text-muted">
             Compare this fingerprint before trusting the server on another
             device. Browsers need their own certificate trust step when using
             the local HTTPS address.
@@ -64,13 +78,23 @@ function AccountRoute() {
         </section>
       )}
       {error && (
-        <p role="alert" className="text-red-400">
+        <p role="alert" className="text-danger-soft-foreground">
           {error}
         </p>
       )}
-      <section className="space-y-4 rounded-xl border border-line p-5">
+      <section className="space-y-4 rounded-xl border border-border p-5">
+        <div>
+          <h2 className="text-xl font-bold">Appearance</h2>
+          <p className="mt-2 text-sm text-muted">
+            Choose a theme for this device. System follows your operating
+            system’s light or dark appearance.
+          </p>
+        </div>
+        <ThemePicker />
+      </section>
+      <section className="space-y-4 rounded-xl border border-border p-5">
         <h2 className="text-xl font-bold">Pair another device</h2>
-        <p className="text-sm text-ink-muted">
+        <p className="text-sm text-muted">
           A six-digit code grants access to your account. Share it only with a device you
           trust. It expires after ten minutes and can be used once. Generating a
           new code invalidates the previous one.
@@ -96,16 +120,16 @@ function AccountRoute() {
               className={input}
             />
           </label>
-          <Button variant="primary" disabled={busy} type="submit">
+          <Button isDisabled={busy} type="submit">
             Create my pairing code
           </Button>
         </form>
         {key && (
           <div className="space-y-2">
-            <p className="rounded-lg border border-line bg-surface p-4 font-mono text-center text-3xl tracking-[0.3em] tabular-nums select-all">
+            <p className="rounded-lg border border-border bg-surface p-4 font-mono text-center text-3xl tracking-[0.3em] tabular-nums select-all">
               {key.code}
             </p>
-            <p className="text-xs text-ink-muted">
+            <p className="text-xs text-muted">
               Expires{" "}
               {new Date(
                 key.expiresAt.replace(" ", "T") + "Z",
@@ -120,14 +144,14 @@ function AccountRoute() {
           </div>
         )}
       </section>
-      <section className="space-y-4 rounded-xl border border-line p-5">
+      <section className="space-y-4 rounded-xl border border-border p-5">
         <h2 className="text-xl font-bold">My devices</h2>
         {devices.data
           ?.filter((d) => !d.revoked)
           .map((device) => (
             <div
               key={device.id}
-              className="flex justify-between gap-4 border-t border-line pt-3"
+              className="flex justify-between gap-4 border-t border-border pt-3"
             >
               <span className="text-sm">{device.name}</span>
               <button
@@ -148,7 +172,7 @@ function AccountRoute() {
             </div>
           ))}
       </section>
-      <section className="space-y-4 rounded-xl border border-line p-5">
+      <section className="space-y-4 rounded-xl border border-border p-5">
         <h2 className="text-xl font-bold">Change password</h2>
         <form
           className="space-y-3"
@@ -187,17 +211,17 @@ function AccountRoute() {
               className={input}
             />
           </label>
-          <p className="text-xs text-ink-muted">
+          <p className="text-xs text-muted">
             Changing your password signs out your other devices and invalidates
             pairing codes.
           </p>
-          <Button disabled={busy} type="submit">
+          <Button isDisabled={busy} type="submit">
             Change password
           </Button>
         </form>
       </section>
       <Button
-        onClick={() =>
+        onPress={() =>
           void action(async () => {
             await logout();
             window.location.assign("/");
@@ -210,3 +234,32 @@ function AccountRoute() {
   );
 }
 export const Route = createFileRoute("/account")({ component: AccountRoute });
+
+/// Light / dark / system picker. The choice is stored per device, so a phone
+/// can follow the system while the desktop stays dark.
+function ThemePicker() {
+  const { preference, setPreference } = useTheme();
+
+  return (
+    <ToggleButtonGroup
+      aria-label="Theme"
+      selectionMode="single"
+      disallowEmptySelection
+      selectedKeys={[preference]}
+      onSelectionChange={(keys) => {
+        const next = [...keys][0];
+        if (next === "light" || next === "dark" || next === "system") {
+          setPreference(next);
+        }
+      }}
+      className="flex flex-wrap"
+    >
+      {THEME_CHOICES.map(({ value, label, icon: Icon }) => (
+        <ToggleButton key={value} id={value} className="gap-2 px-4 text-sm">
+          <Icon size={15} />
+          {label}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
+}

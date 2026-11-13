@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { accountRequest, type AccountUser } from "../auth";
 import { queries } from "../queries";
-import { Button } from "./ui/button";
+import { Button } from "@heroui/react";
 
 const input =
-  "mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm";
+  "mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm";
 
 export function UserManagement() {
   const me = useQuery({
@@ -26,9 +26,9 @@ function Users() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <section className="space-y-5 rounded-xl border border-line p-5">
+    <section className="space-y-5 rounded-xl border border-border p-5">
       <h2 className="text-xl font-bold">Users & permissions</h2>
-      <p className="text-sm text-ink-muted">
+      <p className="text-sm text-muted">
         New users have no library access until you grant it. Administrators have
         full access. Each user creates their own pairing codes.
       </p>
@@ -77,11 +77,11 @@ function Users() {
             className={input}
           />
         </label>
-        <Button disabled={busy} type="submit">
+        <Button isDisabled={busy} type="submit">
           Create user
         </Button>
         {error && (
-          <p role="alert" className="text-red-400">
+          <p role="alert" className="text-danger-soft-foreground">
             {error}
           </p>
         )}
@@ -114,7 +114,7 @@ function UserEditor({ user }: { user: AccountUser }) {
   const [busy, setBusy] = useState(false);
   const shown = rules ?? existing.data?.rules ?? [];
   return (
-    <details className="border-t border-line pt-4">
+    <details className="border-t border-border pt-4">
       <summary className="cursor-pointer font-semibold">
         {user.username} · {user.role}
         {user.disabled ? " · disabled" : ""}
@@ -215,7 +215,7 @@ function UserEditor({ user }: { user: AccountUser }) {
           />
           Block unrated titles when a maturity limit is set
         </label>
-        <p className="text-xs text-ink-muted">
+        <p className="text-xs text-muted">
           Choose a library, folder, or title from the suggestions, or paste the
           ID from a title link. Exclusions override grants; maturity
           restrictions always apply.
@@ -248,7 +248,7 @@ function UserEditor({ user }: { user: AccountUser }) {
             <select
               aria-label="Permission scope"
               value={rule.scope}
-              className="h-10 rounded border border-line bg-surface px-2"
+              className="h-10 rounded border border-border bg-surface px-2"
               onChange={(e) =>
                 setRules(
                   shown.map((r, i) =>
@@ -267,7 +267,7 @@ function UserEditor({ user }: { user: AccountUser }) {
               list={`${rule.scope === "library" ? "libraries" : rule.scope === "folder" ? "folders" : "items"}-${user.id}`}
               aria-label="Permission target"
               required
-              className="h-10 min-w-0 flex-1 rounded border border-line bg-surface px-2 text-sm"
+              className="h-10 min-w-0 flex-1 rounded border border-border bg-surface px-2 text-sm"
               value={rule.target}
               onChange={(e) =>
                 setRules(
@@ -279,7 +279,7 @@ function UserEditor({ user }: { user: AccountUser }) {
             />
             <select
               aria-label="Access"
-              className="h-10 rounded border border-line bg-surface px-2"
+              className="h-10 rounded border border-border bg-surface px-2"
               value={rule.allowed ? "allow" : "deny"}
               onChange={(e) =>
                 setRules(
@@ -317,14 +317,13 @@ function UserEditor({ user }: { user: AccountUser }) {
           Add permission
         </button>
         {error && (
-          <p role="alert" className="text-red-400">
+          <p role="alert" className="text-danger-soft-foreground">
             {error}
           </p>
         )}
         <Button
-          variant="primary"
           type="submit"
-          disabled={busy || existing.isLoading}
+          isDisabled={busy || existing.isLoading}
         >
           {busy ? "Saving…" : "Save permissions"}
         </Button>

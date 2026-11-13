@@ -8,8 +8,9 @@
 /// - `transcode`   — codecs themselves are unsupported; re-encode on demand.
 /// - `unsupported` — none of the above is reliable; never claim it will play.
 
+/// `hls` is retained only for wire compatibility with the frozen player, which
+/// can still report it in diagnostics; the server never emits it.
 export type PlayPath = "direct" | "remux" | "transcode" | "hls" | "unsupported";
-
 export interface BrowserCaps {
   videoCodecs: string[];   // e.g. ["avc1", "h264", "hevc", "vp9", "av1"]
   audioCodecs: string[];   // e.g. ["aac", "mp3", "flac", "opus", "ac3", "ec3", "dts"]

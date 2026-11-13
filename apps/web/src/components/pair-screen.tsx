@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button } from "./ui/button";
+import { Button } from "@heroui/react";
 import { login, pairDevice } from "../auth";
 
 export function PairScreen({
@@ -19,8 +19,8 @@ export function PairScreen({
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-5 py-12">
       <header>
         <img src="/icon.svg" alt="" className="mb-5 h-12 w-12" />
-        <h1 className="text-3xl font-bold text-ink">Sign in to Plexy</h1>
-        <p className="mt-2 break-all text-sm text-ink-muted">{serverUrl}</p>
+        <h1 className="text-3xl font-bold text-foreground">Sign in to Plexy</h1>
+        <p className="mt-2 break-all text-sm text-muted">{serverUrl}</p>
       </header>
       <div className="flex gap-4 text-sm">
         <button
@@ -73,7 +73,7 @@ export function PairScreen({
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3"
+                className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
               />
             </label>
             <label className="block text-sm">
@@ -85,7 +85,7 @@ export function PairScreen({
                 maxLength={128}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3"
+                className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
               />
             </label>
           </>
@@ -102,29 +102,28 @@ export function PairScreen({
               spellCheck={false}
               value={key}
               onChange={(e) => setKey(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
-              className="mt-2 w-full rounded-lg border border-line bg-surface p-3 font-mono text-center text-2xl tracking-[0.3em] tabular-nums"
+              className="mt-2 w-full rounded-lg border border-border bg-surface p-3 font-mono text-center text-2xl tracking-[0.3em] tabular-nums"
             />
-            <span className="mt-2 block text-xs text-ink-muted">
+            <span className="mt-2 block text-xs text-muted">
               Create a six-digit code in My account on a device where you are signed in.
               The code signs in to that same account and works once.
             </span>
           </label>
         )}
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger-soft-foreground">
             {error}
           </p>
         )}
         <Button
           type="submit"
-          variant="primary"
-          disabled={busy || (mode === "pair" && key.length !== 6)}
+          isDisabled={busy || (mode === "pair" && key.length !== 6)}
           className="h-11 w-full"
         >
           {busy ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-      {!window.electronAPI?.localOnly && <a href="/connect" className="text-sm underline text-ink-muted">
+      {!window.electronAPI?.localOnly && <a href="/connect" className="text-sm underline text-muted">
         Choose a different server
       </a>}
     </main>

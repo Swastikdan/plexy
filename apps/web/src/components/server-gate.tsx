@@ -185,7 +185,7 @@ export function ServerGate({ children }: { children: ReactNode }) {
   return (
     <>
       {state.phase === "ready" && health !== "online" && (
-        <div className="sticky top-0 z-[100] flex items-center justify-center gap-3 border-b border-amber-500/30 bg-surface px-4 py-2 text-xs text-ink shadow-lg">
+        <div className="sticky top-0 z-[100] flex items-center justify-center gap-3 border-b border-warning/30 bg-surface px-4 py-2 text-xs text-foreground shadow-lg">
           {retrying ? <Loader2 size={15} className="animate-spin" /> : <WifiOff size={15} />}
           <span>
             {health === "offline"
@@ -196,7 +196,7 @@ export function ServerGate({ children }: { children: ReactNode }) {
             type="button"
             onClick={() => void retryConnection()}
             disabled={retrying}
-            className="inline-flex shrink-0 items-center gap-1 font-semibold text-ink hover:text-brand-text disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1 font-semibold text-foreground hover:text-muted disabled:opacity-50"
           >
             <RefreshCw size={13} /> Retry
           </button>
@@ -212,9 +212,9 @@ function ConnectionSplash() {
     <div className="flex min-h-dvh items-center justify-center px-6">
       <div className="flex flex-col items-center gap-4 text-center">
         <img src="/icon.svg" alt="Plexy" className="h-12 w-12 animate-pulse" />
-        <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+        <div className="flex items-center gap-2 text-sm font-medium text-muted">
           <span
-            className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-brand"
+            className="h-4 w-4 animate-spin rounded-full border-2 border-separator border-t-accent"
             aria-hidden="true"
           />
           Looking for your Plexy server…

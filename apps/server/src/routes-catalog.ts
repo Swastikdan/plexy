@@ -15,31 +15,11 @@ import { classifyPlayability, rowPlayabilityFacts } from "./playback";
 import { optimizationView } from "./optimize";
 import { denyIfNotLocal } from "./essentials";
 import { resolveOptimizedDir } from "./paths";
-import { cancelStreamPreparationsForFiles } from "./hls-preparation";
+import type { ItemCard } from "@plexy/api-client";
 
 // --- card assembly -----------------------------------------------------------
 
-export interface ItemCard {
-  id: number;
-  publicId: string;
-  kind: string;
-  name: string;
-  year: number | null;
-  seasonNumber?: number | null;
-  episodeNumber?: number | null;
-  fileId?: number | null;
-  parentId?: number | null;
-  parentPublicId?: string | null;
-  parentTitle?: string | null;
-  poster: string | null;
-  backdrop: string | null;
-  overview: string | null;
-  rating: number | null;
-  runtime: number | null;
-  genres: string[];
-  matchStatus: string;
-  watch: { position: number; duration: number | null; played: boolean; percent: number } | null;
-}
+export type { ItemCard };
 
 /** Upgrade any low-res TMDB artwork URLs to crisp modern definitions. */
 export function upgradeArtworkUrl(url: string | null, kind: string): string | null {
@@ -357,6 +337,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
        WHERE ip.item_id = ? AND ip.department = 'cast' ORDER BY ip.ord LIMIT 12`,
     ).all(id);
     const cast = castRows.map((p) => ({
+      id: Number(p.id),
       name: String(p.name),
       character: p.character_name ? String(p.character_name) : null,
       photo: p.profile_path ? `/api/people/${Number(p.id)}/photo?w=300` : null,
@@ -448,6 +429,42 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     });
   })
 
+  /**
+   * Person detail: photo plus every title they appear in that is locally
+   * available. Local-only by design — this never calls TMDB, so cast pages keep
+   * working when the machine is offline.
+   */
+  .get("/people/:personId", async ({ params, request }) => {
+    const personId = Number(params.personId);
+    if (!Number.isFinite(personId)) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    const person = q<Row>(
+      "SELECT id, name, profile_path FROM people WHERE id = ?",
+    ).get(personId);
+    if (!person) return Response.json({ error: "Not found" }, { status: 404 });
+
+    const rows = q<Row>(
+      `SELECT DISTINCT i.* FROM items i
+       JOIN item_people ip ON ip.item_id = i.id
+       WHERE ip.person_id = ? AND ip.department = 'cast'
+         AND i.kind IN ('movie', 'series') AND ${accessSql(request)}
+       ORDER BY (i.year IS NULL), i.year DESC, i.name`,
+    ).all(personId);
+    const items = await attachArt(rows, request);
+
+    return Response.json({
+      person: {
+        id: Number(person.id),
+        name: String(person.name),
+        photo: person.profile_path
+          ? `/api/people/${Number(person.id)}/photo?w=300`
+          : null,
+      },
+      items,
+    });
+  }, { params: t.Object({ personId: t.Numeric() }) })
+
   /** Remove a title and its indexed descendants; original video files stay on disk. */
   .delete("/items/:id", async (ctx) => {
     const denied = denyIfNotLocal(ctx);
@@ -462,7 +479,6 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
        ) SELECT f.id, f.path, f.size, f.mtime FROM media_files f JOIN descendants d ON d.id=f.item_id`,
     ).all(itemId);
     const fileIds = indexedFiles.map((row) => Number(row.id));
-    await cancelStreamPreparationsForFiles(fileIds);
     const existingFiles = [] as Array<{ id: number; path: string }>;
     for (const file of indexedFiles) {
       const source = await stat(file.path).catch(() => null);
@@ -489,11 +505,6 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       db.exec("ROLLBACK");
       throw error;
     }
-    const hlsDir = join(resolveOptimizedDir(), "hls");
-    const dirs = await readdir(hlsDir, { withFileTypes: true }).catch(() => []);
-    await Promise.all(fileIds.flatMap((id) => dirs
-      .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${id}-`))
-      .map((entry) => rm(join(hlsDir, entry.name), { recursive: true, force: true }))));
     log.info("media", "title removed from catalog", { itemId, indexedFiles: fileIds.length });
     return { ok: true };
   })
@@ -640,7 +651,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       }
     }
 
-    log.info("player", body.played ? "marked watched" : "marked unwatched", { itemId, kind: item.kind });
+    log.debug("player", body.played ? "marked watched" : "marked unwatched", { itemId, kind: item.kind });
     return { ok: true, played: body.played };
   }, {
     params: t.Object({ itemId: t.Numeric() }),
@@ -653,6 +664,6 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const itemId = parseItemId(params.itemId);
     if (itemId == null) return invalidItemId();
     run("DELETE FROM watch_state WHERE user_id=? AND item_id = ?", userId, itemId);
-    log.info("player", "watch state cleared", { itemId });
+    log.debug("player", "watch state cleared", { itemId });
     return { ok: true };
   }, { params: t.Object({ itemId: t.Numeric() }) });

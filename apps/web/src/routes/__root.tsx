@@ -4,12 +4,13 @@ import { createRootRoute, Outlet, useMatchRoute, useRouterState } from "@tanstac
 import { TopNav } from "../components/topnav";
 import { BottomNav } from "../components/bottomnav";
 import { ServerGate } from "../components/server-gate";
-import { usePrefetchRuntime } from "../lib/prefetch-config";
+import { useLibrarySync, usePrefetchRuntime } from "../lib/prefetch-config";
 
 function Shell() {
-  // Local-only asset prefetch follows the saved server preferences everywhere
-  // in the app, not just on the settings screen.
+  // The offline cache follows the saved preferences everywhere in the app and
+  // refreshes itself after scans, so every screen can render without internet.
   usePrefetchRuntime();
+  useLibrarySync();
   // The player and the connection screen are chrome-less full-screen views.
   const matchRoute = useMatchRoute();
   const pathname = useRouterState({ select: (state) => state.location.pathname });

@@ -1,8 +1,9 @@
 /// Admin (PRD 10.4, loopback-only server-side): libraries + scans, the
-/// matching review queue, settings (including the light/dark appearance
-/// toggle) and the live log tail. Everything here is reachable only when the
-/// browser is the host machine; the server enforces this and reports
-/// `adminAvailable: false` otherwise.
+/// matching review queue, and settings (including the light/dark appearance
+/// toggle). Logs live collapsed under Settings → Advanced → Diagnostics and
+/// only query the server while that panel is open. Everything here is
+/// reachable only when the browser is the host machine; the server enforces
+/// this and reports `adminAvailable: false` otherwise.
 import { DesktopServerSettings } from "../../components/desktop-server-settings";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -33,9 +34,8 @@ import { api, type LibraryItem, type ReviewEntry } from "../../client";
 import { getApiBase, hasServerOverride } from "../../server-config";
 import { createPairingCode, listDevices, removeRevokedDevice, revokeDevice } from "../../auth";
 import { queries } from "../../queries";
-import { Button, cx } from "../../components/ui/button";
-import { Select } from "../../components/ui/select";
-import { Dialog } from "../../components/ui/dialog";
+import { Button, ListBox, Modal, Select } from "@heroui/react";
+import { cx } from "../../lib/cx";
 import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
 import { PageLoader } from "../../components/page-loader";
 import { LibraryFolderForm } from "../../components/library-folder-form";
@@ -43,23 +43,32 @@ import { UserManagement } from "../../components/user-management";
 import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "../../lib/playback-diagnostics-consent";
 import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "../../electron";
 import { getPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "../../lib/playback-preferences";
-import {
-  clearPrefetchCache,
-  getPrefetchStats,
-  localPrefetchContext,
-  type PrefetchStats,
-} from "../../lib/asset-prefetch";
+import { clearPrefetchCache, getPrefetchStats, type PrefetchStats } from "../../lib/asset-prefetch";
+import { clearLibraryCache, getLastSyncedAt, syncLibrary } from "../../lib/library-cache";
 
-const ERROR_TEXT = "text-red-500";
+const ERROR_TEXT = "text-danger-soft-foreground";
 
 const ADMIN_TABS = [
   { key: "libraries", label: "Libraries" },
   { key: "review", label: "Fix matches" },
   { key: "settings", label: "Settings" },
-  { key: "logs", label: "Logs" },
 ] as const;
 type AdminTab = (typeof ADMIN_TABS)[number]["key"];
 const ADMIN_TAB_KEYS: readonly string[] = ADMIN_TABS.map((entry) => entry.key);
+
+/// Language choices for the preferred-audio and preferred-subtitle pickers.
+const LANGUAGE_OPTIONS = [
+  { value: "en", label: "English" },
+  { value: "hi", label: "Hindi" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+  { value: "zh", label: "Chinese" },
+  { value: "pt", label: "Portuguese" },
+  { value: "it", label: "Italian" },
+] as const;
 
 function AdminRoute() {
   const { tab = "libraries" } = Route.useSearch();
@@ -122,18 +131,18 @@ function AdminRoute() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight">Server</h1>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="mt-1 text-xs text-muted">
             v{status.data?.version ?? "…"}
             {status.data?.uptimeSeconds != null && ` · up ${formatUptime(status.data.uptimeSeconds)}`}
             {status.data?.bind && ` · ${status.data.bind}:${status.data.port}`}
           </p>
         </div>
         <Button
-          variant="surface"
-          onClick={() => void refresh()}
-          disabled={refreshing}
+          variant="secondary"
+          onPress={() => void refresh()}
+          isDisabled={refreshing}
           className="h-8 px-3 text-xs font-medium"
-          title="Refresh the server status, matches and logs"
+          aria-label="Refresh the server status, matches and logs"
         >
           <RotateCw size={14} className={refreshing ? "animate-spin" : ""} />
           Refresh
@@ -145,7 +154,7 @@ function AdminRoute() {
         className="sticky top-12 sm:top-14 z-30 -mx-4 mt-6 overflow-x-auto px-4 pb-3 pt-1 sm:-mx-8 sm:px-8"
         aria-label="Admin sections"
       >
-        <div className="inline-flex min-w-max items-center gap-1.5 rounded-xl border border-line/60 bg-surface p-1" role="tablist">
+        <div className="inline-flex min-w-max items-center gap-1.5 rounded-xl border border-border/60 bg-surface p-1" role="tablist">
           {ADMIN_TABS.map(({ key, label }) => (
             <button
               key={key}
@@ -157,8 +166,8 @@ function AdminRoute() {
               className={cx(
                 "rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95 sm:text-sm",
                 tab === key
-                  ? "bg-ink text-canvas"
-                  : "text-ink-muted hover:bg-surface-hover/60 hover:text-ink",
+                  ? "bg-foreground text-background"
+                  : "text-muted hover:bg-surface-tertiary/60 hover:text-foreground",
               )}
             >
               {label}
@@ -173,7 +182,7 @@ function AdminRoute() {
             role="tabpanel"
             id="panel-libraries"
             aria-labelledby="tab-libraries"
-            className={tab === "libraries" ? "block animate-in fade-in duration-150" : "hidden"}
+            className={tab === "libraries" ? "block page-enter" : "hidden"}
           >
             <Libraries />
           </div>
@@ -183,7 +192,7 @@ function AdminRoute() {
             role="tabpanel"
             id="panel-review"
             aria-labelledby="tab-review"
-            className={tab === "review" ? "block animate-in fade-in duration-150" : "hidden"}
+            className={tab === "review" ? "block page-enter" : "hidden"}
           >
             <Review />
           </div>
@@ -193,26 +202,16 @@ function AdminRoute() {
             role="tabpanel"
             id="panel-settings"
             aria-labelledby="tab-settings"
-            className={tab === "settings" ? "block animate-in fade-in duration-150" : "hidden"}
+            className={tab === "settings" ? "block page-enter" : "hidden"}
           >
             <Settings />
           </div>
         )}
-        {visitedTabs.has("logs") && (
-          <div
-            role="tabpanel"
-            id="panel-logs"
-            aria-labelledby="tab-logs"
-            className={tab === "logs" ? "block animate-in fade-in duration-150" : "hidden"}
-          >
-            <Logs />
-          </div>
-        )}
       </div>
       {status.data?.scan?.status === "running" && (
-        <div className="mt-10 rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted" role="status">
+        <div className="mt-10 rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted" role="status">
           Scanning: {status.data.scan.filesSeen} files seen, currently{" "}
-          <span className="text-ink">{status.data.scan.currentFile}</span>
+          <span className="text-foreground">{status.data.scan.currentFile}</span>
         </div>
       )}
     </main>
@@ -231,7 +230,8 @@ function formatUptime(seconds: number): string {
 export const Route = createFileRoute("/admin/")({
   component: AdminRoute,
   validateSearch: (search: Record<string, unknown>): { tab?: AdminTab } => {
-    const tab = String(search.tab ?? "");
+    // Logs moved under Settings → Advanced → Diagnostics; old links still work.
+    const tab = String(search.tab ?? "") === "logs" ? "settings" : String(search.tab ?? "");
     return ADMIN_TAB_KEYS.includes(tab) ? { tab: tab as AdminTab } : {};
   },
 });
@@ -271,27 +271,27 @@ function Libraries() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-muted">Active Libraries</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Active Libraries</h2>
         <Link to="/add-library">
-          <Button variant="surface" className="h-8 text-xs font-medium">
+          <Button variant="secondary" className="h-8 text-xs font-medium">
             + Add Library
           </Button>
         </Link>
       </div>
       {isLoading && !data && <PageLoader />}
       {data?.map((lib) => (
-        <div key={lib.id} className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4">
+        <div key={lib.id} className="flex items-center gap-4 rounded-2xl border border-border bg-surface px-5 py-4">
           <div className="min-w-0 flex-1">
             <p className="font-display font-semibold">{lib.name}</p>
-            <p className="mt-0.5 truncate text-[13px] text-ink-muted">{lib.paths.join(", ")}</p>
+            <p className="mt-0.5 truncate text-[13px] text-muted">{lib.paths.join(", ")}</p>
           </div>
           <div className="flex shrink-0 items-center gap-4 text-[13px]">
-            <span className="tabular-nums"><span className="text-ink">{lib.counts.items}</span> <span className="text-ink-muted">matched</span></span>
+            <span className="tabular-nums"><span className="text-foreground">{lib.counts.items}</span> <span className="text-muted">matched</span></span>
             {lib.counts.review > 0 && (
-              <span className="tabular-nums"><span className="text-amber">{lib.counts.review}</span> <span className="text-ink-muted">review</span></span>
+              <span className="tabular-nums"><span className="text-warning">{lib.counts.review}</span> <span className="text-muted">review</span></span>
             )}
             {lib.counts.unmatched > 0 && (
-              <span className="tabular-nums"><span className="text-ink-muted">{lib.counts.unmatched}</span> unmatched</span>
+              <span className="tabular-nums"><span className="text-muted">{lib.counts.unmatched}</span> unmatched</span>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -308,20 +308,28 @@ function Libraries() {
         </div>
       ))}
       {data?.length === 0 && (
-        <p className="text-sm text-ink-muted">No libraries yet. Use “Add Library” to choose a media type and folders.</p>
+        <p className="text-sm text-muted">No libraries yet. Use “Add Library” to choose a media type and folders.</p>
       )}
-      <Dialog.Root open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
-        <Dialog.Portal>
-          <Dialog.Backdrop />
-          <Dialog.Popup className="max-h-[90vh] w-[min(760px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line bg-canvas p-5 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div><Dialog.Title className="font-sans text-xl font-bold text-ink">Configure library</Dialog.Title><p className="mt-1 text-xs text-ink-muted">Change its name, media type, or scanned folders.</p></div>
-              <Dialog.Close render={<button type="button" aria-label="Close" className="text-ink-muted hover:text-ink"><X size={18} /></button>} />
-            </div>
-            {editing && <LibraryFolderForm key={editing.id} initialLibrary={editing} onComplete={() => setEditing(null)} completeLabel="Save library" />}
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <Modal isOpen={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
+        <Modal.Backdrop>
+          <Modal.Container>
+            <Modal.Dialog className="w-[min(760px,calc(100vw-2rem))] max-w-none">
+              <Modal.Header className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <Modal.Heading className="font-sans text-xl font-bold text-foreground">Configure library</Modal.Heading>
+                  <p className="mt-1 text-xs text-muted">Change its name, media type, or scanned folders.</p>
+                </div>
+                <Modal.CloseTrigger className="text-muted hover:text-foreground" aria-label="Close">
+                  <X size={18} />
+                </Modal.CloseTrigger>
+              </Modal.Header>
+              <Modal.Body>
+                {editing && <LibraryFolderForm key={editing.id} initialLibrary={editing} onComplete={() => setEditing(null)} completeLabel="Save library" />}
+              </Modal.Body>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </div>
   );
 }
@@ -333,7 +341,7 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
       title={label}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-40 disabled:pointer-events-none"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-secondary hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
     >
       {children}
     </button>
@@ -365,7 +373,7 @@ function Review() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-line/60 bg-surface p-1" role="group" aria-label="Match filter">
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-surface p-1" role="group" aria-label="Match filter">
           {REVIEW_FILTERS.map((f) => (
             <button
               key={f.key}
@@ -374,15 +382,15 @@ function Review() {
               className={cx(
                 "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
                 filter === f.key
-                  ? "bg-ink text-canvas"
-                  : "text-ink-muted hover:text-ink hover:bg-surface-hover/50",
+                  ? "bg-foreground text-background"
+                  : "text-muted hover:text-foreground hover:bg-surface-tertiary/50",
               )}
             >
               <span>{f.label}</span>
               {counts && (
                 <span className={cx(
-                  "rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
-                  filter === f.key ? "bg-black/10 text-canvas" : "bg-surface-2 text-ink-muted",
+                  "rounded-sm px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
+                  filter === f.key ? "bg-black/10 text-background" : "bg-surface-secondary text-muted",
                 )}>
                   {f.key === "attention" ? counts.attention : f.key === "matched" ? counts.matched : counts.all}
                 </span>
@@ -391,19 +399,19 @@ function Review() {
           ))}
         </div>
 
-        <label className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm text-ink-muted transition-colors focus-within:border-brand/70 lg:w-80">
+        <label className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm text-muted transition-colors focus-within:border-accent/70 lg:w-80">
           <Search size={15} className="shrink-0" aria-hidden />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search title or file name…"
             aria-label="Search titles and file names"
-            className="w-full min-w-0 bg-transparent text-ink placeholder:text-ink-muted/70 outline-none"
+            className="w-full min-w-0 bg-transparent text-foreground placeholder:text-muted/70 outline-none"
           />
         </label>
       </div>
 
-      <p className="text-xs leading-relaxed text-ink-muted">
+      <p className="text-xs leading-relaxed text-muted">
         {filter === "attention"
           ? "Plexy is unsure about these titles. Pick the right result, or search TMDB manually."
           : filter === "matched"
@@ -412,7 +420,7 @@ function Review() {
       </p>
 
       {counts && filter === "all" && !debounced && counts.all > items.length && (
-        <p className="text-xs text-ink-muted">
+        <p className="text-xs text-muted">
           Showing the first {items.length} of {counts.all} titles. Use search to narrow the list.
         </p>
       )}
@@ -422,7 +430,7 @@ function Review() {
         <p className={`text-sm ${ERROR_TEXT}`}>Could not load matches. Administrative tools work only on the machine running Plexy.</p>
       )}
       {!isLoading && !isError && items.length === 0 && (
-        <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
+        <p className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted">
           {debounced
             ? `No titles match “${debounced}”.`
             : filter === "attention"
@@ -433,12 +441,12 @@ function Review() {
 
       <div className={cx("space-y-3 transition-opacity duration-150", isFetching && "opacity-70")}>
         {items.map((entry) => (
-          <div key={entry.id} className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3">
-            <div className="h-16 w-11 shrink-0 overflow-hidden rounded-sm bg-surface-2">
+          <div key={entry.id} className="flex items-center gap-4 rounded-xl border border-border bg-surface px-4 py-3">
+            <div className="h-16 w-11 shrink-0 overflow-hidden rounded-sm bg-surface-secondary">
               {entry.poster ? (
                 <img src={entry.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-ink-muted">
+                <div className="flex h-full w-full items-center justify-center text-muted">
                   <Film size={16} aria-hidden />
                 </div>
               )}
@@ -447,14 +455,14 @@ function Review() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <p className="truncate font-display font-semibold">{entry.name}</p>
-                {entry.year && <span className="text-xs text-ink-muted">{entry.year}</span>}
+                {entry.year && <span className="text-xs text-muted">{entry.year}</span>}
                 <MatchBadge status={entry.matchStatus} />
               </div>
-              <p className="mt-0.5 truncate text-[13px] text-ink-muted" title={entry.fileName ?? entry.reason ?? undefined}>
+              <p className="mt-0.5 truncate text-[13px] text-muted" title={entry.fileName ?? entry.reason ?? undefined}>
                 {entry.fileName ?? entry.reason ?? `${entry.matchStatus} match`}
               </p>
               {entry.matchStatus === "matched" && (
-                <p className="mt-1 text-[11px] text-ink-muted">
+                <p className="mt-1 text-[11px] text-muted">
                   Currently matched{entry.matchedBy ? ` by ${entry.matchedBy}` : ""}
                   {entry.score != null ? ` · ${Math.round(entry.score * 100)}% confidence` : ""}
                   {entry.tmdbId ? ` · TMDB ${entry.tmdbId}` : ""}
@@ -462,38 +470,43 @@ function Review() {
               )}
             </div>
 
-            <Button variant="surface" onClick={() => setOpen(entry)} className="shrink-0">
+            <Button variant="secondary" onPress={() => setOpen(entry)} className="shrink-0">
               {entry.matchStatus === "matched" ? "Remap" : "Fix"}
             </Button>
           </div>
         ))}
       </div>
 
-      <Dialog.Root open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        <Dialog.Portal>
-          <Dialog.Backdrop />
-          <Dialog.Popup className="w-[min(94vw,640px)]">
-            <Dialog.Title>Match {open?.name}</Dialog.Title>
-            <p className="mt-1 text-sm text-ink-muted">
-              Pick the correct title, or search for a better one. Applying a match locks it; rescans never overwrite manual matches.
-            </p>
-            {open && <FixMatch entry={open} onDone={() => setOpen(null)} />}
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <Modal isOpen={!!open} onOpenChange={(isOpen) => !isOpen && setOpen(null)}>
+        <Modal.Backdrop>
+          <Modal.Container>
+            <Modal.Dialog className="w-[min(94vw,640px)]">
+              <Modal.Header>
+                <Modal.Heading>Match {open?.name}</Modal.Heading>
+                <p className="mt-1 text-sm text-muted">
+                  Pick the correct title, or search for a better one. Applying a match locks it; rescans never overwrite manual matches.
+                </p>
+              </Modal.Header>
+              <Modal.Body>
+                {open && <FixMatch entry={open} onDone={() => setOpen(null)} />}
+              </Modal.Body>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </div>
   );
 }
 
 function MatchBadge({ status }: { status: string }) {
   const style = status === "matched"
-    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+    ? "border-success/30 bg-success/10 text-success-soft-foreground"
     : status === "review"
-      ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-      : "border-line bg-surface-2 text-ink-muted";
+      ? "border-warning/30 bg-warning/10 text-warning-soft-foreground"
+      : "border-border bg-surface-secondary text-muted";
   const label = status === "matched" ? "Matched" : status === "review" ? "Needs review" : "Unmatched";
   return (
-    <span className={cx("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", style)}>
+    <span className={cx("rounded-sm border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", style)}>
       {label}
     </span>
   );
@@ -537,20 +550,20 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 
   return (
     <div className="mt-4 space-y-4">
-      <div className="space-y-1 rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink-muted">
+      <div className="space-y-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted">
         {entry.originalName && entry.originalName !== entry.fileName && (
           <p className="truncate" title={entry.originalName}>
-            Library entry: <span className="text-ink">{entry.originalName}</span>
+            Library entry: <span className="text-foreground">{entry.originalName}</span>
           </p>
         )}
         {entry.fileName && (
           <p className="truncate" title={entry.fileName}>
-            File: <span className="text-ink">{entry.fileName}</span>
+            File: <span className="text-foreground">{entry.fileName}</span>
           </p>
         )}
         {entry.matchStatus === "matched" && (
           <p>
-            Currently matched to <span className="text-ink">{entry.name}</span>
+            Currently matched to <span className="text-foreground">{entry.name}</span>
             {entry.tmdbId ? ` (TMDB ${entry.tmdbId})` : ""}. Choosing another result replaces and locks it.
           </p>
         )}
@@ -559,7 +572,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
           params={{ itemId: String(entry.id) }}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-brand-text hover:underline"
+          className="inline-flex items-center gap-1 text-muted hover:underline"
         >
           Open title page <ExternalLink size={12} aria-hidden />
         </Link>
@@ -574,7 +587,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search TMDB title…"
           aria-label="TMDB search title"
-          className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-brand/70"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent/70"
         />
         <input
           value={year}
@@ -582,9 +595,9 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
           placeholder="Year"
           aria-label="Year"
           inputMode="numeric"
-          className="h-9 w-20 rounded-lg border border-line bg-surface px-3 text-sm outline-none focus:border-brand/70"
+          className="h-9 w-20 rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-accent/70"
         />
-        <Button variant="surface" disabled={search.isPending || !query.trim()}>
+        <Button variant="secondary" isDisabled={search.isPending || !query.trim()}>
           {search.isPending ? "Searching…" : "Search"}
         </Button>
       </form>
@@ -600,38 +613,38 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
               key={r.tmdbId}
               onClick={() => apply.mutate({ tmdbId: r.tmdbId })}
               disabled={apply.isPending}
-              className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-hover disabled:opacity-50"
+              className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary disabled:opacity-50"
             >
               {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded-sm object-cover" loading="lazy" />}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{r.title}</span>
-                <span className="block text-[13px] text-ink-muted">{r.year} · {r.overview?.slice(0, 90) ?? ""}</span>
+                <span className="block text-[13px] text-muted">{r.year} · {r.overview?.slice(0, 90) ?? ""}</span>
               </span>
-              <span className="shrink-0 text-xs font-semibold text-brand-text">Use this</span>
+              <span className="shrink-0 text-xs font-semibold text-muted">Use this</span>
             </button>
           ))}
           {search.data.results.length === 0 && (
-            <p className="text-sm text-ink-muted">TMDB has nothing for that search.</p>
+            <p className="text-sm text-muted">TMDB has nothing for that search.</p>
           )}
         </div>
       )}
 
       {!search.data && !search.isPending && entry.candidates.length > 0 && (
         <div>
-          <p className="text-xs uppercase tracking-[0.12em] text-ink-muted">Auto candidates</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-muted">Auto candidates</p>
           <div className="mt-2 space-y-1">
             {entry.candidates.map((c) => (
               <button
                 key={c.tmdbId}
                 onClick={() => apply.mutate({ tmdbId: c.tmdbId })}
                 disabled={apply.isPending}
-                className="flex w-full items-center justify-between gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-hover disabled:opacity-50"
+                className="flex w-full items-center justify-between gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary disabled:opacity-50"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm">{c.title} {c.year ? `(${c.year})` : ""}</span>
-                  <span className="block text-[13px] text-ink-muted" title={c.reason}>{c.reason}</span>
+                  <span className="block text-[13px] text-muted" title={c.reason}>{c.reason}</span>
                 </span>
-                <span className="shrink-0 text-[13px] tabular-nums text-brand-text">{Math.round(c.score * 100)}%</span>
+                <span className="shrink-0 text-[13px] tabular-nums text-muted">{Math.round(c.score * 100)}%</span>
               </button>
             ))}
           </div>
@@ -649,17 +662,6 @@ function Settings() {
   const { data, isError, isLoading } = useQuery(queries.settings());
   const status = useQuery(queries.serverStatus());
   const playbackDiagnostics = useQuery(queries.playbackDiagnostics());
-  const { data: streamTitles } = useQuery({
-    queryKey: ["stream-preparation-titles"],
-    queryFn: () => api.items({ limit: 5000 }),
-  });
-  const { data: streamStatus } = useQuery({
-    queryKey: ["stream-preparation"],
-    queryFn: api.streamPreparationStatus,
-    // Preparation progress only changes while work is queued or running.
-    // Stop polling the server once the queue is idle.
-    refetchInterval: (query) => query.state.data?.running || query.state.data?.queued ? 2000 : false,
-  });
   const queryClient = useQueryClient();
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -668,8 +670,6 @@ function Settings() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPhrase, setResetPhrase] = useState("");
   const [resetMessage, setResetMessage] = useState<string | null>(null);
-  const [streamTitleSearch, setStreamTitleSearch] = useState("");
-  const [selectedStreamTitleIds, setSelectedStreamTitleIds] = useState<number[]>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(isPlaybackDiagnosticsEnabled);
   const [openMetadataSelect, setOpenMetadataSelect] = useState<string | null>(null);
@@ -719,20 +719,6 @@ function Settings() {
     onError: () => setSkipMessage("Could not refresh skip markers. Check the server log."),
   });
 
-  const generateStreamVariants = useMutation({
-    mutationFn: api.runStreamPreparation,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["stream-preparation"] });
-    },
-  });
-
-  const cancelStreamVariants = useMutation({
-    mutationFn: api.cancelStreamPreparation,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["stream-preparation"] });
-    },
-  });
-
   const resetLocalData = useMutation({
     mutationFn: api.resetLocalData,
     onSuccess: async ({ libraries, files, titles }) => {
@@ -747,53 +733,46 @@ function Settings() {
 
   if (isError || !data) {
     return (
-      <div className="rounded-2xl border border-line bg-surface p-6 text-center text-sm text-ink-muted">
+      <div className="rounded-2xl border border-border bg-surface p-6 text-center text-sm text-muted">
         Settings are only accessible when connecting from the machine running Plexy.
       </div>
     );
   }
   const s = data.settings;
-  const selectableStreamTitles = (streamTitles?.items ?? []).filter((item) => item.kind === "movie" || item.kind === "series");
-  const filteredStreamTitles = selectableStreamTitles.filter((item) => item.name.toLowerCase().includes(streamTitleSearch.trim().toLowerCase()));
-  const selectedStreamTitleSet = new Set(selectedStreamTitleIds);
-  const toggleStreamTitle = (id: number) => setSelectedStreamTitleIds((ids) =>
-    ids.includes(id) ? ids.filter((existing) => existing !== id) : [...ids, id],
-  );
-
   return (
     <div className="space-y-3">
       <UserManagement />
       <DesktopServerSettings />
       <DesktopUpdateSettings />
       <SystemUsage />
-      <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
-        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+      <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-border/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
-            <span className="block text-sm font-semibold text-ink">Metadata & episode markers</span>
-            <span className="mt-1 block text-xs text-ink-muted">TMDB matching, artwork, language, and skip markers</span>
+            <span className="block text-sm font-semibold text-foreground">Metadata & episode markers</span>
+            <span className="mt-1 block text-xs text-muted">TMDB matching, artwork, language, and skip markers</span>
           </span>
-          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+          <ChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
         </summary>
-        <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="space-y-4 border-t border-border p-4 sm:p-5">
+      <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
-              <Film size={17} className="text-brand-text" />
+            <h2 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+              <Film size={17} className="text-muted" />
               TMDB Metadata
             </h2>
-            <p className="mt-1 text-xs text-ink-muted">
+            <p className="mt-1 text-xs text-muted">
               Matches files to TMDB. Titles, metadata, and watch progress stay in Plexy’s local database; images are cached locally after their first download.
             </p>
           </div>
           <div className="shrink-0 self-start sm:self-auto">
             {s.hasTmdbToken ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+              <span className="inline-flex items-center gap-1.5 rounded-sm bg-success/10 border border-success/25 px-2.5 py-1 text-xs font-semibold text-success-soft-foreground">
                 <Check size={13} />
                 Connected ({s.tokenSource})
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 text-xs font-semibold text-amber-300">
+              <span className="inline-flex items-center gap-1.5 rounded-sm bg-warning/10 border border-warning/25 px-2.5 py-1 text-xs font-semibold text-warning-soft-foreground">
                 Token Required
               </span>
             )}
@@ -846,53 +825,61 @@ function Settings() {
               : [{ value: setting.value, label: setting.value }, ...setting.options];
             return (
               <div key={setting.label} className="min-w-0 space-y-1.5">
-                <span className="block text-xs font-semibold text-ink-muted">{setting.label}</span>
-                <Select.Root
-                  value={setting.value}
-                  open={openMetadataSelect === setting.label}
+                <span className="block text-xs font-semibold text-muted">{setting.label}</span>
+                <Select
+                  aria-label={setting.label}
+                  selectedKey={setting.value}
+                  isOpen={openMetadataSelect === setting.label}
                   onOpenChange={(open) => setOpenMetadataSelect(open ? setting.label : null)}
-                  onValueChange={(value) => {
+                  onSelectionChange={(key) => {
                     setOpenMetadataSelect(null);
-                    setting.update(String(value));
+                    setting.update(String(key));
                   }}
-                  items={options}
+                  className="w-full min-w-0"
                 >
-                  <Select.Trigger aria-label={setting.label} className="w-full min-w-0">
+                  <Select.Trigger>
                     <Select.Value />
-                    <Select.Icon />
+                    <Select.Indicator />
                   </Select.Trigger>
-                  <Select.Positioner>
-                    {options.map((option) => (
-                      <Select.Item key={option.value} value={option.value}>
-                        <Select.ItemText>{option.label}</Select.ItemText>
-                      </Select.Item>
-                    ))}
-                  </Select.Positioner>
-                </Select.Root>
+                  <Select.Popover>
+                    <ListBox>
+                      {options.map((option) => (
+                        <ListBox.Item
+                          key={option.value}
+                          id={option.value}
+                          textValue={option.label}
+                        >
+                          {option.label}
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
               </div>
             );
           })}
         </div>
 
-        <p className="text-xs leading-relaxed text-ink-muted">
-          The selected width is the TMDB poster source size: <strong className="font-semibold text-ink">w500</strong> means about 500 pixels wide. Larger sources look sharper on big displays and use more storage. Changes apply when metadata is refreshed; existing cached images are kept until then.
+        <p className="text-xs leading-relaxed text-muted">
+          The selected width is the TMDB poster source size: <strong className="font-semibold text-foreground">w500</strong> means about 500 pixels wide. Larger sources look sharper on big displays and use more storage. Changes apply when metadata is refreshed; existing cached images are kept until then.
         </p>
 
-        <div className="flex flex-col gap-2 border-t border-line/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-xl text-xs leading-relaxed text-ink-muted">
+        <div className="flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-xl text-xs leading-relaxed text-muted">
             Clear TMDB responses if you need fresh data. This keeps your library and downloaded artwork.
           </p>
           <Button
-            variant="surface"
-            onClick={() => clearCache.mutate()}
-            disabled={clearCache.isPending}
+            variant="secondary"
+            onPress={() => clearCache.mutate()}
+            isDisabled={clearCache.isPending}
             className="h-9 shrink-0 px-3 text-xs font-semibold"
           >
             {clearCache.isPending && <RotateCw size={13} className="animate-spin" />}
             {clearCache.isPending ? "Clearing…" : "Clear TMDB cache"}
           </Button>
         </div>
-        {cacheMessage && <p className="text-xs font-medium text-brand-text">{cacheMessage}</p>}
+        {cacheMessage && <p className="text-xs font-medium text-muted">{cacheMessage}</p>}
 
         <form
           onSubmit={async (e) => {
@@ -917,11 +904,11 @@ function Settings() {
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder={s.hasTmdbToken ? "Replace TMDB token…" : "Paste TMDB Read-Access Token…"}
-            className="h-10 min-w-0 flex-1 rounded-xl border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-ink-muted/70 outline-none focus:border-brand/70"
+            className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground placeholder:text-muted/70 outline-none focus:border-accent/70"
           />
           <Button
-            variant="surface"
-            disabled={testing}
+            variant="secondary"
+            isDisabled={testing}
             className="h-10 px-4 text-xs font-semibold shrink-0"
           >
             {testing ? <RotateCw size={14} className="animate-spin" /> : null}
@@ -934,44 +921,44 @@ function Settings() {
             className={cx(
               "flex items-center gap-2 rounded-xl border p-3 text-xs font-medium",
               test.ok
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-red-500/30 bg-red-500/10 text-red-300",
+                ? "border-success/30 bg-success/10 text-success-soft-foreground"
+                : "border-danger/30 bg-danger/10 text-danger-soft-foreground",
             )}
           >
-            {test.ok ? <CheckCircle2 size={15} className="shrink-0 text-emerald-400" /> : null}
+            {test.ok ? <CheckCircle2 size={15} className="shrink-0 text-success-soft-foreground" /> : null}
             <span>{test.message}</span>
           </div>
         )}
       </div>
 
-      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-3">
+      <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm space-y-3">
         <div>
-          <h2 className="font-display text-base font-bold text-ink">Intro, recap &amp; credits</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-ink-muted">
+          <h2 className="font-display text-base font-bold text-foreground">Intro, recap &amp; credits</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted">
             Look up episode markers from IntroDB while playing. Plexy uses the show’s IMDb ID and episode numbers; when a marker is available, the player offers a skip button. Lookup is off until enabled.
           </p>
         </div>
-        <label className="flex items-start gap-2.5 text-sm text-ink cursor-pointer select-none">
+        <label className="flex items-start gap-2.5 text-sm text-foreground cursor-pointer select-none">
           <input
             type="checkbox"
             checked={s.skipSegmentsEnabled}
             onChange={(e) => save.mutate({ skipSegmentsEnabled: e.target.checked })}
-            className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
+            className="mt-0.5 h-4 w-4 rounded-sm accent-accent"
           />
           <span>Enable community skip markers (IntroDB)</span>
         </label>
         <div className="flex flex-wrap items-center gap-3">
           <Button
-            variant="surface"
-            disabled={!s.skipSegmentsEnabled || refreshSkipMarkers.isPending}
-            onClick={() => refreshSkipMarkers.mutate()}
+            variant="secondary"
+            isDisabled={!s.skipSegmentsEnabled || refreshSkipMarkers.isPending}
+            onPress={() => refreshSkipMarkers.mutate()}
           >
             {refreshSkipMarkers.isPending && <RotateCw size={13} className="animate-spin" />}
             {refreshSkipMarkers.isPending ? "Refreshing…" : "Refresh markers now"}
           </Button>
-          {skipMessage && <p className="text-xs font-medium text-brand-text">{skipMessage}</p>}
+          {skipMessage && <p className="text-xs font-medium text-muted">{skipMessage}</p>}
         </div>
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-[11px] text-muted">
           Markers are cached in the library database during scans and refreshed when you play an
           episode whose data is missing or stale. Playback continues normally if the title has no
           marker, TMDB cannot resolve its IMDb ID, or the service is unavailable.
@@ -982,82 +969,91 @@ function Settings() {
       </details>
 
       {!s.localOnly && (
-      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
-        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-border/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
-            <span className="block text-sm font-semibold text-ink">Network & security</span>
-            <span className="mt-1 block text-xs text-ink-muted">Local network access, paired devices, and server connection</span>
+            <span className="block text-sm font-semibold text-foreground">Network & security</span>
+            <span className="mt-1 block text-xs text-muted">Local network access, paired devices, and server connection</span>
           </span>
-          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+          <ChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
         </summary>
-        <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="space-y-4 border-t border-border p-4 sm:p-5">
+      <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div>
-          <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
-            <Server size={17} className="text-brand-text" />
+          <h2 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+            <Server size={17} className="text-muted" />
             Network & Access
           </h2>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="mt-1 text-xs text-muted">
             Configure how Plexy is accessed on your local network.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
-            <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
+          <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
+            <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
               LAN Access (Bind Address)
             </span>
-            <p className="text-xs text-ink-muted">Control whether phones, tablets and TVs on Wi-Fi can connect.</p>
+            <p className="text-xs text-muted">Control whether phones, tablets and TVs on Wi-Fi can connect.</p>
             <div className="pt-1">
-              <Select.Root
-                value={s.bindAddress}
-                onValueChange={(v) => save.mutate({ bindAddress: String(v) })}
-                items={[
-                  { value: "127.0.0.1", label: "127.0.0.1 (Local loopback only)" },
-                  { value: "0.0.0.0", label: "0.0.0.0 (Allow LAN devices on Wi-Fi)" },
-                ]}
+              <Select
+                aria-label="LAN access bind address"
+                selectedKey={s.bindAddress}
+                onSelectionChange={(key) => save.mutate({ bindAddress: String(key) })}
+                className="w-full"
               >
-                <Select.Trigger className="w-full">
+                <Select.Trigger>
                   <Select.Value />
-                  <Select.Icon />
+                  <Select.Indicator />
                 </Select.Trigger>
-                <Select.Positioner>
-                  {[
-                    { value: "127.0.0.1", label: "127.0.0.1 (Local loopback only)" },
-                    { value: "0.0.0.0", label: "0.0.0.0 (Allow LAN devices on Wi-Fi)" },
-                  ].map((opt) => (
-                    <Select.Item key={opt.value} value={opt.value}>
-                      <Select.ItemText>{opt.label}</Select.ItemText>
-                    </Select.Item>
-                  ))}
-                </Select.Positioner>
-              </Select.Root>
+                <Select.Popover>
+                  <ListBox>
+                    {[
+                      { value: "127.0.0.1", label: "127.0.0.1 (Local loopback only)" },
+                      { value: "0.0.0.0", label: "0.0.0.0 (Allow LAN devices on Wi-Fi)" },
+                    ].map((opt) => (
+                      <ListBox.Item key={opt.value} id={opt.value} textValue={opt.label}>
+                        {opt.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
             </div>
           </div>
 
-          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
-            <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider block">
+          <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
+            <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
               Logging Verbosity
             </span>
-            <p className="text-xs text-ink-muted">Server port is {status.data?.port ?? s.port}. Adjust detail level for server logs.</p>
+            <p className="text-xs text-muted">Server port is {status.data?.port ?? s.port}. Adjust detail level for server logs.</p>
             <div className="pt-1">
-              <Select.Root
-                value={data.logLevel}
-                onValueChange={(v) => save.mutate({ logLevel: String(v) })}
-                items={["debug", "info", "warn", "error"].map((l) => ({ value: l, label: `Level: ${l.toUpperCase()}` }))}
+              <Select
+                aria-label="Logging verbosity"
+                selectedKey={data.logLevel}
+                onSelectionChange={(key) => save.mutate({ logLevel: String(key) })}
+                className="w-full"
               >
-                <Select.Trigger className="w-full">
+                <Select.Trigger>
                   <Select.Value />
-                  <Select.Icon />
+                  <Select.Indicator />
                 </Select.Trigger>
-                <Select.Positioner>
-                  {["debug", "info", "warn", "error"].map((l) => (
-                    <Select.Item key={l} value={l}>
-                      <Select.ItemText>{`Level: ${l.toUpperCase()}`}</Select.ItemText>
-                    </Select.Item>
-                  ))}
-                </Select.Positioner>
-              </Select.Root>
+                <Select.Popover>
+                  <ListBox>
+                    {["debug", "info", "warn", "error"].map((l) => (
+                      <ListBox.Item
+                        key={l}
+                        id={l}
+                        textValue={`Level: ${l.toUpperCase()}`}
+                      >
+                        {`Level: ${l.toUpperCase()}`}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
             </div>
           </div>
         </div>
@@ -1065,14 +1061,14 @@ function Settings() {
         {/* Live binding: LAN addresses plus a restart hint when settings and
             the running listener disagree. */}
         {status.data?.restartRequired ? (
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-medium text-amber-300">
+          <p className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs font-medium text-warning-soft-foreground">
             Restart Plexy to apply the new bind address. It is still listening on{" "}
             <span className="font-mono">{status.data.bind}:{status.data.port}</span>.
           </p>
         ) : status.data?.bind === "0.0.0.0" ? (
           status.data.lanUrls?.length ? (
-            <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-2">
-              <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+            <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-2">
+              <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
                 Remote server address for this network
               </span>
               <ul className="space-y-1.5">
@@ -1082,47 +1078,47 @@ function Settings() {
                       href={url}
                       target="_blank"
                       rel="noreferrer"
-                      className="font-mono text-xs text-brand-text hover:underline break-all"
+                      className="font-mono text-xs text-muted hover:underline break-all"
                     >
                       {url}
                     </a>
                     <button
                       type="button"
                       onClick={() => copyLanUrl(url)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-hover active:scale-95 transition-all"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-all"
                       title="Copy address"
                     >
-                      {copiedUrl === url ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedUrl === url ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
                       <span>{copiedUrl === url ? "Copied" : "Copy"}</span>
                     </button>
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-ink-muted">
+              <p className="text-xs text-muted">
                 Enter one of these URLs as the server address on another device connected to the same network. Admin actions stay limited to this Mac.
               </p>
             </div>
           ) : (
-            <p className="text-xs text-ink-muted">
+            <p className="text-xs text-muted">
               No Wi-Fi or Ethernet address detected. Connect this Mac to your network, then refresh.
             </p>
           )
         ) : (
-          <p className="text-xs text-ink-muted">
+          <p className="text-xs text-muted">
             Bound to this Mac only. Choose <span className="font-mono">0.0.0.0</span> above and restart
             Plexy to let phones and TVs connect.
           </p>
         )}
 
-        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-2">
+        <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-2">
           <div>
-            <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+            <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
               Playback diagnostics
             </span>
-            <p className="mt-1 text-xs text-ink-muted">
+            <p className="mt-1 text-xs text-muted">
               Server v{status.data?.version ?? "—"} · client {window.location.origin} · API {getApiBase()}
             </p>
-            <label className="mt-2 flex items-start gap-2 text-xs text-ink-muted">
+            <label className="mt-2 flex items-start gap-2 text-xs text-muted">
               <input
                 type="checkbox"
                 checked={diagnosticsEnabled}
@@ -1131,7 +1127,7 @@ function Settings() {
                   setDiagnosticsEnabled(enabled);
                   setPlaybackDiagnosticsEnabled(enabled);
                 }}
-                className="mt-0.5 accent-brand-text"
+                className="mt-0.5 accent-muted"
               />
               <span>Share startup, rebuffer, and error details from this device with this server. The server keeps the latest 100 events in memory.</span>
             </label>
@@ -1142,8 +1138,8 @@ function Settings() {
                 .filter((event) => event.kind !== "startup")
                 .slice(0, 5)
                 .map((event, index) => (
-                  <li key={`${event.at}-${index}`} className="flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
-                    <span className={event.kind === "error" ? "text-red-400" : "text-amber-400"}>
+                  <li key={`${event.at}-${index}`} className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                    <span className={event.kind === "error" ? "text-danger-soft-foreground" : "text-warning-soft-foreground"}>
                       {event.kind === "error" ? `Playback error ${event.mediaErrorCode ?? ""}` : `Rebuffer ${event.durationMs ?? 0} ms`}
                     </span>
                     <span>{event.path ?? "unknown path"}</span>
@@ -1152,23 +1148,23 @@ function Settings() {
                 ))}
             </ul>
           ) : (
-            <p className="text-xs text-ink-muted">No recent playback errors or rebuffer events recorded.</p>
+            <p className="text-xs text-muted">No recent playback errors or rebuffer events recorded.</p>
           )}
         </div>
       </div>
 
       <SecuritySettings />
 
-      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+      <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
-              <Server size={17} className="text-brand-text" />
+            <h2 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+              <Server size={17} className="text-muted" />
               Server connection
             </h2>
-            <p className="mt-1 text-xs text-ink-muted">
+            <p className="mt-1 text-xs text-muted">
               This client is connected to{" "}
-              <span className="font-medium text-ink">{getApiBase()}</span>.
+              <span className="font-medium text-foreground">{getApiBase()}</span>.
               {hasServerOverride()
                 ? " The address is saved on this device."
                 : " It follows the address this page was opened from."}
@@ -1176,12 +1172,12 @@ function Settings() {
           </div>
           <Link
             to="/connect"
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-surface-2 px-3 text-xs font-semibold text-ink transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-surface-hover active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-surface-secondary px-3 text-xs font-semibold text-foreground transition-[background-color,border-color,color,transform] duration-150 ease-out hover:bg-surface-tertiary active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
           >
             Change server…
           </Link>
         </div>
-        <p className="text-xs leading-relaxed text-ink-muted">
+        <p className="text-xs leading-relaxed text-muted">
           Use this when Plexy is hosted on the web and should connect to a
           different Mac or home server. Playback, images and metadata all follow
           the selected address.
@@ -1192,257 +1188,170 @@ function Settings() {
       </details>
       )}
 
-      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
-        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-border/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
-            <span className="block text-sm font-semibold text-ink">Playback</span>
-            <span className="mt-1 block text-xs text-ink-muted">{s.directPlayOnly ? "Original-file playback and subtitle preferences" : "Audio preferences, quality streams, and preparation cache"}</span>
+            <span className="block text-sm font-semibold text-foreground">Playback</span>
+            <span className="mt-1 block text-xs text-muted">{s.directPlayOnly ? "Original-file playback and subtitle preferences" : "Audio, subtitle, and preparation-cache preferences"}</span>
           </span>
-          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+          <ChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
         </summary>
-        <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm">
-        <h2 className="font-display text-base font-bold text-ink flex items-center gap-2 mb-4">
-          <HardDrive size={17} className="text-brand-text" />
+        <div className="space-y-4 border-t border-border p-4 sm:p-5">
+      <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm">
+        <h2 className="font-display text-base font-bold text-foreground flex items-center gap-2 mb-4">
+          <HardDrive size={17} className="text-muted" />
           Playback Preferences
         </h2>
         <div className="mb-5 grid gap-4 md:grid-cols-2">
-          <label className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
-            <span className="block text-xs font-semibold text-ink-muted">Automatically turn on subtitles</span>
-            <p className="text-xs text-ink-muted">When playback starts, select a subtitle track in your preferred language when one is available.</p>
-            <span className="flex items-center gap-2 pt-1 text-sm text-ink">
-              <input type="checkbox" checked={playbackPrefs.autoSubtitles} onChange={(e) => updatePlaybackPrefs({ autoSubtitles: e.target.checked })} className="h-4 w-4 rounded-sm accent-[var(--color-brand)]" />
+          <label className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
+            <span className="block text-xs font-semibold text-muted">Automatically turn on subtitles</span>
+            <p className="text-xs text-muted">When playback starts, select a subtitle track in your preferred language when one is available.</p>
+            <span className="flex items-center gap-2 pt-1 text-sm text-foreground">
+              <input type="checkbox" checked={playbackPrefs.autoSubtitles} onChange={(e) => updatePlaybackPrefs({ autoSubtitles: e.target.checked })} className="h-4 w-4 rounded-sm accent-accent" />
               Turn on subtitles automatically
             </span>
           </label>
-          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
-            <span className="block text-xs font-semibold text-ink-muted">Preferred subtitle language</span>
-            <p className="text-xs text-ink-muted">Saved on this device and used when automatic subtitles are enabled.</p>
-            <Select.Root
-              value={playbackPrefs.subtitleLanguage}
-              onValueChange={(value) => updatePlaybackPrefs({ subtitleLanguage: String(value) })}
-              items={[
-                { value: "en", label: "English" }, { value: "hi", label: "Hindi" },
-                { value: "es", label: "Spanish" }, { value: "fr", label: "French" },
-                { value: "de", label: "German" }, { value: "ja", label: "Japanese" },
-                { value: "ko", label: "Korean" }, { value: "zh", label: "Chinese" },
-                { value: "pt", label: "Portuguese" }, { value: "it", label: "Italian" },
-              ]}
+          <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
+            <span className="block text-xs font-semibold text-muted">Preferred subtitle language</span>
+            <p className="text-xs text-muted">Saved on this device and used when automatic subtitles are enabled.</p>
+            <Select
+              aria-label="Preferred subtitle language"
+              selectedKey={playbackPrefs.subtitleLanguage}
+              onSelectionChange={(key) => updatePlaybackPrefs({ subtitleLanguage: String(key) })}
+              className="w-full"
             >
-              <Select.Trigger className="w-full"><Select.Value /><Select.Icon /></Select.Trigger>
-              <Select.Positioner>
-                {[
-                  { value: "en", label: "English" }, { value: "hi", label: "Hindi" },
-                  { value: "es", label: "Spanish" }, { value: "fr", label: "French" },
-                  { value: "de", label: "German" }, { value: "ja", label: "Japanese" },
-                  { value: "ko", label: "Korean" }, { value: "zh", label: "Chinese" },
-                  { value: "pt", label: "Portuguese" }, { value: "it", label: "Italian" },
-                ].map((option) => <Select.Item key={option.value} value={option.value}><Select.ItemText>{option.label}</Select.ItemText></Select.Item>)}
-              </Select.Positioner>
-            </Select.Root>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+                      {option.label}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
           </div>
         </div>
         <div className="mb-5 grid gap-4 md:grid-cols-1">
-          <label className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
-            <span className="block text-xs font-semibold text-ink-muted">Preferred audio language</span>
-            <p className="text-xs text-ink-muted">Plexy selects the matching audio track when playback starts. English is the default.</p>
-            <Select.Root
-              value={s.preferredAudioLanguage}
-              onValueChange={(value) => save.mutate({ preferredAudioLanguage: String(value) })}
-              items={[
-                { value: "en", label: "English" },
-                { value: "hi", label: "Hindi" },
-                { value: "es", label: "Spanish" },
-                { value: "fr", label: "French" },
-                { value: "de", label: "German" },
-                { value: "ja", label: "Japanese" },
-                { value: "ko", label: "Korean" },
-                { value: "zh", label: "Chinese" },
-                { value: "pt", label: "Portuguese" },
-                { value: "it", label: "Italian" },
-              ]}
+          <label className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
+            <span className="block text-xs font-semibold text-muted">Preferred audio language</span>
+            <p className="text-xs text-muted">Plexy selects the matching audio track when playback starts. English is the default.</p>
+            <Select
+              aria-label="Preferred audio language"
+              selectedKey={s.preferredAudioLanguage}
+              onSelectionChange={(key) => save.mutate({ preferredAudioLanguage: String(key) })}
+              className="w-full"
             >
-              <Select.Trigger className="w-full"><Select.Value /><Select.Icon /></Select.Trigger>
-              <Select.Positioner>
-                {[
-                  { value: "en", label: "English" }, { value: "hi", label: "Hindi" },
-                  { value: "es", label: "Spanish" }, { value: "fr", label: "French" },
-                  { value: "de", label: "German" }, { value: "ja", label: "Japanese" },
-                  { value: "ko", label: "Korean" }, { value: "zh", label: "Chinese" },
-                  { value: "pt", label: "Portuguese" }, { value: "it", label: "Italian" },
-                ].map((option) => (
-                  <Select.Item key={option.value} value={option.value}>
-                    <Select.ItemText>{option.label}</Select.ItemText>
-                  </Select.Item>
-                ))}
-              </Select.Positioner>
-            </Select.Root>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+                      {option.label}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
           </label>
-          {!s.directPlayOnly && (
-          <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-3">
-            <div>
-              <span className="block text-xs font-semibold text-ink">Generate quality streams</span>
-              <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                Select the titles to prepare at 360p, 480p, 720p, 1080p, and each video’s maximum source resolution. Choose Auto or a specific quality in the player. Plexy uses hardware acceleration when available and pauses background preparation so this finishes sooner. 4K encoding can still take a while and use extra storage.
-              </p>
-            </div>
-            <label className="block">
-              <span className="sr-only">Search titles to prepare</span>
-              <input
-                type="search"
-                value={streamTitleSearch}
-                onChange={(event) => setStreamTitleSearch(event.target.value)}
-                placeholder="Search titles…"
-                className="h-9 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
-              />
-            </label>
-            <div className="max-h-56 overflow-y-auto rounded-xl border border-line/60 bg-surface/60">
-              {filteredStreamTitles.length ? filteredStreamTitles.map((item) => (
-                <label key={item.id} className="flex cursor-pointer items-center gap-3 border-b border-line/40 px-3 py-2 last:border-b-0 hover:bg-surface-hover">
-                  <input
-                    type="checkbox"
-                    checked={selectedStreamTitleSet.has(item.id)}
-                    onChange={() => toggleStreamTitle(item.id)}
-                    className="accent-brand"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink">{item.name}{item.year ? ` (${item.year})` : ""}</span>
-                  <span className="shrink-0 text-[11px] text-ink-muted">{item.kind === "series" ? "Series" : "Movie"}</span>
-                </label>
-              )) : <p className="p-3 text-sm text-ink-muted">{streamTitles ? "No titles match that search." : "Loading titles…"}</p>}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <button
-                type="button"
-                className="font-medium text-brand-text hover:underline disabled:opacity-50"
-                disabled={!filteredStreamTitles.length}
-                onClick={() => setSelectedStreamTitleIds((ids) => [...new Set([...ids, ...filteredStreamTitles.map((item) => item.id)])])}
-              >Select shown</button>
-              <button
-                type="button"
-                className="font-medium text-ink-muted hover:text-ink disabled:opacity-50"
-                disabled={!selectedStreamTitleIds.length}
-                onClick={() => setSelectedStreamTitleIds([])}
-              >Clear selection</button>
-              <span className="ml-auto text-ink-muted">{selectedStreamTitleIds.length} selected</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant="brand"
-                disabled={!selectedStreamTitleIds.length || generateStreamVariants.isPending || Boolean(streamStatus?.queued || streamStatus?.running)}
-                onClick={() => generateStreamVariants.mutate(selectedStreamTitleIds)}
-                className="h-9 px-3 text-xs font-semibold"
-              >
-                {generateStreamVariants.isPending ? "Queueing…" : "Generate selected titles"}
-              </Button>
-              {Boolean(streamStatus?.queued || streamStatus?.running || generateStreamVariants.isPending) && (
-                <Button
-                  variant="danger"
-                  disabled={cancelStreamVariants.isPending}
-                  onClick={() => cancelStreamVariants.mutate()}
-                  className="h-9 px-3 text-xs"
-                >{cancelStreamVariants.isPending ? "Cancelling…" : "Cancel generation"}</Button>
-              )}
-              {streamStatus && streamStatus.total > 0 && (
-                <span className="text-xs text-ink-muted">
-                  {streamStatus.ready}/{streamStatus.total} ready
-                  {streamStatus.queued ? ` · ${streamStatus.queued} queued` : ""}
-                  {streamStatus.failed ? ` · ${streamStatus.failed} failed` : ""}
-                  {streamStatus.cancelled ? ` · ${streamStatus.cancelled} cancelled` : ""}
-                </span>
-              )}
-            </div>
-            {streamStatus?.current && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between gap-3 text-xs text-ink-muted">
-                  <span className="truncate">Preparing {streamStatus.current.title}</span>
-                  <span className="shrink-0">{Math.round(streamStatus.current.progress * 100)}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-surface">
-                  <div className="h-full rounded-full bg-brand transition-[width]" style={{ width: `${Math.round(streamStatus.current.progress * 100)}%` }} />
-                </div>
-              </div>
-            )}
-            {streamStatus?.error && <p role="alert" className="text-xs text-red-400">Last preparation error: {streamStatus.error}</p>}
-            {generateStreamVariants.isError && <p role="alert" className="text-xs text-red-400">{generateStreamVariants.error.message}</p>}
-            {cancelStreamVariants.isError && <p role="alert" className="text-xs text-red-400">{cancelStreamVariants.error.message}</p>}
-          </div>
-          )}
         </div>
-        {!s.directPlayOnly && <><h3 className="mb-3 text-sm font-semibold text-ink">Preparation cache</h3>
+        {!s.directPlayOnly && <><h3 className="mb-3 text-sm font-semibold text-foreground">Preparation cache</h3>
         <OptimizerSettings /></>}
       </div>
 
         </div>
       </details>
 
-      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-line/70 bg-surface">
-        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-border/70 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
-            <span className="block text-sm font-semibold text-ink">Local prefetch</span>
-            <span className="mt-1 block text-xs text-ink-muted">Warm artwork and scrub previews on this device</span>
+            <span className="block text-sm font-semibold text-foreground">Offline library</span>
+            <span className="mt-1 block text-xs text-muted">Cache the catalog and its images on this device</span>
           </span>
-          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+          <ChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
         </summary>
-        <div className="space-y-4 border-t border-line p-4 sm:p-5">
-          <PrefetchSettings />
+        <div className="space-y-4 border-t border-border p-4 sm:p-5">
+          <OfflineLibrarySettings />
         </div>
       </details>
 
-      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-red-500/25 bg-surface">
-        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-red-400 focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+      <details name="admin-settings" className="group overflow-hidden rounded-xl border border-danger/25 bg-surface">
+        <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-danger-soft-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
-            <span className="block text-sm font-semibold text-ink">Maintenance & diagnostics</span>
-            <span className="mt-1 block text-xs text-ink-muted">Reset local data and review server crashes</span>
+            <span className="block text-sm font-semibold text-foreground">Maintenance & diagnostics</span>
+            <span className="mt-1 block text-xs text-muted">Reset local data and review server crashes</span>
           </span>
-          <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+          <ChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
         </summary>
-        <div className="space-y-4 border-t border-line p-4 sm:p-5">
-      <section className="rounded-2xl border border-red-500/25 bg-surface p-5 sm:p-6 shadow-sm">
-        <h2 className="font-display text-base font-bold text-ink">Reset local Plexy data</h2>
-        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-muted">
+        <div className="space-y-4 border-t border-border p-4 sm:p-5">
+      <section className="rounded-2xl border border-danger/25 bg-surface p-5 sm:p-6 shadow-sm">
+        <h2 className="font-display text-base font-bold text-foreground">Reset local Plexy data</h2>
+        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
           Clears the local catalog, watch progress, match history, scan history, TMDB cache, and downloaded artwork and playback caches. Your configured libraries and folders, video files, and Plexy preferences are kept. Rescan to rebuild the catalog.
         </p>
         <div className="mt-4 flex flex-col items-start gap-2">
-          <Button variant="danger" onClick={() => { setResetPhrase(""); setResetOpen(true); }}>
+          <Button variant="danger" onPress={() => { setResetPhrase(""); setResetOpen(true); }}>
             <Trash2 size={14} /> Reset local data…
           </Button>
-          {resetMessage && <p className="text-xs font-medium text-brand-text">{resetMessage}</p>}
-          {resetLocalData.isError && <p role="alert" className="text-xs text-red-400">{resetLocalData.error.message}</p>}
+          {resetMessage && <p className="text-xs font-medium text-muted">{resetMessage}</p>}
+          {resetLocalData.isError && <p role="alert" className="text-xs text-danger-soft-foreground">{resetLocalData.error.message}</p>}
         </div>
-        <Dialog.Root open={resetOpen} onOpenChange={(open) => { setResetOpen(open); if (!open) setResetPhrase(""); }}>
-          <Dialog.Portal>
-            <Dialog.Backdrop />
-            <Dialog.Popup>
-              <Dialog.Title>Reset local Plexy data?</Dialog.Title>
-              <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-                This permanently removes your catalog and watch progress, scan history, and cached images and playback files. Your configured libraries and folder paths, original media files, and Plexy preferences will remain untouched. Rescan your libraries to rebuild the catalog.
-              </p>
-              <label className="mt-5 block space-y-1.5">
-                <span className="text-xs font-semibold text-ink-muted">Type RESET to continue</span>
-                <input
-                  autoFocus
-                  value={resetPhrase}
-                  onChange={(event) => setResetPhrase(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-sm text-ink outline-none focus:border-red-500/60"
-                />
-              </label>
-              <div className="mt-5 flex justify-end gap-2">
-                <Button variant="surface" onClick={() => setResetOpen(false)}>Cancel</Button>
-                <Button
-                  variant="danger"
-                  disabled={resetPhrase !== "RESET" || resetLocalData.isPending}
-                  onClick={() => resetLocalData.mutate()}
-                >
-                  {resetLocalData.isPending ? <RotateCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  {resetLocalData.isPending ? "Resetting…" : "Reset data"}
-                </Button>
-              </div>
-            </Dialog.Popup>
-          </Dialog.Portal>
-        </Dialog.Root>
+        <Modal
+          isOpen={resetOpen}
+          onOpenChange={(isOpen) => {
+            setResetOpen(isOpen);
+            if (!isOpen) setResetPhrase("");
+          }}
+        >
+          <Modal.Backdrop>
+            <Modal.Container>
+              <Modal.Dialog>
+                <Modal.Header>
+                  <Modal.Heading>Reset local Plexy data?</Modal.Heading>
+                </Modal.Header>
+                <Modal.Body>
+                  <p className="text-sm leading-relaxed text-muted">
+                    This permanently removes your catalog and watch progress, scan history, and cached images and playback files. Your configured libraries and folder paths, original media files, and Plexy preferences will remain untouched. Rescan your libraries to rebuild the catalog.
+                  </p>
+                  <label className="mt-5 block space-y-1.5">
+                    <span className="text-xs font-semibold text-muted">Type RESET to continue</span>
+                    <input
+                      autoFocus
+                      value={resetPhrase}
+                      onChange={(event) => setResetPhrase(event.target.value)}
+                      className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-danger/60"
+                    />
+                  </label>
+                </Modal.Body>
+                <Modal.Footer className="flex justify-end gap-2">
+                  <Button variant="secondary" onPress={() => setResetOpen(false)}>Cancel</Button>
+                  <Button
+                    variant="danger"
+                    isDisabled={resetPhrase !== "RESET" || resetLocalData.isPending}
+                    onPress={() => resetLocalData.mutate()}
+                  >
+                    {resetLocalData.isPending ? <RotateCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    {resetLocalData.isPending ? "Resetting…" : "Reset data"}
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
       </section>
 
       <Crashes />
+
+      <DiagnosticsLogs />
         </div>
       </details>
     </div>
@@ -1518,20 +1427,20 @@ function DesktopUpdateSettings() {
       ? `${(bytes / 1024 ** 2).toFixed(1)} MB`
       : `${(bytes / 1024).toFixed(0)} KB`;
   return (
-    <section className="rounded-2xl border border-line/70 bg-surface p-5 shadow-sm sm:p-6">
+    <section className="rounded-2xl border border-border/70 bg-surface p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="font-display text-base font-bold text-ink">Plexy Beta app updates</h2>
-          <p className="mt-1 text-xs text-ink-muted">Installed version: {installedVersion ?? "…"}{currentBuild ? ` · build ${currentBuild}` : ""}</p>
-          {updateStatus?.latestVersion && <p className="mt-1 text-xs text-ink-muted">Latest release: {updateStatus.latestVersion}{latestBuild ? ` · build ${latestBuild}` : ""}</p>}
+          <h2 className="font-display text-base font-bold text-foreground">Plexy Beta app updates</h2>
+          <p className="mt-1 text-xs text-muted">Installed version: {installedVersion ?? "…"}{currentBuild ? ` · build ${currentBuild}` : ""}</p>
+          {updateStatus?.latestVersion && <p className="mt-1 text-xs text-muted">Latest release: {updateStatus.latestVersion}{latestBuild ? ` · build ${latestBuild}` : ""}</p>}
         </div>
         <div className="flex gap-2">
-          <Button variant="surface" disabled={checking || installing} onClick={() => void check()}>
+          <Button variant="secondary" isDisabled={checking || installing} onPress={() => void check()}>
             {checking ? <RotateCw size={14} className="animate-spin" /> : <RotateCw size={14} />}
             {checking ? "Checking…" : "Check for updates"}
           </Button>
           {updateStatus?.updateAvailable && updateStatus.canInstall && (
-            <Button disabled={installing || checking} onClick={() => void install()}>
+            <Button isDisabled={installing || checking} onPress={() => void install()}>
               {installing ? <RotateCw size={14} className="animate-spin" /> : <Download size={14} />}
               {installing ? "Preparing…" : "Install update"}
             </Button>
@@ -1539,13 +1448,13 @@ function DesktopUpdateSettings() {
         </div>
       </div>
       {installing && updateProgress && (
-        <div className="mt-4 rounded-xl border border-line/70 bg-surface p-4" aria-live="polite">
+        <div className="mt-4 rounded-xl border border-border/70 bg-surface p-4" aria-live="polite">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium text-ink">{progressLabel}</span>
-            {progressPercent !== null && <span className="tabular-nums text-ink-muted">{progressPercent}%</span>}
+            <span className="font-medium text-foreground">{progressLabel}</span>
+            {progressPercent !== null && <span className="tabular-nums text-muted">{progressPercent}%</span>}
           </div>
           <div
-            className="mt-3 h-2 overflow-hidden rounded-full bg-line"
+            className="mt-3 h-2 overflow-hidden rounded-sm bg-border"
             role="progressbar"
             aria-label={progressLabel}
             aria-valuemin={0}
@@ -1553,18 +1462,18 @@ function DesktopUpdateSettings() {
             aria-valuenow={progressPercent ?? undefined}
           >
             <div
-              className={`h-full rounded-full bg-primary transition-[width] duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
+              className={`h-full rounded-sm bg-accent transition-[width] duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
               style={progressPercent === null ? undefined : { width: `${progressPercent}%` }}
             />
           </div>
           {updateProgress.phase === "downloading" && (
-            <p className="mt-2 text-xs text-ink-muted">
+            <p className="mt-2 text-xs text-muted">
               {formatUpdateBytes(downloaded)} downloaded
               {total !== null ? ` · ${formatUpdateBytes(Math.max(0, total - downloaded))} left` : ""}
             </p>
           )}
           {updateProgress.phase === "waiting-for-approval" && (
-            <p className="mt-2 text-xs text-ink-muted">
+            <p className="mt-2 text-xs text-muted">
               {updateStatus?.requiresAdministrator
                 ? "macOS will ask you to authorize replacing Plexy in /Applications. Plexy does not save your password."
                 : "Plexy is ready to replace the app and reopen."}
@@ -1573,11 +1482,11 @@ function DesktopUpdateSettings() {
         </div>
       )}
       {updateStatus?.requiresAdministrator && (
-        <p className="mt-3 text-xs text-ink-muted">
+        <p className="mt-3 text-xs text-muted">
           Because Plexy is in the shared /Applications folder, macOS asks for administrator approval for each update. For password-free updates, move Plexy Beta.app to your user Applications folder (~/Applications) and open it from there. Plexy never stores your password.
         </p>
       )}
-      {message && <p role="status" className={`mt-3 text-xs ${message.startsWith("Could not") || message.includes("missing") ? "text-amber-400" : "text-ink-muted"}`}>{message}</p>}
+      {message && <p role="status" className={`mt-3 text-xs ${message.startsWith("Could not") || message.includes("missing") ? "text-warning-soft-foreground" : "text-muted"}`}>{message}</p>}
     </section>
   );
 }
@@ -1625,9 +1534,9 @@ function NumberSetting({
   };
 
   return (
-    <label className="block rounded-xl border border-line/60 bg-surface-2/60 p-3.5 space-y-1.5">
-      <span className="block text-xs font-semibold text-ink-muted">{label}</span>
-      <span className="block text-xs leading-relaxed text-ink-muted">{hint}</span>
+    <label className="block rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
+      <span className="block text-xs font-semibold text-muted">{label}</span>
+      <span className="block text-xs leading-relaxed text-muted">{hint}</span>
       <span className="flex items-center gap-2 pt-1">
         <input
           type="number"
@@ -1641,9 +1550,9 @@ function NumberSetting({
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();
           }}
-          className="h-9 w-24 rounded-lg border border-line bg-surface px-2 text-sm text-ink outline-none focus:border-brand/70"
+          className="h-9 w-24 rounded-lg border border-border bg-surface px-2 text-sm text-foreground outline-none focus:border-accent/70"
         />
-        {suffix && <span className="text-xs text-ink-muted">{suffix}</span>}
+        {suffix && <span className="text-xs text-muted">{suffix}</span>}
       </span>
     </label>
   );
@@ -1654,17 +1563,16 @@ function NumberSetting({
  * The cache lives in this browser/app profile, so the numbers and the clear
  * action here never describe another device's storage.
  */
-function PrefetchSettings() {
+function OfflineLibrarySettings() {
   const queryClient = useQueryClient();
   const { data } = useQuery(queries.settings());
-  const local = localPrefetchContext();
   const stats = useQuery({
     queryKey: ["prefetch-stats"],
     queryFn: getPrefetchStats,
-    enabled: local,
     refetchInterval: 15_000,
   });
-  const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(getLastSyncedAt);
 
   const save = useMutation({
     mutationFn: api.updateSettings,
@@ -1673,13 +1581,37 @@ function PrefetchSettings() {
     },
   });
 
+  const sync = useMutation({
+    mutationFn: syncLibrary,
+    onSuccess: (result) => {
+      setLastSyncedAt(getLastSyncedAt());
+      setMessage(
+        result.ok
+          ? `Cached ${result.titles} title${result.titles === 1 ? "" : "s"}, ${result.people} cast page${
+              result.people === 1 ? "" : "s"
+            }, and ${result.assets} image${result.assets === 1 ? "" : "s"}.`
+          : result.reason === "offline"
+            ? "Connect to the server to refresh the offline library."
+            : result.reason === "playing"
+              ? "Playback is running. Refresh the library once it ends."
+              : `Could not refresh the library${result.message ? `: ${result.message}` : "."}`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["prefetch-stats"] });
+    },
+  });
+
   const clear = useMutation({
-    mutationFn: clearPrefetchCache,
+    mutationFn: async () => {
+      const removed = await clearPrefetchCache();
+      await clearLibraryCache();
+      setLastSyncedAt(null);
+      return removed;
+    },
     onSuccess: ({ removed, bytes }) => {
-      setCacheMessage(
+      setMessage(
         removed
-          ? `Cleared ${removed} prefetched item${removed === 1 ? "" : "s"} (~${formatMegabytes(bytes)} MB).`
-          : "The prefetch cache is already empty.",
+          ? `Cleared ${removed} cached image${removed === 1 ? "" : "s"} (~${formatMegabytes(bytes)} MB) and the saved catalog.`
+          : "The offline cache is already empty.",
       );
       void queryClient.invalidateQueries({ queryKey: ["prefetch-stats"] });
     },
@@ -1691,131 +1623,91 @@ function PrefetchSettings() {
   const budgetMb = measured ? Math.round(measured.budgetBytes / (1024 * 1024)) : s.prefetchMaxCacheMb;
 
   return (
-    <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+    <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
       <div>
-        <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
-          <Download size={17} className="text-brand-text" />
-          Local prefetch
+        <h2 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+          <Download size={17} className="text-muted" />
+          Offline library
         </h2>
-        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-ink-muted">
-          Downloads artwork and existing scrub-preview frames ahead of time into this browser or app’s own
-          cache. Plexy only fetches images the server already has: prefetch never prepares a stream,
-          extracts trickplay, or creates thumbnails. Work runs only in the desktop app or a browser opened
-          on the server machine, and only while this preference is on.
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted">
+          Saves the catalog, title pages, cast pages, and the images they use on this device. With the
+          internet down but your Plexy server reachable, every screen still renders and local files still
+          play. The sync is a normal client read: it never prepares, converts, or scans anything.
         </p>
       </div>
 
-      <label className="flex items-start gap-2.5 text-sm text-ink cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={s.prefetchAggressiveLocal}
-          onChange={(event) => save.mutate({ prefetchAggressiveLocal: event.target.checked })}
-          className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
-        />
-        <span>
-          Prefetch assets on this local viewer
-          <span className="mt-0.5 block text-xs text-ink-muted">
-            Remotely hosted viewers and other devices on the network ignore this setting.
-          </span>
-        </span>
-      </label>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex items-start gap-2.5 rounded-xl border border-line/60 bg-surface-2/60 p-3.5 text-sm text-ink cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={s.prefetchOnHover}
-            onChange={(event) => save.mutate({ prefetchOnHover: event.target.checked })}
-            className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
-          />
-          <span>
-            On poster hover
-            <span className="mt-0.5 block text-xs text-ink-muted">
-              Warm a card’s poster and backdrop after a short hover or keyboard focus.
-            </span>
-          </span>
-        </label>
-        <label className="flex items-start gap-2.5 rounded-xl border border-line/60 bg-surface-2/60 p-3.5 text-sm text-ink cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={s.prefetchOnScroll}
-            onChange={(event) => save.mutate({ prefetchOnScroll: event.target.checked })}
-            className="mt-0.5 h-4 w-4 rounded-sm accent-[var(--color-brand)]"
-          />
-          <span>
-            Near the visible rows and episodes
-            <span className="mt-0.5 block text-xs text-ink-muted">
-              Warm a small window of upcoming cards and episode thumbnails.
-            </span>
-          </span>
-        </label>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <NumberSetting
-          label="Concurrent downloads"
-          hint="Maximum speculative requests in flight (1–10)."
+          label="Concurrent image downloads"
+          hint="Maximum cache requests in flight (1–10)."
           value={s.prefetchMaxConcurrent}
           min={1}
           max={10}
           onCommit={(value) => save.mutate({ prefetchMaxConcurrent: value })}
         />
         <NumberSetting
-          label="Cache budget"
-          hint="Estimated ceiling for this viewer’s prefetch cache (10–500 MB)."
+          label="Image cache budget"
+          hint="Estimated ceiling for this device’s offline images (10–500 MB)."
           value={s.prefetchMaxCacheMb}
           min={10}
           max={500}
           suffix="MB"
           onCommit={(value) => save.mutate({ prefetchMaxCacheMb: value })}
         />
-        <NumberSetting
-          label="Upcoming items"
-          hint="How many cards a row may warm beyond what is visible (1–20)."
-          value={s.prefetchNextCount}
-          min={1}
-          max={20}
-          onCommit={(value) => save.mutate({ prefetchNextCount: value })}
-        />
       </div>
 
-      {save.isError && <p role="alert" className="text-xs text-red-400">{save.error.message}</p>}
+      {save.isError && <p role="alert" className="text-xs text-danger-soft-foreground">{save.error.message}</p>}
 
-      <div className="border-t border-line/60 pt-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="border-t border-border/60 pt-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-ink">This viewer’s cache</h3>
-            <p className="text-xs text-ink-muted">
-              {!local
-                ? "Cache details are available only on the viewer’s own machine."
-                : measured && !measured.supported
-                  ? "This browser cannot use a managed asset cache, so prefetch stays inactive."
-                  : measured
-                    ? `${measured.count} item${measured.count === 1 ? "" : "s"} · ~${formatMegabytes(measured.bytes)} MB of ${budgetMb} MB estimate${
-                        measured.lastReconciledAt ? ` · reconciled ${new Date(measured.lastReconciledAt).toLocaleString()}` : ""
-                      }`
-                    : "Reading cache usage…"}
+            <h3 className="text-sm font-semibold text-foreground">This device’s copy</h3>
+            <p className="text-xs text-muted">
+              {measured && !measured.supported
+                ? "This browser cannot use managed offline storage, so the library stays online-only here."
+                : measured
+                  ? `${measured.count} image${measured.count === 1 ? "" : "s"} · ~${formatMegabytes(measured.bytes)} MB of ${budgetMb} MB estimate`
+                  : "Reading cache usage…"}
             </p>
-            <p className="text-[11px] leading-relaxed text-ink-muted">
-              Browser storage can evict entries at any time, so this is an estimate, not disk usage. Clearing
-              removes only Plexy’s prefetched copies; server artwork, prepared streams, and library files stay.
+            <p className="text-xs text-muted">
+              {lastSyncedAt
+                ? `Last synced ${new Date(lastSyncedAt).toLocaleString()}.`
+                : "Not synced yet. It runs automatically on first load and after each scan."}
+            </p>
+            <p className="text-[11px] leading-relaxed text-muted">
+              Browser storage can evict entries at any time, so this is an estimate, not disk usage.
+              Clearing removes only this device’s copies; server artwork and library files stay.
             </p>
           </div>
-          <Button
-            variant="surface"
-            onClick={() => {
-              setCacheMessage(null);
-              clear.mutate();
-            }}
-            disabled={!local || clear.isPending}
-            className="h-9 shrink-0 px-3 text-xs font-semibold"
-          >
-            {clear.isPending && <RotateCw size={13} className="animate-spin" />}
-            {clear.isPending ? "Clearing…" : "Clear prefetch cache"}
-          </Button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              onPress={() => {
+                setMessage(null);
+                sync.mutate();
+              }}
+              isDisabled={sync.isPending}
+              className="h-9 px-3 text-xs font-semibold"
+            >
+              {sync.isPending && <RotateCw size={13} className="animate-spin" />}
+              {sync.isPending ? "Syncing…" : "Refresh offline library"}
+            </Button>
+            <Button
+              variant="secondary"
+              onPress={() => {
+                setMessage(null);
+                clear.mutate();
+              }}
+              isDisabled={clear.isPending}
+              className="h-9 px-3 text-xs font-semibold"
+            >
+              {clear.isPending && <RotateCw size={13} className="animate-spin" />}
+              {clear.isPending ? "Clearing…" : "Clear cache"}
+            </Button>
+          </div>
         </div>
-        {cacheMessage && <p className="mt-2 text-xs font-medium text-brand-text">{cacheMessage}</p>}
-        {clear.isError && <p role="alert" className="mt-2 text-xs text-red-400">{clear.error.message}</p>}
+        {message && <p className="mt-2 text-xs font-medium text-muted">{message}</p>}
+        {sync.isError && <p role="alert" className="mt-2 text-xs text-danger-soft-foreground">{sync.error.message}</p>}
+        {clear.isError && <p role="alert" className="mt-2 text-xs text-danger-soft-foreground">{clear.error.message}</p>}
       </div>
     </div>
   );
@@ -1862,13 +1754,13 @@ function SecuritySettings() {
   };
 
   return (
-    <div className="rounded-2xl border border-line/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
+    <div className="rounded-2xl border border-border/70 bg-surface p-5 sm:p-6 shadow-sm space-y-4">
       <div>
-        <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
-          <ShieldCheck size={17} className="text-brand-text" />
+        <h2 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+          <ShieldCheck size={17} className="text-muted" />
           Security
         </h2>
-        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-muted">
+        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
           Phones, TVs, and other computers must pair once before they can browse
           or stream. Each device signs in to an individual account. Paired devices stay
           signed in across app updates.
@@ -1876,19 +1768,19 @@ function SecuritySettings() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2 rounded-xl border border-line/60 bg-surface-2/60 p-3.5">
-          <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+        <div className="space-y-2 rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5">
+          <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
             Pair a new device
           </span>
-          <p className="text-xs leading-relaxed text-ink-muted">
+          <p className="text-xs leading-relaxed text-muted">
             Generate a six-digit code for your own account, then enter it on the other device. Each
             code works once and expires after 10 minutes.
           </p>
-          <label className="block text-xs">Confirm your password<input type="password" autoComplete="current-password" value={pairPassword} onChange={event => setPairPassword(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-line bg-surface px-3" /></label>
+          <label className="block text-xs">Confirm your password<input type="password" autoComplete="current-password" value={pairPassword} onChange={event => setPairPassword(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-border bg-surface px-3" /></label>
           <Button
-            variant="surface"
-            disabled={mint.isPending || !pairPassword}
-            onClick={() => mint.mutate()}
+            variant="secondary"
+            isDisabled={mint.isPending || !pairPassword}
+            onPress={() => mint.mutate()}
             className="mt-1"
           >
             {mint.isPending ? <RotateCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
@@ -1896,45 +1788,45 @@ function SecuritySettings() {
           </Button>
 
           {pairing && (
-            <div className="mt-2 rounded-xl border border-brand/30 bg-brand/10 p-3">
+            <div className="mt-2 rounded-xl border border-accent/30 bg-accent/10 p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-2xl tracking-[0.2em] tabular-nums text-ink">
+                <span className="font-mono text-2xl tracking-[0.2em] tabular-nums text-foreground">
                   {pairing.code}
                 </span>
                 <button
                   type="button"
                   onClick={copyCode}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink transition-all hover:bg-surface-hover active:scale-95"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground transition-all hover:bg-surface-tertiary active:scale-95"
                 >
-                  {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                  {copied ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
                   {copied ? "Copied" : "Copy"}
                 </button>
               </div>
-              <p className="mt-1.5 text-[11px] text-ink-muted">
+              <p className="mt-1.5 text-[11px] text-muted">
                 Valid until {formatPairingExpiry(pairing.expiresAt)}.
               </p>
             </div>
           )}
           {mint.isError && (
-            <p role="alert" className="text-xs text-red-400">{mint.error.message}</p>
+            <p role="alert" className="text-xs text-danger-soft-foreground">{mint.error.message}</p>
           )}
         </div>
 
-        <div className="space-y-2 rounded-xl border border-line/60 bg-surface-2/60 p-3.5">
-          <span className="block text-xs font-semibold text-ink-muted uppercase tracking-wider">
+        <div className="space-y-2 rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5">
+          <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
             Paired devices
           </span>
           {devices.isLoading ? (
-            <p className="text-xs text-ink-muted">Loading…</p>
+            <p className="text-xs text-muted">Loading…</p>
           ) : devices.data?.length ? (
             <ul className="space-y-2">
               {devices.data.map((device) => (
                 <li key={device.id} className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <span className="block truncate text-xs font-medium text-ink">
+                    <span className="block truncate text-xs font-medium text-foreground">
                       {device.name}
                     </span>
-                    <span className="block text-[11px] text-ink-muted">
+                    <span className="block text-[11px] text-muted">
                       {device.revoked
                         ? "Revoked"
                         : device.lastSeen
@@ -1942,7 +1834,7 @@ function SecuritySettings() {
                           : "Not used yet"}
                     </span>
                     {!device.revoked && (
-                      <span className="block text-[11px] text-ink-muted">
+                      <span className="block text-[11px] text-muted">
                         {device.lastIp ? `Last connected from ${device.lastIp}` : "IP address appears after its next connection"}
                       </span>
                     )}
@@ -1952,7 +1844,7 @@ function SecuritySettings() {
                       type="button"
                       onClick={() => remove.mutate(device.id)}
                       disabled={remove.isPending}
-                      className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-50"
+                      className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-tertiary hover:text-foreground disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -1961,7 +1853,7 @@ function SecuritySettings() {
                       type="button"
                       onClick={() => revoke.mutate(device.id)}
                       disabled={revoke.isPending}
-                      className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-300 transition-all hover:bg-red-500/20 active:scale-95 disabled:opacity-50"
+                      className="shrink-0 rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger-soft-foreground transition-all hover:bg-danger/20 active:scale-95 disabled:opacity-50"
                     >
                       Revoke
                     </button>
@@ -1970,21 +1862,21 @@ function SecuritySettings() {
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-ink-muted">No devices paired yet.</p>
+            <p className="text-xs text-muted">No devices paired yet.</p>
           )}
           {devices.isError && (
-            <p role="alert" className="text-xs text-red-400">{devices.error.message}</p>
+            <p role="alert" className="text-xs text-danger-soft-foreground">{devices.error.message}</p>
           )}
           {revoke.isError && (
-            <p role="alert" className="text-xs text-red-400">{revoke.error.message}</p>
+            <p role="alert" className="text-xs text-danger-soft-foreground">{revoke.error.message}</p>
           )}
           {remove.isError && (
-            <p role="alert" className="text-xs text-red-400">{remove.error.message}</p>
+            <p role="alert" className="text-xs text-danger-soft-foreground">{remove.error.message}</p>
           )}
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-ink-muted">
+      <p className="text-[11px] leading-relaxed text-muted">
         Credentials are stored as hashes in the library database and survive app
         updates. Admin actions still work only from this computer.
       </p>
@@ -2045,7 +1937,7 @@ function OptimizerSettings() {
     },
   });
 
-  if (!data) return <p className="text-sm text-ink-muted">Preparation status unavailable.</p>;
+  if (!data) return <p className="text-sm text-muted">Preparation status unavailable.</p>;
 
   const done = data.counts.done ?? 0;
   const total = Object.values(data.counts).reduce((sum, n) => sum + n, 0);
@@ -2056,17 +1948,17 @@ function OptimizerSettings() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
-          <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Prepared Files</span>
-          <p className="mt-1 text-lg font-bold text-ink">{done} <span className="text-xs text-ink-muted font-normal">/ {total}</span></p>
+        <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
+          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Prepared Files</span>
+          <p className="mt-1 text-lg font-bold text-foreground">{done} <span className="text-xs text-muted font-normal">/ {total}</span></p>
         </div>
-        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
-          <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Storage Used</span>
-          <p className="mt-1 text-lg font-bold text-ink">{cacheGb} <span className="text-xs text-ink-muted font-normal">GB</span></p>
+        <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
+          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Storage Used</span>
+          <p className="mt-1 text-lg font-bold text-foreground">{cacheGb} <span className="text-xs text-muted font-normal">GB</span></p>
         </div>
-        <div className="rounded-xl border border-line/60 bg-surface-2/60 p-3">
-          <span className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider block">Status</span>
-          <p className="mt-1 text-sm font-semibold text-brand-text truncate">
+        <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
+          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Status</span>
+          <p className="mt-1 text-sm font-semibold text-muted truncate">
             {data.running
               ? current
                 ? `Preparing (${Math.round(current.progress * 100)}%)`
@@ -2080,13 +1972,13 @@ function OptimizerSettings() {
 
       {total > 0 && (
         <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-ink-muted">
+          <div className="flex justify-between text-xs text-muted">
             <span>Overall completion</span>
             <span>{percent}%</span>
           </div>
-          <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden border border-line/40">
+          <div className="w-full bg-surface-secondary rounded-sm h-2 overflow-hidden border border-border/40">
             <div
-              className="bg-brand h-full rounded-full transition-all duration-300"
+              className="bg-accent h-full rounded-sm transition-all duration-300"
               style={{ width: `${percent}%` }}
             />
           </div>
@@ -2094,10 +1986,10 @@ function OptimizerSettings() {
       )}
 
       {data.cacheDir && (
-        <div className="rounded-xl border border-line/60 bg-surface-2/40 p-3 space-y-2">
+        <div className="rounded-xl border border-border/60 bg-surface-secondary/40 p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
-              <Folder size={14} className="text-brand-text" />
+            <div className="flex items-center gap-2 text-xs font-semibold text-muted">
+              <Folder size={14} className="text-muted" />
               <span>Storage Directory</span>
             </div>
             <button
@@ -2107,14 +1999,14 @@ function OptimizerSettings() {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-hover active:scale-95 transition-all"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-all"
               title="Copy path"
             >
-              {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              {copied ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
               <span>{copied ? "Copied" : "Copy"}</span>
             </button>
           </div>
-          <p className="font-mono text-xs text-ink break-all select-all bg-surface p-2 rounded-lg border border-line/50">
+          <p className="font-mono text-xs text-foreground break-all select-all bg-surface p-2 rounded-lg border border-border/50">
             {data.cacheDir}
           </p>
         </div>
@@ -2125,23 +2017,23 @@ function OptimizerSettings() {
           <button
             type="button"
             onClick={() => setShowFiles(!showFiles)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:underline"
           >
             {showFiles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             <span>{showFiles ? "Hide prepared files" : `Show prepared files (${data.files.length})`}</span>
           </button>
           {showFiles && (
-            <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-line bg-surface divide-y divide-line text-xs">
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-border bg-surface divide-y divide-border text-xs">
               {data.files.map((file) => (
                 <div key={file.id} className="p-2.5 flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-ink truncate">{file.title || file.path.split("/").pop()}</p>
-                    <p className="font-mono text-[11px] text-ink-muted truncate" title={file.optimizedPath ?? file.path}>
+                    <p className="font-medium text-foreground truncate">{file.title || file.path.split("/").pop()}</p>
+                    <p className="font-mono text-[11px] text-muted truncate" title={file.optimizedPath ?? file.path}>
                       {file.optimizedPath ?? file.path}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="font-mono text-ink text-xs">{(file.optimizedSize / 1024 ** 2).toFixed(1)} MB</span>
+                    <span className="font-mono text-foreground text-xs">{(file.optimizedSize / 1024 ** 2).toFixed(1)} MB</span>
                   </div>
                 </div>
               ))}
@@ -2151,30 +2043,30 @@ function OptimizerSettings() {
       )}
 
       {/* Background preparation is opt-in to keep idle machines quiet. */}
-      <label className="flex items-center gap-2.5 text-xs sm:text-sm text-ink cursor-pointer select-none">
+      <label className="flex items-center gap-2.5 text-xs sm:text-sm text-foreground cursor-pointer select-none">
         <input
           type="checkbox"
           checked={data.enabled}
           onChange={(e) => save.mutate({ autoOptimize: e.target.checked })}
-          className="h-4 w-4 rounded-sm accent-[var(--color-brand)]"
+          className="h-4 w-4 rounded-sm accent-accent"
         />
-        <span>Automatically prepare files in the background</span>
+        <span>Prepare only files that cannot play directly</span>
       </label>
 
       <div className="flex flex-col sm:flex-row sm:items-end gap-3 pt-2">
         <div className="space-y-1">
-          <span className="text-xs text-ink-muted font-medium">Cache limit (GB, 0 = unlimited)</span>
+          <span className="text-xs text-muted font-medium">Cache limit (GB, 0 = unlimited)</span>
           <div className="flex items-center gap-2">
             <input
               type="number"
               min={0}
               value={cap}
               onChange={(e) => setCap(e.target.value)}
-              className="h-9 w-28 rounded-lg border border-line bg-surface-2 px-3 text-xs sm:text-sm text-ink outline-none focus:border-brand/70"
+              className="h-9 w-28 rounded-lg border border-border bg-surface-secondary px-3 text-xs sm:text-sm text-foreground outline-none focus:border-accent/70"
             />
             <Button
-              variant="surface"
-              onClick={() => save.mutate({ optimizeMaxCacheGb: Math.max(0, Math.round(Number(cap) || 0)) })}
+              variant="secondary"
+              onPress={() => save.mutate({ optimizeMaxCacheGb: Math.max(0, Math.round(Number(cap) || 0)) })}
               className="h-9 px-3 text-xs"
             >
               Save
@@ -2184,19 +2076,19 @@ function OptimizerSettings() {
 
         <div className="flex items-center gap-2 sm:ml-auto">
           <Button
-            variant="surface"
-            onClick={() => run.mutate()}
-            disabled={run.isPending}
+            variant="secondary"
+            onPress={() => run.mutate()}
+            isDisabled={run.isPending}
             className="h-9 px-3 text-xs font-semibold"
           >
             Prepare Now
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
+            onPress={() => {
               if (confirm("Delete every prepared copy? Original media is untouched.")) clear.mutate();
             }}
-            disabled={clear.isPending}
+            isDisabled={clear.isPending}
             className="h-9 px-3 text-xs"
           >
             Clear Cache
@@ -2204,7 +2096,7 @@ function OptimizerSettings() {
         </div>
       </div>
 
-      {message && <p className="text-xs text-brand-text font-medium">{message}</p>}
+      {message && <p className="text-xs text-muted font-medium">{message}</p>}
     </div>
   );
 }
@@ -2212,13 +2104,35 @@ function OptimizerSettings() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink-muted">{title}</h2>
+      <h2 className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-muted">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
 }
 
-// --- logs --------------------------------------------------------------------
+// --- logs -------------------------------------------------------------------
+
+/// Logs are a debugging surface, not navigation. They live collapsed under
+/// Settings → Advanced → Diagnostics, and the log query only runs while the
+/// panel is open.
+function DiagnosticsLogs() {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="group mt-4 overflow-hidden rounded-xl border border-border/70 bg-surface"
+      onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
+        <span>
+          <span className="block text-sm font-semibold text-foreground">Diagnostics</span>
+          <span className="mt-1 block text-xs text-muted">Live server log tail and filters</span>
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-border p-4 sm:p-5">{open && <Logs />}</div>
+    </details>
+  );
+}
 
 const MAX_LOGS = 500;
 
@@ -2253,10 +2167,10 @@ const LOG_LEVELS = ["all", "debug", "info", "warn", "error"] as const;
 type LogLevelFilter = (typeof LOG_LEVELS)[number];
 
 const LEVEL_STYLE: Record<string, string> = {
-  debug: "bg-surface-2 text-ink-muted border border-white/10",
-  info: "bg-brand/15 text-brand-text border border-brand/25",
-  warn: "bg-amber/15 text-amber border border-amber/25",
-  error: "bg-red-500/15 text-red-400 border border-red-500/25",
+  debug: "bg-surface-secondary text-muted border border-white/10",
+  info: "bg-accent/15 text-muted border border-accent/25",
+  warn: "bg-warning/15 text-warning border border-warning/25",
+  error: "bg-danger/15 text-danger-soft-foreground border border-danger/25",
 };
 
 function logTime(entry: LogEntry): string {
@@ -2331,22 +2245,22 @@ function Logs() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-line/70 bg-surface p-3.5 sm:p-4 space-y-3 shadow-sm">
+      <div className="rounded-2xl border border-border/70 bg-surface p-3.5 sm:p-4 space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 text-xs sm:text-sm text-ink-muted transition-colors focus-within:border-brand/70">
-            <Search size={14} className="shrink-0 text-ink-muted/80" aria-hidden />
+          <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-secondary px-3 text-xs sm:text-sm text-muted transition-colors focus-within:border-accent/70">
+            <Search size={14} className="shrink-0 text-muted/80" aria-hidden />
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search log messages…"
               aria-label="Filter log lines"
-              className="w-full min-w-0 bg-transparent text-ink placeholder:text-ink-muted/70 outline-none"
+              className="w-full min-w-0 bg-transparent text-foreground placeholder:text-muted/70 outline-none"
             />
             {filter && (
               <button
                 type="button"
                 onClick={() => setFilter("")}
-                className="text-ink-muted hover:text-ink"
+                className="text-muted hover:text-foreground"
               >
                 <X size={13} />
               </button>
@@ -2354,42 +2268,48 @@ function Logs() {
           </label>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Select.Root
-              value={component}
-              onValueChange={(v) => setComponent(String(v))}
-              items={[
-                { value: "all", label: "All Components" },
-                ...components.map((c) => ({ value: c, label: c })),
-              ]}
+            <Select
+              aria-label="Filter by component"
+              selectedKey={component}
+              onSelectionChange={(key) => setComponent(String(key))}
+              className="min-w-36"
             >
-              <Select.Trigger aria-label="Filter by component" className="h-9 min-w-36 text-xs">
+              <Select.Trigger className="h-9 text-xs">
                 <Select.Value />
-                <Select.Icon />
+                <Select.Indicator />
               </Select.Trigger>
-              <Select.Positioner>
-                <Select.Item value="all"><Select.ItemText>All Components</Select.ItemText></Select.Item>
-                {components.map((c) => (
-                  <Select.Item key={c} value={c}><Select.ItemText>{c}</Select.ItemText></Select.Item>
-                ))}
-              </Select.Positioner>
-            </Select.Root>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="all" textValue="All Components">
+                    All Components
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                  {components.map((c) => (
+                    <ListBox.Item key={c} id={c} textValue={c}>
+                      {c}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
 
             <Button
-              variant="surface"
-              onClick={() => void copy()}
+              variant="secondary"
+              onPress={() => void copy()}
               className="h-9 px-3 text-xs font-medium"
-              title="Copy filtered logs"
+              aria-label="Copy filtered logs"
             >
-              {copied ? <CheckCircle2 size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              {copied ? <CheckCircle2 size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
               <span className="hidden min-[400px]:inline">{copied ? "Copied" : "Copy"}</span>
             </Button>
 
             <Button
-              variant="surface"
-              onClick={download}
-              disabled={entries.length === 0}
+              variant="secondary"
+              onPress={download}
+              isDisabled={entries.length === 0}
               className="h-9 px-3 text-xs font-medium"
-              title="Download full log file"
+              aria-label="Download full log file"
             >
               <Download size={13} />
               <span className="hidden min-[400px]:inline">Export</span>
@@ -2397,10 +2317,10 @@ function Logs() {
 
             {typeof window !== "undefined" && window.electronAPI?.openLogs && (
               <Button
-                variant="surface"
-                onClick={() => void window.electronAPI?.openLogs()}
+                variant="secondary"
+                onPress={() => void window.electronAPI?.openLogs()}
                 className="h-9 px-3 text-xs font-medium"
-                title="Reveal Logs in Finder"
+                aria-label="Reveal Logs in Finder"
               >
                 <Folder size={13} />
                 <span className="hidden min-[400px]:inline">Finder</span>
@@ -2409,7 +2329,7 @@ function Logs() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-line/40">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-border/40">
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by level">
             {LOG_LEVELS.map((l) => (
               <button
@@ -2419,14 +2339,14 @@ function Logs() {
                 className={cx(
                   "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-all active:scale-95",
                   level === l
-                    ? "bg-ink text-canvas"
-                    : "bg-surface-2 text-ink-muted hover:text-ink hover:bg-surface-hover",
+                    ? "bg-foreground text-background"
+                    : "bg-surface-secondary text-muted hover:text-foreground hover:bg-surface-tertiary",
                 )}
               >
                 <span>{l}</span>
                 <span className={cx(
                   "tabular-nums text-[10px] px-1 py-0.2 rounded-sm font-bold",
-                  level === l ? "bg-black/10 text-canvas" : "text-ink-muted/70",
+                  level === l ? "bg-black/10 text-background" : "text-muted/70",
                 )}>
                   {l === "all" ? allEntries.length : levelCounts[l] ?? 0}
                 </span>
@@ -2434,28 +2354,28 @@ function Logs() {
             ))}
           </div>
 
-          <label className="inline-flex items-center gap-2 text-xs text-ink-muted cursor-pointer select-none">
+          <label className="inline-flex items-center gap-2 text-xs text-muted cursor-pointer select-none">
             <span className={cx(
-              "h-2 w-2 rounded-full transition-colors",
-              follow ? "bg-emerald-400 animate-pulse" : "bg-zinc-600",
+              "h-2 w-2 rounded-sm transition-colors",
+              follow ? "bg-success animate-pulse" : "bg-default",
             )} />
             <input
               type="checkbox"
               checked={follow}
               onChange={(e) => setFollow(e.target.checked)}
-              className="h-3.5 w-3.5 rounded-sm accent-[var(--color-brand)]"
+              className="h-3.5 w-3.5 rounded-sm accent-accent"
             />
             <span>Follow newest</span>
           </label>
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-ink-muted px-1">
+      <div className="flex items-center justify-between text-xs text-muted px-1">
         <span>Showing {entries.length} of {allEntries.length} lines (buffer {MAX_LOGS})</span>
-        {isError && <span className="text-red-400 font-medium">Failed to read live logs</span>}
+        {isError && <span className="text-danger-soft-foreground font-medium">Failed to read live logs</span>}
       </div>
 
-      <div className="rounded-2xl border border-line/70 bg-[#0d0d0f] shadow-inner font-mono overflow-hidden">
+      <div className="rounded-xl border border-border bg-surface-secondary shadow-inner font-mono overflow-hidden">
         <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3 py-2 border-b border-white/10 bg-white/[0.03] text-[11px] font-semibold text-white/50 uppercase tracking-wider">
           <span>Time</span>
           <span>Level</span>
@@ -2498,11 +2418,11 @@ function LogRow({ entry }: { entry: LogEntry }) {
         </span>
         <span className={cx(
           "rounded-sm px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
-          LEVEL_STYLE[entry.level] ?? "bg-surface-2 text-ink-muted",
+          LEVEL_STYLE[entry.level] ?? "bg-surface-secondary text-muted",
         )}>
           {entry.level}
         </span>
-        <span className="truncate text-[11px] font-semibold text-brand-text shrink-0" title={entry.component}>
+        <span className="truncate text-[11px] font-semibold text-muted shrink-0" title={entry.component}>
           {entry.component}
         </span>
         <div className="min-w-0 break-words text-white/90 leading-relaxed">
@@ -2511,7 +2431,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
             <button
               type="button"
               onClick={() => setExpanded(!expanded)}
-              className="ml-2 text-[10px] text-brand-text hover:underline"
+              className="ml-2 text-[10px] text-muted hover:underline"
             >
               {expanded ? "[hide context]" : "[context]"}
             </button>
@@ -2524,11 +2444,11 @@ function LogRow({ entry }: { entry: LogEntry }) {
           <div className="flex items-center gap-1.5">
             <span className={cx(
               "rounded-sm px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
-              LEVEL_STYLE[entry.level] ?? "bg-surface-2 text-ink-muted",
+              LEVEL_STYLE[entry.level] ?? "bg-surface-secondary text-muted",
             )}>
               {entry.level}
             </span>
-            <span className="text-[11px] font-semibold text-brand-text">
+            <span className="text-[11px] font-semibold text-muted">
               {entry.component}
             </span>
           </div>
@@ -2543,7 +2463,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="text-[10px] text-brand-text hover:underline"
+            className="text-[10px] text-muted hover:underline"
           >
             {expanded ? "Hide context" : "Show context details"}
           </button>
@@ -2581,7 +2501,7 @@ function Crashes() {
             <a
               href={`/api/crashes/${c.id}`}
               download
-              className="text-ink-muted transition-colors hover:text-brand-text"
+              className="text-muted transition-colors hover:text-muted"
             >
               {c.ts.replace("T", " ").replace("Z", "")}
             </a>
@@ -2653,10 +2573,10 @@ function SystemUsage() {
   return (
     <Section title="System usage">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-ink-muted">{desktopUsage ? "Plexy desktop process metrics" : "Browser-visible estimates"} · {refreshing ? "refreshing…" : `updated ${new Date(now).toLocaleTimeString()}`}</p>
+        <p className="text-xs text-muted">{desktopUsage ? "Plexy desktop process metrics" : "Browser-visible estimates"} · {refreshing ? "refreshing…" : `updated ${new Date(now).toLocaleTimeString()}`}</p>
         <div className="flex gap-2">
-          <Button variant="surface" className="h-8 px-3 text-xs" onClick={() => void refresh()} disabled={refreshing}>Refresh</Button>
-          <Button variant={live ? "primary" : "surface"} className="h-8 px-3 text-xs" onClick={() => setLive((value) => !value)}>{live ? "Live · 1s / 5s" : "Live updates off"}</Button>
+          <Button variant="secondary" className="h-8 px-3 text-xs" onPress={() => void refresh()} isDisabled={refreshing}>Refresh</Button>
+          <Button variant={live ? "primary" : "secondary"} className="h-8 px-3 text-xs" onPress={() => setLive((value) => !value)}>{live ? "Live · 1s / 5s" : "Live updates off"}</Button>
         </div>
       </div>
       {live && desktopUsage && (
@@ -2665,7 +2585,7 @@ function SystemUsage() {
           <UsageGraph title="Plexy memory" value={desktopUsage.appMemoryBytes / 1024 ** 2} suffix=" MB" maxValue={desktopUsage.systemMemoryTotalBytes / 1024 ** 2} history={usageHistory.map((point) => point.memory)} detail={`${fmtBytes(desktopUsage.systemMemoryFreeBytes)} free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} system memory`} />
         </div>
       )}
-      {live && !desktopUsage && <p className="mt-4 rounded-xl border border-line/70 bg-surface px-4 py-3 text-sm text-ink-muted">Live system graphs are available in the Plexy desktop app. This browser does not expose CPU and memory process metrics.</p>}
+      {live && !desktopUsage && <p className="mt-4 rounded-xl border border-border/70 bg-surface px-4 py-3 text-sm text-muted">Live system graphs are available in the Plexy desktop app. This browser does not expose CPU and memory process metrics.</p>}
       {!live && <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <UsageMetric title="Plexy CPU" value={desktopUsage ? `${desktopUsage.cpuPercent.toFixed(1)}%` : `${navigator.hardwareConcurrency || "—"} logical cores`} detail={desktopUsage ? "Combined Plexy desktop processes" : "Live CPU load is unavailable in browser mode"} />
         <UsageMetric title="Memory" value={desktopUsage ? `${fmtBytes(desktopUsage.appMemoryBytes)} Plexy` : memory ? `${fmtBytes(memory.usedJSHeapSize)} page heap` : "Unavailable"} detail={desktopUsage ? `${fmtBytes(desktopUsage.systemMemoryFreeBytes)} OS-reported free of ${fmtBytes(desktopUsage.systemMemoryTotalBytes)} total` : nav.deviceMemory ? `Device memory: ~${nav.deviceMemory} GB` : "Device memory estimate unavailable"} />
@@ -2673,7 +2593,7 @@ function SystemUsage() {
         <UsageMetric title="Network" value={nav.connection?.effectiveType ?? "Connection estimate unavailable"} detail={nav.connection?.downlink ? `Estimated ${nav.connection.downlink} Mbps · ${nav.connection.rtt ?? "—"} ms RTT` : "Live throughput is not exposed by this browser"} />
         <UsageMetric title="Page data" value={fmtBytes(transferred)} detail="Transfer size across resources loaded in this tab" />
       </div>}
-      <p className="mt-4 text-[11px] text-ink-muted">{live ? "The graph shows the last five minutes. CPU and memory samples refresh every five seconds; the status line refreshes every second." : "CPU and memory describe Plexy’s desktop processes plus system memory availability. Page data is a cumulative browser transfer estimate; network throughput and GPU utilization are not exposed."}</p>
+      <p className="mt-4 text-[11px] text-muted">{live ? "The graph shows the last five minutes. CPU and memory samples refresh every five seconds; the status line refreshes every second." : "CPU and memory describe Plexy’s desktop processes plus system memory availability. Page data is a cumulative browser transfer estimate; network throughput and GPU utilization are not exposed."}</p>
     </Section>
   );
 }
@@ -2684,16 +2604,16 @@ function getTransferredBytes() {
 }
 
 function UsageMetric({ title, value, detail }: { title: string; value: string; detail: string }) {
-  return <div className="rounded-xl border border-line/70 bg-surface px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{title}</p><p className="mt-1 truncate text-sm font-semibold" title={value}>{value}</p><p className="mt-1 text-xs text-ink-muted">{detail}</p></div>;
+  return <div className="rounded-xl border border-border/70 bg-surface px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p><p className="mt-1 truncate text-sm font-semibold" title={value}>{value}</p><p className="mt-1 text-xs text-muted">{detail}</p></div>;
 }
 
 function UsageGraph({ title, value, suffix = "%", maxValue = 100, history, detail }: { title: string; value: number; suffix?: string; maxValue?: number; history: number[]; detail?: string }) {
   const points = history.length > 1 ? history : [value, value];
   const scale = maxValue > 0 ? maxValue : 100;
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${(index / (points.length - 1)) * 100} ${36 - (Math.max(0, Math.min(scale, point)) / scale) * 30}`).join(" ");
-  return <div className="overflow-hidden rounded-xl border border-line/70 bg-surface px-4 py-3">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{title}</p>{detail && <p className="mt-1 text-[11px] text-ink-muted">{detail}</p>}</div><p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}{suffix}</p></div>
-    <svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={`${title} usage history`} className="mt-3 h-16 w-full text-brand-text">
+  return <div className="overflow-hidden rounded-xl border border-border/70 bg-surface px-4 py-3">
+    <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p>{detail && <p className="mt-1 text-[11px] text-muted">{detail}</p>}</div><p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}{suffix}</p></div>
+    <svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={`${title} usage history`} className="mt-3 h-16 w-full text-muted">
       <path d="M 0 36 H 100 M 0 21 H 100 M 0 6 H 100" stroke="currentColor" strokeOpacity=".12" strokeWidth=".5" fill="none" />
       <path d={path} stroke="currentColor" strokeWidth="1.5" fill="none" vectorEffect="non-scaling-stroke" />
     </svg>

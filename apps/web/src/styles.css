@@ -1,90 +1,42 @@
-/* Plexy theme — Driftboard true-dark aesthetic.
+/* Plexy — HeroUI v3 theme.
  *
- * - Near-black shell canvas; charcoal surfaces with a cool blue-gray cast
- * - White is the single action color; no colored brand accent in chrome
- * - Geist Variable for all text — one family, two weights
- * - Soft off-white hairline borders; 18px card radius, calm grouped lists
- * - Amber reserved for ratings only
+ * HeroUI is the only source of colour, radius, shadow, and typography.
+ * There is no bespoke palette and no compatibility layer: every screen uses
+ * HeroUI tokens directly.
+ *
+ * Only two values are overridden:
+ *   --font-sans     Archivo, to match the native app
+ *   --field-radius  HeroUI Native's taller input radius
+ *
+ * Desktop (`navigator.userAgent` contains Electron) sets `data-shell="desktop"`
+ * before first paint, which collapses --radius to 0 so every corner is square.
+ * The web build keeps HeroUI's radii.
  */
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
-@custom-variant dark (&:is(.dark *));
+@import "@heroui/styles";
+@import "@fontsource-variable/archivo";
+
+/* Utility-class scanning for the app. HeroUI's own component CSS is shipped
+ * precompiled, so only our source needs to be scanned. */
+@source "./**/*.{ts,tsx}";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
-  /* Plexy design tokens */
-  --color-canvas: var(--canvas);          /* app canvas */
-  --color-surface: var(--surface);        /* cards on canvas */
-  --color-surface-2: var(--surface-2);    /* elevated popovers, modals */
-  --color-surface-hover: var(--surface-hover);
-  --color-ink: var(--ink);                /* primary text */
-  --color-ink-muted: var(--ink-muted);    /* secondary text */
-  --color-line: var(--line);              /* hairline borders */
-  --color-line-strong: var(--line-strong);
-  --color-brand: var(--brand);            /* fills: buttons, bars, focus */
-  --color-brand-hover: var(--brand-hover);
-  --color-brand-active: var(--brand-active);
-  --color-brand-text: var(--brand-text);  /* brand-colored text on canvas */
-  --color-amber: #e8a33d;                 /* ratings and warnings only */
-  --color-amber-soft: #f0b95c;
-
-  /* shadcn base-nova preset tokens */
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-sans);
-  --font-display: var(--font-sans);
-  --font-body: var(--font-sans);
-
-  /* Corner system: every radius derives from --radius (18px cards at lg) */
+  /* Tailwind's radius utilities follow HeroUI's single --radius token, so the
+   * desktop override squares off both HeroUI components and our own markup. */
+  --radius-xs: calc(var(--radius) * 0.25);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) * 1.5);
   --radius-xl: calc(var(--radius) * 2);
-  --radius-2xl: calc(var(--radius) * 2);
-  --radius-hero: calc(var(--radius) * 2);
-  --radius-poster: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2.5);
+  --radius-3xl: calc(var(--radius) * 3);
+  --radius-4xl: calc(var(--radius) * 4);
 
-  /* Shared page gutter: sized on the scroller cards + snap padding (3 == px-3) */
-  --row-inset: calc(var(--spacing) * 3);
-
-  /* Emil Kowalski custom motion curves */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-
-  --animate-rise: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Player-frozen compatibility: `text-ink-muted` appears in a file covered by
+   * the player freeze (routes/watch) and cannot be rewritten. Everything else
+   * uses HeroUI tokens directly. */
+  --color-ink-muted: var(--muted);
 
   --color-media-accent: var(--media-accent);
 
@@ -237,6 +189,26 @@
   --spacing-media-hidden-seek-offset: var(--media-hidden-seek-offset);
 }
 
+:root {
+  --font-sans: "Archivo Variable", "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
+
+  /* HeroUI Native keeps inputs slightly taller than buttons. */
+  --field-radius: calc(var(--radius) * 1.75);
+
+  /* Shared page gutter for poster scrollers (3 == px-3). */
+  --row-inset: calc(var(--spacing) * 3);
+}
+
+/* Everything square in the desktop shell. Only intrinsic circles (person
+ * photos, progress rings, spinners) use rounded-full. */
+html[data-shell="desktop"] {
+  --radius: 0px;
+  --field-radius: 0px;
+}
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -253,63 +225,9 @@
   animation: page-enter 180ms var(--ease-out);
 }
 
-/* Dark is the default theme; the Settings toggle flips data-theme on <html>. */
-:root {
-  color-scheme: dark;
-  --radius: 0.75rem;
-
-  /* Plexy tokens — Driftboard true-dark palette */
-  --canvas: #0b0c0e;
-  --surface: #16181c;
-  --surface-2: #1d2025;
-  --surface-hover: #22252b;
-  --ink: #f2f4f7;
-  --ink-muted: #9598a1;
-  --line: rgba(233, 239, 247, 0.07);
-  --line-strong: rgba(233, 239, 247, 0.16);
-  /* White is the single action color — no colored accent in chrome */
-  --brand: #f0f0f0;
-  --brand-hover: #ffffff;
-  --brand-active: #d4d4d4;
-  --brand-text: #a0a0a0;
-
-  /* shadcn dark palette — kept in sync with the Driftboard tokens above */
-  --background: #0b0c0e;
-  --foreground: #f2f4f7;
-  --card: #16181c;
-  --card-foreground: #f2f4f7;
-  --popover: #1d2025;
-  --popover-foreground: #f2f4f7;
-  --primary: #f2f4f7;
-  --primary-foreground: #0b0c0e;
-  --secondary: #1d2025;
-  --secondary-foreground: #c9cdd4;
-  --muted: #1d2025;
-  --muted-foreground: #9598a1;
-  --accent: #22252b;
-  --accent-foreground: #f2f4f7;
-  --destructive: oklch(0.63 0.2 25);
-  --border: rgba(233, 239, 247, 0.07);
-  --input: rgba(233, 239, 247, 0.1);
-  --ring: #f2f4f7;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: #0e1013;
-  --sidebar-foreground: #f2f4f7;
-  --sidebar-primary: #f2f4f7;
-  --sidebar-primary-foreground: #0b0c0e;
-  --sidebar-accent: #22252b;
-  --sidebar-accent-foreground: #f2f4f7;
-  --sidebar-border: rgba(233, 239, 247, 0.07);
-  --sidebar-ring: #f2f4f7;
-}
-
 /* One orchestrated entrance: hero and rows rise on first paint */
 .staggered > * {
-  animation: var(--animate-rise);
+  animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .staggered > *:nth-child(2) { animation-delay: 50ms; }
 .staggered > *:nth-child(3) { animation-delay: 100ms; }
@@ -318,32 +236,31 @@
 
 @layer base {
   html {
-    background: var(--color-canvas);
-    color: var(--color-ink);
-    font-family: var(--font-body);
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
-    scrollbar-color: var(--surface-hover) transparent;
+    scrollbar-color: var(--surface-tertiary) transparent;
     scrollbar-gutter: stable;
-    @apply font-sans;
   }
 
   body {
     margin: 0;
     min-height: 100dvh;
-    background-color: var(--color-canvas);
+    background-color: var(--background);
+    color: var(--foreground);
     touch-action: manipulation;
-    @apply bg-background text-foreground;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--color-brand) 40%, transparent);
-    color: var(--color-ink);
+    background: color-mix(in oklab, var(--accent) 40%, transparent);
+    color: var(--foreground);
   }
 
   /* Visible keyboard focus, consistent across the app and both themes */
   :focus-visible {
-    outline: 2px solid var(--color-brand);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 
@@ -354,7 +271,7 @@
     cursor: pointer;
   }
 
-/* Horizontal poster scrollers */
+  /* Horizontal poster scrollers */
   .scroll-row {
     scrollbar-width: none;
     scroll-behavior: smooth;
@@ -365,16 +282,11 @@
      with the scroller edge instead of the page gutter. */
   .scroll-row { scroll-snap-type: x proximity; scroll-padding-inline: var(--row-inset); }
   .scroll-row > * { scroll-snap-align: start; }
-
-  * {
-    @apply border-border outline-ring/50;
-  }
 }
 
 /* Mobile fullscreen playback: when a browser fullscreen plays video but the
  * device stays portrait (rotation unavailable), rotate the fullscreen element
- * to landscape with CSS. The transform math maps the swapped box back onto the
- * viewport:-width 100vh, height 100vw, shifted right by the rotated extent. */
+ * to landscape with CSS. */
 @media (orientation: portrait) {
   :fullscreen {
     width: 100vh;

@@ -369,37 +369,29 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(text).toContain("<svg");
   });
 
-  test("PUT /api/settings persists local prefetch preferences and rejects out-of-range values", async () => {
+  test("PUT /api/settings persists offline-cache preferences and rejects out-of-range values", async () => {
     try {
       const res = await app.handle(
         new Request("http://localhost:8765/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prefetchAggressiveLocal: false,
             prefetchMaxConcurrent: 4,
             prefetchMaxCacheMb: 120,
-            prefetchOnHover: false,
-            prefetchOnScroll: true,
-            prefetchNextCount: 7,
           }),
         }),
       );
       expect(res.status).toBe(200);
       const saved = await res.json();
       expect(saved.settings).toMatchObject({
-        prefetchAggressiveLocal: false,
         prefetchMaxConcurrent: 4,
         prefetchMaxCacheMb: 120,
-        prefetchOnHover: false,
-        prefetchOnScroll: true,
-        prefetchNextCount: 7,
       });
 
       // Round-trips through GET instead of only echoing the request.
       const read = await (await app.handle(new Request("http://localhost:8765/api/settings"))).json();
       expect(read.settings.prefetchMaxConcurrent).toBe(4);
-      expect(read.settings.prefetchNextCount).toBe(7);
+      expect(read.settings.prefetchMaxCacheMb).toBe(120);
 
       const invalid = await app.handle(
         new Request("http://localhost:8765/api/settings", {
@@ -414,14 +406,7 @@ describe("Elysia API Routes (PRD 9)", () => {
         new Request("http://localhost:8765/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prefetchAggressiveLocal: true,
-            prefetchMaxConcurrent: 3,
-            prefetchMaxCacheMb: 50,
-            prefetchOnHover: true,
-            prefetchOnScroll: true,
-            prefetchNextCount: 5,
-          }),
+          body: JSON.stringify({ prefetchMaxConcurrent: 3, prefetchMaxCacheMb: 50 }),
         }),
       );
     }

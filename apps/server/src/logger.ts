@@ -9,6 +9,12 @@
 ///   anything reaches the file.
 /// - The level is runtime-changeable from the admin UI without a restart.
 /// - `subscribe()` lets the SSE log endpoint tail lines from memory.
+///
+/// Policy: log failures and state transitions, not routine success. Defaults
+/// are `warn` in a release build and `info` in dev; `debug` is opt-in (the
+/// admin UI or `PLEXY_LOG_LEVEL`). Request handlers may only emit `info` for a
+/// state change — never for every read. Per-file/per-request chatter belongs at
+/// `debug`. Slow requests keep their `warn` line from `app.ts`.
 import {
   appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync,
   readdirSync, renameSync, statSync, unlinkSync, writeSync,
@@ -40,7 +46,12 @@ const REDACT: RegExp[] = [
   /("(?:api[_.-]?key|token|authorization)"\s*:\s*)"[^"]*"/gi,
 ];
 
-let minLevel: Level = isDevRuntime() ? "debug" : "info";
+/** Release builds stay quiet; dev shows state transitions. */
+export function defaultLogLevel(): Level {
+  return isDevRuntime() ? "info" : "warn";
+}
+
+let minLevel: Level = defaultLogLevel();
 const ringBuffer: string[] = [];
 const subscribers = new Set<(line: string) => void>();
 let fileHandle: number | null = null;

@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Home, Film, Tv, Settings, UserRound } from "lucide-react";
 import { queries } from "../queries";
-import { cx } from "./poster";
+import { cx } from "../lib/cx";
 import { getClientRuntime } from "../runtime-config";
 
 export function BottomNav() {
@@ -38,7 +38,7 @@ export function BottomNav() {
     <nav
       className={cx(
         "fixed bottom-0 inset-x-0 z-40 sm:hidden",
-        "border-t border-line bg-canvas/98 backdrop-blur-md",
+        "border-t border-border bg-background/98 backdrop-blur-md",
         "pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-1.5 px-2",
       )}
       aria-label="Mobile Navigation Bar"
@@ -52,8 +52,8 @@ export function BottomNav() {
             activeOptions={{ exact: item.label === "Home" || item.label === "Settings" }}
             className={cx(
               "group flex flex-1 flex-col items-center justify-center gap-1 py-1 text-center select-none",
-              "text-ink-muted transition-all duration-150 active:scale-95",
-              "[&.active]:text-ink",
+              "text-muted transition-all duration-150 active:scale-95",
+              "[&.active]:text-foreground",
             )}
           >
             <div className="relative flex h-7 w-7 items-center justify-center transition-colors">

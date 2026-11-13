@@ -35,7 +35,6 @@ import { resolveFfmpeg } from "./ffmpeg";
 import { getConfig } from "./config";
 import { storeProbeFacts } from "./media-facts";
 import { getSkipSegments } from "./skip-segments";
-import { isPreparedHlsAsset, preparedStreamAvailable, readPreparedPlaylist } from "./hls-preparation";
 import {
   enqueueTrickplay, trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
@@ -62,14 +61,6 @@ async function openableFile(fileOrItemId: number): Promise<Row | null> {
   } catch { /* fall through */ }
   q("UPDATE media_files SET unavailable = 1 WHERE id = ?").run(Number(row.id));
   return null;
-}
-
-const MAX_HEIGHT_OPTIONS = [360, 480, 720, 1080, 1440, 2160] as const;
-
-function parseMaxHeight(value: unknown): number | undefined | null {
-  if (value === undefined) return undefined;
-  const height = Number(value);
-  return (MAX_HEIGHT_OPTIONS as readonly number[]).includes(height) ? height : null;
 }
 
 function audioIndex(value: unknown): number {
@@ -118,8 +109,6 @@ interface ConversionOptions {
   channels: number | null;
   /** Remux can copy video but still needs AAC audio for browser compatibility. */
   audioCodec?: string | null;
-  /** Optional client-selected ceiling for live transcodes. */
-  maxHeight?: number;
 }
 
 function conversionArgs(path: string, options: ConversionOptions): string[] {
@@ -140,30 +129,17 @@ function conversionArgs(path: string, options: ConversionOptions): string[] {
       args.push("-c:a", "aac", "-b:a", String(preferredAudioBitrate(options.channels)));
     }
   } else {
-    const outputHeight = options.maxHeight && options.height
-      ? Math.min(options.maxHeight, options.height)
-      : options.height;
+    // Conversion always targets the source: same resolution, same bitrate
+    // class. There is no quality ladder and no client-selected ceiling.
+    const outputHeight = options.height;
     const selectedBitrate = preferredVideoBitrate(outputHeight, options.sourceBitrate);
-    const maxBitrateByHeight = outputHeight === null ? 60_000_000
-      : outputHeight <= 360 ? 1_500_000
-        : outputHeight <= 480 ? 2_500_000
-          : outputHeight <= 720 ? 5_000_000
-            : outputHeight <= 1080 ? 10_000_000
-              : outputHeight <= 1440 ? 20_000_000
-                : 35_000_000;
-    const videoBitrate = options.maxHeight
-      ? Math.min(selectedBitrate, maxBitrateByHeight)
-      : selectedBitrate;
     args.push(
       "-c:v", "libx264",
       "-preset", "veryfast",
       "-pix_fmt", "yuv420p",
-      ...(options.maxHeight && options.height && options.height > options.maxHeight
-        ? ["-vf", `scale=-2:min(${options.maxHeight}\\,ih)`]
-        : []),
-      "-b:v", String(videoBitrate),
-      "-maxrate", String(Math.round(videoBitrate * 1.4)),
-      "-bufsize", String(Math.round(videoBitrate * 3)),
+      "-b:v", String(selectedBitrate),
+      "-maxrate", String(Math.round(selectedBitrate * 1.4)),
+      "-bufsize", String(Math.round(selectedBitrate * 3)),
       "-c:a", "aac",
       "-b:a", String(preferredAudioBitrate(options.channels)),
     );
@@ -529,9 +505,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (!directPlayOnly() && verdict.path === "direct" && !prepared && audioTracks.length > 1) {
       verdict = { path: "remux", reason: "Remuxing with selected audio track" };
     }
-    if (!directPlayOnly() && await preparedStreamAvailable(row, selectedAudioIndex)) {
-      verdict = { path: "hls", reason: "Prepared adaptive quality streams are ready" };
-    }
 
     if (directPlayOnly() && verdict.path !== "direct") {
       verdict = { path: "unsupported", reason: "This player cannot directly decode this file. Video conversion is disabled for this app." };
@@ -655,7 +628,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     return response;
   }, { params: t.Object({ fileId: t.Numeric() }) })
 
-  /** Authenticated download response for a selected source or one-shot quality transcode. */
+  /** Authenticated download of the original file, untouched. */
   .get("/download/:fileId/info", async ({ params }) => {
     const row = await openableFile(Number(params.fileId));
     if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
@@ -669,41 +642,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   }, { params: t.Object({ fileId: t.Numeric() }) })
   .get("/download/:fileId", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
-    let row = await openableFile(fileId);
+    const row = await openableFile(fileId);
     if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
     const path = String(row.path);
-    const maxHeight = parseMaxHeight(ctx.query.maxHeight);
-    const audio = audioIndex(ctx.query.audio);
-    if (maxHeight === null) {
-      return Response.json({ error: `maxHeight must be one of ${MAX_HEIGHT_OPTIONS.join(", ")}.` }, { status: 400 });
-    }
-
-    if (maxHeight !== undefined && ctx.request.method === "HEAD") {
-      return Response.json({ error: "Generated downloads do not support HEAD requests." }, { status: 400 });
-    }
-    if (maxHeight !== undefined) {
-      row = await ensureFileProbed(row);
-      if (!row.height) {
-        return Response.json({ error: "Source resolution is unavailable, so a capped download cannot be generated." }, { status: 422 });
-      }
-      try {
-        const response = await conversionResponse(path, {
-          mode: "transcode",
-          height: (row.height as number | null) ?? null,
-          sourceBitrate: (row.bitrate as number | null) ?? null,
-          channels: firstChannelCount(row, audio),
-          audioIndex: audio,
-          maxHeight,
-        });
-        response.headers.set("Content-Disposition", `attachment; filename=plexy-${fileId}-${maxHeight}p.mp4`);
-        return response;
-      } catch (err) {
-        log.error("media", "download transcode failed to start", {
-          fileId, message: err instanceof Error ? err.message : String(err),
-        });
-        return Response.json({ error: "Server conversion could not start for this download." }, { status: 503 });
-      }
-    }
 
     const info = await stat(path);
     // A mobile download may resume days later, after the source was replaced.
@@ -724,7 +665,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     return response;
   }, {
     params: t.Object({ fileId: t.Numeric() }),
-    query: t.Object({ maxHeight: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
   })
 
   /** Remux = container-only problem (PRD 5.8). Copy packets, near instant. */
@@ -764,6 +704,8 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
    * On-demand transcode fallback for a file that is still being prepared.
    * `start=` seconds resumes from a position; the player restarts the stream
    * on long seeks. Failures return honest errors, never a fake stream.
+   * The output keeps the source resolution and bitrate — there is no quality
+   * ladder to choose from.
    */
   .get("/stream/:fileId/transcode", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
@@ -771,10 +713,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
     const path = String(row.path);
     const start = ctx.query.start ? Number(ctx.query.start) : 0;
-    const maxHeight = parseMaxHeight(ctx.query.maxHeight);
-    if (maxHeight === null) {
-      return Response.json({ error: `maxHeight must be one of ${MAX_HEIGHT_OPTIONS.join(", ")}.` }, { status: 400 });
-    }
     const audio = audioIndex(ctx.query.audio);
     try {
       return await conversionResponse(path, {
@@ -783,7 +721,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
         sourceBitrate: (row.bitrate as number | null) ?? null,
         channels: firstChannelCount(row, audio),
         audioIndex: audio,
-        maxHeight,
         trimStart: Number.isFinite(start) && start > 0 ? start : undefined,
       });
     } catch (err) {
@@ -797,23 +734,6 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     }
   }, {
     params: t.Object({ fileId: t.Numeric() }),
-    query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()), maxHeight: t.Optional(t.Numeric()) }),
-  })
-
-  /** Cached adaptive HLS stream with several server-generated resolutions. */
-  .get("/stream/:fileId/hls/:asset", async (ctx) => {
-    const fileId = Number(ctx.params.fileId);
-    const row = await openableFile(fileId);
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const asset = String(ctx.params.asset);
-    if (!isPreparedHlsAsset(asset)) {
-      return Response.json({ error: "Invalid HLS asset" }, { status: 404 });
-    }
-    const audio = audioIndex(ctx.query.audio);
-    const response = await readPreparedPlaylist(row, asset, new URL(ctx.request.url).origin, audio);
-    return response ?? Response.json({ error: "Prepared quality streams are not available for this title." }, { status: 404 });
-  }, {
-    params: t.Object({ fileId: t.Numeric(), asset: t.String() }),
     query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
   })
 

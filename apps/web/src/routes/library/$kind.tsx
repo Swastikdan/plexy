@@ -4,8 +4,8 @@ import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { queries } from "../../queries";
 import { Poster } from "../../components/poster";
-import { cx } from "../../components/ui/button";
-import { Select } from "../../components/ui/select";
+import { ListBox, Select } from "@heroui/react";
+import { cx } from "../../lib/cx";
 import { PageHeader } from "../../components/page-header";
 import { State } from "@/components/state";
 import { PageLoader } from "../../components/page-loader";
@@ -43,32 +43,36 @@ function LibraryRoute() {
               <div
                 data-testid="scan-indicator"
                 role="status"
-                className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full border border-line bg-surface px-3 text-xs text-ink-muted"
+                className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-sm border border-border bg-surface px-3 text-xs text-muted"
               >
                 <span
                   aria-hidden
-                  className="h-3 w-3 animate-spin rounded-full border-2 border-line border-t-ink-muted"
+                  className="h-3 w-3 animate-spin rounded-full border-2 border-border border-t-muted"
                 />
                 Scanning {scan.libraryName ?? "libraries"}
               </div>
             )}
-            <Select.Root
-            value={sort}
-            onValueChange={(v) => setSort(String(v))}
-            items={SORTS as unknown as readonly { value: string; label: string }[]}
-          >
-            <Select.Trigger aria-label="Sort order" className="h-8 min-w-36 whitespace-nowrap">
-              <Select.Value />
-              <Select.Icon />
-            </Select.Trigger>
-            <Select.Positioner>
-              {SORTS.map((s) => (
-                <Select.Item key={s.value} value={s.value}>
-                  <Select.ItemText>{s.label}</Select.ItemText>
-                </Select.Item>
-              ))}
-            </Select.Positioner>
-          </Select.Root>
+            <Select
+              aria-label="Sort order"
+              selectedKey={sort}
+              onSelectionChange={(key) => setSort(String(key))}
+              className="w-44 shrink-0"
+            >
+              <Select.Trigger className="h-8">
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {SORTS.map((s) => (
+                    <ListBox.Item key={s.value} id={s.value} textValue={s.label}>
+                      {s.label}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
           </>
         }
       />

@@ -19,15 +19,15 @@ export function PageHeader({
     <header className="flex flex-wrap items-end justify-between gap-4 pt-8 pb-6 sm:pt-10">
       <div className="min-w-0">
         {eyebrow && (
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-ink-muted">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
             {eyebrow}
           </p>
         )}
-        <h1 className={`${eyebrow ? "mt-1" : ""} font-sans text-2xl font-bold tracking-tight text-ink sm:text-3xl`}>
+        <h1 className={`${eyebrow ? "mt-1" : ""} font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl`}>
           {title}
         </h1>
         {description && (
-          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink-muted">
+          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted">
             {description}
           </p>
         )}

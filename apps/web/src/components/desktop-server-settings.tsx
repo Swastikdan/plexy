@@ -14,8 +14,8 @@ export function DesktopServerSettings() {
   }, [desktop]);
   if (!desktop?.setLocalServerEnabled) return null;
   return (
-    <div className="my-4 space-y-2 border border-line p-4">
-      <label className="flex items-center gap-3 text-sm text-ink">
+    <div className="my-4 space-y-2 border border-border p-4">
+      <label className="flex items-center gap-3 text-sm text-foreground">
         <input
           type="checkbox"
           checked={enabled === true}
@@ -35,12 +35,12 @@ export function DesktopServerSettings() {
         />
         Run local server
       </label>
-      <p className="text-xs text-ink-muted">
+      <p className="text-xs text-muted">
         Use the bundled library server on this computer. Turn it off to connect
         to another server. Changing this reopens the Plexy window.
       </p>
       {error && (
-        <p role="alert" className="text-xs text-red-500">
+        <p role="alert" className="text-xs text-danger-soft-foreground">
           {error}
         </p>
       )}

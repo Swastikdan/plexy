@@ -7,7 +7,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { resolveDataDir } from "./paths";
-import { log } from "./logger";
+import { defaultLogLevel, log } from "./logger";
 import { setCrashConfigSnapshot, APP_VERSION } from "./crash";
 
 /** Environment-input shape (`.env`, process env, CLI) — not the browser shape. */
@@ -16,7 +16,7 @@ const ConfigSchema = z.object({
   port: z.number().int().min(1024).max(65535).default(8765),
   /** `127.0.0.1` unless the owner explicitly enabled LAN viewing (PRD 5.10). */
   bindAddress: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
-  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  logLevel: z.enum(["debug", "info", "warn", "error"]).default(defaultLogLevel()),
   metadataLanguage: z.string().default("en-US"),
   preferredAudioLanguage: z.string().default("en"),
   metadataRegion: z.string().default("US"),
@@ -34,19 +34,11 @@ const ConfigSchema = z.object({
   /** Free-form admin notes to self. */
   note: z.string().default(""),
 
-  // --- Prefetch settings (aggressive local asset downloading) ---
-  /** Enable aggressive prefetching of assets (trickplay, thumbnails, posters, backdrops) when running locally. */
-  prefetchAggressiveLocal: z.boolean().default(true),
-  /** Maximum concurrent asset downloads. */
+  // --- Offline library cache ---------------------------------------------
+  /** Maximum concurrent image downloads while filling the offline cache. */
   prefetchMaxConcurrent: z.number().int().min(1).max(10).default(3),
-  /** Maximum cache size in MB for prefetched assets. */
-  prefetchMaxCacheMb: z.number().int().min(10).max(500).default(50),
-  /** Prefetch assets on poster hover. */
-  prefetchOnHover: z.boolean().default(true),
-  /** Prefetch assets for items scrolled into view. */
-  prefetchOnScroll: z.boolean().default(true),
-  /** Number of next items to prefetch when scrolling. */
-  prefetchNextCount: z.number().int().min(1).max(20).default(5),
+  /** Ceiling for this device's offline image cache, in megabytes. */
+  prefetchMaxCacheMb: z.number().int().min(10).max(500).default(100),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -76,7 +68,7 @@ export async function initConfig(): Promise<Config> {
     await save({});
   }
   setCrashConfigSnapshot(redactedView(await getConfig()));
-  log.info("server", "config loaded", { port: cache.port, bind: cache.bindAddress });
+  log.debug("server", "config loaded", { port: cache.port, bind: cache.bindAddress });
   return cache;
 }
 

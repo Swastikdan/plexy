@@ -423,7 +423,7 @@ async function runSweep(): Promise<RefreshSummary> {
   });
 
   if (checked > 0) {
-    log.info("player", "skip markers refreshed", { checked, found });
+    log.debug("player", "skip markers refreshed", { checked, found });
   }
   return { checked, found };
 }

@@ -312,7 +312,7 @@ export async function cacheMissingArtwork(): Promise<{ cached: number; failed: n
       );
     }
 
-    log.info("artwork", "completed background artwork pre-caching", { cached, failed, total: tasks.length });
+    log.debug("artwork", "completed background artwork pre-caching", { cached, failed, total: tasks.length });
     return { cached, failed };
   } catch (err) {
     log.warn("artwork", "background artwork caching failed", { error: String(err) });

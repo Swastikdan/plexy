@@ -188,7 +188,7 @@ function createWindow(serverUrl: string): BrowserWindow {
     height: 820,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: "#0c0d12",
+    backgroundColor: "#060607",
     show: false,
     title: "Plexy",
     ...(iconImage && !iconImage.isEmpty() ? { icon: iconImage } : {}),

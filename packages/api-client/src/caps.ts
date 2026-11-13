@@ -1,4 +1,4 @@
-import type { BrowserCaps } from "./types";
+import type { BrowserCaps } from "./contracts/playback";
 
 /**
  * Measure real browser decoding capabilities from an HTMLVideoElement (PRD 5.6, 10).

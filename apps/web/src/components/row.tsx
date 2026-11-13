@@ -1,10 +1,9 @@
 /// Horizontal Netflix-style row of posters with arrow paging and smooth scrolling.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Poster, cx } from "./poster";
+import { Poster } from "./poster";
+import { cx } from "../lib/cx";
 import type { ItemCard } from "../client";
-import { prefetchAssets } from "../lib/asset-prefetch";
-import { prefetchTriggerEnabled, prefetchWindow } from "../lib/prefetch-config";
 
 export function Row({
   title,
@@ -51,59 +50,6 @@ export function Row({
     };
   }, [items]);
 
-  // Warm a small window of artwork just past the visible cards. A throttled
-  // scroll handler (one run per animation frame, at most every 250 ms) keeps
-  // this from firing on every event or warming the whole row.
-  useEffect(() => {
-    const element = scroller.current;
-    if (!element || items.length === 0 || typeof IntersectionObserver === "undefined") return;
-
-    let visible = false;
-    let frame = 0;
-    let lastRun = 0;
-
-    const warmAhead = () => {
-      if (!visible || !prefetchTriggerEnabled("scroll")) return;
-      const bounds = element.getBoundingClientRect();
-      const children = Array.from(element.children) as HTMLElement[];
-      let lastVisible = -1;
-      for (let index = 0; index < children.length; index++) {
-        const rect = children[index]!.getBoundingClientRect();
-        if (rect.right > bounds.left && rect.left < bounds.right) lastVisible = index;
-      }
-      if (lastVisible < 0) return;
-      const upcoming = items.slice(lastVisible + 1, lastVisible + 1 + prefetchWindow());
-      for (const item of upcoming) prefetchAssets([item.poster, item.backdrop]);
-    };
-
-    const schedule = () => {
-      if (!visible || frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const now = performance.now();
-        if (now - lastRun < 250) return;
-        lastRun = now;
-        warmAhead();
-      });
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        visible = entries.some((entry) => entry.isIntersecting);
-        if (visible) warmAhead();
-      },
-      { rootMargin: "200px 0px" },
-    );
-    observer.observe(element);
-    element.addEventListener("scroll", schedule, { passive: true });
-
-    return () => {
-      observer.disconnect();
-      element.removeEventListener("scroll", schedule);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, [items]);
-
   if (!items.length) return null;
 
   const page = (dir: -1 | 1) => {
@@ -115,7 +61,7 @@ export function Row({
   return (
     <section className="group/row relative min-w-0 my-6">
       <div className="mb-2 flex items-baseline justify-between gap-4 px-3 sm:mb-3">
-        <h2 className="font-sans text-base font-semibold tracking-tight text-ink sm:text-lg">
+        <h2 className="font-sans text-base font-semibold tracking-tight text-foreground sm:text-lg">
           {title}
         </h2>
         {action}
@@ -128,10 +74,10 @@ export function Row({
           onClick={() => page(-1)}
           className={cx(
             "absolute left-0 top-0 bottom-0 z-30 flex w-16 items-center justify-start pl-1",
-            "bg-gradient-to-r from-canvas via-canvas/80 to-transparent text-ink-muted",
+            "bg-gradient-to-r from-background via-background/80 to-transparent text-muted",
             "transition-all duration-200",
-            "opacity-0 hover:text-ink group-hover/row:opacity-100 disabled:pointer-events-none",
-            "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink",
+            "opacity-0 hover:text-foreground group-hover/row:opacity-100 disabled:pointer-events-none",
+            "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-foreground",
           )}
         >
           <ChevronLeft size={20} />
@@ -164,10 +110,10 @@ export function Row({
           onClick={() => page(1)}
           className={cx(
             "absolute right-0 top-0 bottom-0 z-30 flex w-16 items-center justify-end pr-1",
-            "bg-gradient-to-l from-canvas via-canvas/80 to-transparent text-ink-muted",
+            "bg-gradient-to-l from-background via-background/80 to-transparent text-muted",
             "transition-all duration-200",
-            "opacity-0 hover:text-ink group-hover/row:opacity-100 disabled:pointer-events-none",
-            "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink",
+            "opacity-0 hover:text-foreground group-hover/row:opacity-100 disabled:pointer-events-none",
+            "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-foreground",
           )}
         >
           <ChevronRight size={20} />

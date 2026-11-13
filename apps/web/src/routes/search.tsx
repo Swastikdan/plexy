@@ -22,8 +22,8 @@ function ResultSection({
   return (
     <section className="mt-8">
       <div className="flex items-baseline gap-2">
-        <h2 className="font-sans text-sm font-semibold text-ink">{title}</h2>
-        <span className="text-[11px] tabular-nums text-ink-muted">{count}</span>
+        <h2 className="font-sans text-sm font-semibold text-foreground">{title}</h2>
+        <span className="text-[11px] tabular-nums text-muted">{count}</span>
       </div>
       <div className="mt-3 grid max-w-5xl gap-2.5 sm:gap-3">{children}</div>
     </section>
@@ -63,16 +63,16 @@ function SearchRoute() {
 
       {/* Sticky under the app header so the search field keeps its nav context
           while results scroll. */}
-      <div className="sticky top-12 z-20 -mx-4 border-b border-line bg-canvas/95 px-4 py-3 backdrop-blur-md sm:top-14 sm:-mx-8 sm:px-8">
-        <label className="flex h-11 items-center gap-3 border border-line bg-surface px-3.5 transition-colors focus-within:border-line-strong">
-          <Search size={16} className="shrink-0 text-ink-muted" aria-hidden />
+      <div className="sticky top-12 z-20 -mx-4 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-md sm:top-14 sm:-mx-8 sm:px-8">
+        <label className="flex h-11 items-center gap-3 border border-border bg-surface px-3.5 transition-colors focus-within:border-separator">
+          <Search size={16} className="shrink-0 text-muted" aria-hidden />
           <input
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search your films and shows"
             aria-label="Search your films and shows"
-            className="w-full bg-transparent text-[15px] text-ink placeholder:text-ink-muted/70 outline-none"
+            className="w-full bg-transparent text-[15px] text-foreground placeholder:text-muted/70 outline-none"
           />
           {q && (
             <button
@@ -80,14 +80,14 @@ function SearchRoute() {
               onClick={() => setQ("")}
               aria-label="Clear search"
               title="Clear"
-              className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-ink-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2"
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2"
             >
               <X size={14} />
             </button>
           )}
           {isFetching && (
             <span
-              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line-strong border-t-ink"
+              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-separator border-t-foreground"
               role="status"
               aria-label="Searching"
             />
@@ -113,11 +113,11 @@ function SearchRoute() {
       {data && count > 0 && (
         <>
           <div className="mt-6 flex items-baseline justify-between gap-4">
-            <h2 className="font-sans text-sm font-semibold text-ink">
+            <h2 className="font-sans text-sm font-semibold text-foreground">
               {count} {count === 1 ? "result" : "results"} for “{debounced}”
             </h2>
             {isFetching && (
-              <span className="text-[11px] text-ink-muted">Updating…</span>
+              <span className="text-[11px] text-muted">Updating…</span>
             )}
           </div>
 

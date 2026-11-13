@@ -1,13 +1,13 @@
-/// Bounded, local-only prefetch of artwork and trickplay sprites the server
-/// already serves.
+/// Bounded artwork/trickplay cache for the offline library.
 ///
 /// This module is the only writer of Plexy's managed Cache Storage bucket; the
 /// read-through service worker (`public/sw.js`) lets ordinary `<img>` elements
-/// consume those entries. Nothing here calls a preparation or generation
-/// endpoint: only URLs that catalog/title/play data already returned, or cue
-/// URLs parsed from an existing trickplay VTT, are ever fetched. Speculative
-/// work is best-effort — every failure is swallowed so browsing and playback
-/// never depend on it.
+/// consume those entries. The library sync (`library-cache.ts`) fills it with
+/// every image the catalog references, so screens keep rendering when the
+/// internet is down. Nothing here calls a preparation or generation endpoint:
+/// only URLs that catalog/title/play data already returned, or cue URLs parsed
+/// from an existing trickplay VTT, are ever fetched. Every failure is swallowed
+/// so browsing and playback never depend on the cache.
 import { isLocalPage } from "../auth";
 import { getApiBase, isElectron } from "../server-config";
 
@@ -26,21 +26,16 @@ const RECONCILED_KEY = "plexy.prefetch.reconciled-at";
 const ASSET_PATH_PREFIXES = ["/api/images/", "/api/trickplay/", "/api/people/"];
 
 export interface PrefetchRuntime {
+  /** Kept for settings compatibility; the offline cache is always on. */
   enabled: boolean;
   maxConcurrent: number;
   maxCacheMb: number;
-  onHover: boolean;
-  onScroll: boolean;
-  nextCount: number;
 }
 
 export const PREFETCH_DEFAULTS: PrefetchRuntime = {
-  enabled: false,
+  enabled: true,
   maxConcurrent: 3,
-  maxCacheMb: 50,
-  onHover: true,
-  onScroll: true,
-  nextCount: 5,
+  maxCacheMb: 100,
 };
 
 export interface PrefetchStats {
@@ -78,34 +73,30 @@ export function getPrefetchRuntime(): PrefetchRuntime | null {
  * entries to normal image requests; without it this would be wasted traffic.
  */
 function managedCacheAvailable(): boolean {
-  if (workerBlocked || !cacheStorage()) return false;
+  if (!cacheStorage()) return false;
   return typeof navigator !== "undefined" && "serviceWorker" in navigator;
 }
 
-/** Aggressive work runs only for a local viewer with the preference enabled. */
+/**
+ * Caching is available whenever the worker can hand cached entries back. The
+ * name is kept because the player (a frozen surface) gates its trickplay
+ * sprite caching on it.
+ */
 export function isPrefetchActive(): boolean {
-  if (!runtime?.enabled) return false;
-  if (!localPrefetchContext()) return false;
-  if (!managedCacheAvailable()) return false;
-  return isOnline();
+  return managedCacheAvailable();
 }
 
 export function setPrefetchRuntime(next: PrefetchRuntime | null): void {
   const previous = runtime;
   runtime = next;
   ensureListeners();
-  if (!next?.enabled || !localPrefetchContext()) {
+  if (!next) {
     cancelPending();
     return;
   }
   if (previous?.maxConcurrent !== next.maxConcurrent) pump();
   // Apply a reduced budget promptly instead of waiting for the next insert.
   void evictToBudget();
-}
-
-function isOnline(): boolean {
-  if (typeof navigator === "undefined") return true;
-  return navigator.onLine !== false;
 }
 
 let listening = false;
@@ -451,12 +442,15 @@ async function enqueue(rawUrl: string): Promise<void> {
 }
 
 /** Queue known asset URLs. Unknown, external and excluded URLs are ignored. */
-export function prefetchAssets(urls: ReadonlyArray<string | null | undefined>): void {
+export function cacheAssetUrls(urls: ReadonlyArray<string | null | undefined>): void {
   if (!isPrefetchActive()) return;
   for (const raw of urls) {
     if (raw) void enqueue(raw);
   }
 }
+
+/** Alias kept for the frozen player's trickplay sprite caching. */
+export const prefetchAssets = cacheAssetUrls;
 
 // --- trickplay ---------------------------------------------------------------
 
@@ -564,40 +558,4 @@ export async function clearPrefetchCache(): Promise<{ removed: number; bytes: nu
     removed: metas.length,
     bytes: metas.reduce((sum, meta) => sum + meta.bytes, 0),
   };
-}
-
-// --- service worker ----------------------------------------------------------
-
-let workerRequested = false;
-let workerBlocked = false;
-
-/**
- * Register the read-through worker so normal `<img>` requests are served from
- * the managed cache. Only local viewers register it, and only when Cache
- * Storage exists; without it prefetching still works but the UI cannot consume
- * the cache, so nothing is queued in that case.
- */
-export function registerPrefetchServiceWorker(): void {
-  if (workerRequested) return;
-  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-  if (!localPrefetchContext() || !cacheStorage() || workerBlocked) return;
-  workerRequested = true;
-  const cache = encodeURIComponent(PREFETCH_CACHE_NAME);
-  try {
-    void navigator.serviceWorker
-      .register(`/sw.js?cache=${cache}`, { scope: "/" })
-      .then(() => {
-        workerBlocked = false;
-      })
-      .catch(() => {
-        // A blocked worker must not break the viewer, and prefetch would only
-        // spend bandwidth that the UI can never read back.
-        workerBlocked = true;
-        workerRequested = false;
-        cancelPending();
-      });
-  } catch {
-    workerBlocked = true;
-    workerRequested = false;
-  }
 }

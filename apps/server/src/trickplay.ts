@@ -237,7 +237,7 @@ async function extractOne(fileId: number): Promise<void> {
     pattern,
   ];
 
-  log.info("media", "extracting trickplay sprite sheets", { fileId, interval });
+  log.debug("media", "extracting trickplay sprite sheets", { fileId, interval });
   const startedAt = Date.now();
   pauseOptimizer("trickplay");
   try {
@@ -283,7 +283,7 @@ async function extractOne(fileId: number): Promise<void> {
     duration: row.duration == null ? null : Number(row.duration),
     error: null,
   });
-  log.info("media", "trickplay ready", {
+  log.debug("media", "trickplay ready", {
     fileId,
     frames,
     seconds: Math.round((Date.now() - startedAt) / 100) / 10,

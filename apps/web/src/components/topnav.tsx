@@ -7,7 +7,7 @@ import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Settings, Film, Tv, Home, Server, UserRound } from "lucide-react";
 import { queries } from "../queries";
-import { cx } from "./poster";
+import { cx } from "../lib/cx";
 import { useIsFullscreen } from "../lib/use-fullscreen";
 import { isElectronMac } from "../lib/platform";
 import { BackButton } from "./back-button";
@@ -31,6 +31,7 @@ function resolvePageTitle(
     return rawKind.charAt(0).toUpperCase() + rawKind.slice(1);
   }
   if (pathname.startsWith("/search")) return "Search";
+  if (pathname.startsWith("/person/")) return "Cast";
   if (pathname.startsWith("/admin")) return "Settings";
   if (pathname.startsWith("/add-library")) return "Add Library";
   if (pathname.startsWith("/setup")) return "Setup";
@@ -109,8 +110,8 @@ export function TopNav() {
         "sticky top-0 z-40 select-none px-3 sm:px-6 md:px-8",
         "transition-[background-color,border-color] duration-200 ease-out",
         scrolled
-          ? "border-b border-line bg-canvas/95 backdrop-blur-md"
-          : "border-b border-transparent bg-canvas/80 backdrop-blur-sm",
+          ? "border-b border-border bg-background/95 backdrop-blur-md"
+          : "border-b border-transparent bg-background/80 backdrop-blur-sm",
       )}
     >
       <div className="mx-auto max-w-[1500px]">
@@ -134,7 +135,7 @@ export function TopNav() {
                 className="group flex min-w-0 items-center gap-2 p-1 transition-transform active:scale-97"
               >
                 <img src="/icon.svg" alt="" className="h-6 w-6 shrink-0" />
-                <span className="font-sans text-base font-bold tracking-tight text-ink transition-colors group-hover:text-ink/80">
+                <span className="font-sans text-base font-bold tracking-tight text-foreground transition-colors group-hover:text-foreground/80">
                   Plexy
                 </span>
               </Link>
@@ -144,7 +145,7 @@ export function TopNav() {
                 {pageTitle && (
                   <span
                     title={pageTitle}
-                    className="truncate font-sans text-base font-bold tracking-tight text-ink"
+                    className="truncate font-sans text-base font-bold tracking-tight text-foreground"
                   >
                     {pageTitle}
                   </span>
@@ -164,7 +165,7 @@ export function TopNav() {
                 key={l.label}
                 to={l.to}
                 params={"params" in l ? l.params : undefined}
-                className="whitespace-nowrap px-3 py-1.5 text-xs md:text-sm font-medium text-ink-muted transition-colors hover:text-ink active:scale-95 [&.active]:text-ink"
+                className="whitespace-nowrap px-3 py-1.5 text-xs md:text-sm font-medium text-muted transition-colors hover:text-foreground active:scale-95 [&.active]:text-foreground"
                 activeOptions={{ exact: l.label === "Home" }}
               >
                 {l.label}
@@ -181,7 +182,7 @@ export function TopNav() {
               to="/connect"
               aria-label="Server connection"
               title="Server connection"
-              className="inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2 [&.active]:text-ink"
+              className="inline-flex h-8 w-8 items-center justify-center text-muted transition-colors hover:text-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2 [&.active]:text-foreground"
             >
               <Server size={17} />
             </Link>}
@@ -190,12 +191,12 @@ export function TopNav() {
               to="/search"
               aria-label="Search"
               title="Search"
-              className="inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2 [&.active]:text-ink"
+              className="inline-flex h-8 w-8 items-center justify-center text-muted transition-colors hover:text-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2 [&.active]:text-foreground"
             >
               <Search size={17} />
             </Link>
 
-            <Link to="/account" title="My account" aria-label="My account" className="inline-flex h-8 w-8 items-center justify-center text-ink-muted hover:text-ink"><UserRound size={17} /></Link>
+            <Link to="/account" title="My account" aria-label="My account" className="inline-flex h-8 w-8 items-center justify-center text-muted hover:text-foreground"><UserRound size={17} /></Link>
 
             {/* Server settings are visible only to a local administrator. */}
             {getClientRuntime().canManageServer && <Link
@@ -203,7 +204,7 @@ export function TopNav() {
               search={{ tab: "settings" }}
               aria-label="Settings"
               title="Settings"
-              className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-ink-muted transition-colors hover:text-ink active:scale-95 focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2"
+              className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-muted transition-colors hover:text-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2"
             >
               <Settings size={17} />
             </Link>}

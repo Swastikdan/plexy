@@ -49,7 +49,8 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
   const people = [...(data.credits?.cast || []).slice(0,12), ...(data.credits?.crew || []).filter((p: any) => ["Director", "Writer", "Screenplay", "Creator"].includes(p.job)).slice(0,6)];
   for (let offset = 0; offset < people.length; offset += 3) {
     cast.push(...await Promise.all(people.slice(offset, offset + 3).map(async (person: any) => ({
-      name: person.name, character: person.character || person.job || null, photo: await image(person.profile_path, "h632"),
+      id: Number(person.id), name: person.name,
+      character: person.character || person.job || null, photo: await image(person.profile_path, "h632"),
     }))));
   }
   const trailer = (data.videos?.results || []).filter((v: any) => v.site === "YouTube" && ["Trailer", "Teaser"].includes(v.type))

@@ -4,7 +4,47 @@
 /// effectively static while browsing, watch state and scan progress are the
 /// only live pieces.
 import { queryOptions, keepPreviousData } from "@tanstack/react-query";
+import type { ItemCard } from "@plexy/api-client";
 import { api } from "./client";
+import {
+  cacheKeys,
+  cachePersonArtwork,
+  cacheTitleArtwork,
+  filterCachedItems,
+  readCached,
+  searchCachedItems,
+  writeCached,
+} from "./lib/library-cache";
+
+function isOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+/** Network first, cache second: a failed read still renders the last catalog. */
+async function cachedQuery<T>(key: string, fetch: () => Promise<T>): Promise<T> {
+  if (isOffline()) {
+    const cached = await readCached<T>(key);
+    if (cached != null) return cached;
+    return fetch();
+  }
+  try {
+    const value = await fetch();
+    await writeCached(key, value);
+    return value;
+  } catch (error) {
+    const cached = await readCached<T>(key);
+    if (cached != null) return cached;
+    throw error;
+  }
+}
+
+interface CachedCatalog {
+  items: ItemCard[];
+}
+
+async function offlineCatalog(): Promise<CachedCatalog | null> {
+  return await readCached<CachedCatalog>(cacheKeys.allItems);
+}
 
 export const queries = {
   serverStatus: () =>
@@ -32,14 +72,27 @@ export const queries = {
   home: () =>
     queryOptions({
       queryKey: ["home"],
-      queryFn: api.home,
+      queryFn: () => cachedQuery(cacheKeys.home, api.home),
       staleTime: 60_000,
     }),
 
   items: (query: { kind?: "movie" | "series"; libraryId?: number; sort?: string; unwatched?: boolean }) =>
     queryOptions({
       queryKey: ["items", query],
-      queryFn: () => api.items({ ...query, limit: 200 }),
+      queryFn: async () => {
+        if (!isOffline()) {
+          try {
+            return await api.items({ ...query, limit: 200 });
+          } catch (error) {
+            const catalog = await offlineCatalog();
+            if (catalog) return { items: filterCachedItems(catalog.items, query) };
+            throw error;
+          }
+        }
+        const catalog = await offlineCatalog();
+        if (catalog) return { items: filterCachedItems(catalog.items, query) };
+        return api.items({ ...query, limit: 200 });
+      },
       staleTime: 60_000,
       placeholderData: keepPreviousData,
     }),
@@ -47,14 +100,42 @@ export const queries = {
   title: (id: number | string) =>
     queryOptions({
       queryKey: ["title", id],
-      queryFn: () => api.title(id),
+      queryFn: async () => {
+        const detail = await cachedQuery(cacheKeys.title(id), () => api.title(id));
+        cacheTitleArtwork(detail);
+        return detail;
+      },
+      staleTime: 60_000,
+    }),
+
+  person: (id: number) =>
+    queryOptions({
+      queryKey: ["person", id],
+      queryFn: async () => {
+        const detail = await cachedQuery(cacheKeys.person(id), () => api.person(id));
+        cachePersonArtwork(detail);
+        return detail;
+      },
       staleTime: 60_000,
     }),
 
   search: (q: string) =>
     queryOptions({
       queryKey: ["search", q],
-      queryFn: () => api.search(q),
+      queryFn: async () => {
+        if (!isOffline()) {
+          try {
+            return await api.search(q);
+          } catch (error) {
+            const catalog = await offlineCatalog();
+            if (catalog) return searchCachedItems(catalog.items, q);
+            throw error;
+          }
+        }
+        const catalog = await offlineCatalog();
+        if (catalog) return searchCachedItems(catalog.items, q);
+        return api.search(q);
+      },
       enabled: q.trim().length > 0,
     }),
 

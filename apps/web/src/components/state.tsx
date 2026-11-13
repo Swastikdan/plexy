@@ -14,8 +14,8 @@ export function State({
 }) {
   return (
     <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-      <h2 className="font-sans text-xl font-bold text-ink">{title}</h2>
-      <p className="text-sm text-ink-muted leading-relaxed">{body}</p>
+      <h2 className="font-sans text-xl font-bold text-foreground">{title}</h2>
+      <p className="text-sm text-muted leading-relaxed">{body}</p>
       {action}
     </div>
   );

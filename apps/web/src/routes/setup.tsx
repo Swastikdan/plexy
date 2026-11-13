@@ -7,7 +7,7 @@ import { accountRequest, type AccountUser, type SetupState } from "../auth";
 import { api } from "../client";
 import { queries } from "../queries";
 import { LibraryFolderForm } from "../components/library-folder-form";
-import { Button } from "../components/ui/button";
+import { Button } from "@heroui/react";
 
 function SetupRoute() {
   const setup = useQuery({
@@ -61,16 +61,16 @@ function SetupRoute() {
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center px-4 py-12 sm:px-8">
       <div className="space-y-8">
         <header className="space-y-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-surface text-ink">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-foreground">
             <Server size={20} />
           </div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
             Plexy · First run
           </p>
-          <h1 className="font-sans text-3xl font-bold tracking-tight text-ink">
+          <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">
             Set up your server
           </h1>
-          <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
+          <p className="max-w-xl text-sm leading-relaxed text-muted">
             Your owner account is ready. Connect metadata and add your media
             folders. You can change these settings or manage libraries later
             from the admin page.
@@ -81,7 +81,7 @@ function SetupRoute() {
           {["Metadata", "First library", "Ready"].map((label, index) => (
             <div
               key={label}
-              className={`border-t-2 pt-2 text-xs ${step >= index ? "border-ink text-ink" : "border-line text-ink-muted"}`}
+              className={`border-t-2 pt-2 text-xs ${step >= index ? "border-foreground text-foreground" : "border-border text-muted"}`}
             >
               <span className="mr-2 tabular-nums">0{index + 1}</span>
               {label}
@@ -90,7 +90,7 @@ function SetupRoute() {
         </nav>
 
         {error && (
-          <p role="alert" className="text-red-400">
+          <p role="alert" className="text-danger-soft-foreground">
             {error}
           </p>
         )}
@@ -98,10 +98,10 @@ function SetupRoute() {
         {step === 1 && (
           <section className="space-y-4">
             <div>
-              <h2 className="font-sans text-xl font-bold text-ink">
+              <h2 className="font-sans text-xl font-bold text-foreground">
                 Add your first library
               </h2>
-              <p className="mt-1 text-sm text-ink-muted">
+              <p className="mt-1 text-sm text-muted">
                 Choose a library type and the folders Plexy should scan.
               </p>
             </div>
@@ -113,14 +113,14 @@ function SetupRoute() {
               <button
                 type="button"
                 onClick={() => setStep(0)}
-                className="text-xs text-ink-muted hover:text-ink"
+                className="text-xs text-muted hover:text-foreground"
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="text-xs text-ink-muted underline hover:text-ink"
+                className="text-xs text-muted underline hover:text-foreground"
               >
                 Set up a library later
               </button>
@@ -128,20 +128,20 @@ function SetupRoute() {
           </section>
         )}
         {step === 2 && (
-          <section className="border border-line bg-surface p-7">
+          <section className="border border-border bg-surface p-7">
             <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 text-ink" />
+              <CheckCircle2 className="mt-0.5 h-5 w-5 text-foreground" />
               <div>
-                <h2 className="font-sans text-xl font-bold text-ink">
+                <h2 className="font-sans text-xl font-bold text-foreground">
                   Your server is ready
                 </h2>
-                <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+                <p className="mt-2 text-sm leading-relaxed text-muted">
                   Plexy will scan your library in the background. You can add,
                   remove, and configure libraries whenever you need.
                 </p>
               </div>
             </div>
-            <div className="mt-5 space-y-2 border-t border-line pt-4 text-sm">
+            <div className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
               <p className="font-semibold">Connect your other devices</p>
               {status.data?.lanUrls?.length ? (
                 status.data.lanUrls.map((url) => (
@@ -152,22 +152,21 @@ function SetupRoute() {
                   </p>
                 ))
               ) : (
-                <p className="text-ink-muted">
+                <p className="text-muted">
                   Enable LAN access in Server settings after setup to connect
                   other devices. Your client entry link is <code>/connect</code>
                   ; this server setup link is <code>/setup</code>.
                 </p>
               )}
-              <p className="text-xs text-ink-muted">
+              <p className="text-xs text-muted">
                 Manage users, content permissions, and your own pairing codes in
                 My account.
               </p>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button
-                variant="primary"
                 className="h-10 px-5"
-                onClick={async () => {
+                onPress={async () => {
                   try {
                     await accountRequest("/setup/complete", {});
                     window.location.assign("/");
@@ -183,7 +182,7 @@ function SetupRoute() {
                 Finish setup <ChevronRight size={16} />
               </Button>
               <Link to="/add-library">
-                <Button variant="surface" className="h-10 px-5">
+                <Button variant="secondary" className="h-10 px-5">
                   Add another library
                 </Button>
               </Link>
@@ -226,20 +225,20 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
   const configured = settings.data?.settings.hasTmdbToken || envToken;
 
   return (
-    <section className="border border-line bg-surface p-6">
-      <h2 className="font-sans text-xl font-bold text-ink">Connect metadata</h2>
-      <p className="mt-1 text-sm text-ink-muted">
+    <section className="border border-border bg-surface p-6">
+      <h2 className="font-sans text-xl font-bold text-foreground">Connect metadata</h2>
+      <p className="mt-1 text-sm text-muted">
         TMDB provides posters, descriptions, release dates, and cast details.
       </p>
       {connected && !showManualInput ? (
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-line bg-surface-2 p-4">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-border bg-surface-secondary p-4">
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-ink" />
+            <CheckCircle2 className="h-5 w-5 text-foreground" />
             <div>
-              <p className="text-sm font-semibold text-ink">
+              <p className="text-sm font-semibold text-foreground">
                 Connected to TMDB
               </p>
-              <p className="text-xs text-ink-muted">
+              <p className="text-xs text-muted">
                 {envToken
                   ? "Token loaded from the server environment."
                   : "Metadata connection is ready."}
@@ -249,37 +248,37 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
           <button
             type="button"
             onClick={() => setShowManualInput(true)}
-            className="text-xs text-ink-muted underline hover:text-ink"
+            className="text-xs text-muted underline hover:text-foreground"
           >
             Change
           </button>
-          <Button variant="primary" onClick={onContinue} className="h-9 px-4">
+          <Button onPress={onContinue} className="h-9 px-4">
             Continue <ChevronRight size={15} />
           </Button>
         </div>
       ) : (
         <div className="mt-5 space-y-3">
           {tmdbTest.data && !tmdbTest.data.ok && (
-            <div className="flex gap-2 border border-red-500/20 bg-red-500/8 p-3 text-xs text-red-400">
+            <div className="flex gap-2 border border-danger/20 bg-danger/8 p-3 text-xs text-danger-soft-foreground">
               <AlertCircle size={15} />
               {tmdbTest.data.message ||
                 "Could not connect to TMDB with the current token."}
             </div>
           )}
           {save.isError && (
-            <p className="text-xs text-red-400">
+            <p className="text-xs text-danger-soft-foreground">
               {save.error instanceof Error
                 ? save.error.message
                 : "Could not save the token."}
             </p>
           )}
-          <p className="text-xs leading-relaxed text-ink-muted">
+          <p className="text-xs leading-relaxed text-muted">
             Enter your TMDB API v4 Read-Access Token. Create one under{" "}
             <a
               href="https://www.themoviedb.org/settings/api"
               target="_blank"
               rel="noreferrer"
-              className="text-ink underline"
+              className="text-foreground underline"
             >
               TMDB Settings → API
             </a>
@@ -291,12 +290,11 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
               value={tokenInput}
               onChange={(event) => setTokenInput(event.target.value)}
               placeholder="TMDB Read-Access Token"
-              className="h-10 flex-1 rounded-sm border border-line bg-surface-2 px-4 text-sm text-ink placeholder:text-ink-muted/70 outline-none focus:border-line-strong"
+              className="h-10 flex-1 rounded-sm border border-border bg-surface-secondary px-4 text-sm text-foreground placeholder:text-muted/70 outline-none focus:border-separator"
             />
             <Button
-              variant="primary"
-              disabled={save.isPending || (!tokenInput.trim() && !configured)}
-              onClick={() => save.mutate(tokenInput)}
+              isDisabled={save.isPending || (!tokenInput.trim() && !configured)}
+              onPress={() => save.mutate(tokenInput)}
               className="h-10 shrink-0 px-5"
             >
               {save.isPending ? "Testing…" : "Verify & Save"}
@@ -305,7 +303,7 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
           <button
             type="button"
             onClick={onContinue}
-            className="text-xs underline text-ink-muted"
+            className="text-xs underline text-muted"
           >
             Configure metadata later
           </button>
@@ -313,7 +311,7 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
             <button
               type="button"
               onClick={() => setShowManualInput(false)}
-              className="text-xs text-ink-muted hover:text-ink"
+              className="text-xs text-muted hover:text-foreground"
             >
               Cancel
             </button>
@@ -333,9 +331,9 @@ function OwnerStep() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center gap-6 px-5 py-12">
       <header>
-        <p className="text-sm text-ink-muted">Plexy Server · First launch</p>
+        <p className="text-sm text-muted">Plexy Server · First launch</p>
         <h1 className="mt-3 text-3xl font-bold">Create your owner account</h1>
-        <p className="mt-3 text-sm text-ink-muted">
+        <p className="mt-3 text-sm text-muted">
           This account manages the server, users, and libraries. Setup runs once
           for this server installation.
         </p>
@@ -374,7 +372,7 @@ function OwnerStep() {
             pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,39}"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3"
+            className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
           />
         </label>
         <label className="block text-sm">
@@ -387,9 +385,9 @@ function OwnerStep() {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3"
+            className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
           />
-          <span className="mt-1 block text-xs text-ink-muted">
+          <span className="mt-1 block text-xs text-muted">
             Use at least 12 characters.
           </span>
         </label>
@@ -401,24 +399,23 @@ function OwnerStep() {
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-line bg-surface px-3"
+            className="mt-2 h-11 w-full rounded-lg border border-border bg-surface px-3"
           />
         </label>
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger-soft-foreground">
             {error}
           </p>
         )}
         <Button
-          variant="primary"
           type="submit"
-          disabled={busy}
+          isDisabled={busy}
           className="h-11 w-full"
         >
           {busy ? "Creating account…" : "Create account & continue"}
         </Button>
       </form>
-      <a href="/connect" className="text-sm underline text-ink-muted">
+      <a href="/connect" className="text-sm underline text-muted">
         Looking for a server? Open Plexy Client
       </a>
     </main>

@@ -24,12 +24,6 @@ import { VIDEO_EXTENSIONS } from "./parse";
 import { getServerId } from "./server-identity";
 import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
 import { getLiveBinding } from "./runtime";
-import {
-  enqueueStreamPreparationsForTitles,
-  enqueueConfiguredStreamPreparations,
-  cancelStreamPreparation,
-  streamPreparationStatus,
-} from "./hls-preparation";
 import { refreshMissingSkipSegments } from "./skip-segments";
 
 const startedAt = Date.now();
@@ -165,12 +159,8 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.note !== undefined) patch.note = body.note;
     // Local prefetch preferences stay server-owned in config.json. The client
     // still gates the actual work on being Electron or a loopback page.
-    if (body.prefetchAggressiveLocal !== undefined) patch.prefetchAggressiveLocal = body.prefetchAggressiveLocal;
     if (body.prefetchMaxConcurrent !== undefined) patch.prefetchMaxConcurrent = body.prefetchMaxConcurrent;
     if (body.prefetchMaxCacheMb !== undefined) patch.prefetchMaxCacheMb = body.prefetchMaxCacheMb;
-    if (body.prefetchOnHover !== undefined) patch.prefetchOnHover = body.prefetchOnHover;
-    if (body.prefetchOnScroll !== undefined) patch.prefetchOnScroll = body.prefetchOnScroll;
-    if (body.prefetchNextCount !== undefined) patch.prefetchNextCount = body.prefetchNextCount;
     // Tokens only round-trip when genuinely provided; the UI never echoes the
     // stored value, so "{redacted}" sentinels are ignored.
     if (body.tmdbToken !== undefined && body.tmdbToken.trim() !== ""
@@ -184,12 +174,6 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.skipSegmentsEnabled) {
       // Turning markers on should fill the cache without waiting for a rescan.
       void refreshMissingSkipSegments().catch(() => {});
-    }
-    if (body.preferredAudioLanguage) {
-      void enqueueConfiguredStreamPreparations().catch((err) =>
-        log.warn("media", "could not re-prepare titles for the new audio preference", {
-          message: err instanceof Error ? err.message : String(err),
-        }));
     }
     log.info("server", "settings updated", { logLevel: body.logLevel ?? undefined });
     return { settings: redactedView(cfg) };
@@ -207,12 +191,8 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       tmdbToken: t.Optional(t.String()),
       bindAddress: t.Optional(t.Union([t.Literal("127.0.0.1"), t.Literal("0.0.0.0")])),
       note: t.Optional(t.String()),
-      prefetchAggressiveLocal: t.Optional(t.Boolean()),
       prefetchMaxConcurrent: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
       prefetchMaxCacheMb: t.Optional(t.Integer({ minimum: 10, maximum: 500 })),
-      prefetchOnHover: t.Optional(t.Boolean()),
-      prefetchOnScroll: t.Optional(t.Boolean()),
-      prefetchNextCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
     }),
   })
 
@@ -220,7 +200,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const removed = clearTmdbCache();
-    log.info("tmdb", "response cache cleared", { removed });
+    log.debug("tmdb", "response cache cleared", { removed });
     return { removed };
   })
 
@@ -229,7 +209,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const result = await refreshMissingSkipSegments();
-    log.info("player", "manual skip marker refresh", result);
+    log.debug("player", "manual skip marker refresh", result);
     return result;
   })
 
@@ -290,35 +270,8 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const requested = await enqueueMissingOptimizations({ includeFailed: true });
-    log.info("optimizer", "manual preparation run requested", { queued: requested });
+    log.debug("optimizer", "manual preparation run requested", { queued: requested });
     return { ...(await optimizerStatus()), requested };
-  })
-
-  .get("/stream-preparation/status", async (ctx) => {
-    const denied = denyIfNotLocal(ctx);
-    if (denied) return denied;
-    return streamPreparationStatus();
-  })
-
-  .post("/stream-preparation/run", async (ctx) => {
-    const denied = denyIfNotLocal(ctx);
-    if (denied) return denied;
-    const itemIds = ctx.body.itemIds;
-    if (!itemIds.length) return Response.json({ error: "Select at least one title" }, { status: 400 });
-    void enqueueStreamPreparationsForTitles(itemIds).catch((err) =>
-      log.error("media", "selected-title adaptive stream preparation could not start", {
-        message: err instanceof Error ? err.message : String(err),
-      }));
-    log.info("media", "selected-title adaptive stream preparation requested", { titles: itemIds.length });
-    return { started: true };
-  }, { body: t.Object({ itemIds: t.Array(t.Number({ minimum: 1 })) }) })
-
-  .post("/stream-preparation/cancel", async (ctx) => {
-    const denied = denyIfNotLocal(ctx);
-    if (denied) return denied;
-    cancelStreamPreparation();
-    log.info("media", "adaptive stream preparation cancelled");
-    return streamPreparationStatus();
   })
 
   /** Delete every prepared copy; the originals are untouched. */
@@ -326,7 +279,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const removed = await clearOptimizerCache();
-    log.info("optimizer", "prepared copies cleared", { removed });
+    log.debug("optimizer", "prepared copies cleared", { removed });
     return { removed };
   })
 

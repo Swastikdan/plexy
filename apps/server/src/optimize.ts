@@ -20,6 +20,7 @@ import { getConfig } from "./config";
 import { resolveOptimizedDir } from "./paths";
 import {
   canonicalCodec, classifyPlayability, preferredAudioBitrate, preferredVideoBitrate,
+  rowPlayabilityFacts,
 } from "./playback";
 import { runOptimize, shutdownOptimizeWorker } from "./optimize-host";
 import { cacheEmbeddedSubtitles } from "./subtitles";
@@ -251,6 +252,8 @@ export function enqueueOptimization(fileId: number): void {
   const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
   if (!row || Number(row.unavailable ?? 0) !== 0) return;
   if (row.analysis_status !== "probed") return;
+  // Direct files are streamed as-is; never copy or re-encode them.
+  if (!needsPreparation(row)) return;
 
   queuedIds.add(fileId);
   queue.push(fileId);
@@ -328,7 +331,7 @@ async function optimizeOne(fileId: number): Promise<void> {
       optimized_error: null,
       optimized_progress: null,
     });
-    log.info("optimizer", "file changed since scan; waiting for the next scan", { fileId });
+    log.debug("optimizer", "file changed since scan; waiting for the next scan", { fileId });
     return;
   }
 
@@ -436,7 +439,7 @@ async function optimizeOne(fileId: number): Promise<void> {
       optimized_at: new Date().toISOString(),
       optimized_error: null,
     });
-    log.info("optimizer", "file prepared", {
+    log.debug("optimizer", "file prepared", {
       fileId,
       mode: decision.mode,
       seconds: Math.round((Date.now() - startedAt) / 100) / 10,
@@ -495,8 +498,22 @@ export async function pruneOptimizerCache(): Promise<number> {
 }
 
 /**
- * Queue every probed file that is not prepared yet. Called after a scan and at
- * boot; safe to call repeatedly.
+ * A file is worth preparing only when it cannot play as-is. Direct files are
+ * never copied, remuxed, or re-encoded — the original bytes are the stream.
+ */
+export function needsPreparation(row: {
+  container?: unknown;
+  video_codec?: unknown;
+  audio_json?: unknown;
+  subtitles_json?: unknown;
+}): boolean {
+  const verdict = classifyPlayability(rowPlayabilityFacts(row), null);
+  return verdict.path === "remux" || verdict.path === "transcode";
+}
+
+/**
+ * Queue probed files that cannot play directly and are not prepared yet.
+ * Called after a scan and at boot; safe to call repeatedly.
  */
 export async function enqueueMissingOptimizations(
   options: { includeFailed?: boolean } = {},
@@ -505,7 +522,7 @@ export async function enqueueMissingOptimizations(
   if (!cfg.autoOptimize && !options.includeFailed) return 0;
 
   const rows = q<Row>(
-    `SELECT id FROM media_files
+    `SELECT id, container, video_codec, audio_json, subtitles_json FROM media_files
      WHERE unavailable = 0
        AND analysis_status = 'probed'
        AND (
@@ -519,8 +536,9 @@ export async function enqueueMissingOptimizations(
      ORDER BY id`,
   ).all();
 
-  for (const row of rows) enqueueOptimization(Number(row.id));
-  return rows.length;
+  const candidates = rows.filter((row) => needsPreparation(row));
+  for (const row of candidates) enqueueOptimization(Number(row.id));
+  return candidates.length;
 }
 
 /** Reset interrupted jobs and start working through the queue. */

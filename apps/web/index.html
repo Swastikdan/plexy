@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-shell="web">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#080808" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#060607" />
     <meta
       name="description"
       content="Plexy is your personal film and TV library, streamed from your own machine with local metadata, artwork, and watch progress."
@@ -18,17 +18,45 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!-- Theme + shell run before first paint so there is no light/dark flash
+         and desktop corners are square from the first frame. `plexy.theme`
+         holds "light", "dark", or is absent for "follow the system". -->
     <script>
-      try {
-        localStorage.removeItem("plexy-theme");
-      } catch (e) {}
-      document.documentElement.dataset.theme = "dark";
+      (function () {
+        var root = document.documentElement;
+        var stored = null;
+        try {
+          stored = localStorage.getItem("plexy.theme");
+        } catch (e) {}
+        var system = window.matchMedia("(prefers-color-scheme: light)").matches
+          ? "light"
+          : "dark";
+        var theme = stored === "light" || stored === "dark" ? stored : system;
+        root.dataset.theme = theme;
+        root.dataset.shell = /Electron/i.test(navigator.userAgent) ? "desktop" : "web";
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#060607");
+        }
+      })();
     </script>
     <!-- Boot splash: inline so it paints on the very first frame, before any
          JS or font has loaded. It self-removes once the app mounts, so on a
          warm cache it is never visible and on a slow load the window never
-         sits blank. -->
+         sits blank. Colours mirror HeroUI's canvas in both themes. -->
     <style>
+      html[data-theme="light"] {
+        --boot-background: oklch(0.9702 0 0);
+        --boot-foreground: oklch(0.2103 0.0059 285.89);
+        --boot-track: rgba(0, 0, 0, 0.08);
+        --boot-ring: rgba(0, 0, 0, 0.45);
+      }
+      html[data-theme="dark"] {
+        --boot-background: oklch(12% 0.005 285.823);
+        --boot-foreground: oklch(0.9911 0 0);
+        --boot-track: rgba(255, 255, 255, 0.08);
+        --boot-ring: rgba(255, 255, 255, 0.55);
+      }
       #boot {
         position: fixed;
         inset: 0;
@@ -38,8 +66,8 @@
         align-items: center;
         justify-content: center;
         gap: 22px;
-        background: #080808;
-        color: #ededed;
+        background: var(--boot-background, oklch(12% 0.005 285.823));
+        color: var(--boot-foreground, oklch(0.9911 0 0));
         font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         opacity: 1;
         transition: opacity 200ms ease;
@@ -58,8 +86,8 @@
         width: 22px;
         height: 22px;
         border-radius: 50%;
-        border: 2px solid rgba(255, 255, 255, 0.08);
-        border-top-color: rgba(255, 255, 255, 0.55);
+        border: 2px solid var(--boot-track, rgba(255, 255, 255, 0.08));
+        border-top-color: var(--boot-ring, rgba(255, 255, 255, 0.55));
         animation: boot-spin 0.8s linear infinite;
       }
       @keyframes boot-spin {
