@@ -1,8 +1,8 @@
+import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
 import React,{ useRef,useState } from "react";
 import {
-Alert,
 Linking,
 Pressable,
 ScrollView,
@@ -46,6 +46,7 @@ export function TitleScreen({
   back: () => void;
   play: (fileId: number) => void;
 }) {
+  const showDialog = useAppDialog();
   const colors = useColors();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
@@ -479,7 +480,7 @@ export function TitleScreen({
                 icon={Trash2}
                 label="Delete from device"
                 onPress={() =>
-                  Alert.alert(
+                  showDialog(
                     "Delete title?",
                     "This permanently deletes the video files from your device.",
                     [

@@ -1,3 +1,4 @@
+import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useEffect,useState } from "react";
 import {
 checkForUpdate,
@@ -7,6 +8,7 @@ type AppInfo,
 type UpdateInfo,
 } from "@/features/settings/lib/app-updater";
 export function useAppUpdates(online: boolean) {
+  const showDialog = useAppDialog();
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(
     null,
@@ -27,7 +29,7 @@ export function useAppUpdates(online: boolean) {
     try {
       const current = await getInstalledAppInfo();
       setAppInfo(current);
-      const latest = await checkForUpdate(current.buildNumber);
+      const latest = await checkForUpdate(current);
       setAvailableUpdate(latest);
       if (latest) {
         setUpdateStatusText(
@@ -42,7 +44,7 @@ export function useAppUpdates(online: boolean) {
       setUpdateChecking(false);
     }
   };
-  const handleDownloadAndInstall = async () => {
+  const downloadAndInstall = async () => {
     if (!availableUpdate || updateDownloading) return;
     setUpdateDownloading(true);
     setUpdateProgress(0);
@@ -61,6 +63,14 @@ export function useAppUpdates(online: boolean) {
       setUpdateDownloading(false);
       setUpdateProgress(null);
     }
+  };
+
+  const handleDownloadAndInstall = () => {
+    if (!availableUpdate || updateDownloading) return;
+    showDialog("Download update?", `Download ${availableUpdate.tagName} (${(availableUpdate.apkSize / 1024 ** 2).toFixed(1)} MB)? Android will ask you to confirm installation after the download.`, [
+      { text: "Download update", onPress: () => void downloadAndInstall() },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   return {

@@ -130,3 +130,31 @@ test("installed Android versions retain current and legacy update comparisons", 
   expect(selectUpdate([release("build.2033")], "mobile", decodeVersionCode(52032))?.buildNumber).toBe(2033);
   expect(selectUpdate([release("build.2032")], "mobile", decodeVersionCode(52032))).toBeNull();
 });
+
+const mobileRelease = (version: string, build: number): GitHubRelease => ({
+  ...release(`build.${build}`, `Plexy-mobile-v${version}-Android.apk`),
+  tag_name: `v${version}-build.${build}`,
+});
+
+test("1.0.5 discovers 1.0.6 and the shipped 1.0.6 build-only checker discovers 1.0.7", () => {
+  expect(selectUpdate([mobileRelease("1.0.6", 2045)], "mobile", 2044, "1.0.5")?.tagName)
+    .toBe("v1.0.6-build.2045");
+  // 1.0.6 passes only its decoded Android build, without a version name.
+  expect(selectUpdate([mobileRelease("1.0.7", 2046)], "mobile", 2045, "")?.tagName)
+    .toBe("v1.0.7-build.2046");
+  expect(selectUpdate([mobileRelease("1.0.8", 2047)], "mobile", 2046, "1.0.7")?.tagName)
+    .toBe("v1.0.8-build.2047");
+});
+
+test("release version order wins over API ordering and older high-build versions", () => {
+  const versions = [mobileRelease("1.0.5", 9000), mobileRelease("1.0.7", 2046), mobileRelease("1.0.6", 2048)];
+  expect(selectUpdate(versions, "mobile", 2045, "1.0.6")?.tagName).toBe("v1.0.7-build.2046");
+  expect(selectUpdate([mobileRelease("1.0.5", 9000)], "mobile", 2045, "1.0.6")).toBeNull();
+});
+
+test("drafts and incomplete APK releases cannot be offered as updates", () => {
+  const draft = { ...mobileRelease("1.0.7", 2046), draft: true };
+  const empty = mobileRelease("1.0.7", 2047);
+  empty.assets[0]!.size = 0;
+  expect(selectUpdate([draft, empty], "mobile", 2045, "1.0.6")).toBeNull();
+});

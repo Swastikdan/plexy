@@ -1,9 +1,9 @@
+import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useUniwind } from "uniwind";
 import { Directory } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { useEffect,useState } from "react";
 import {
-Alert,
 Modal,
 ScrollView,
 Text,
@@ -32,6 +32,7 @@ import { useAppUpdates } from "./hooks/use-app-updates";
 export function SettingsScreen({ page = "settings" }: {
   page?: "settings" | "folders" | "updates" | "metadata";
 }) {
+  const showDialog = useAppDialog();
   const colors = useColors();
   const { theme } = useUniwind();
   const online = useOnline();
@@ -64,13 +65,19 @@ export function SettingsScreen({ page = "settings" }: {
       setBusy(false);
     }
   };
-  const addFolder = async (kind: LocalRoot["kind"]) => {
+  const pickFolder = async (kind: LocalRoot["kind"]) => {
     const folder = await Directory.pickDirectoryAsync();
     await localLibrary.addRoot({
       uri: folder.uri,
       name: displayName(folder.uri),
       kind,
     });
+  };
+  const addFolder = (kind: LocalRoot["kind"]) => {
+    showDialog("Add media folder", "Choose a folder in Android’s file picker, then allow Plexy to access its videos.", [
+      { text: "Choose folder", onPress: () => void action(() => pickFolder(kind)) },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
   const metadata = localLibrary.metadataSettings;
   const [picker, setPicker] = useState<{
@@ -343,21 +350,21 @@ export function SettingsScreen({ page = "settings" }: {
               title="Add movie folder"
               icon={Film}
               onPress={
-                busy ? undefined : () => void action(() => addFolder("movies"))
+                busy ? undefined : () => addFolder("movies")
               }
             />
             <SettingsRow
               title="Add TV show folder"
               icon={Tv}
               onPress={
-                busy ? undefined : () => void action(() => addFolder("tv"))
+                busy ? undefined : () => addFolder("tv")
               }
             />
             <SettingsRow
               title="Add anime folder"
               icon={Library}
               onPress={
-                busy ? undefined : () => void action(() => addFolder("anime"))
+                busy ? undefined : () => addFolder("anime")
               }
             />
           </View>
@@ -382,7 +389,7 @@ export function SettingsScreen({ page = "settings" }: {
                   title="Remove folder from library"
                   danger
                   onPress={() =>
-                    Alert.alert(
+                    showDialog(
                       "Remove folder?",
                       "Your original videos will stay untouched.",
                       [

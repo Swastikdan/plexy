@@ -1,3 +1,4 @@
+import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useEffect,useState } from "react";
 import { Linking,Text,View } from "react-native";
 import { useOnline } from "@/shared/hooks/use-online";
@@ -13,6 +14,7 @@ type AppInfo,
 type UpdateInfo,
 } from "@/features/settings/lib/app-updater";
 export function Updates() {
+  const showDialog = useAppDialog();
   const online = useOnline();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -32,7 +34,7 @@ export function Updates() {
     try {
       const current = await getInstalledAppInfo();
       setInfo(current);
-      const latest = await checkForUpdate(current.buildNumber);
+      const latest = await checkForUpdate(current);
       setUpdate(latest);
       if (!latest) setMessage("Your app is up to date.");
     } catch (e) {
@@ -77,7 +79,10 @@ export function Updates() {
             style={{ width: 120, flexShrink: 0 }}
             label={progress === 100 ? "Install…" : progress !== null ? `${progress}%` : "Update now"}
             disabled={!online || busy}
-            onPress={() => void install()}
+            onPress={() => showDialog("Download update?", `Download ${update.tagName}? Android will ask you to confirm installation after the download.`, [
+              { text: "Download update", onPress: () => void install() },
+              { text: "Cancel", style: "cancel" },
+            ])}
           />
           <Button
             label="Allow installations"

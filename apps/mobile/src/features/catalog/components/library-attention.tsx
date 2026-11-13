@@ -1,3 +1,4 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import { useRouter,useSegments } from "expo-router";
 import { useEffect,useState } from "react";
@@ -27,23 +28,25 @@ export function LibraryAttention() {
   )
     return null;
   return (
-    <View className="flex-row items-center gap-3 bg-warning/15 p-[14px]">
-      <Text className="flex-1 text-foreground">
-        {attention.count} title{attention.count === 1 ? "" : "s"} need attention
-      </Text>
+    <View className="flex-row items-center gap-3 bg-warning/15 px-[14px] py-1">
       <Pressable
+        className="min-h-[48px] flex-1 flex-row items-center gap-3"
         accessibilityRole="button"
-        onPress={() => router.navigate("/settings")}
+        accessibilityLabel={`${attention.count} titles need attention. Open library report`}
+        onPress={() => { triggerHaptic("light"); router.push("/settings/report"); }}
       >
+        <Text className="flex-1 text-foreground">
+          {attention.count} title{attention.count === 1 ? "" : "s"} need attention
+        </Text>
         <Text className="text-foreground">Review</Text>
       </Pressable>
       <Pressable
+        className="h-12 w-12 items-center justify-center"
         accessibilityRole="button"
         accessibilityLabel="Dismiss notice"
-        hitSlop={10}
-        onPress={() => setDismissed(attention.fingerprint)}
+        onPress={() => { triggerHaptic("light"); setDismissed(attention.fingerprint); }}
       >
-        <X color={colors.ink} size={16} />
+        <X color={colors.ink} size={18} />
       </Pressable>
     </View>
   );

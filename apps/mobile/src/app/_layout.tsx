@@ -1,3 +1,4 @@
+import { AppDialogProvider } from "@/shared/ui/app-dialog";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native/provider";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -11,6 +12,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MobileProvider>
         <HeroUINativeProvider>
+          <AppDialogProvider>
           <Stack
             screenOptions={{
               headerShown: false,
@@ -24,6 +26,7 @@ export default function RootLayout() {
               options={{ animation: "none", gestureEnabled: false }}
             />
           </Stack>
+          </AppDialogProvider>
         </HeroUINativeProvider>
       </MobileProvider>
     </GestureHandlerRootView>

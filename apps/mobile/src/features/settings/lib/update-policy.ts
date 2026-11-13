@@ -42,7 +42,7 @@ export function selectUpdate(
     const build = Number(
       release.tag_name.match(/build\.(\d+)(?:$|[^\d])/i)?.[1],
     );
-    if (!asset || !Number.isSafeInteger(build)) return [];
+    if (release.draft || !asset || !Number.isSafeInteger(build) || build <= 0 || asset.size <= 0) return [];
     const isNewerBuild = build > current;
     let isNewerVersion = false;
     if (currentVersion) {
@@ -50,7 +50,9 @@ export function selectUpdate(
         /^v?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)/,
       );
       if (tagVerMatch) {
-        isNewerVersion = compareSemver(tagVerMatch[1], currentVersion) > 0;
+        const versionOrder = compareSemver(tagVerMatch[1], currentVersion);
+        if (versionOrder < 0) return [];
+        isNewerVersion = versionOrder > 0;
       }
     }
     if (!isNewerBuild && !isNewerVersion) return [];
@@ -68,7 +70,7 @@ export function selectUpdate(
     ];
   });
   return (
-    candidates.sort((a, b) => (b.buildNumber ?? 0) - (a.buildNumber ?? 0))[0] ||
+    candidates.sort((a, b) => compareSemver(b.tagName, a.tagName) || (b.buildNumber ?? 0) - (a.buildNumber ?? 0))[0] ||
     null
   );
 }

@@ -1,7 +1,7 @@
+import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Image } from "expo-image";
 import { useEffect,useState } from "react";
 import {
-Alert,
 FlatList,
 Modal,
 Pressable,
@@ -21,6 +21,7 @@ import { IdentifyTitle } from "./components/identify-title";
 import { ReportAction } from "./components/report-action";
 
 export function LibraryReportScreen() {
+  const showDialog = useAppDialog();
   const colors = useColors();
   const { api, runtime } = useClient();
   const [, update] = useState(0);
@@ -37,7 +38,7 @@ export function LibraryReportScreen() {
     try {
       await addLocalFiles(kind);
     } catch (e) {
-      setMessage(String(e));
+      if (!/cancel/i.test(String(e))) setMessage(String(e));
     } finally {
       setBusy(false);
     }
@@ -66,7 +67,7 @@ export function LibraryReportScreen() {
                 label={busy ? "Adding…" : "+ Add"}
                 disabled={busy}
                 onPress={() =>
-                  Alert.alert(
+                  showDialog(
                     "Add local videos",
                     "Choose the type of title to add.",
                     [
@@ -189,7 +190,7 @@ export function LibraryReportScreen() {
                   label="Remove"
                   subtle
                   onPress={() =>
-                    Alert.alert(
+                    showDialog(
                       "Remove this title?",
                       "It will stay excluded from folder scans. The video file will stay untouched.",
                       [

@@ -1,10 +1,11 @@
+import { fetchUpdateReleases } from "./update-releases";
 import * as Application from "expo-application";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { isCompleteApk, validateApkDownload } from "./update-package";
 import { Platform } from "react-native";
 import { decodeVersionCode } from "../../../shared/lib/build-version";
-import { selectUpdate,type UpdateTarget } from "./update-policy";
+import { selectUpdate } from "./update-policy";
 export interface GitHubAsset {
   name: string;
   size: number;
@@ -17,6 +18,7 @@ export interface GitHubRelease {
   body: string;
   published_at: string;
   prerelease: boolean;
+  draft?: boolean;
   assets: GitHubAsset[];
 }
 export interface UpdateInfo {
@@ -49,35 +51,12 @@ export async function getInstalledAppInfo(): Promise<AppInfo> {
   };
 }
 export async function checkForUpdate(
-  currentBuild?: number,
+  current?: AppInfo | number,
 ): Promise<UpdateInfo | null> {
-  const targetApk: UpdateTarget = "mobile";
-  const appInfo =
-    currentBuild !== undefined
-      ? { buildNumber: currentBuild, versionName: "" }
-      : await getInstalledAppInfo();
-  const res = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO}/releases`,
-    {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Plexy-App",
-      },
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`GitHub update check failed (HTTP ${res.status})`);
-  }
-  const releases: GitHubRelease[] = await res.json();
-  if (!Array.isArray(releases) || releases.length === 0) {
-    return null;
-  }
-  return selectUpdate(
-    releases,
-    targetApk,
-    appInfo.buildNumber,
-    appInfo.versionName,
-  );
+  const installed = typeof current === "object" ? current : await getInstalledAppInfo();
+  const appInfo = typeof current === "number" ? { ...installed, buildNumber: current } : installed;
+  const releases = await fetchUpdateReleases();
+  return selectUpdate(releases, "mobile", appInfo.buildNumber, appInfo.versionName);
 }
 export async function openUnknownAppsSettings(): Promise<void> {
   if (Platform.OS === "android") {
