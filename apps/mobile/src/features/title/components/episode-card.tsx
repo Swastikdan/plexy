@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Image,Pressable,Text,View } from "react-native";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Check,Play } from "@/shared/ui/icons";
 
 export function EpisodeCard({
@@ -18,6 +18,7 @@ export function EpisodeCard({
   item: ItemCard;
   onToggleWatched?: (ep: any) => void;
 }) {
+  const colors = useColors();
   const [, setFocused] = useState(false);
   const watched = Boolean(ep.watch?.played);
   const hasProgress = Boolean(ep.watch?.position && !watched);
@@ -105,7 +106,7 @@ export function EpisodeCard({
                 hitSlop={10}
                 className={cn(
                   "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-60",
-                  watched && "border-[#22c55e]/[0.4] bg-[#22c55e]/[0.15]",
+                  watched && "border-success/40 bg-success/15",
                 )}
                 accessibilityRole="button"
                 accessibilityLabel={
@@ -116,7 +117,7 @@ export function EpisodeCard({
               >
                 <Check
                   size={14}
-                  color={watched ? "#22c55e" : colors.muted}
+                  color={watched ? colors.success : colors.muted}
                   strokeWidth={watched ? 2.6 : 2}
                 />
               </Pressable>

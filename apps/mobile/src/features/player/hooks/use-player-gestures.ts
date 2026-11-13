@@ -1,3 +1,4 @@
+import { createPlayerTapController } from "../lib/player-taps";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -8,7 +9,6 @@ import {
 import {
   clampZoom,
   DOUBLE_TAP_MS,
-  doubleTapSeek,
   pinchZoom,
   SEEK_SECONDS,
   type PlayerTap,
@@ -21,6 +21,8 @@ export function usePlayerGestures({
   reduceMotion,
   seekBy,
   toggleControls,
+  controlsVisible,
+  enabled,
 }: {
   hasLoaded: boolean;
   height: number;
@@ -28,6 +30,8 @@ export function usePlayerGestures({
   reduceMotion: boolean;
   seekBy: (seconds: number) => void;
   toggleControls: () => void;
+  controlsVisible: boolean;
+  enabled: boolean;
 }) {
   const callbacks = useRef({ seekBy, toggleControls });
   callbacks.current = { seekBy, toggleControls };
@@ -35,21 +39,10 @@ export function usePlayerGestures({
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
-  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTap = useRef<PlayerTap | null>(null);
   const gestureBlockedUntil = useRef(0);
   const viewportWidth = useRef(1);
-  const cancelPendingTap = () => {
-    if (tapTimer.current) clearTimeout(tapTimer.current);
-    tapTimer.current = null;
-    lastTap.current = null;
-  };
-  useEffect(
-    () => () => {
-      if (tapTimer.current) clearTimeout(tapTimer.current);
-    },
-    [],
-  );
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -59,6 +52,23 @@ export function usePlayerGestures({
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
   };
+  const tapController = useRef<ReturnType<typeof createPlayerTapController> | null>(null);
+  if (!tapController.current) {
+    tapController.current = createPlayerTapController({
+      toggleControls: () => callbacks.current.toggleControls(),
+      seekBy: (seconds) => {
+        callbacks.current.seekBy(seconds);
+        showFitToast(seconds > 0 ? `Forward ${SEEK_SECONDS} seconds` : `Back ${SEEK_SECONDS} seconds`);
+      },
+      schedule: (callback, delay) => setTimeout(callback, delay),
+      cancel: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    });
+  }
+  const cancelPendingTap = () => tapController.current?.reset();
+  useEffect(() => {
+    if (!enabled) cancelPendingTap();
+  }, [enabled]);
+  useEffect(() => () => cancelPendingTap(), []);
   useEffect(() => {
     if (fitToast) {
       toastOpacity.setValue(0);
@@ -133,9 +143,15 @@ export function usePlayerGestures({
   };
   const videoGestures = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (evt) =>
-        evt.nativeEvent.touches.length >= 2,
+      onStartShouldSetPanResponderCapture: (evt) => {
+        // Every touch begins a new swipe candidate; never reuse a prior tap.
+        const touches = evt.nativeEvent.touches;
+        const touch = touches[0];
+        avCandidate.current = touch ? { x: touch.pageX, y: touch.pageY } : null;
+        return enabledRef.current && touches.length >= 2;
+      },
       onMoveShouldSetPanResponder: (evt) => {
+        if (!enabledRef.current) return false;
         const touches = evt.nativeEvent.touches;
         if (touches.length >= 2) return true;
         if (touches.length !== 1) return false;
@@ -227,7 +243,7 @@ export function usePlayerGestures({
   ).current;
   const onTap = (event: GestureResponderEvent) => {
     const now = Date.now();
-    if (now < gestureBlockedUntil.current || locked) return;
+    if (now < gestureBlockedUntil.current || locked || !enabled) return;
     const tap: PlayerTap = {
       time: now,
       side:
@@ -235,24 +251,7 @@ export function usePlayerGestures({
           ? "left"
           : "right",
     };
-    const seconds = doubleTapSeek(lastTap.current, tap);
-    if (seconds !== null) {
-      cancelPendingTap();
-      callbacks.current.seekBy(seconds);
-      showFitToast(
-        seconds > 0
-          ? `Forward ${SEEK_SECONDS} seconds`
-          : `Back ${SEEK_SECONDS} seconds`,
-      );
-      return;
-    }
-    cancelPendingTap();
-    lastTap.current = tap;
-    tapTimer.current = setTimeout(() => {
-      lastTap.current = null;
-      tapTimer.current = null;
-      callbacks.current.toggleControls();
-    }, DOUBLE_TAP_MS);
+    tapController.current?.tap(tap, controlsVisible);
   };
   useEffect(
     () => () => {

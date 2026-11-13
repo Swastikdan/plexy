@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Film } from "@/shared/ui/icons";
 import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
@@ -30,6 +30,7 @@ export function HomeScreen({
   focused: (id: number) => void;
   active: boolean;
 }) {
+  const colors = useColors();
   const homeRouter = useRouter();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
@@ -188,7 +189,7 @@ export function HomeScreen({
           <RefreshControl
             refreshing={data.loading}
             onRefresh={data.retry}
-            tintColor="#ffffff"
+            tintColor={colors.ink}
           />
         }
       >
@@ -255,7 +256,7 @@ export function HomeScreen({
                 })
               }
             >
-              <NativeButton.Label className="text-white">
+              <NativeButton.Label className="text-accent-foreground">
                 Add media folders
               </NativeButton.Label>
             </NativeButton>

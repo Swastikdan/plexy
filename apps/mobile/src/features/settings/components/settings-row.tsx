@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable,Text,View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import type { NativeIcon } from "@/shared/ui/icons";
 
 export function SettingsRow({
@@ -20,6 +20,7 @@ export function SettingsRow({
   children?: React.ReactNode;
   danger?: boolean;
 }) {
+  const colors = useColors();
   return (
     <Pressable
       accessibilityRole={onPress ? "button" : undefined}

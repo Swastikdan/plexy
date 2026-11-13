@@ -1,6 +1,6 @@
 import { Pressable,Text } from "react-native";
 import { cn } from "@/shared/lib/cn";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import type { NativeIcon } from "@/shared/ui/icons";
 export function TitleMenuAction({
   label,
@@ -13,6 +13,7 @@ export function TitleMenuAction({
   onPress: () => void;
   destructive?: boolean;
 }) {
+  const colors = useColors();
   const color = destructive ? colors.danger : colors.ink;
   return (
     <Pressable

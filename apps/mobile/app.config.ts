@@ -23,9 +23,9 @@ const config: ExpoConfig = {
   platforms: ["android"],
   experiments: { reactCompiler: true },
   scheme: "plexy-mobile",
-  userInterfaceStyle: "dark",
+  userInterfaceStyle: "automatic",
   icon: "../../build/icon.png",
-  backgroundColor: "#080808",
+  backgroundColor: "#f5f5f5",
   orientation: "default",
   android: {
     package: "app.plexy.mobile",
@@ -34,7 +34,7 @@ const config: ExpoConfig = {
     permissions: ["android.permission.REQUEST_INSTALL_PACKAGES"],
     adaptiveIcon: {
       foregroundImage: "../../build/icon.png",
-      backgroundColor: "#080808",
+      backgroundColor: "#f5f5f5",
       monochromeImage: "../../build/icon.png",
     },
     blockedPermissions: [
@@ -55,7 +55,8 @@ const config: ExpoConfig = {
       "expo-splash-screen",
       {
         image: "./assets/splash-icon.png",
-        backgroundColor: "#000000",
+        backgroundColor: "#f5f5f5",
+        dark: { backgroundColor: "#060607" },
         imageWidth: 132,
       },
     ],

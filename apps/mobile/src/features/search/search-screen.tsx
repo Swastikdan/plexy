@@ -10,7 +10,7 @@ View,
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import { Search as SearchIcon,X } from "@/shared/ui/icons";
 import { Loading } from "@/shared/ui/loading";
@@ -27,6 +27,7 @@ export function SearchScreen({
   open: OpenTitle;
   play: (fileId: number) => void;
 }) {
+  const colors = useColors();
   const { api } = useClient();
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
@@ -87,12 +88,12 @@ export function SearchScreen({
       <View
         className={cn(
           "flex-row items-center gap-2.5 mx-5 min-h-[46px] bg-surface rounded-[12px] px-3 border border-border",
-          inputFocus && "border-white/36 bg-surface-secondary",
+          inputFocus && "border-foreground/36 bg-surface-secondary",
         )}
       >
         <SearchIcon
           size={18}
-          color={inputFocus ? "#ffffff" : colors.muted}
+          color={inputFocus ? colors.ink : colors.muted}
           strokeWidth={2.1}
         />
         <TextInput
@@ -113,7 +114,7 @@ export function SearchScreen({
             accessibilityLabel="Clear search"
             hitSlop={10}
             className={cn(
-              "w-6 h-6 rounded-full items-center justify-center bg-white/8",
+              "w-6 h-6 rounded-full items-center justify-center bg-foreground/8",
               "active:opacity-[0.6]",
             )}
           >

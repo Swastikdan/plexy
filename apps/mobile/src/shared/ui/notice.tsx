@@ -15,7 +15,7 @@ export function Notice({
   return (
     <View
       accessibilityLiveRegion="polite"
-      className="p-4 bg-surface-secondary rounded-[10px] border border-white/[0.08] gap-3.5 my-3"
+      className="p-4 bg-surface-secondary rounded-[10px] border border-foreground/[0.08] gap-3.5 my-3"
     >
       <Label
         className={cn(kind === "error" ? "text-danger" : "text-foreground")}

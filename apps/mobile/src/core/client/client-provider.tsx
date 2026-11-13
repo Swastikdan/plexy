@@ -1,3 +1,4 @@
+import { Uniwind } from "uniwind";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { AppState } from "react-native";
 import type { LocalCatalog } from "@/core/library/catalog-api";
@@ -43,6 +44,8 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
                 ...defaultPreferences,
                 ...(await readJson<Partial<Preferences>>(PREFERENCE_KEY, {})),
             };
+            saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
+            Uniwind.setTheme(saved.theme);
             preferencesRef.current = saved;
             if (live)
                 setPreferences(saved);
@@ -65,6 +68,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
     }, [api, progress]);
     const updatePreferences = (patch: Partial<Preferences>) => {
         const next = { ...preferencesRef.current, ...patch };
+        if (patch.theme) Uniwind.setTheme(patch.theme);
         preferencesRef.current = next;
         setPreferences(next);
         void writeJson(PREFERENCE_KEY, next).catch(() => setStorageError("Could not save preferences. Check available device storage."));

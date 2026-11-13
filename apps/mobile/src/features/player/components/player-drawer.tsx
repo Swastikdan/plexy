@@ -1,3 +1,5 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { useColors } from "@/shared/theme";
 import { X, Check } from "@/shared/ui/icons";
 import { isPictureInPictureSupported } from "expo-video";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -52,6 +54,12 @@ export function PlayerDrawer({
   subtitles,
   setPlaybackRate,
 }: PlayerDrawerProps) {
+  const colors = useColors();
+  const close = () => {
+    triggerHaptic("light");
+    setMenu(null);
+    reveal();
+  };
   const { api, preferences, updatePreferences, progress } = useClient();
   const { fitMode, applyFit, zoom } = picture;
   const { position: subVertical, setPosition: setSubVertical } = subtitles;
@@ -89,6 +97,7 @@ export function PlayerDrawer({
   >({});
   const toggleDrawerEpWatched = useCallback(
     async (ep: ItemCard) => {
+      triggerHaptic("selection");
       const isPlayed =
         drawerWatchedOverride[ep.id] ??
         (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
@@ -117,17 +126,17 @@ export function PlayerDrawer({
       visible={menu != null}
       transparent
       animationType="fade"
-      onRequestClose={() => setMenu(null)}
+      onRequestClose={close}
       supportedOrientations={["landscape"]}
     >
       <View className="flex-1 flex-row justify-end bg-black/60">
         <Pressable
           className="absolute inset-0"
           focusable={false}
-          onPress={() => setMenu(null)}
+          onPress={close}
         />
         <Animated.View
-          className="h-full w-[46%] min-w-[380px] max-w-[560px] border-l border-white/10 bg-[#0d0e12]"
+          className="h-full w-[46%] min-w-[380px] max-w-[560px] border-l border-foreground/10 bg-overlay"
           style={{
             transform: [{ translateX: drawerAnim }],
             shadowColor: "#000",
@@ -138,7 +147,7 @@ export function PlayerDrawer({
         >
           <View className="flex-1">
             <View className="flex-row items-center justify-between border-b-[0.33px] border-border px-5 py-3.5">
-              <Text className="text-white text-[17px] font-bold">
+              <Text className="text-foreground text-[17px] font-bold">
                 {menu === "quality"
                   ? "Video quality"
                   : menu === "episodes"
@@ -147,15 +156,13 @@ export function PlayerDrawer({
               </Text>
               <Pressable
                 focusable={true}
-                onPress={() => {
-                  setMenu(null);
-                  reveal();
-                }}
-                className="h-8 w-8 rounded-[16px] bg-white/[0.12] items-center justify-center active:opacity-70"
+                onPress={close}
+                hitSlop={8}
+                className="h-12 w-12 rounded-full bg-foreground/[0.12] items-center justify-center active:opacity-70"
                 accessibilityRole="button"
                 accessibilityLabel="Close menu"
               >
-                <X strokeWidth={2.2} size={18} color="#fff" />
+                <X strokeWidth={2.2} size={18} color={colors.ink} />
               </Pressable>
             </View>
             {menu === "episodes" && (
@@ -202,12 +209,12 @@ export function PlayerDrawer({
                       className={cn(
                         "flex-row items-center px-5 py-3 border-b-[0.33px] border-border active:opacity-[0.75]",
                         isCurrent &&
-                          "bg-white/[0.08] border-l-[3px] border-l-white",
+                          "bg-foreground/[0.08] border-l-[3px] border-l-white",
                       )}
                       accessibilityRole="button"
                       accessibilityLabel={`${epLabel}, ${ep.name}${isCurrent ? ", currently playing" : ""}`}
                     >
-                      <View className="mr-3 h-[50px] w-[88px] overflow-hidden rounded-[6px] bg-white/[0.06]">
+                      <View className="mr-3 h-[50px] w-[88px] overflow-hidden rounded-[6px] bg-foreground/[0.06]">
                         {ep.still || ep.backdrop || ep.poster ? (
                           <PosterImage
                             source={api.image(
@@ -216,8 +223,8 @@ export function PlayerDrawer({
                             style={{ width: 88, height: 50, borderRadius: 6 }}
                           />
                         ) : (
-                          <View className="h-[50px] w-[88px] items-center justify-center bg-white/[0.05]">
-                            <Film size={18} color="rgba(255,255,255,0.3)" />
+                          <View className="h-[50px] w-[88px] items-center justify-center bg-foreground/[0.05]">
+                            <Film size={18} color={colors.muted} />
                           </View>
                         )}
                       </View>
@@ -226,14 +233,14 @@ export function PlayerDrawer({
                           <Text
                             className={cn(
                               "text-[12px] font-bold tracking-[0.5px]",
-                              isCurrent ? "text-white" : "text-white/60",
+                              isCurrent ? "text-foreground" : "text-foreground/60",
                             )}
                           >
                             {epLabel}
                           </Text>
                           {isCurrent && (
-                            <View className="bg-white rounded-[4px] px-1.5 py-0.5">
-                              <Text className="text-black text-[9px] font-archivo-bold tracking-[0.5px]">
+                            <View className="bg-foreground rounded-[4px] px-1.5 py-0.5">
+                              <Text className="text-background text-[9px] font-archivo-bold tracking-[0.5px]">
                                 NOW PLAYING
                               </Text>
                             </View>
@@ -243,15 +250,15 @@ export function PlayerDrawer({
                           className={cn(
                             "text-[14px]",
                             isCurrent
-                              ? "text-white font-bold"
-                              : "text-white/90 font-semibold",
+                              ? "text-foreground font-bold"
+                              : "text-foreground/90 font-semibold",
                           )}
                           numberOfLines={2}
                         >
                           {ep.name || `Episode ${ep.episodeNumber ?? idx + 1}`}
                         </Text>
                         {ep.watch?.duration ? (
-                          <Text className="text-white/40 text-[12px]">
+                          <Text className="text-foreground/40 text-[12px]">
                             {timeLabel(ep.watch.duration)}
                           </Text>
                         ) : null}
@@ -260,10 +267,10 @@ export function PlayerDrawer({
                         onPress={() => void toggleDrawerEpWatched(ep)}
                         hitSlop={10}
                         className={cn(
-                          "ml-2 h-9 w-9 rounded-full items-center justify-center active:opacity-60",
+                          "ml-2 h-12 w-12 rounded-full items-center justify-center active:opacity-60",
                           isEpWatched
-                            ? "bg-[#22c55e]/[0.18]"
-                            : "bg-white/[0.08]",
+                            ? "bg-success/20"
+                            : "bg-foreground/[0.08]",
                         )}
                         accessibilityRole="button"
                         accessibilityLabel={
@@ -274,7 +281,7 @@ export function PlayerDrawer({
                           strokeWidth={2.5}
                           size={16}
                           color={
-                            isEpWatched ? "#22c55e" : "rgba(255,255,255,0.4)"
+                            isEpWatched ? colors.success : colors.muted
                           }
                         />
                       </Pressable>
@@ -331,7 +338,7 @@ export function PlayerDrawer({
                           },
                         ]}
                       />
-                      <Text className="text-white/45 text-[12px] px-5 pt-3 leading-[17px]">
+                      <Text className="text-foreground/45 text-[12px] px-5 pt-3 leading-[17px]">
                         Pinch with two fingers on the video to zoom in or out.
                       </Text>
 
@@ -382,10 +389,10 @@ export function PlayerDrawer({
                       />
                       <View className="flex-row items-center justify-between px-5 pt-[18px]">
                         <View>
-                          <Text className="text-white text-[14px] font-semibold">
+                          <Text className="text-foreground text-[14px] font-semibold">
                             Vertical Position
                           </Text>
-                          <Text className="text-white text-[18px] font-bold mt-1">
+                          <Text className="text-foreground text-[18px] font-bold mt-1">
                             {subVertical}%
                           </Text>
                         </View>
@@ -394,6 +401,7 @@ export function PlayerDrawer({
                             accessibilityRole="button"
                             accessibilityLabel="Move subtitles higher"
                             onPress={() => {
+                              triggerHaptic("selection");
                               const nextVal = Math.max(8, subVertical - 6);
                               setSubVertical(nextVal);
                               updatePreferences({
@@ -401,11 +409,11 @@ export function PlayerDrawer({
                                   nextVal < 50 ? "top" : "bottom",
                               });
                             }}
-                            className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
+                            className="w-12 h-12 rounded-full bg-foreground/10 items-center justify-center active:opacity-60"
                           >
                             <Minus
                               size={18}
-                              color="#ffffff"
+                              color={colors.ink}
                               strokeWidth={2.4}
                             />
                           </Pressable>
@@ -413,6 +421,7 @@ export function PlayerDrawer({
                             accessibilityRole="button"
                             accessibilityLabel="Move subtitles lower"
                             onPress={() => {
+                              triggerHaptic("selection");
                               const nextVal = Math.min(92, subVertical + 6);
                               setSubVertical(nextVal);
                               updatePreferences({
@@ -420,9 +429,9 @@ export function PlayerDrawer({
                                   nextVal < 50 ? "top" : "bottom",
                               });
                             }}
-                            className="w-10 h-10 rounded-full bg-white/10 items-center justify-center active:opacity-60"
+                            className="w-12 h-12 rounded-full bg-foreground/10 items-center justify-center active:opacity-60"
                           >
-                            <Plus size={18} color="#ffffff" strokeWidth={2.4} />
+                            <Plus size={18} color={colors.ink} strokeWidth={2.4} />
                           </Pressable>
                         </View>
                       </View>
@@ -482,7 +491,7 @@ export function PlayerDrawer({
                   </>
                 )}
                 {menu === "quality" && (
-                  <Text className="text-white/50 text-[14px] px-5 py-5">
+                  <Text className="text-foreground/50 text-[14px] px-5 py-5">
                     Original file quality. No video conversion.
                   </Text>
                 )}

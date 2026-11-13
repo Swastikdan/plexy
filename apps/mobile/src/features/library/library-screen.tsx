@@ -14,7 +14,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { colors,easings } from "@/shared/theme";
+import { useColors,easings } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Film } from "@/shared/ui/icons";
@@ -92,6 +92,7 @@ export function LibraryScreen({
   open: OpenTitle;
   defaultSubTab?: "movie" | "series" | "anime";
 }) {
+  const colors = useColors();
   const { api, runtime } = useClient();
   const { width } = useWindowDimensions();
   type LibraryTab = "movie" | "series" | "anime" | "collection";
@@ -268,12 +269,12 @@ export function LibraryScreen({
               setSortOpen(true);
             }}
             className={cn(
-              "flex-row items-center gap-1.5 h-[38px] px-3 rounded-full border border-white/14 bg-surface max-w-[190px]",
-              sortOpen && "border-white/40 bg-surface-secondary",
+              "flex-row items-center gap-1.5 h-[38px] px-3 rounded-full border border-foreground/14 bg-surface max-w-[190px]",
+              sortOpen && "border-foreground/40 bg-surface-secondary",
               "active:opacity-[0.72]",
             )}
           >
-            <ArrowUpDown size={14} color="#ffffff" strokeWidth={2} />
+            <ArrowUpDown size={14} color={colors.ink} strokeWidth={2} />
             <Text
               className="font-archivo-medium text-[12.5px] text-foreground shrink"
               numberOfLines={1}
@@ -321,7 +322,7 @@ export function LibraryScreen({
                   }}
                   className={cn(
                     "flex-1 rounded-full items-center justify-center px-3",
-                    active && "bg-white",
+                    active && "bg-foreground",
                     !active && "active:opacity-[0.65]",
                   )}
                 >
@@ -332,7 +333,7 @@ export function LibraryScreen({
                       // conflicting text-* classes by stylesheet order, so a
                       // conditional override of text-muted never wins.
                       active
-                        ? "font-archivo-bold text-black"
+                        ? "font-archivo-bold text-background"
                         : "font-archivo-medium text-muted",
                     )}
                   >
@@ -461,10 +462,10 @@ export function LibraryScreen({
           accessibilityLabel="Close sort and filter"
         >
           <Pressable
-            className="bg-[#0b0b0b] rounded-t-[24px] border-t-[0.33px] border-border pt-2 px-3"
+            className="bg-overlay rounded-t-[24px] border-t-[0.33px] border-border pt-2 px-3"
             onPress={() => {}}
           >
-            <View className="w-[40px] h-[4px] rounded-[2px] bg-white/22 self-center mb-2.5" />
+            <View className="w-[40px] h-[4px] rounded-[2px] bg-foreground/22 self-center mb-2.5" />
             <Text className="font-archivo-bold text-[18px] text-foreground tracking-[-0.3px] px-2 pb-3">
               Sort & filter
             </Text>
@@ -482,20 +483,20 @@ export function LibraryScreen({
                   }}
                   className={cn(
                     "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-                    active && "bg-white",
+                    active && "bg-foreground",
                     "active:opacity-[0.75]",
                   )}
                 >
                   <Text
                     className={cn(
                       "font-archivo-medium text-[15px] text-foreground",
-                      active && "font-archivo-bold text-black",
+                      active && "font-archivo-bold text-background",
                     )}
                   >
                     {label}
                   </Text>
                   {active && (
-                    <Check size={18} color="#000000" strokeWidth={2.6} />
+                    <Check size={18} color={colors.canvas} strokeWidth={2.6} />
                   )}
                 </Pressable>
               );
@@ -509,20 +510,20 @@ export function LibraryScreen({
               }}
               className={cn(
                 "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-                unwatched && "bg-white",
+                unwatched && "bg-foreground",
                 "active:opacity-[0.75]",
               )}
             >
               <Text
                 className={cn(
                   "font-archivo-medium text-[15px] text-foreground",
-                  unwatched && "font-archivo-bold text-black",
+                  unwatched && "font-archivo-bold text-background",
                 )}
               >
                 Unwatched only
               </Text>
               {unwatched && (
-                <Check size={18} color="#000000" strokeWidth={2.6} />
+                <Check size={18} color={colors.canvas} strokeWidth={2.6} />
               )}
             </Pressable>
             <View className="h-4" />

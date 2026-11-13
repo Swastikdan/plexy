@@ -1,20 +1,21 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors } from "@/shared/theme";
+import { useColors, withAlpha } from "@/shared/theme";
 
 export function TopFade() {
+  const colors = useColors();
   const insets = useSafeAreaInsets();
   return (
     <LinearGradient
       pointerEvents="none"
-      colors={[colors.canvas, "rgba(0,0,0,0.92)", "rgba(0,0,0,0)"]}
-      locations={[0, 0.4, 1]}
+      colors={[withAlpha(colors.canvas, 0.88), withAlpha(colors.canvas, 0.32), withAlpha(colors.canvas, 0)]}
+      locations={[0, 0.35, 1]}
       style={{
         position: "absolute",
         top: 0,
         left: 0,
         right: 0,
-        height: insets.top + 112,
+        height: insets.top + 96,
         zIndex: 10,
       }}
     />

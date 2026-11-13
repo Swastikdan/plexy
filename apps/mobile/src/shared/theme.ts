@@ -1,23 +1,24 @@
-// Theme colors mirror the HeroUI Native default dark theme tokens (see
-// global.css). Raw strings are only needed for component color props that
-// cannot take class names (icon `color`, gradient `colors`, interpolators) —
-// styles themselves must use Tailwind classes with the same token names.
-export const colors = {
-  canvas: "#060607", // --background (dark)
-  surface: "#18181b", // --surface (dark)
-  elevated: "#232325", // --surface-secondary (dark)
-  hover: "#2a2a2e", // --color-surface-hover (dark)
-  ink: "#fcfcfc", // --foreground (snow)
-  muted: "#9f9fa9", // --muted
-  quiet: "#9f9fa9", // --muted
-  line: "#28282c", // --border (dark)
-  strong: "#0485f738", // accent at ~22% alpha
-  brand: "#0485f7", // --accent (dark)
-  brandLight: "#5aabfb", // accent, lightened
-  brandDark: "#0365bd", // accent, deepened
-  amber: "#f7b750", // --warning (dark)
-  danger: "#db3b3e", // --danger (dark)
-};
+import { processColor } from "react-native";
+import { useThemeColor } from "heroui-native";
+
+// Resolve raw color props from the same HeroUI tokens as Tailwind utilities.
+// This hook subscribes each consumer to theme changes, including native icons.
+export function useColors() {
+  const [canvas, surface, elevated, hover, ink, muted, line, brand, amber, danger, success] =
+    useThemeColor(["background", "surface", "surface-secondary", "surface-hover",
+      "foreground", "muted", "border", "accent", "warning", "danger", "success"]);
+  return { canvas, surface, elevated, hover, ink, muted, quiet: muted, line,
+    brand, brandLight: brand, brandDark: brand, amber, danger, success };
+}
+
+// React Native resolves HeroUI colors before applying alpha for gradients.
+export function withAlpha(color: string, opacity: number) {
+  const value = processColor(color);
+  if (typeof value !== "number") return color;
+  const rgb = value >>> 0;
+  return `rgba(${(rgb >>> 16) & 255}, ${(rgb >>> 8) & 255}, ${rgb & 255}, ${opacity})`;
+}
+
 // One shape for every action, including icon-only and playback controls.
 export const control = { radius: 999, height: 52, inset: 20 } as const;
 // Card radius matching the Driftboard grouped-list look (18px cards).

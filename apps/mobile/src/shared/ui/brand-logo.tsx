@@ -5,7 +5,7 @@ Path,
 Stop,
 LinearGradient as SvgGradient,
 } from "react-native-svg";
-import { fonts } from "@/shared/theme";
+import { fonts, useColors } from "@/shared/theme";
 
 export function PlexyMark({ size = 22 }: { size?: number }) {
   const height = (size * 277) / 256;
@@ -38,6 +38,7 @@ export function PlexyLogo({
   size?: number;
   showText?: boolean;
 }) {
+  const colors = useColors();
   return (
     <View className="flex-row items-center gap-2">
       <PlexyMark size={size} />
@@ -46,7 +47,7 @@ export function PlexyLogo({
           style={{
             fontFamily: fonts.black,
             fontSize: size * 0.95,
-            color: "#ffffff",
+            color: colors.ink,
             letterSpacing: -0.4,
           }}
         >

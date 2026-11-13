@@ -1,12 +1,12 @@
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native/provider";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { Uniwind } from "uniwind";
+import { useColors } from "@/shared/theme";
 import "../../global.css";
 import { MobileProvider } from "@/core/mobile-provider";
-Uniwind.setTheme("dark");
 export const unstable_settings = { initialRouteName: "(tabs)" };
 export default function RootLayout() {
+  const colors = useColors();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MobileProvider>
@@ -14,7 +14,7 @@ export default function RootLayout() {
           <Stack
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: "#000" },
+              contentStyle: { backgroundColor: colors.canvas },
             }}
           >
             <Stack.Screen name="(tabs)" />

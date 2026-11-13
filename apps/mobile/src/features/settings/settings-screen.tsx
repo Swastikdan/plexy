@@ -1,3 +1,4 @@
+import { useUniwind } from "uniwind";
 import { Directory } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { useEffect,useState } from "react";
@@ -18,7 +19,7 @@ localRuntime,
 } from "@/core/library/local-runtime";
 import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Download, Film, Library, Tv } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
@@ -31,6 +32,8 @@ import { useAppUpdates } from "./hooks/use-app-updates";
 export function SettingsScreen({ page = "settings" }: {
   page?: "settings" | "folders" | "updates" | "metadata";
 }) {
+  const colors = useColors();
+  const { theme } = useUniwind();
   const online = useOnline();
   const router = useRouter();
   const [, update] = useState(0);
@@ -167,6 +170,18 @@ export function SettingsScreen({ page = "settings" }: {
       {!!message && <Notice message={message} />}
       {page === "settings" && (
         <>
+          <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+            Appearance
+          </Text>
+          <View className="overflow-hidden rounded-[18px] bg-surface">
+            <SettingsRow title="Dark mode" subtitle={theme === "dark" ? "Dark appearance" : "Light appearance"}>
+              <ToggleSwitch
+                accessibilityLabel="Dark mode"
+                value={theme === "dark"}
+                onValueChange={(value) => updatePreferences({ theme: value ? "dark" : "light" })}
+              />
+            </SettingsRow>
+          </View>
           <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
             Library
           </Text>

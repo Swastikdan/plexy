@@ -1,9 +1,10 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
 import React from "react";
 import { Pressable } from "react-native";
 
 export function PlayerControl({
   onPress,
-  size = 46,
+  size = 48,
   bg = "rgba(0,0,0,0.3)",
   children,
   disabled = false,
@@ -24,15 +25,15 @@ export function PlayerControl({
 }) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => { triggerHaptic("light"); onPress(); }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       hitSlop={12}
       className="items-center justify-center rounded-full"
       style={({ pressed }) => ({
-        width: size,
-        height: size,
+        width: Math.max(48, size),
+        height: Math.max(48, size),
         backgroundColor: active ? activeBg : bg,
         opacity: disabled ? 0.4 : pressed ? 0.8 : 1,
         transform: [{ scale: pressed ? 0.92 : 1 }],

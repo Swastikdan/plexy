@@ -9,7 +9,7 @@ import { useClient } from "@/core/client/client-provider";
 import { LibraryAttention } from "@/features/catalog/components/library-attention";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Home, Library, Search, Settings, type NativeIcon } from "@/shared/ui/icons";
 const tabs: {
   name: string;
@@ -36,6 +36,7 @@ function TabIcon({
   focused: boolean;
   filled: boolean;
 }) {
+  const colors = useColors();
   const reduceMotion = useReducedMotion();
   const scale = useRef(new Animated.Value(1)).current;
   const wasFocused = useRef(focused);
@@ -124,6 +125,7 @@ function MobileTabBar({
   );
 }
 export default function TabLayout() {
+  const colors = useColors();
   const isHome = usePathname() === "/";
   const { runtime } = useClient();
   const [attention, setAttention] = useState(0);

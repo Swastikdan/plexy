@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { ArrowLeft } from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
 
@@ -25,6 +25,7 @@ export function TitleBrowser({
   close: () => void;
   open: (id: string | number) => void;
 }) {
+  const colors = useColors();
   const { api } = useClient();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();

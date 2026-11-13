@@ -1,3 +1,4 @@
+import { useColors } from "@/shared/theme";
 import { View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import { useResource } from "@/core/resources/use-resource";
@@ -15,6 +16,7 @@ export function PlayerScreen({
   back: () => void;
   next: (id: number) => void;
 }) {
+  const colors = useColors();
   const { api, progress } = useClient();
   const resource = useResource(async () => {
     const manifest = await api.play(fileId);
@@ -37,7 +39,7 @@ export function PlayerScreen({
       <View
         style={{
           flex: 1,
-          backgroundColor: "#000000",
+          backgroundColor: colors.canvas,
           justifyContent: "center",
           alignItems: "center",
         }}

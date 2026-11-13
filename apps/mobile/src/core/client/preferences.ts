@@ -10,6 +10,7 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
 export const writeJson = (key: string, value: unknown) =>
   AsyncStorage.setItem(key, JSON.stringify(value));
 export interface Preferences {
+  theme: "light" | "dark" | "system";
   autoSubtitles: boolean;
   subtitleLanguage: string;
   subtitleOffset: number;
@@ -20,6 +21,7 @@ export interface Preferences {
   playbackRate: number;
 }
 export const defaultPreferences: Preferences = {
+  theme: "system",
   autoSubtitles: true,
   subtitleLanguage: "en",
   subtitleOffset: 0,

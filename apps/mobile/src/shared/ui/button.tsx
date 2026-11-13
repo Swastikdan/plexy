@@ -51,12 +51,12 @@ export const Button = forwardRef<
         compact
           ? "min-h-[36px] px-3.5 py-2 gap-2"
           : "min-h-[52px] px-5 py-3 gap-[9px]",
-        !isFilled && "bg-white/10",
-        "focus:border-2 focus:border-white",
+        !isFilled && "bg-default",
+        "focus:border-2 focus:border-foreground",
       )}
     >
       {!compact && (
-        <NativeButton.Label className="text-[15px] font-archivo-medium text-white">
+        <NativeButton.Label className={cn("text-[15px] font-archivo-medium", isFilled ? "text-accent-foreground" : "text-default-foreground")}>
           {label}
         </NativeButton.Label>
       )}

@@ -1,3 +1,4 @@
+import { useColors } from "@/shared/theme";
 import { useEffect,useRef } from "react";
 import {
 ActivityIndicator,
@@ -13,6 +14,7 @@ export function Loading({
 }: {
   showLogo?: boolean;
 } = {}) {
+  const colors = useColors();
   const reduceMotion = useReducedMotion();
   const shouldShowLogo = showLogo !== undefined ? showLogo : true;
   const slide = useRef(new Animated.Value(0)).current;
@@ -39,24 +41,24 @@ export function Loading({
   }, [shouldShowLogo, slide, reduceMotion]);
   if (!shouldShowLogo) {
     return (
-      <View className="flex-1 p-12 items-center justify-center">
+      <View className="flex-1 bg-background p-12 items-center justify-center">
         <ActivityIndicator
           size="small"
-          color="#ffffff"
+          color={colors.ink}
           accessibilityLabel="Loading"
         />
       </View>
     );
   }
   return (
-    <View className="flex-1 p-12 items-center justify-center gap-[26px]">
+    <View className="flex-1 bg-background p-12 items-center justify-center gap-[26px]">
       <PlexyLogo size={34} showText={true} />
       <View
-        className="w-[140px] h-[3px] rounded-[2px] bg-white/[0.14] overflow-hidden"
+        className="w-[140px] h-[3px] rounded-[2px] bg-foreground/[0.14] overflow-hidden"
         accessibilityLabel="Loading"
       >
         <Animated.View
-          className="w-12 h-[3px] rounded-[2px] bg-white"
+          className="w-12 h-[3px] rounded-[2px] bg-foreground"
           style={{
             transform: [
               {

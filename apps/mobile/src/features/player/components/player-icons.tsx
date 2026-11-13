@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
 import { Svg, Path, Rect } from "react-native-svg";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Crop, Maximize, MoveHorizontal, ZoomIn } from "@/shared/ui/icons";
 import { SEEK_SECONDS } from "@/features/player/lib/player-interactions";
 
@@ -87,6 +87,7 @@ export function IconFitState({
   size?: number;
   color?: string;
 }) {
+  const colors = useColors();
   if (mode === "cover") {
     return <Crop size={size} color={color} strokeWidth={2.2} />;
   }

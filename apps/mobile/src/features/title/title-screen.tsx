@@ -17,7 +17,7 @@ import { useOnline } from "@/shared/hooks/use-online";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { cn } from "@/shared/lib/cn";
-import { colors,control } from "@/shared/theme";
+import { useColors,control } from "@/shared/theme";
 import {
 ArrowLeft,
 Check,
@@ -46,6 +46,7 @@ export function TitleScreen({
   back: () => void;
   play: (fileId: number) => void;
 }) {
+  const colors = useColors();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
@@ -161,11 +162,11 @@ export function TitleScreen({
       <TopFade />
       <Pressable
         onPress={back}
-        className="absolute left-4 z-[99] h-10 w-10 items-center justify-center rounded-full border border-white/[0.15] bg-black/[0.65] active:opacity-60"
+        className="absolute left-4 z-[99] h-10 w-10 items-center justify-center rounded-full border border-foreground/[0.15] bg-overlay/90 active:opacity-60"
         style={{ top: insets.top + 14 }}
         hitSlop={14}
       >
-        <ArrowLeft size={22} color="#fff" strokeWidth={2} />
+        <ArrowLeft size={22} color={colors.ink} strokeWidth={2} />
       </Pressable>
 
       <ScrollView
@@ -231,7 +232,7 @@ export function TitleScreen({
                           className={cn(
                             "text-[15px]",
                             detailTab === "episodes"
-                              ? "font-archivo-bold text-black"
+                              ? "font-archivo-bold text-background"
                               : "font-archivo-medium text-muted",
                           )}
                         >
@@ -258,7 +259,7 @@ export function TitleScreen({
                           className={cn(
                             "text-[15px]",
                             detailTab === "details"
-                              ? "font-archivo-bold text-black"
+                              ? "font-archivo-bold text-background"
                               : "font-archivo-medium text-muted",
                           )}
                         >
@@ -303,7 +304,7 @@ export function TitleScreen({
                                     // padding never change, so the pill keeps
                                     // its exact height.
                                     active
-                                      ? "border-b-white"
+                                      ? "border-b-foreground"
                                       : seasonFocus === s.number
                                         ? "border-b-accent"
                                         : "border-b-transparent",
@@ -312,7 +313,7 @@ export function TitleScreen({
                                   <Text
                                     className={cn(
                                       "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
-                                      active ? "text-white" : "text-muted",
+                                      active ? "text-foreground" : "text-muted",
                                     )}
                                   >
                                     {label}
@@ -357,7 +358,7 @@ export function TitleScreen({
                       </>
                     ) : (
                       <>
-                        <Text className="font-archivo-regular text-[14px] leading-[22px] text-[#f0f0f0]/[0.78]">
+                        <Text className="font-archivo-regular text-[14px] leading-[22px] text-foreground/80">
                           {detail.metadata?.overview ||
                             item.overview ||
                             "No synopsis is available."}
@@ -389,7 +390,7 @@ export function TitleScreen({
                   </>
                 ) : (
                   <>
-                    <Text className="font-archivo-regular text-[14px] leading-[22px] text-[#f0f0f0]/[0.78]">
+                    <Text className="font-archivo-regular text-[14px] leading-[22px] text-foreground/80">
                       {detail.metadata?.overview ||
                         item.overview ||
                         "No synopsis is available."}
@@ -436,7 +437,7 @@ export function TitleScreen({
           <Pressable
             accessibilityLabel="More title actions"
             onPress={() => setMenuOpen(!menuOpen)}
-            className="absolute right-5 z-[99] h-10 w-10 items-center justify-center rounded-full border border-white/[0.15] bg-black/[0.65]"
+            className="absolute right-5 z-[99] h-10 w-10 items-center justify-center rounded-full border border-foreground/[0.15] bg-overlay/90"
             style={{ top: insets.top + 14 }}
           >
             <MoreHorizontal size={22} color={colors.ink} />
@@ -504,7 +505,7 @@ export function TitleScreen({
             style={{ paddingBottom: Math.max(insets.bottom, 14) }}
           >
             <NativeButton
-              className="flex-1 justify-center rounded-full bg-white px-5"
+              className="flex-1 justify-center rounded-full bg-foreground px-5"
               style={{ height: control.height, minHeight: control.height }}
               size="lg"
               accessibilityLabel={detailAction.accessibilityLabel}
@@ -516,7 +517,7 @@ export function TitleScreen({
             >
               <Play size={22} color={colors.canvas} fill={colors.canvas} />
               <View style={{ alignItems: "center", flexShrink: 1 }}>
-                <NativeButton.Label className="text-black">
+                <NativeButton.Label className="text-background">
                   {detailAction.label}
                 </NativeButton.Label>
               </View>

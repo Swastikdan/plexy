@@ -1,12 +1,13 @@
-import { Check } from "@/shared/ui/icons";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { Check, X } from "@/shared/ui/icons";
 import React from "react";
-import { Modal, Pressable, Text, View } from "react-native";
-import { colors } from "@/shared/theme";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-/** Compact speed picker anchored to the left side of the landscape player. */
+/** Centered speed picker, matching Audio & Subtitles. */
 export function SpeedPanel({
   visible,
   rate,
@@ -18,35 +19,41 @@ export function SpeedPanel({
   onClose: () => void;
   onSelect: (rate: number) => void;
 }) {
+  const colors = useColors();
+  const close = () => { triggerHaptic("light"); onClose(); };
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={close}
       supportedOrientations={["landscape"]}
     >
-      <View className="flex-1 bg-black/55">
+      <View className="flex-1 items-center justify-center bg-black/55 p-4">
         <Pressable
           className="absolute inset-0"
           accessibilityLabel="Close speed picker"
-          onPress={onClose}
+          onPress={close}
         />
         <View
-          className="absolute w-[264px] rounded-[18px] border border-white/10 bg-[#0d0e12] p-2.5"
+          className="w-[264px] rounded-[18px] border border-foreground/10 bg-overlay p-2.5"
           style={{
-            left: 18,
-            top: "50%",
-            transform: [{ translateY: -158 }],
+            maxHeight: "100%",
             shadowColor: "#000",
             shadowOpacity: 0.5,
             shadowRadius: 20,
             elevation: 20,
           }}
         >
-          <Text className="px-3 pb-1.5 pt-2 text-[11px] font-bold uppercase tracking-[1.2px] text-white/[0.42]">
-            Playback speed
-          </Text>
+          <View className="flex-row items-center justify-between pl-3">
+            <Text className="text-[14px] font-bold text-foreground">Playback speed</Text>
+            <Pressable onPress={close} hitSlop={4} accessibilityRole="button"
+              accessibilityLabel="Close speed picker"
+              className="h-12 w-12 items-center justify-center rounded-full active:bg-foreground/10">
+              <X size={20} color={colors.ink} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
           {RATES.map((value) => {
             const active = Math.abs(rate - value) < 0.001;
             return (
@@ -54,18 +61,18 @@ export function SpeedPanel({
                 key={String(value)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
-                onPress={() => onSelect(value)}
+                onPress={() => { triggerHaptic("selection"); onSelect(value); }}
                 className={cn(
-                  "flex-row items-center justify-between rounded-[12px] px-3.5 py-3 active:bg-white/10",
-                  active && "bg-white/[0.08]",
+                  "min-h-[48px] flex-row items-center justify-between rounded-[12px] px-3.5 py-3 active:bg-foreground/10",
+                  active && "bg-foreground/[0.08]",
                 )}
               >
                 <Text
                   className={cn(
                     "text-[15px]",
                     active
-                      ? "font-bold text-white"
-                      : "font-medium text-white/85",
+                      ? "font-bold text-foreground"
+                      : "font-medium text-foreground/85",
                   )}
                 >
                   {value}×
@@ -76,6 +83,7 @@ export function SpeedPanel({
               </Pressable>
             );
           })}
+          </ScrollView>
         </View>
       </View>
     </Modal>

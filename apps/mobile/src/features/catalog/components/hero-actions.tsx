@@ -1,3 +1,4 @@
+import { useColors } from "@/shared/theme";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemCard } from "@/core/library/catalog-api";
@@ -34,6 +35,7 @@ export function HeroActions({
   onHeroFocus,
   hideActions = false,
 }: HeroActionsProps) {
+  const colors = useColors();
   const { api } = useClient();
   const [, setPlayFocus] = useState(false);
   const [, setDetailFocus] = useState(false);
@@ -65,14 +67,14 @@ export function HeroActions({
         }}
         onBlur={() => setPlayFocus(false)}
         className={cn(
-          "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-white px-5 py-3.5",
+          "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-foreground px-5 py-3.5",
           disabled && "opacity-40",
           "active:opacity-78",
         )}
       >
-        <Play size={22} color={"#000"} fill={"#000"} />
+        <Play size={22} color={colors.canvas} fill={colors.canvas} />
         <View style={{ alignItems: "center", flexShrink: 1 }}>
-          <Text className="font-archivo-bold text-[16px] tracking-[0.2px] text-black">
+          <Text className="font-archivo-bold text-[16px] tracking-[0.2px] text-background">
             {playLabel}
           </Text>
         </View>
@@ -89,14 +91,14 @@ export function HeroActions({
           }}
           onBlur={() => setDetailFocus(false)}
           className={cn(
-            "h-[52px] w-[52px] items-center justify-center rounded-full bg-white",
+            "h-[52px] w-[52px] items-center justify-center rounded-full bg-foreground",
             "active:opacity-78",
           )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Details"
         >
-          <InfoSolid size={28} color="#000" />
+          <InfoSolid size={28} color={colors.canvas} />
         </Pressable>
       )}
       {onTrailer && (
@@ -111,14 +113,14 @@ export function HeroActions({
           }}
           onBlur={() => setTrailerFocus(false)}
           className={cn(
-            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-white/45 bg-white/12",
+            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-foreground/45 bg-foreground/12",
             "active:opacity-78",
           )}
           hitSlop={10}
           disabled={busy}
           accessibilityLabel="Watch Trailer"
         >
-          <Film size={20} color="#fff" strokeWidth={2.2} />
+          <Film size={20} color={colors.ink} strokeWidth={2.2} />
         </Pressable>
       )}
       {onToggleWatched && (
@@ -134,7 +136,7 @@ export function HeroActions({
           onBlur={() => setWatchedFocus(false)}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px]",
-            isWatched ? "border-white bg-white" : "border-white/45 bg-white/12",
+            isWatched ? "border-foreground bg-foreground" : "border-foreground/45 bg-foreground/12",
             "active:opacity-78",
           )}
           hitSlop={8}
@@ -143,7 +145,7 @@ export function HeroActions({
         >
           <Check
             size={18}
-            color={isWatched ? "#000000" : "#fff"}
+            color={isWatched ? colors.canvas : colors.ink}
             strokeWidth={isWatched ? 2.6 : 2}
           />
         </Pressable>
@@ -160,14 +162,14 @@ export function HeroActions({
           }}
           onBlur={() => setDeleteFocus(false)}
           className={cn(
-            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-[#ef4444]/50 bg-[#ef4444]/15",
+            "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-danger/50 bg-danger/15",
             "active:opacity-78",
           )}
           hitSlop={8}
           disabled={busy}
           accessibilityLabel="Delete"
         >
-          <Trash2 size={18} color="#ef4444" strokeWidth={2.2} />
+          <Trash2 size={18} color={colors.danger} strokeWidth={2.2} />
         </Pressable>
       )}
     </View>

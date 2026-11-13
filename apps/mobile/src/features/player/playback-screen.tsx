@@ -1,3 +1,4 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
 import { ArrowLeft, Play, Pause, SlidersHorizontal } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
 import * as Orientation from "expo-screen-orientation";
@@ -199,6 +200,8 @@ export function PlaybackScreen({
     reduceMotion,
     seekBy: (seconds) => seek(currentPosition.current + seconds),
     toggleControls,
+    controlsVisible: visible,
+    enabled: !locked && !resume && !menu && !speedPanel && !audioPanel,
   });
   const isTvShow = Boolean(
     manifest.parentItemId ||
@@ -545,7 +548,7 @@ export function PlaybackScreen({
   const previewTime = scrub ?? position;
 
   const show =
-    visible || !!menu || speedPanel || audioPanel || resume || ended || !!error;
+    !resume && (visible || !!menu || speedPanel || audioPanel || ended || !!error);
   const openingVideo = shouldShowPlayerLoading(
     status,
     hasLoaded,
@@ -653,7 +656,7 @@ export function PlaybackScreen({
           style={{ opacity: (1 - brightness) * 0.9 }}
         />
 
-        {openingVideo && <PlayerLoading />}
+        {openingVideo && !resume && <PlayerLoading />}
         <Animated.View
           pointerEvents="none"
           style={{
@@ -757,6 +760,8 @@ export function PlaybackScreen({
           className="absolute inset-0"
           pointerEvents="box-none"
           style={{ opacity: chromeIn }}
+          onTouchStart={() => { lastInteraction.current = Date.now(); }}
+          onTouchEnd={() => { lastInteraction.current = Date.now(); }}
         >
           {!openingVideo && !ended && !creditsPills && (
             <TimelineBar
@@ -840,7 +845,7 @@ export function PlaybackScreen({
               top: Math.max(insets.top, 10) + 8,
             }}
           >
-            <PlayerControl onPress={exit} size={42} bg="rgba(0,0,0,0.4)">
+            <PlayerControl accessibilityLabel="Close player" onPress={exit} size={48} bg="rgba(0,0,0,0.4)">
               <ArrowLeft strokeWidth={2.2} color="#ffffff" size={20} />
             </PlayerControl>
           </View>
@@ -852,8 +857,9 @@ export function PlaybackScreen({
             }}
           >
             <PlayerControl
+              accessibilityLabel="Player settings"
               onPress={() => setMenu("settings")}
-              size={42}
+              size={48}
               bg="rgba(0,0,0,0.4)"
               active={menu === "settings"}
             >
@@ -891,7 +897,7 @@ export function PlaybackScreen({
             </PlayerControl>
 
             <Pressable
-              onPress={togglePlay}
+              onPress={() => { triggerHaptic("light"); togglePlay(); }}
               accessibilityRole="button"
               accessibilityLabel={playing ? "Pause" : "Play"}
               hitSlop={14}
@@ -1052,36 +1058,40 @@ export function PlaybackScreen({
           >
             <Pressable
               onPress={() => {
+                triggerHaptic("light");
+                reveal();
                 setChoice((old) => ({ ...old, start: initialResume }));
                 setResume(false);
                 setStarted(true);
               }}
               accessibilityRole="button"
               accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
-              className="rounded-[14px] bg-white px-5 py-4 active:opacity-85"
+              className="rounded-[14px] bg-foreground px-5 py-4 active:opacity-85"
               style={({ pressed }) => ({
                 transform: [{ scale: pressed ? 0.97 : 1 }],
               })}
             >
-              <Text className="text-black font-archivo-bold text-[15px]">
+              <Text className="text-background font-archivo-bold text-[15px]">
                 Continue watching ({timeLabel(initialResume)})
               </Text>
             </Pressable>
 
             <Pressable
               onPress={() => {
+                triggerHaptic("light");
+                reveal();
                 setChoice((old) => ({ ...old, start: 0 }));
                 setResume(false);
                 setStarted(true);
               }}
               accessibilityRole="button"
               accessibilityLabel="Start from beginning"
-              className="rounded-[14px] bg-white/[0.14] border border-white/20 px-5 py-4 active:opacity-85"
+              className="rounded-[14px] bg-foreground/[0.14] border border-foreground/20 px-5 py-4 active:opacity-85"
               style={({ pressed }) => ({
                 transform: [{ scale: pressed ? 0.97 : 1 }],
               })}
             >
-              <Text className="text-white/95 font-archivo-medium text-[15px]">
+              <Text className="text-foreground/95 font-archivo-medium text-[15px]">
                 Start from beginning
               </Text>
             </Pressable>

@@ -13,7 +13,7 @@ import type { ItemCard } from "@plexy/api-client/types";
 import type { LocalRoot } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Film, Tv } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { addLocalFiles } from "@/features/library/lib/import-local-files";
@@ -21,6 +21,7 @@ import { IdentifyTitle } from "./components/identify-title";
 import { ReportAction } from "./components/report-action";
 
 export function LibraryReportScreen() {
+  const colors = useColors();
   const { api, runtime } = useClient();
   const [, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");

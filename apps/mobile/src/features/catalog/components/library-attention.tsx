@@ -1,9 +1,11 @@
+import { useColors } from "@/shared/theme";
 import { useRouter,useSegments } from "expo-router";
 import { useEffect,useState } from "react";
 import { Pressable,Text,View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import { X } from "@/shared/ui/icons";
 export function LibraryAttention() {
+  const colors = useColors();
   const router = useRouter();
   const segments = useSegments();
   const { runtime } = useClient();
@@ -25,15 +27,15 @@ export function LibraryAttention() {
   )
     return null;
   return (
-    <View className="flex-row items-center gap-3 bg-[#30230d] p-[14px]">
-      <Text className="flex-1 text-[#fef3c7]">
+    <View className="flex-row items-center gap-3 bg-warning/15 p-[14px]">
+      <Text className="flex-1 text-foreground">
         {attention.count} title{attention.count === 1 ? "" : "s"} need attention
       </Text>
       <Pressable
         accessibilityRole="button"
         onPress={() => router.navigate("/settings")}
       >
-        <Text className="text-[#f59e0b]">Review</Text>
+        <Text className="text-foreground">Review</Text>
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -41,7 +43,7 @@ export function LibraryAttention() {
         hitSlop={10}
         onPress={() => setDismissed(attention.fingerprint)}
       >
-        <X color="#fff" size={16} />
+        <X color={colors.ink} size={16} />
       </Pressable>
     </View>
   );

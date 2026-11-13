@@ -11,7 +11,7 @@ View,
 import type { ItemCard } from "@plexy/api-client/types";
 import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Notice } from "@/shared/ui/notice";
 import { ReportAction } from "./report-action";
 
@@ -22,6 +22,7 @@ export function IdentifyTitle({
   item: ItemCard;
   close: () => void;
 }) {
+  const colors = useColors();
   const online = useOnline();
   const { api, runtime } = useClient();
   const record = api.titleFile(item.id)!;

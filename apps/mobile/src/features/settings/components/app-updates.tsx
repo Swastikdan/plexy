@@ -92,7 +92,7 @@ export function Updates() {
         </>
       )}
       {progress !== null && progress < 100 && (
-        <Text className="text-white">Downloading: {progress}%</Text>
+        <Text className="text-foreground">Downloading: {progress}%</Text>
       )}
       {!!message && <Notice message={message} />}
     </View>

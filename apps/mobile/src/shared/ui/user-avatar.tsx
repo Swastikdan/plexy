@@ -6,7 +6,7 @@ View,
 type StyleProp,
 type ViewStyle,
 } from "react-native";
-import { fonts } from "@/shared/theme";
+import { fonts, useColors } from "@/shared/theme";
 
 export function dicebearAvatarUrl(seed: string): string {
   const clean = encodeURIComponent((seed || "user").trim());
@@ -22,6 +22,7 @@ export function UserAvatar({
   size?: number;
   style?: StyleProp<ViewStyle>;
 }) {
+  const colors = useColors();
   const [loadError, setLoadError] = useState(false);
   const initial = (name || "U").charAt(0).toUpperCase();
   const avatarUrl = dicebearAvatarUrl(name);
@@ -32,12 +33,12 @@ export function UserAvatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: "#1f1f23",
+          backgroundColor: colors.elevated,
           alignItems: "center",
           justifyContent: "center",
           overflow: "hidden",
           borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.15)",
+          borderColor: colors.line,
         },
         style,
       ]}
@@ -54,7 +55,7 @@ export function UserAvatar({
           style={{
             fontSize: Math.round(size * 0.42),
             fontWeight: "700",
-            color: "#ffffff",
+            color: colors.ink,
             fontFamily: fonts.bold,
           }}
         >

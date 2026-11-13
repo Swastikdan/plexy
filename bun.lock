@@ -44,7 +44,7 @@
     },
     "apps/desktop": {
       "name": "@plexy/desktop",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "devDependencies": {
         "@types/node": "^22.10.1",
         "electron": "^45.0.0",
@@ -54,7 +54,7 @@
     },
     "apps/mobile": {
       "name": "@plexy/mobile",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "dependencies": {
         "@expo-google-fonts/archivo": "^0.4.2",
         "@expo-google-fonts/geist": "^0.4.2",

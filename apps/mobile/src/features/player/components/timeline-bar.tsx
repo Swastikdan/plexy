@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { Text,View } from "react-native";
-import { colors,timeLabel } from "@/shared/theme";
+import { useColors,timeLabel } from "@/shared/theme";
 
 interface TimelineBarProps {
   duration: number;
@@ -31,6 +31,7 @@ export function TimelineBar({
   seekStep,
   bottom,
 }: TimelineBarProps) {
+  const colors = useColors();
   const width = useRef(1);
   const ratio =
     duration > 0 ? Math.min(1, Math.max(0, value / duration)) : 0;

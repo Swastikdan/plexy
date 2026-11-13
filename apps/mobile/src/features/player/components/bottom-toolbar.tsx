@@ -1,3 +1,4 @@
+import { triggerHaptic } from "@/shared/lib/haptics";
 import React from "react";
 import { Pressable,Text,View } from "react-native";
 import { AudioLines,Gauge,ListVideo,Lock } from "@/shared/ui/icons";
@@ -16,8 +17,8 @@ function ToolButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      onPress={onPress}
-      className="flex-row items-center gap-2.5 rounded-full px-4 py-2.5 active:bg-white/10"
+      onPress={() => { triggerHaptic("light"); onPress(); }}
+      className="min-h-[48px] flex-row items-center gap-2.5 rounded-full px-4 py-2.5 active:bg-white/10"
       style={({ pressed }) => ({
         transform: [{ scale: pressed ? 0.95 : 1 }],
       })}

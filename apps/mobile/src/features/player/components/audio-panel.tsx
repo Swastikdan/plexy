@@ -1,9 +1,10 @@
-import { Check } from "@/shared/ui/icons";
+import { triggerHaptic } from "@/shared/lib/haptics";
+import { Check, X } from "@/shared/ui/icons";
 import type { AudioTrack, SubtitleTrack, VideoPlayer } from "expo-video";
 import React from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import type { Playability } from "@/core/library/catalog-api";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 
 interface TrackRow {
@@ -14,21 +15,22 @@ interface TrackRow {
 }
 
 function Row({ row }: { row: TrackRow }) {
+  const colors = useColors();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: row.selected }}
-      onPress={row.onPress}
+      onPress={() => { triggerHaptic("selection"); row.onPress(); }}
       className={cn(
-        "flex-row items-center justify-between rounded-[12px] px-4 py-3 active:bg-white/10",
-        row.selected && "bg-white/[0.08]",
+        "min-h-[48px] flex-row items-center justify-between rounded-[12px] px-4 py-3 active:bg-foreground/10",
+        row.selected && "bg-foreground/[0.08]",
       )}
     >
       <Text
         numberOfLines={1}
         className={cn(
           "mr-3 flex-1 text-[14px]",
-          row.selected ? "font-bold text-white" : "text-white/85",
+          row.selected ? "font-bold text-foreground" : "text-foreground/85",
         )}
       >
         {row.label}
@@ -42,7 +44,7 @@ function Row({ row }: { row: TrackRow }) {
 
 function Section({ label }: { label: string }) {
   return (
-    <Text className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-[1.2px] text-white/[0.42]">
+    <Text className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-[1.2px] text-foreground/[0.42]">
       {label}
     </Text>
   );
@@ -74,6 +76,7 @@ export function AudioPanel({
   onPickSubtitle: (value: string | null) => void;
   onAddSubtitleFile: () => void;
 }) {
+  const colors = useColors();
   const subtitleRows: TrackRow[] = [
     {
       key: "off",
@@ -102,33 +105,39 @@ export function AudioPanel({
       onPress: onAddSubtitleFile,
     });
   }
+  const close = () => { triggerHaptic("light"); onClose(); };
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={close}
       supportedOrientations={["landscape"]}
     >
-      <View className="flex-1 bg-black/55">
+      <View className="flex-1 items-center justify-center bg-black/55 p-4">
         <Pressable
           className="absolute inset-0"
           accessibilityLabel="Close audio and subtitles"
-          onPress={onClose}
+          onPress={close}
         />
         <View
-          className="absolute w-[330px] rounded-[18px] border border-white/10 bg-[#0d0e12] p-2.5"
+          className="w-[330px] rounded-[18px] border border-foreground/10 bg-overlay p-2.5"
           style={{
-            left: "50%",
-            top: "50%",
-            transform: [{ translateX: -165 }, { translateY: -150 }],
-            maxHeight: 320,
+            maxHeight: "100%",
             shadowColor: "#000",
             shadowOpacity: 0.5,
             shadowRadius: 20,
             elevation: 20,
           }}
         >
+          <View className="flex-row items-center justify-between pl-3">
+            <Text className="text-[14px] font-bold text-foreground">Audio & Subtitles</Text>
+            <Pressable onPress={close} hitSlop={4} accessibilityRole="button"
+              accessibilityLabel="Close audio and subtitles"
+              className="h-12 w-12 items-center justify-center rounded-full active:bg-foreground/10">
+              <X size={20} color={colors.ink} />
+            </Pressable>
+          </View>
           <ScrollView showsVerticalScrollIndicator={false}>
             <Section label="Audio" />
             {nativeAudio.length ? (

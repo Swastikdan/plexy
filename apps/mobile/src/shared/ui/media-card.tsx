@@ -2,7 +2,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Film, Tv } from "./icons";
 import { Check } from "./icons";
 import { PosterImage } from "./poster-image";
@@ -23,6 +23,7 @@ export function Card({
   onFocus?: () => void;
   width?: number;
 }) {
+  const colors = useColors();
   const [focus, setFocus] = useState(false);
   const isEpisode = item.kind === "episode";
   const aspectRatio = isEpisode ? 16 / 9 : 2 / 3;

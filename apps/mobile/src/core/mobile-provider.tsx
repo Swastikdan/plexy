@@ -1,3 +1,4 @@
+import { useUniwind } from "uniwind";
 import {
 Archivo_400Regular,
 Archivo_500Medium,
@@ -9,7 +10,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React,{ useEffect,useState } from "react";
 import { AppState,StatusBar,View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { colors } from "@/shared/theme";
+import { useColors } from "@/shared/theme";
 import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
 import {
@@ -40,6 +41,8 @@ function Ready({ children }: React.PropsWithChildren) {
   );
 }
 export function MobileProvider({ children }: React.PropsWithChildren) {
+  const colors = useColors();
+  const { theme } = useUniwind();
   const [booted, setBooted] = useState(false);
   const [error, setError] = useState("");
   const [fonts, fontError] = useFonts({
@@ -84,7 +87,7 @@ export function MobileProvider({ children }: React.PropsWithChildren) {
   return (
     <SafeAreaProvider>
       <StatusBar
-        barStyle="light-content"
+        barStyle={theme === "dark" ? "light-content" : "dark-content"}
         translucent
         backgroundColor="transparent"
       />
