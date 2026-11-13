@@ -190,6 +190,142 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # The release job no longer waits for macOS runners (GitHub's arm64 pool
+      # can stay queued for a long time). This step attaches the app to the same
+      # tag as soon as the build finishes, creating the release first if needed.
+      - name: Publish macOS assets to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
+          tag="v${version}-build.${build_num}"
+          if [[ "$version" == *-beta.* ]]; then
+            prerelease_flag="--prerelease"
+            release_title="Plexy Beta ${tag}"
+          else
+            prerelease_flag=""
+            release_title="Plexy ${tag}"
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "$release_title" \
+              --target "$GITHUB_SHA" \
+              $prerelease_flag \
+              --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
+          fi
+          gh release upload "$tag" dist/mac/*.dmg dist/mac/*.zip --clobber
+          echo "Attached macOS assets to $tag"
+
+  mac-fallback:
+    name: macOS app (Apple Silicon, fallback pool)
+    needs: [plan, checks, mac]
+    runs-on: macos-14
+    # GitHub occasionally cannot hand out a macos-15 arm64 runner within the
+    # acquisition window. Try the other arm64 image once before giving up.
+    if: |
+      failure() &&
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      needs.plan.outputs.build_desktop == 'true'
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+
+      - name: Install dependencies
+        env:
+          SKIP_FFMPEG: "true"
+        run: bun install --frozen-lockfile
+
+      - name: Cache FFmpeg runtime
+        uses: actions/cache@v5
+        with:
+          path: node_modules/node-av/binary
+          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs') }}
+
+      - name: Ensure FFmpeg runtime is installed
+        run: node scripts/install-macos-ffmpeg.mjs
+
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Reuse verified website
+        uses: actions/download-artifact@v8
+        with:
+          name: verified-web
+          path: dist/web
+
+      - name: Build macOS app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          PLEXY_REUSE_WEB_BUILD: "true"
+        run: bun run package:mac
+
+      - name: Verify desktop release version
+        run: |
+          expected="$(node -p "require('./package.json').version")"
+          actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'dist/mac/mac-arm64/Plexy Beta.app/Contents/Info.plist')"
+          test "$actual" = "$expected" || { echo "Desktop version $actual does not match release $expected"; exit 1; }
+
+      - name: Verify app signature
+        run: codesign --verify --deep --strict --verbose=2 "dist/mac/mac-arm64/Plexy Beta.app"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: plexy-macos
+          path: |
+            dist/mac/*.dmg
+            dist/mac/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish macOS assets to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
+          tag="v${version}-build.${build_num}"
+          if [[ "$version" == *-beta.* ]]; then
+            prerelease_flag="--prerelease"
+            release_title="Plexy Beta ${tag}"
+          else
+            prerelease_flag=""
+            release_title="Plexy ${tag}"
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "$release_title" \
+              --target "$GITHUB_SHA" \
+              $prerelease_flag \
+              --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
+          fi
+          gh release upload "$tag" dist/mac/*.dmg dist/mac/*.zip --clobber
+          echo "Attached macOS assets to $tag"
+
   android:
     name: Android mobile APK
     needs: [plan, checks]
@@ -299,7 +435,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - plan
-      - mac
       - checks
       - android
       - server
@@ -332,8 +467,11 @@ jobs:
           require_asset() { compgen -G "release/$1" >/dev/null || { echo "Missing release asset: $1"; exit 1; }; }
           if [ "$BUILD_DESKTOP" = true ]; then
             version="$(node -p "require('./package.json').version")"
-            require_asset "Plexy Beta-${version}-arm64.dmg"
-            require_asset "Plexy Beta-${version}-arm64.zip"
+            if compgen -G "release/Plexy Beta-${version}-arm64.dmg" >/dev/null; then
+              require_asset "Plexy Beta-${version}-arm64.zip"
+            else
+              echo "::warning::macOS assets are not ready; the macOS job attaches them to this release when it finishes."
+            fi
           fi
           if [ "$BUILD_MOBILE" = true ]; then require_asset 'Plexy-mobile-*.apk'; fi
           if [ "$BUILD_SERVER" = true ]; then
@@ -376,12 +514,18 @@ jobs:
             release_title="Plexy ${tag}"
           fi
 
+          if compgen -G "release/Plexy Beta-"*.dmg >/dev/null; then
+            mac_paragraph="**Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**."
+          else
+            mac_paragraph="_The macOS app is still being produced on GitHub's Apple Silicon runners. It is attached to this release automatically as soon as a runner is available._"
+          fi
+
           cat > release-notes.md <<EOF
           ## ${release_title}
 
           Only components affected by this change are attached to this release.
 
-          **Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**.
+          ${mac_paragraph}
 
           **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. Phone APKs target ARM64. These standalone preview APKs use the template test signing identity and are not store releases.
 
