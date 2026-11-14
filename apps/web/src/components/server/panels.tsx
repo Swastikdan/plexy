@@ -993,7 +993,8 @@ export function ServerPreferencesPanel() {
               <h2 className="font-display text-base font-bold text-foreground">Preparation cache</h2>
               <p className="mb-4 mt-1 max-w-3xl text-xs leading-relaxed text-muted">
                 Files that cannot play directly are prepared in the background.
-                Prepared copies start instantly and never replace your originals.
+                Prepared copies start instantly and stay in a cache unless you
+                opt into replacing the original below.
               </p>
               <OptimizerSettings />
             </div>
@@ -1463,6 +1464,10 @@ function OptimizerSettings() {
     if (settingsData) setCap(String(settingsData.settings.optimizeMaxCacheGb ?? 0));
   }, [settingsData]);
 
+  const storageMedia = settingsData?.settings.optimizeStorage === "media";
+  const replaceOriginal = settingsData?.settings.replaceOriginal ?? false;
+  const moveToTrash = settingsData?.settings.moveOriginalsToTrash ?? true;
+
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["optimizer"] });
     void queryClient.invalidateQueries({ queryKey: ["server-status"] });
@@ -1494,7 +1499,8 @@ function OptimizerSettings() {
 
   if (!data) return <p className="text-sm text-muted">Preparation status unavailable.</p>;
 
-  const done = data.counts.done ?? 0;
+  const replaced = data.counts.replaced ?? 0;
+  const done = (data.counts.done ?? 0) + replaced;
   const total = Object.values(data.counts).reduce((sum, n) => sum + n, 0);
   const cacheGb = (data.cacheBytes / 1024 ** 3).toFixed(2);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -1504,7 +1510,7 @@ function OptimizerSettings() {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
-          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Prepared Files</span>
+          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Prepared / Replaced</span>
           <p className="mt-1 text-lg font-bold text-foreground">{done} <span className="text-xs text-muted font-normal">/ {total}</span></p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
@@ -1540,7 +1546,89 @@ function OptimizerSettings() {
         </div>
       )}
 
-      {data.cacheDir && (
+      <div className="rounded-xl border border-border/60 bg-surface-secondary/40 p-3 space-y-3">
+        <Switch
+          isSelected={storageMedia}
+          onChange={(isSelected) => save.mutate({ optimizeStorage: isSelected ? "media" : "data" })}
+          className="w-full"
+        >
+          <Switch.Content className="flex w-full items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-foreground">Store prepared copies beside originals</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">
+                Uses a hidden <code>.plexy/optimized</code> folder in each media folder instead of the Plexy data folder.
+                The original and prepared copy both exist, so this uses extra space until you replace or clear.
+              </span>
+            </span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
+
+        <Switch
+          isSelected={replaceOriginal}
+          onChange={(isSelected) => save.mutate({ replaceOriginal: isSelected })}
+          className="w-full"
+        >
+          <Switch.Content className="flex w-full items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-foreground">Replace original after preparation</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">
+                Makes the prepared MP4 the library file and removes the source. The MP4 keeps the first video and audio
+                track; extra audio tracks and embedded subtitles are dropped from it.
+              </span>
+            </span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
+
+        <Switch
+          isSelected={moveToTrash}
+          onChange={(isSelected) => save.mutate({ moveOriginalsToTrash: isSelected })}
+          className="w-full"
+        >
+          <Switch.Content className="flex w-full items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-foreground">Move removed originals to the system Trash</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">
+                Applies to replacement and title removal. If the system Trash is unavailable, a hidden{" "}
+                <code>.plexy/trash</code> folder beside the media is used. The Trash still uses disk space until you
+                empty it; turn this off to delete permanently and reclaim space immediately.
+              </span>
+            </span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
+
+        {replaceOriginal && (
+          <p className={`rounded-lg border p-2 text-[11px] leading-relaxed ${
+            moveToTrash
+              ? "border-border/60 bg-surface text-muted"
+              : "border-danger/30 bg-danger/10 text-danger-soft-foreground"
+          }`}>
+            {moveToTrash
+              ? "The previous original goes to the system Trash after the MP4 is verified. Empty the Trash to reclaim its space."
+              : "Permanent deletion is on. The previous original is deleted immediately after the MP4 is verified and cannot be recovered."}
+          </p>
+        )}
+      </div>
+
+      {data.storage === "media" ? (
+        <div className="rounded-xl border border-border/60 bg-surface-secondary/40 p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted">
+            <Folder size={14} className="text-muted" />
+            <span>Storage Directory</span>
+          </div>
+          <p className="mt-1 font-mono text-xs text-foreground break-all">
+            .plexy/optimized beside each original
+          </p>
+        </div>
+      ) : data.cacheDir && (
         <div className="rounded-xl border border-border/60 bg-surface-secondary/40 p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted">
@@ -1600,7 +1688,9 @@ function OptimizerSettings() {
       <p className="text-xs leading-relaxed text-muted">
         Files that cannot play directly are prepared automatically when they are
         scanned, or the first time playback identifies them. Files that already
-        play directly are never copied or re-encoded.
+        play directly are never copied or re-encoded. Replacement is applied to
+        future successful preparations; already prepared files stay in the cache
+        until you clear it.
       </p>
 
       <div className="flex flex-col sm:flex-row sm:items-end gap-3 pt-2">
@@ -1636,7 +1726,7 @@ function OptimizerSettings() {
           <Button
             variant="danger"
             onPress={() => {
-              if (confirm("Delete every prepared copy? Original media is untouched.")) clear.mutate();
+              if (confirm("Delete every prepared copy? Original media is untouched. Copies stored beside media in .plexy/optimized are removed too.")) clear.mutate();
             }}
             isDisabled={clear.isPending}
             className="h-9 px-3 text-xs"

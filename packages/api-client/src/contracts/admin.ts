@@ -49,6 +49,7 @@ export interface OptimizerStatus {
   counts: Record<string, number>;
   cacheBytes: number;
   cacheDir?: string;
+  storage?: "data" | "media";
   files?: Array<{
     id: number;
     path: string;
@@ -73,6 +74,12 @@ export interface ServerSettings {
   autoOptimize: boolean;
   skipSegmentsEnabled: boolean;
   optimizeMaxCacheGb: number;
+  /** `data` keeps prepared copies in the Plexy data folder; `media` puts them beside each original. */
+  optimizeStorage: "data" | "media";
+  /** Replace the source file with the prepared MP4 after a successful preparation. */
+  replaceOriginal: boolean;
+  /** Send removed originals to the system Trash instead of deleting permanently. */
+  moveOriginalsToTrash: boolean;
   probeConcurrency: number;
   hasTmdbToken: boolean;
   tokenSource: string;

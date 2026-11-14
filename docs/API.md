@@ -55,6 +55,20 @@ browser `<video>` element cannot set arbitrary Authorization headers; browser
 playback uses the HttpOnly session cookie instead. Native tokens returned by
 pairing are not stored by the browser client.
 
+## Preparation settings
+
+`PUT /api/settings` (loopback only) accepts the playback-preparation fields:
+
+- `optimizeStorage`: `"data"` (default) or `"media"` for `.plexy/optimized`
+  beside each original.
+- `replaceOriginal`: replace the source with the verified MP4 after a
+  successful preparation (default `false`).
+- `moveOriginalsToTrash`: send removed originals to the system Trash instead of
+  deleting permanently (default `true`).
+
+See [playback preparation](PLAYBACK_PREPARATION.md) for the storage and
+recovery behavior.
+
 ## Native playback behavior
 
 The playback response supplies the selected path, resume position, available

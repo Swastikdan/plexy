@@ -154,6 +154,9 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.autoOptimize !== undefined) patch.autoOptimize = body.autoOptimize;
     if (body.skipSegmentsEnabled !== undefined) patch.skipSegmentsEnabled = body.skipSegmentsEnabled;
     if (body.optimizeMaxCacheGb !== undefined) patch.optimizeMaxCacheGb = body.optimizeMaxCacheGb;
+    if (body.optimizeStorage !== undefined) patch.optimizeStorage = body.optimizeStorage;
+    if (body.replaceOriginal !== undefined) patch.replaceOriginal = body.replaceOriginal;
+    if (body.moveOriginalsToTrash !== undefined) patch.moveOriginalsToTrash = body.moveOriginalsToTrash;
     if (body.probeConcurrency !== undefined) patch.probeConcurrency = body.probeConcurrency;
     if (body.bindAddress) patch.bindAddress = body.bindAddress;
     if (body.note !== undefined) patch.note = body.note;
@@ -187,6 +190,9 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       autoOptimize: t.Optional(t.Boolean()),
       skipSegmentsEnabled: t.Optional(t.Boolean()),
       optimizeMaxCacheGb: t.Optional(t.Numeric()),
+      optimizeStorage: t.Optional(t.Union([t.Literal("data"), t.Literal("media")])),
+      replaceOriginal: t.Optional(t.Boolean()),
+      moveOriginalsToTrash: t.Optional(t.Boolean()),
       probeConcurrency: t.Optional(t.Numeric()),
       tmdbToken: t.Optional(t.String()),
       bindAddress: t.Optional(t.Union([t.Literal("127.0.0.1"), t.Literal("0.0.0.0")])),
@@ -227,6 +233,9 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
     pauseOptimizer("reset");
     try {
+      // Remove prepared copies stored beside media before the catalog rows
+      // disappear, so a reset does not leave orphaned MP4s in media folders.
+      await clearOptimizerCache();
       const counts = {
         libraries: Number(q<{ n: number }>("SELECT COUNT(*) AS n FROM libraries").get()?.n ?? 0),
         files: Number(q<{ n: number }>("SELECT COUNT(*) AS n FROM media_files").get()?.n ?? 0),

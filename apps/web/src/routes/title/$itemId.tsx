@@ -466,11 +466,11 @@ function DetailView({
                       <Dropdown.Section>
                         <Dropdown.Item
                           id="delete"
-                          textValue="Delete title and files"
+                          textValue="Remove title and files"
                           className="text-danger-soft-foreground"
                         >
                           <Trash2 size={14} className="shrink-0" />
-                          <span>Delete title and files</span>
+                          <span>Remove title and files</span>
                         </Dropdown.Item>
                       </Dropdown.Section>
                     </Dropdown.Menu>
@@ -892,12 +892,13 @@ function DetailView({
           <Modal.Container>
             <Modal.Dialog className="w-[min(94vw,520px)]">
               <Modal.Header>
-                <Modal.Heading>Delete “{item.name}” and its video files?</Modal.Heading>
+                <Modal.Heading>Remove “{item.name}” and its video files?</Modal.Heading>
               </Modal.Header>
               <Modal.Body>
                 <p className="text-sm leading-relaxed text-muted">
-                  This permanently deletes the original video files from disk and removes the title from Plexy.
-                  {item.kind === "series" ? " The files for its episodes will also be deleted." : ""}
+                  The original video files move to the system Trash and the title is removed from Plexy. If the
+                  recycle bin is disabled in server settings, they are deleted permanently instead.
+                  {item.kind === "series" ? " The files for its episodes are removed too." : ""}
                 </p>
                 {deleteMutation.isError && (
                   <p role="alert" className="mt-3 text-sm text-danger-soft-foreground">{deleteMutation.error.message}</p>
@@ -916,7 +917,7 @@ function DetailView({
                   onPress={() => deleteMutation.mutate()}
                   isDisabled={deleteMutation.isPending}
                 >
-                  {deleteMutation.isPending ? "Deleting…" : "Delete title and files"}
+                  {deleteMutation.isPending ? "Removing…" : "Remove title and files"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>

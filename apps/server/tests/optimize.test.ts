@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { decideOptimization, requeueAfterUrgent, type OptimizeFacts } from "../src/optimize";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  decideOptimization,
+  replaceOriginalWithPrepared,
+  requeueAfterUrgent,
+  type OptimizeFacts,
+} from "../src/optimize";
 import {
   cuesToVtt, fmtVttTimestamp, packetToCues, srtToVtt,
 } from "../src/subtitles";
@@ -130,6 +138,64 @@ describe("playback preparation decisions", () => {
     const allUrgent = [42, 43];
     requeueAfterUrgent(allUrgent, new Set([42, 43]), 9);
     expect(allUrgent).toEqual([42, 43, 9]);
+  });
+});
+
+describe("original replacement", () => {
+  async function fixture(name = "Movie.mkv") {
+    const dir = await mkdtemp(join(tmpdir(), "plexy-replace-"));
+    const source = join(dir, name);
+    const output = join(dir, "prepared-cache.mp4");
+    await writeFile(source, "original");
+    await writeFile(output, "prepared");
+    const info = await stat(source);
+    const row = {
+      id: 1,
+      path: source,
+      size: info.size,
+      mtime: Math.floor(info.mtimeMs),
+    };
+    return { dir, source, output, row };
+  }
+
+  test("publishes the prepared MP4 and permanently removes the source", async () => {
+    const f = await fixture();
+    try {
+      const result = await replaceOriginalWithPrepared(f.row as never, f.output, "permanent");
+      expect(result).toMatchObject({ path: join(f.dir, "Movie.mp4"), method: "permanent" });
+      expect(await readFile(result!.path, "utf8")).toBe("prepared");
+      expect(await Bun.file(f.source).exists()).toBe(false);
+      expect(await Bun.file(f.output).exists()).toBe(false);
+    } finally {
+      await rm(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("replaces an MP4 in place without leaving a backup", async () => {
+    const f = await fixture("Movie.mp4");
+    try {
+      const result = await replaceOriginalWithPrepared(f.row as never, f.output, "permanent");
+      expect(result?.path).toBe(f.source);
+      expect(await readFile(f.source, "utf8")).toBe("prepared");
+      expect(await Bun.file(`${f.source}.plexy-original`).exists()).toBe(false);
+      expect(await Bun.file(f.output).exists()).toBe(false);
+    } finally {
+      await rm(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("never overwrites another file with the replacement target", async () => {
+    const f = await fixture();
+    const existing = join(f.dir, "Movie.mp4");
+    try {
+      await writeFile(existing, "existing");
+      const result = await replaceOriginalWithPrepared(f.row as never, f.output, "permanent");
+      expect(result?.path).toBe(join(f.dir, "Movie (1).mp4"));
+      expect(await readFile(existing, "utf8")).toBe("existing");
+      expect(await readFile(result!.path, "utf8")).toBe("prepared");
+    } finally {
+      await rm(f.dir, { recursive: true, force: true });
+    }
   });
 });
 

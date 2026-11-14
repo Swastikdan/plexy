@@ -19,6 +19,7 @@ import { storeProbeFacts } from "./media-facts";
 import { enqueueMissingOptimizations, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { cacheEmbeddedSubtitles } from "./subtitles";
 import { resolveOptimizedDir, resolveTrickplayDir } from "./paths";
+import { PLEXY_MEDIA_DIR, removePreparedFile } from "./trash";
 import { hydrateItemMetadata, hydrateEpisodeItem, hydrateMissingEpisodes } from "./hydrate";
 import { refreshMissingSkipSegments } from "./skip-segments";
 
@@ -357,7 +358,7 @@ async function scanFolder(
   const tasks: Promise<void>[] = [];
   for (const entry of entries) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory() && EXTRA_FOLDER.test(entry.name)) continue;
+    if (entry.isDirectory() && (EXTRA_FOLDER.test(entry.name) || entry.name === PLEXY_MEDIA_DIR)) continue;
     if (entry.isDirectory()) {
       await scanFolder(root, path, type, roots, progress, emit, pool, seen, seenPaths, libraryId);
       continue;
@@ -398,9 +399,11 @@ async function removeMissingLibraryFiles(libraryId: number, seenPaths: Set<strin
   const trickplayEntries = await readdir(trickplayRoot).catch(() => [] as string[]);
   for (const row of missing) {
     const fileId = Number(row.id);
-    const optimizedPath = row.optimized_path == null ? null : resolve(String(row.optimized_path));
-    if (optimizedPath?.startsWith(`${optimizedRoot}${sep}`)) {
-      await unlink(optimizedPath).catch(() => {});
+    if (row.optimized_path) await removePreparedFile(String(row.optimized_path));
+    for (const variant of q<{ path: string | null }, [number]>(
+      "SELECT path FROM media_audio_variants WHERE file_id = ?",
+    ).all(fileId)) {
+      if (variant.path) await removePreparedFile(String(variant.path));
     }
     const subtitles = q<{ path: string }, [number]>(
       "SELECT path FROM subtitle_cache WHERE file_id = ?",

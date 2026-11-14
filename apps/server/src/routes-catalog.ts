@@ -6,7 +6,7 @@ import { requestUser } from "./auth";
 /// the shared watch state. Filesystem paths never leave the server through
 /// these routes (PRD 11) — media resolves only by file id.
 import { Elysia, t } from "elysia";
-import { readdir, rm, stat, unlink } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { db, q, run, type Row } from "./db";
 import { log } from "./logger";
@@ -14,7 +14,8 @@ import { imageUrl } from "./tmdb";
 import { classifyPlayability, rowPlayabilityFacts } from "./playback";
 import { optimizationView } from "./optimize";
 import { denyIfNotLocal } from "./essentials";
-import { resolveOptimizedDir } from "./paths";
+import { getConfig } from "./config";
+import { removeOriginal } from "./trash";
 import type { ItemCard } from "@plexy/api-client";
 
 // --- card assembly -----------------------------------------------------------
@@ -465,7 +466,11 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     });
   }, { params: t.Object({ personId: t.Numeric() }) })
 
-  /** Remove a title and its indexed descendants; original video files stay on disk. */
+  /**
+   * Remove a title and its indexed descendants. Source files follow the
+   * owner's deletion policy: the system Trash by default, permanent only when
+   * explicitly selected in settings.
+   */
   .delete("/items/:id", async (ctx) => {
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
@@ -488,10 +493,17 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       }
       existingFiles.push({ id: Number(file.id), path: file.path });
     }
+    const cfg = await getConfig();
     try {
-      for (const file of existingFiles) await unlink(file.path);
+      for (const file of existingFiles) {
+        await removeOriginal(file.path, cfg.moveOriginalsToTrash ? "system" : "permanent");
+      }
     } catch {
-      return Response.json({ error: "Could not delete a source file. The title remains in the catalog." }, { status: 500 });
+      return Response.json({
+        error: cfg.moveOriginalsToTrash
+          ? "Could not move a source file to the recycle bin. The title remains in the catalog."
+          : "Could not delete a source file. The title remains in the catalog.",
+      }, { status: 500 });
     }
     db.exec("BEGIN");
     try {

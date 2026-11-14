@@ -114,8 +114,9 @@ export function resolveDerivedDir(): string {
 }
 
 /**
- * Prepared-playback cache: fast-start MP4 copies and extracted WebVTT tracks.
- * Never written inside media folders; safe to delete when Plexy is stopped.
+ * Default prepared-playback cache: fast-start MP4 copies and extracted WebVTT
+ * tracks. When the owner enables `optimizeStorage: "media"`, copies live in a
+ * hidden `.plexy/optimized` folder beside each source instead.
  */
 export function resolveOptimizedDir(): string {
   return join(resolveDataDir(), "optimized");

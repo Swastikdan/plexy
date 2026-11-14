@@ -16,12 +16,14 @@
 /// long-running encode, so opening a freshly added title never waits behind
 /// the rest of the library.
 ///
-/// The original file is never modified or deleted. Finished copies live in the
-/// app-data `optimized/` directory and are served through the normal stream
-/// route, which turns every prepared title into a `direct` play with instant
-/// byte-range seeking.
-import { mkdir, open, readdir, stat, statfs, unlink } from "node:fs/promises";
-import { join } from "node:path";
+/// Finished copies default to the app-data `optimized/` directory. The owner
+/// can instead store them beside each original in `.plexy/optimized`, and can
+/// opt into replacing the source after a successful preparation. Replacement
+/// removes the original with the owner's policy: the system Trash by default,
+/// permanent deletion only when explicitly selected.
+import { constants } from "node:fs";
+import { access, copyFile, lstat, mkdir, open, readdir, rename, stat, statfs, unlink } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { q, run, type Row } from "./db";
 import { log } from "./logger";
 import { getConfig } from "./config";
@@ -32,6 +34,12 @@ import {
 } from "./playback";
 import { cancelOptimize, OptimizerCancelledError, runOptimize, shutdownOptimizeWorker } from "./optimize-host";
 import { cacheEmbeddedSubtitles } from "./subtitles";
+import {
+  preparedDirBeside,
+  removeOriginal,
+  removePreparedFile,
+  replacementTargetFor,
+} from "./trash";
 
 export interface OptimizeFacts {
   container: string | null;
@@ -209,8 +217,36 @@ export async function isFastStart(path: string): Promise<boolean> {
 }
 
 /** Cache location for one prepared copy; the mtime keeps versions distinct. */
-export function optimizedPathFor(row: Row): string {
-  return join(resolveOptimizedDir(), `${Number(row.id)}-${Number(row.mtime)}.mp4`);
+export function optimizedPathFor(row: Row): Promise<string> {
+  return preparedOutputPath(row);
+}
+
+async function preparedOutputPath(row: Row, suffix = ""): Promise<string> {
+  const cfg = await getConfig();
+  const name = `${Number(row.id)}-${Number(row.mtime)}${suffix}.mp4`;
+  return cfg.optimizeStorage === "media" && row.path
+    ? join(preparedDirBeside(String(row.path)), name)
+    : join(resolveOptimizedDir(), name);
+}
+
+/**
+ * Create the chosen output directory. A read-only or missing media folder
+ * falls back to the app-data cache instead of failing the whole preparation.
+ */
+async function ensurePreparedOutput(output: string): Promise<string> {
+  try {
+    const dir = dirname(output);
+    await mkdir(dir, { recursive: true });
+    await access(dir, constants.W_OK);
+    return output;
+  } catch (err) {
+    const fallback = join(resolveOptimizedDir(), basename(output));
+    log.warn("optimizer", "could not write beside the original; using the Plexy cache", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+    await mkdir(resolveOptimizedDir(), { recursive: true });
+    return fallback;
+  }
 }
 
 /**
@@ -283,8 +319,8 @@ function variantKey(fileId: number, audioIndex: number): string {
   return `${fileId}:${audioIndex}`;
 }
 
-function variantPathFor(row: Row, audioIndex: number): string {
-  return join(resolveOptimizedDir(), `${Number(row.id)}-${Number(row.mtime)}-a${audioIndex}.mp4`);
+function variantPathFor(row: Row, audioIndex: number): Promise<string> {
+  return preparedOutputPath(row, `-a${audioIndex}`);
 }
 
 function variantRow(fileId: number, audioIndex: number): Row | undefined {
@@ -470,8 +506,7 @@ async function prepareAudioVariant(fileId: number, audioIndex: number): Promise<
   if (!track) throw new Error("That audio track no longer exists");
 
   const decision = variantDecision(row, audioIndex);
-  await mkdir(resolveOptimizedDir(), { recursive: true });
-  const output = variantPathFor(row, audioIndex);
+  const output = await ensurePreparedOutput(await variantPathFor(row, audioIndex));
   const previousPath = variantRow(fileId, audioIndex)?.path;
   upsertVariant(row, audioIndex, "running", {
     progress: 0,
@@ -514,7 +549,7 @@ async function prepareAudioVariant(fileId: number, audioIndex: number): Promise<
     const info = await stat(output);
     if (!info.isFile() || info.size === 0) throw new Error("prepared audio track is empty");
     if (previousPath && String(previousPath) !== output) {
-      await unlink(String(previousPath)).catch(() => {});
+      await removePreparedFile(String(previousPath));
     }
     upsertVariant(row, audioIndex, "done", {
       progress: 1,
@@ -716,6 +751,189 @@ async function freeBytes(dir: string): Promise<number | null> {
   }
 }
 
+type OptimizeAction = Extract<OptimizeDecision, { action: "optimize" }>;
+
+interface ReplacementResult {
+  path: string;
+  size: number;
+  mtime: number;
+  trashPath: string | null;
+  method: "system" | "local-trash" | "permanent";
+}
+
+async function pathIsFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Publish the prepared MP4 at the source's path and remove the original using
+ * the owner's deletion policy. The new file is staged and verified first; a
+ * failure before the swap leaves the original untouched.
+ */
+export async function replaceOriginalWithPrepared(
+  row: Row,
+  output: string,
+  policy: "system" | "permanent",
+): Promise<ReplacementResult | null> {
+  const sourcePath = String(row.path);
+  const before = await lstat(sourcePath).catch(() => null);
+  if (!before) throw new Error("Source file is missing");
+  if (before.isSymbolicLink()) {
+    log.warn("optimizer", "keeping the original because it is a symbolic link", {
+      fileId: Number(row.id), path: sourcePath,
+    });
+    return null;
+  }
+  if (before.size !== Number(row.size) || Math.floor(before.mtimeMs) !== Number(row.mtime)) {
+    log.warn("optimizer", "keeping the original because it changed during preparation", {
+      fileId: Number(row.id), path: sourcePath,
+    });
+    return null;
+  }
+
+  const target = await replacementTargetFor(sourcePath);
+  const part = `${target}.part`;
+  await unlink(part).catch(() => {});
+  let stagedByRename = false;
+  try {
+    const prepared = await stat(output);
+    try {
+      await rename(output, part);
+      stagedByRename = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+      const free = await freeBytes(dirname(target));
+      if (free != null && free < prepared.size + 64 * 1024 * 1024) {
+        throw new Error("Not enough free disk space beside the original for the replacement");
+      }
+      await copyFile(output, part);
+    }
+    const staged = await stat(part);
+    if (!staged.isFile() || staged.size === 0) throw new Error("staged replacement is empty");
+
+    let removed: { trashPath: string | null; method: ReplacementResult["method"] };
+    if (resolve(target) === resolve(sourcePath)) {
+      // In-place MP4 replacement: park the original beside the new file while
+      // the final rename happens, then send it to the chosen trash policy.
+      const backup = `${sourcePath}.plexy-original`;
+      await unlink(backup).catch(() => {});
+      await rename(sourcePath, backup);
+      try {
+        await rename(part, target);
+      } catch (error) {
+        await rename(backup, sourcePath).catch(() => {});
+        throw error;
+      }
+      try {
+        removed = await removeOriginal(backup, policy);
+      } catch (error) {
+        log.warn("optimizer", "replacement succeeded but the original could not be trashed", {
+          fileId: Number(row.id), path: backup,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        removed = { trashPath: backup, method: "local-trash" };
+      }
+    } else {
+      await rename(part, target);
+      try {
+        removed = await removeOriginal(sourcePath, policy);
+      } catch (error) {
+        // Put the folder back the way it was; the prepared cache copy still
+        // exists when it was copied rather than renamed.
+        await unlink(target).catch(() => {});
+        throw error;
+      }
+    }
+
+    if (!stagedByRename && resolve(output) !== resolve(target)) {
+      await removePreparedFile(output);
+    }
+    const final = await stat(target);
+    return {
+      path: target,
+      size: final.size,
+      mtime: Math.floor(final.mtimeMs),
+      ...removed,
+    };
+  } catch (error) {
+    await unlink(part).catch(() => {});
+    if (resolve(target) !== resolve(sourcePath)
+      && await pathIsFile(target)
+      && await pathIsFile(sourcePath)) {
+      await unlink(target).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+/** Point the catalog at the replacement file and retire its old cache state. */
+async function markReplaced(
+  fileId: number,
+  row: Row,
+  replacement: ReplacementResult,
+  decision: OptimizeAction,
+  subtitlesJson: string,
+): Promise<void> {
+  const duration = row.duration == null ? null : Number(row.duration);
+  const bitrate = duration && duration > 0
+    ? Math.round((replacement.size * 8) / duration)
+    : row.bitrate;
+  const tracks = safeAudio(row.audio_json as string | null) as Array<Record<string, unknown>>;
+  const first = tracks[0];
+  const audioJson = first
+    ? JSON.stringify([{
+        ...first,
+        codec: decision.audioCopy ? String(first.codec ?? "aac") : "aac",
+      }])
+    : "[]";
+
+  const variants = q<Row, [number]>(
+    "SELECT path FROM media_audio_variants WHERE file_id = ?",
+  ).all(fileId);
+  for (const variant of variants) {
+    if (variant.path) await removePreparedFile(String(variant.path));
+  }
+  run("DELETE FROM media_audio_variants WHERE file_id = ?", fileId);
+
+  run(
+    `UPDATE media_files SET
+       path = $path, size = $size, mtime = $mtime,
+       container = 'mp4', video_codec = 'h264', video_profile = NULL,
+       video_bit_depth = 8, hdr = $hdr, chapters_json = '[]',
+       bitrate = $bitrate, audio_json = $audio, subtitles_json = $subtitles,
+       optimized_status = 'skipped', optimized_path = NULL, optimized_size = 0,
+       optimized_mtime = $mtime, optimized_progress = 1, optimized_mode = $mode,
+       optimized_error = $error, optimized_speed = NULL,
+       optimized_eta_seconds = NULL, optimized_started_at = NULL,
+       optimized_at = $at
+     WHERE id = $id`,
+    {
+      $path: replacement.path,
+      $size: replacement.size,
+      $mtime: replacement.mtime,
+      $hdr: decision.videoCopy ? row.hdr : null,
+      $bitrate: bitrate,
+      $audio: audioJson,
+      $subtitles: subtitlesJson,
+      $mode: decision.mode,
+      $error: replacement.method === "permanent"
+        ? "Original replaced with the prepared MP4"
+        : "Original replaced with the prepared MP4; the previous file is in the recycle bin",
+      $at: new Date().toISOString(),
+      $id: fileId,
+    },
+  );
+  run(
+    "UPDATE subtitle_cache SET source_mtime = ? WHERE file_id = ?",
+    replacement.mtime,
+    fileId,
+  );
+}
+
 async function optimizeOne(fileId: number): Promise<void> {
   const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
   if (!row) return;
@@ -784,10 +1002,9 @@ async function optimizeOne(fileId: number): Promise<void> {
     return;
   }
 
-  await mkdir(resolveOptimizedDir(), { recursive: true });
-  const output = optimizedPathFor(row);
+  const output = await ensurePreparedOutput(await optimizedPathFor(row));
 
-  const free = await freeBytes(resolveOptimizedDir());
+  const free = await freeBytes(dirname(output));
   const needed = Math.ceil(Number(row.size) * (decision.mode === "remux" ? 1.05 : 1.6))
     + 256 * 1024 * 1024;
   if (free != null && free < needed) {
@@ -855,7 +1072,33 @@ async function optimizeOne(fileId: number): Promise<void> {
     if (!info.isFile() || info.size === 0) throw new Error("prepared file is empty");
 
     if (previousPath && previousPath !== output) {
-      await unlink(previousPath).catch(() => {});
+      await removePreparedFile(previousPath);
+    }
+
+    const cfg = await getConfig();
+    if (cfg.replaceOriginal) {
+      let subtitlesJson = String(row.subtitles_json ?? "[]");
+      if (subtitlesJson !== "[]") {
+        // The prepared MP4 drops embedded tracks. Cache the source subtitles
+        // before the original moves so the player can keep offering them.
+        const cached = await cacheEmbeddedSubtitles(row).catch(() => 0);
+        if (!cached) subtitlesJson = "[]";
+      }
+      const replacement = await replaceOriginalWithPrepared(
+        row,
+        output,
+        cfg.moveOriginalsToTrash ? "system" : "permanent",
+      );
+      if (replacement) {
+        await markReplaced(fileId, row, replacement, decision, subtitlesJson);
+        log.info("optimizer", "original replaced with prepared MP4", {
+          fileId,
+          path: replacement.path,
+          removedBy: replacement.method,
+          trash: replacement.trashPath,
+        });
+        return;
+      }
     }
 
     markStatus(fileId, "done", {
@@ -912,7 +1155,7 @@ export async function pruneOptimizerCache(): Promise<number> {
   for (const row of rows) {
     if (total <= cap) break;
     if (current?.fileId === Number(row.id)) continue;
-    await unlink(String(row.optimized_path)).catch(() => {});
+    await removePreparedFile(String(row.optimized_path));
     total -= Number(row.optimized_size ?? 0);
     removed++;
     run(
@@ -1022,6 +1265,7 @@ export interface OptimizerStatus {
   counts: Record<string, number>;
   cacheBytes: number;
   cacheDir: string;
+  storage: "data" | "media";
   files?: Array<{
     id: number;
     path: string;
@@ -1045,6 +1289,15 @@ export async function optimizerStatus(
   ).all()) {
     counts[String(row.status ?? "none")] = Number(row.n);
   }
+  // Replaced originals are retired as "skipped", but they are successful
+  // preparations. Report them separately so the UI does not look stalled.
+  const replaced = Number(q<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media_files
+     WHERE optimized_status = 'skipped'
+       AND optimized_error LIKE 'Original replaced with the prepared MP4%'`,
+  ).get()?.n ?? 0);
+  counts.replaced = replaced;
+  counts.skipped = Math.max(0, (counts.skipped ?? 0) - replaced);
   const cache = q<{ bytes: number | null }>(
     "SELECT SUM(optimized_size) AS bytes FROM media_files WHERE optimized_status = 'done'",
   ).get();
@@ -1073,6 +1326,7 @@ export async function optimizerStatus(
     counts,
     cacheBytes: Number(cache?.bytes ?? 0),
     cacheDir: resolveOptimizedDir(),
+    storage: cfg.optimizeStorage,
     ...(options.includeFiles === false ? {} : { files: preparedRows.map((r) => ({
       id: Number(r.id),
       path: String(r.path),
@@ -1088,6 +1342,18 @@ export async function optimizerStatus(
 /** Drop every prepared copy (used by an explicit admin reset). */
 export async function clearOptimizerCache(): Promise<number> {
   let removed = 0;
+  // Media-folder copies are not in the app-data directory, so use the paths
+  // recorded in the database as well as the default cache folder.
+  for (const row of q<Row>(
+    "SELECT optimized_path FROM media_files WHERE optimized_path IS NOT NULL",
+  ).all()) {
+    if (row.optimized_path && await removePreparedFile(String(row.optimized_path))) removed++;
+  }
+  for (const row of q<Row>(
+    "SELECT path FROM media_audio_variants WHERE path IS NOT NULL",
+  ).all()) {
+    if (row.path && await removePreparedFile(String(row.path))) removed++;
+  }
   const entries = await readdir(resolveOptimizedDir()).catch(() => [] as string[]);
   for (const name of entries) {
     if (!name.endsWith(".mp4") && !name.endsWith(".part")) continue;

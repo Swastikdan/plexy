@@ -29,6 +29,12 @@ const ConfigSchema = z.object({
   skipSegmentsEnabled: z.boolean().default(false),
   /** 0 = use all available space. Otherwise prune the oldest prepared copies. */
   optimizeMaxCacheGb: z.number().int().min(0).default(0),
+  /** `data` keeps prepared copies in the Plexy data folder; `media` puts them beside each original. */
+  optimizeStorage: z.enum(["data", "media"]).default("data"),
+  /** Replace the source file with the prepared MP4 after a successful preparation. */
+  replaceOriginal: z.boolean().default(false),
+  /** Send removed originals to the system Trash instead of deleting them permanently. */
+  moveOriginalsToTrash: z.boolean().default(true),
   /** Files probed in parallel during a scan. Higher is faster on fast disks. */
   probeConcurrency: z.number().int().min(1).max(16).default(4),
   tmdbToken: z.string().default(""),

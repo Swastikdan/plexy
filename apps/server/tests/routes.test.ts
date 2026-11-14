@@ -451,6 +451,46 @@ describe("Elysia API Routes (PRD 9)", () => {
     }
   });
 
+  test("PUT /api/settings persists preparation storage and deletion policy", async () => {
+    try {
+      const res = await app.handle(
+        new Request("http://localhost:8765/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            optimizeStorage: "media",
+            replaceOriginal: true,
+            moveOriginalsToTrash: false,
+          }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const saved = await res.json();
+      expect(saved.settings).toMatchObject({
+        optimizeStorage: "media",
+        replaceOriginal: true,
+        moveOriginalsToTrash: false,
+      });
+
+      const read = await (await app.handle(new Request("http://localhost:8765/api/settings"))).json();
+      expect(read.settings.optimizeStorage).toBe("media");
+      expect(read.settings.replaceOriginal).toBe(true);
+      expect(read.settings.moveOriginalsToTrash).toBe(false);
+    } finally {
+      await app.handle(
+        new Request("http://localhost:8765/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            optimizeStorage: "data",
+            replaceOriginal: false,
+            moveOriginalsToTrash: true,
+          }),
+        }),
+      );
+    }
+  });
+
   test("GET /api/unknown-route returns 404", async () => {
     const res = await app.handle(new Request("http://localhost:8765/api/does-not-exist"));
     expect(res.status).toBe(404);

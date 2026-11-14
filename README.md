@@ -43,7 +43,7 @@ Use Bun 1.4.4, then run `bun install`.
 | `bun run test:packages` | Shared-package tests |
 | `bun run test:native` | Local-library and mobile logic tests |
 
-See [monorepo layout and ownership](docs/MONOREPO.md), [mobile structure and build instructions](apps/mobile/README.md), [local library behavior](docs/MOBILE_LOCAL_LIBRARY.md), and [API documentation](docs/API.md).
+See [monorepo layout and ownership](docs/MONOREPO.md), [mobile structure and build instructions](apps/mobile/README.md), [local library behavior](docs/MOBILE_LOCAL_LIBRARY.md), [playback preparation](docs/PLAYBACK_PREPARATION.md), and [API documentation](docs/API.md).
 
 ## Build
 
