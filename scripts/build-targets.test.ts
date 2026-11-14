@@ -17,6 +17,7 @@ test("backend and UI changes rebuild both embedded consumers", () => {
     "apps/server/src/auth.ts",
     "apps/web/src/routes/index.tsx",
     "scripts/install-macos-ffmpeg.mjs",
+    "scripts/install-ffmpeg.mjs",
   ])
     expect(selected([file])).toEqual(["desktop", "server"]);
   expect(selected(["packages/api-client/src/types.ts"])).toEqual([

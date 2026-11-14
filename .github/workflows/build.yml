@@ -150,7 +150,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules/node-av/binary
-          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs') }}
+          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs', 'scripts/install-ffmpeg.mjs') }}
 
       - name: Ensure FFmpeg runtime is installed
         run: node scripts/install-macos-ffmpeg.mjs
@@ -289,7 +289,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules/node-av/binary
-          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs') }}
+          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs', 'scripts/install-ffmpeg.mjs') }}
 
       - name: Ensure FFmpeg runtime is installed
         run: node scripts/install-macos-ffmpeg.mjs
@@ -457,8 +457,15 @@ jobs:
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
       - run: bun install --frozen-lockfile
-      - if: runner.os == 'macOS'
-        run: node scripts/install-macos-ffmpeg.mjs
+        env:
+          SKIP_FFMPEG: "true"
+      - name: Cache FFmpeg runtime
+        uses: actions/cache@v5
+        with:
+          path: node_modules/node-av/binary
+          key: ffmpeg-${{ matrix.platform }}-v1-${{ hashFiles('bun.lock', 'scripts/install-ffmpeg.mjs') }}
+      - name: Ensure FFmpeg runtime is installed
+        run: node scripts/install-ffmpeg.mjs
       - uses: actions/download-artifact@v8
         with:
           name: verified-web
@@ -467,7 +474,9 @@ jobs:
         env:
           PLEXY_REUSE_WEB_BUILD: "true"
       - name: Smoke test backend
-        run: ./dist/server/plexy-server --version
+        run: |
+          ./dist/server/ffmpeg -version
+          ./dist/server/plexy-server --version
       - run: tar -czf dist/plexy-server-${{ matrix.platform }}.tar.gz -C dist/server .
       - uses: actions/upload-artifact@v7
         with:

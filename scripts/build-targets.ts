@@ -38,7 +38,7 @@ export function buildTargets(files: string[], target = "", fullBuild = false) {
       if (file.startsWith("packages/api-client/")) flags.mobile = true;
       if (file === "scripts/generate-icon.ts" || file.startsWith("build/"))
         flags.mobile = true;
-      if (file === "scripts/install-macos-ffmpeg.mjs") flags.server = true;
+      if (/^scripts\/install-(macos-)?ffmpeg\.mjs$/.test(file)) flags.server = true;
     }
   // Both desktop and standalone server ship the browser UI and backend.
   // A manual target builds only that artifact; automatic builds follow dependencies.
