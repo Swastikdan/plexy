@@ -186,14 +186,15 @@ export function LibraryScreen({
                     switchTab(tab);
                   }}
                   className={cn(
-                    "min-w-[72px] flex-grow rounded-full items-center justify-center px-3",
+                    "flex-grow rounded-full items-center justify-center",
+                    libraryTabs.length >= 5 ? "px-2" : "min-w-[72px] px-3",
                     active && "bg-foreground",
                     !active && "active:opacity-[0.65]",
                   )}
                 >
                   <Text
                     className={cn(
-                      "text-[14px] tracking-[0.1px]",
+                      libraryTabs.length >= 5 ? "text-[12px]" : libraryTabs.length === 4 ? "text-[13px]" : "text-[14px]",
                       // Mutually exclusive text styles — uniwind resolves
                       // conflicting text-* classes by stylesheet order, so a
                       // conditional override of text-muted never wins.

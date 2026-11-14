@@ -33,9 +33,10 @@ export function EpisodeCard({
       "",
     )
     .trim();
+  const artwork = ep.backdrop || ep.poster || item.backdrop || item.poster;
   const epDisplayTitle =
     cleanedTitle ||
-    (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName);
+    (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName || "Episode");
   return (
     <Pressable
       onPress={() => ep.fileId && play(ep.fileId)}
@@ -43,13 +44,13 @@ export function EpisodeCard({
       className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
     >
       <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
-        {ep.poster ? (
+        {artwork ? (
           <Image
-            source={api.image(ep.poster)}
-            className="h-full w-full"
+            source={api.image(artwork)}
+            style={{ width: "100%", height: "100%" }}
             contentFit="cover"
             cachePolicy="memory-disk"
-            recyclingKey={ep.poster}
+            recyclingKey={artwork}
           />
         ) : (
           <View className="h-full w-full bg-surface-secondary" />

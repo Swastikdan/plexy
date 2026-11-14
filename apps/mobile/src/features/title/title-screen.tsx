@@ -46,7 +46,6 @@ export function TitleScreen({
 }) {
   const showDialog = useAppDialog();
   const detailPager = usePagerDrag();
-  const seasonPager = usePagerDrag();
   const titleActions = useTitleActions();
   const colors = useColors();
   const { api, progress } = useClient();
@@ -288,18 +287,19 @@ export function TitleScreen({
                     <SwipePager
                       controller={detailPager.controller}
                       autoHeight
-                      pageKeys={["episodes", "details"]}
-                      index={detailTab === "episodes" ? 0 : 1}
+                      pageKeys={[...(detail.seasons?.length ? detail.seasons.map(s => `season-${s.number}`) : ["episodes"]), "details"]}
+                      index={detailTab === "details" ? Math.max(1, detail.seasons?.length ?? 0) : Math.max(0, detail.seasons?.findIndex(s => s.number === selectedSeason) ?? 0)}
                       onChange={(index) => {
                         triggerHaptic("selection");
-                        setDetailTab(index === 0 ? "episodes" : "details");
+                        setDetailTab(index < Math.max(1, detail.seasons?.length ?? 0) ? "episodes" : "details");
+                        if (detail.seasons?.[index]) setSeason(detail.seasons[index]!.number);
                       }}
                       renderPage={(page) => (
                         <View className="gap-[18px]">
-                          {page === 0 ? (
+                          {page < Math.max(1, detail.seasons?.length ?? 0) ? (
                             <>
                               {!!detail.seasons?.length && (
-                                <View {...seasonPager.panHandlers}>
+                                <View {...detailPager.panHandlers}>
                                   <ScrollView
                                     ref={seasonStrip}
                                     horizontal
@@ -368,48 +368,10 @@ export function TitleScreen({
                                   </ScrollView>
                                 </View>
                               )}
-                              <SwipePager
-                                controller={seasonPager.controller}
-                                scrollEnabled={false}
-                                autoHeight
-                                pageKeys={
-                                  detail.seasons?.length
-                                    ? detail.seasons.map((s) =>
-                                        String(s.number),
-                                      )
-                                    : ["all"]
-                                }
-                                index={Math.max(
-                                  0,
-                                  detail.seasons?.findIndex(
-                                    (s) => s.number === selectedSeason,
-                                  ) ?? 0,
-                                )}
-                                onChange={(index) => {
-                                  triggerHaptic("selection");
-                                  setSeason(
-                                    detail.seasons?.[index]?.number ?? null,
-                                  );
-                                }}
-                                renderPage={(seasonIndex) => (
-                                  <SeasonEpisodes
-                                    episodes={
-                                      detail.episodes?.filter(
-                                        (e: any) =>
-                                          !detail.seasons?.length ||
-                                          e.seasonNumber ===
-                                            detail.seasons?.[seasonIndex]
-                                              ?.number,
-                                      ) ?? []
-                                    }
-                                    item={item}
-                                    api={api}
-                                    play={play}
-                                    progress={progress}
-                                    overrides={episodesWatchedOverride}
-                                    onToggleWatched={toggleEpisodeWatched}
-                                  />
-                                )}
+                              <SeasonEpisodes
+                                episodes={detail.episodes?.filter(e => !detail.seasons?.length || e.seasonNumber === detail.seasons[page]?.number) ?? []}
+                                item={item} api={api} play={play} progress={progress}
+                                overrides={episodesWatchedOverride} onToggleWatched={toggleEpisodeWatched}
                               />
                             </>
                           ) : (
@@ -595,27 +557,6 @@ export function TitleScreen({
                 </NativeButton.Label>
               </View>
             </NativeButton>
-            {detailAction.label === "Continue watching" && (
-              <NativeButton
-                isIconOnly
-                variant="secondary"
-                size="lg"
-                accessibilityLabel="Continue watching actions"
-                onPress={() =>
-                  titleActions(
-                    item,
-                    () => {
-                      const fid = getFirstPlayableFileId();
-                      if (fid) play(fid);
-                    },
-                    true,
-                  )
-                }
-                className="rounded-full"
-              >
-                <MoreHorizontal size={22} color={colors.ink} />
-              </NativeButton>
-            )}
             {detail.trailer?.provider?.toLowerCase() === "youtube" && (
               <NativeButton
                 variant="secondary"

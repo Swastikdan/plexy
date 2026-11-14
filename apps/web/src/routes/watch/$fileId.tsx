@@ -224,7 +224,9 @@ function WatchRoute() {
     };
   }, [fileId]);
 
-  const play = useQuery({ ...queries.play(Number(fileId), caps), enabled: !!caps });
+  const play = useQuery({ ...queries.play(Number(fileId), caps), enabled: !!caps,
+    refetchInterval: query => ["queued", "running"].includes(query.state.data?.optimization?.status ?? "") ? 2000 : false,
+  });
 
   useEffect(() => {
     if (play.data?.duration) setKnownDuration(play.data.duration);
@@ -989,7 +991,7 @@ function WatchRoute() {
             <VideoPlayer>
               <VideoSkin
                 className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
-                serverAudioTracks={play.data?.audioTracks}
+                serverAudioTracks={play.data?.directPlayOnly ? play.data.audioTracks?.filter(track => track.index === 0) : play.data?.audioTracks}
                 selectedAudioIndex={selectedAudioIndex}
                 onSelectAudioTrack={handleSelectAudioTrack}
                 onSeekDragStart={handleSeekDragStart}

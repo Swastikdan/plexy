@@ -1,5 +1,5 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
-import { FlatList,Pressable,Text,View } from "react-native";
+import { ScrollView,Pressable,Text,View } from "react-native";
 import type {
 LocalCatalog,
 TitleDetail,
@@ -23,20 +23,13 @@ export function CastRow({
       <Text className="font-archivo-bold text-[18px] tracking-[-0.2px] text-foreground">
         Cast & Crew
       </Text>
-      <FlatList {...pagerBoundary}
+      <ScrollView {...pagerBoundary}
         horizontal
-        data={people}
-        keyExtractor={(person: any, index) => `${person.name}-${index}`}
-        getItemLayout={(_, index) => ({
-          length: 110,
-          offset: 110 * index,
-          index,
-        })}
-        initialNumToRender={8}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 14 }}
-        renderItem={({ item: person }: { item: any }) => (
-          <Pressable
+      >
+        {people.map((person, index) => (
+          <Pressable key={`${person.name}-${index}`}
             disabled={!canOpen(person.name)}
             onPress={() => onSelect(person.name)}
             className="w-24 gap-1.5"
@@ -59,8 +52,8 @@ export function CastRow({
               {person.character}
             </Text>
           </Pressable>
-        )}
-      />
+        ))}
+      </ScrollView>
     </View>
   );
 }

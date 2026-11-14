@@ -1,10 +1,10 @@
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
-import { useEffect, useMemo, useRef } from "react";
-import { Pressable, useWindowDimensions, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { AppState, Pressable, useWindowDimensions, View } from "react-native";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated from "react-native-reanimated";
+import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming, type SharedValue } from "react-native-reanimated";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
 import { control } from "@/shared/theme";
@@ -14,6 +14,14 @@ import type { OpenTitle } from "@/features/catalog/types";
 import { useHeroTransition } from "@/features/home/hooks/use-hero-transition";
 
 const ACTION_BOTTOM = 28;
+const ADVANCE_MS = 5000;
+
+function CarouselDot({ selected, next, progress }: { selected: boolean; next: boolean; progress: SharedValue<number> }) {
+  const fillStyle = useAnimatedStyle(() => ({ width: `${progress.get() * 100}%` }));
+  return <View className={cn("h-full w-full overflow-hidden rounded-[2px]", selected ? "bg-foreground" : "bg-foreground/28")}>
+    {next && !selected && <Animated.View className="absolute bottom-0 left-0 top-0 bg-foreground" style={fillStyle} />}
+  </View>;
+}
 
 export function HeroCarousel({
   items,
@@ -34,16 +42,24 @@ export function HeroCarousel({
   const reduceMotion = useReducedMotion();
   const { activeItem, activeIndex, changing, contentStyle, select, step } =
     useHeroTransition(items);
-  const pausedUntil = useRef(0);
-  // Advance the featured title while the user is on Home and not touching it.
+  const [pausedUntil, setPausedUntil] = useState(0);
+  const [touching, setTouching] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+  const progress = useSharedValue(0);
+  const itemKeys = items.map(item => item.publicId).join("|");
   useEffect(() => {
-    if (!active || reduceMotion || items.length < 2) return;
-    const timer = setInterval(() => {
-      if (Date.now() < pausedUntil.current) return;
-      select((activeIndex + 1) % items.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [active, activeIndex, items.length, reduceMotion, select]);
+    const subscription = AppState.addEventListener("change", state => setAppActive(state === "active"));
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    cancelAnimation(progress);
+    progress.set(0);
+    if (!active || !appActive || touching || changing || reduceMotion || items.length < 2) return;
+    const delay = Math.max(0, pausedUntil - Date.now());
+    progress.set(withDelay(delay, withTiming(1, { duration: ADVANCE_MS, easing: Easing.linear })));
+    const timer = setTimeout(() => select((activeIndex + 1) % items.length), delay + ADVANCE_MS);
+    return () => { clearTimeout(timer); cancelAnimation(progress); };
+  }, [active, appActive, touching, changing, activeIndex, itemKeys, items.length, pausedUntil, reduceMotion, select, progress]);
   const swipe = useMemo(
     () =>
       Gesture.Pan()
@@ -52,7 +68,7 @@ export function HeroCarousel({
         .failOffsetY([-16, 16])
         .runOnJS(true)
         .onBegin(() => {
-          pausedUntil.current = Date.now() + 8000;
+          setPausedUntil(Date.now() + 8000);
         })
         .onEnd((event) => {
           if (
@@ -70,7 +86,10 @@ export function HeroCarousel({
   if (!activeItem) return null;
 
   return (
-    <View {...pagerBoundary} className="relative w-full">
+    <View {...pagerBoundary} onTouchStart={() => { pagerBoundary.onTouchStart(); setTouching(true); }}
+      onTouchEnd={() => { pagerBoundary.onTouchEnd(); setTouching(false); setPausedUntil(Date.now() + 8000); }}
+      onTouchCancel={() => { pagerBoundary.onTouchCancel(); setTouching(false); setPausedUntil(Date.now() + 8000); }}
+      className="relative w-full">
       <GestureDetector gesture={swipe}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => open(activeItem.publicId)} onLongPress={() => titleActions(activeItem, () => onPlay(activeItem), Boolean(activeItem.watch?.position && !activeItem.watch?.played))} delayLongPress={1000} className="overflow-hidden">
           <Animated.View style={contentStyle} pointerEvents="none">
@@ -100,21 +119,17 @@ export function HeroCarousel({
             <Pressable
               key={item.publicId}
               onPress={() => {
-                pausedUntil.current = Date.now() + 8000;
+                setPausedUntil(Date.now() + 8000);
                 select(index);
               }}
-              className={cn(
-                "h-[4px] max-w-[44px] flex-1 rounded-[2px]",
-                // Mutually exclusive backgrounds — uniwind resolves
-                // conflicting bg-* classes by stylesheet order, not by
-                // className order, so a conditional override never wins.
-                index === activeIndex ? "bg-foreground" : "bg-foreground/28",
-              )}
+              className="h-[4px] max-w-[44px] flex-1 rounded-[2px]"
               hitSlop={{ top: 12, bottom: 12, left: 3, right: 3 }}
               accessibilityRole="button"
               accessibilityLabel={`Show ${item.name}. Slide ${index + 1} of ${items.length}`}
               accessibilityState={{ selected: index === activeIndex }}
-            />
+            >
+              <CarouselDot selected={index === activeIndex} next={index === (activeIndex + 1) % items.length} progress={progress} />
+            </Pressable>
           ))}
         </View>
       )}

@@ -115,7 +115,7 @@ export async function startServer(): Promise<{ url: string; port: number }> {
   // Prefer 8765 so LAN bookmarks stay valid; random only if it is taken.
   activePort = await getAvailablePort();
 
-  const dataDir = path.join(app.getPath("appData"), "Plexy");
+  const dataDir = process.env.PLEXY_DATA_DIR || path.join(app.getPath("appData"), "Plexy");
   const logDir = path.join(app.getPath("logs"), "Plexy");
 
   const home = process.env.HOME || "";
