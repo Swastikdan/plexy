@@ -106,7 +106,7 @@ afterAll(async () => {
 test("native session loads the relay URL, resumes, and accepts commands", async () => {
   const { log } = await setup();
   const events: NativePlaybackEvent[] = [];
-  const manager = new NativePlayerManager((event) => events.push(event), { fetch: manifestFetch });
+  const manager = new NativePlayerManager((event) => events.push(event), { fetch: manifestFetch, platform: "darwin" });
 
   const result = await manager.play({
     fileId: 7,
@@ -141,7 +141,7 @@ test("native session loads the relay URL, resumes, and accepts commands", async 
 
 test("stopping a session removes its IPC socket and relay", async () => {
   await setup();
-  const manager = new NativePlayerManager(() => {}, { fetch: manifestFetch });
+  const manager = new NativePlayerManager(() => {}, { fetch: manifestFetch, platform: "darwin" });
   const result = await manager.play({
     fileId: 7,
     serverUrl: "http://127.0.0.1:8765",
@@ -158,7 +158,7 @@ test("an engine crash surfaces an error and a closed event", async () => {
   const { log } = await setup();
   process.env.FAKE_MPV_EXIT_AFTER_MS = "250";
   const events: NativePlaybackEvent[] = [];
-  const manager = new NativePlayerManager((event) => events.push(event), { fetch: manifestFetch });
+  const manager = new NativePlayerManager((event) => events.push(event), { fetch: manifestFetch, platform: "darwin" });
   await manager.play({
     fileId: 7,
     serverUrl: "http://127.0.0.1:8765",
@@ -176,6 +176,7 @@ test("a native manifest without a stream URL is rejected", async () => {
   await setup();
   const manager = new NativePlayerManager(() => {}, {
     fetch: async () => new Response(JSON.stringify({ fileId: 7 }), { status: 200 }),
+    platform: "darwin",
   });
   await expect(manager.play({
     fileId: 7,
@@ -184,9 +185,20 @@ test("a native manifest without a stream URL is rejected", async () => {
   })).rejects.toThrow(/native playback/i);
 });
 
+test("native playback is unavailable on unsupported platforms", async () => {
+  await setup();
+  const manager = new NativePlayerManager(() => {}, { fetch: manifestFetch, platform: "linux" });
+  expect(manager.info().available).toBe(false);
+  await expect(manager.play({
+    fileId: 7,
+    serverUrl: "http://127.0.0.1:8765",
+    serverOrigin: "http://127.0.0.1:8765",
+  })).rejects.toThrow(/macOS/i);
+});
+
 test("the renderer cannot point native playback at another server", async () => {
   await setup();
-  const manager = new NativePlayerManager(() => {}, { fetch: manifestFetch });
+  const manager = new NativePlayerManager(() => {}, { fetch: manifestFetch, platform: "darwin" });
   await expect(manager.play({
     fileId: 7,
     serverUrl: "https://evil.example.com",

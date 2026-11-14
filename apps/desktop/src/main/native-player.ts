@@ -275,21 +275,28 @@ export class NativePlayerManager {
 
   constructor(
     private readonly emit: (event: NativePlaybackEvent) => void,
-    private readonly options: { fetch?: ManifestFetch } = {},
+    private readonly options: {
+      fetch?: ManifestFetch;
+      /** Injectable so the manager can be exercised on non-macOS CI runners. */
+      platform?: NodeJS.Platform;
+    } = {},
   ) {}
 
   info(): NativePlaybackInfo {
     const mpv = resolveMpv();
+    const platform = this.options.platform ?? process.platform;
+    const supported = platform === "darwin";
     return {
-      available: process.platform === "darwin" && Boolean(mpv),
-      platform: process.platform,
+      available: supported && Boolean(mpv),
+      platform,
       engine: mpv?.engine ?? null,
       version: mpv ? bundledVersion(mpv.binary) : null,
-      ...(mpv
+      ...(supported && mpv
         ? {}
         : {
-            reason:
-              "The native playback engine is not installed. Run the app's mpv bundling step or set PLEXY_MPV to an mpv binary.",
+            reason: supported
+              ? "The native playback engine is not installed. Run the app's mpv bundling step or set PLEXY_MPV to an mpv binary."
+              : "Native playback is only available on macOS.",
           }),
     };
   }

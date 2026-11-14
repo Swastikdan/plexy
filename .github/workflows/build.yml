@@ -389,7 +389,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
       - name: Cache Bun packages
@@ -402,7 +402,7 @@ jobs:
         env:
           SKIP_FFMPEG: "true"
       - name: Cache Gradle dependencies and task outputs
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Cache Android native compilation
