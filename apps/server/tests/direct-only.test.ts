@@ -8,6 +8,7 @@ import {
   enqueueMissingOptimizations,
   needsPreparation,
   pauseOptimizer,
+  startOptimizer,
   stopOptimizer,
 } from "../src/optimize";
 
@@ -96,6 +97,10 @@ describe("optimizer scope", () => {
       ).get(id)?.optimized_status);
 
     expect(statusOf(8901)).toBe("none");
+    expect(statusOf(8902)).toBe("queued");
+    expect(statusOf(8903)).toBe("queued");
+    // The delayed startup hook must not erase work already queued by a scan.
+    await startOptimizer();
     expect(statusOf(8902)).toBe("queued");
     expect(statusOf(8903)).toBe("queued");
   });

@@ -1,0 +1,6 @@
+{
+  "version": "",
+  "url": "",
+  "sha256": "",
+  "notes": "Pin a macOS arm64 mpv archive here (url + sha256). No checksum means the build skips native playback instead of shipping an unverified engine. PLEXY_MPV_URL, PLEXY_MPV_SHA256 and PLEXY_MPV_PATH override this file."
+}

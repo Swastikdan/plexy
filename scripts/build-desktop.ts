@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import { generateIcons } from "./generate-icon";
 import { generateDmgBackground } from "./generate-dmg-background";
+import { bundleMpv } from "./bundle-mpv";
 
 /**
  * Resolve the FFmpeg binary regardless of whether dependencies were installed
@@ -136,6 +137,10 @@ async function buildDesktop() {
   await chmod(ffmpegOut, 0o755);
   console.log(`✓ FFmpeg bundled: ${ffmpegOut}`);
 
+  // 2b. Optional native playback engine (mpv)
+  console.log("\n2b. Bundling native playback engine (optional)...");
+  await bundleMpv(rootDir);
+
   // 3. Generate High-Resolution Apple Application Icon (.icns)
   console.log("\n3. Generating High-Resolution Apple Application Icon...");
   await generateIcons();
@@ -169,7 +174,7 @@ async function buildDesktop() {
   );
   detachStaleInstallerVolumes("Plexy Beta");
   execSync(
-    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${releasePackage.version}`,
+    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${releasePackage.version} -c.afterPack="${join(rootDir, "scripts", "after-pack-mpv.cjs")}"`,
     {
       stdio: "inherit",
       env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },

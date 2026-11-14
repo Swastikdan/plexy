@@ -23,10 +23,13 @@ import { q, type Row } from "./db";
 import { log } from "./logger";
 import {
   classifyPlayability,
+  isStreamableContainer,
+  mimeForContainer,
   rangeResponse, rowPlayabilityFacts, type BrowserCaps,
 } from "./playback";
 import {
-  enqueueOptimization, optimizationView, usableOptimizedPath,
+  audioVariantView, enqueueAudioVariant, enqueueOptimization, optimizationView,
+  usableAudioVariant, usableOptimizedPath,
 } from "./optimize";
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
 import { getConfig } from "./config";
@@ -87,6 +90,59 @@ async function ensureFileProbed(row: Row): Promise<Row> {
     log.warn("media", "just-in-time probe failed", { fileId: row.id, message: String(err) });
   }
   return row;
+}
+
+/**
+ * Serve an original file exactly as stored on disk. Used by native players via
+ * `/api/stream/:fileId/original`; the browser route keeps its own policy.
+ */
+async function serveOriginal(request: Request, fileId: number): Promise<Response> {
+  const row = await openableFile(fileId);
+  if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+  const path = String(row.path);
+  const info = await stat(path).catch(() => null);
+  if (!info?.isFile()) return Response.json({ error: "File unavailable" }, { status: 404 });
+  const response = await rangeResponse(
+    request,
+    Bun.file(path),
+    info.size,
+    mimeForContainer(row.container == null ? null : String(row.container)),
+  );
+  response.headers.set("X-Plexy-Source", "original");
+  return response;
+}
+
+/**
+ * Human label for a Matroska/MP4 language code. ffprobe reports ISO 639-2
+ * ("hin", "eng"); Intl expects ISO 639-1, so the common cases are mapped.
+ */
+const LANGUAGE_639_1: Record<string, string> = {
+  eng: "en", hin: "hi", tam: "ta", tel: "te", kan: "kn", mal: "ml", ben: "bn",
+  mar: "mr", guj: "gu", pan: "pa", urd: "ur", san: "sa", spa: "es", fra: "fr",
+  fre: "fr", deu: "de", ger: "de", ita: "it", jpn: "ja", kor: "ko", zho: "zh",
+  chi: "zh", cmn: "zh", yue: "zh", rus: "ru", ara: "ar", por: "pt", nld: "nl",
+  dut: "nl", swe: "sv", nor: "no", dan: "da", fin: "fi", pol: "pl", ces: "cs",
+  cze: "cs", slk: "sk", slo: "sk", hun: "hu", ron: "ro", rum: "ro", tur: "tr",
+  ell: "el", gre: "el", heb: "he", tha: "th", vie: "vi", ind: "id", msa: "ms",
+  may: "ms", fil: "fil", ukr: "uk", fas: "fa", per: "fa",
+};
+
+function canonicalLanguage(code: string): string {
+  const base = String(code ?? "").trim().toLowerCase().split(/[-_]/)[0] ?? "";
+  return LANGUAGE_639_1[base] ?? base;
+}
+
+function languageLabel(code: string): string {
+  const raw = String(code ?? "").trim().toLowerCase();
+  if (!raw) return "selected";
+  const iso = canonicalLanguage(raw);
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(iso);
+    if (name && name !== iso) return name;
+  } catch {
+    /* older runtime without Intl.DisplayNames */
+  }
+  return iso.toUpperCase();
 }
 
 function parseCaps(raw: string | undefined): BrowserCaps | null {
@@ -249,36 +305,68 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (!row) return Response.json({ error: "Not found" }, { status: 404 });
     row = await ensureFileProbed(row);
 
+    // Native clients (the desktop app's mpv window) read the original bytes and
+    // do their own decoding, so browser codec rules and preparation do not
+    // apply. They still use the same authorized file lookup and watch state.
+    const nativeRequested = ctx.query.native === "1" || ctx.query.native === "true";
+
     const audioTracks = audioTracksFor(row).map((track, index) => ({ ...track, index }));
     const requestedAudioIndex = ctx.query.audio;
+    const config = await getConfig();
+    // The container's default track is index 0 unless the viewer explicitly
+    // asked for another language. The preferred-language setting is a hint for
+    // the native player's track choice, not an override of the file's default.
     const selectedAudioIndex = requestedAudioIndex != null
       && Number.isInteger(requestedAudioIndex)
       && requestedAudioIndex >= 0
       && requestedAudioIndex < audioTracks.length
       ? requestedAudioIndex
       : 0;
-    // Optimizer output always maps 0:a:0, independently of language preferences.
-    const selectedAudioNeedsConversion = selectedAudioIndex !== 0;
 
     let verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
+    const originalDirect = verdict.path === "direct";
 
-    // A prepared copy is a plain fast-start MP4: the browser can play and seek
-    // it natively, so the "likely" path from probe facts no longer applies.
-    const prepared = !selectedAudioNeedsConversion ? await usableOptimizedPath(row) : null;
+    // Track 0 is served by the primary prepared copy (or the original when it
+    // is directly playable). Any other language needs its own prepared copy,
+    // because browsers cannot switch audio tracks inside one MP4.
+    const preparedPrimary = nativeRequested ? null : await usableOptimizedPath(row);
+    const preparedVariant = !nativeRequested && selectedAudioIndex > 0
+      ? await usableAudioVariant(row, selectedAudioIndex)
+      : null;
+    const prepared = selectedAudioIndex === 0 ? preparedPrimary : preparedVariant;
+
     if (prepared) {
       verdict = { path: "direct", reason: "Prepared for instant playback and seeking" };
     }
-    if (verdict.path === "direct" && !prepared && selectedAudioIndex > 0) {
-      verdict = { path: "remux", reason: "Remuxing with selected audio track" };
+    if (nativeRequested) {
+      verdict = { path: "direct", reason: "Playing the original file in the native player" };
+    } else if (!prepared && selectedAudioIndex > 0) {
+      enqueueAudioVariant(Number(row.id), selectedAudioIndex);
+      const label = languageLabel(audioTracks[selectedAudioIndex]?.language ?? "");
+      verdict = {
+        path: "unsupported",
+        reason: `Preparing the ${label} audio track. This is a one-time step and takes a few seconds.`,
+      };
     }
     // Identify the fallback immediately and prepare it in the background so the
     // next play is direct. This never blocks the current request.
-    if (!prepared && (verdict.path === "remux" || verdict.path === "transcode")) {
-      if (!selectedAudioNeedsConversion) enqueueOptimization(Number(row.id));
-      verdict = { path: "unsupported", reason: selectedAudioNeedsConversion
-        ? "This audio track is not prepared. Live conversion is disabled; select the first audio track."
+    if (!nativeRequested && !prepared && selectedAudioIndex === 0
+      && (verdict.path === "remux" || verdict.path === "transcode")) {
+      enqueueOptimization(Number(row.id), { urgent: true });
+      const state = optimizationView(getFile(Number(row.id)) ?? row);
+      const waiting = state.status === "running" || state.status === "queued";
+      verdict = { path: "unsupported", reason: waiting
+        ? "Plexy is preparing this file so it plays smoothly in your browser. This is a one-time step."
         : "This file must finish preparation before playback. Live conversion is disabled." };
     }
+
+    // Every language the menu may offer, marked with whether its copy exists.
+    const audioTracksWithState = await Promise.all(audioTracks.map(async (track) => ({
+      ...track,
+      prepared: nativeRequested || (track.index === 0
+        ? Boolean(preparedPrimary) || originalDirect
+        : Boolean(await usableAudioVariant(row, track.index))),
+    })));
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
 
     const context = itemContext(row);
@@ -320,8 +408,8 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       ...verdict,
       fileId: Number(row.id),
       itemId: row.item_id as number | null,
-      directPlayOnly: true,
-      audioTracks,
+      directPlayOnly: !nativeRequested,
+      audioTracks: audioTracksWithState,
       selectedAudioIndex,
       versions,
       title: context.title,
@@ -336,11 +424,25 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       watch,
       tracks,
       trickplay,
-      optimization: optimizationView(getFile(Number(row.id)) ?? row),
+      optimization: !nativeRequested && selectedAudioIndex > 0
+        ? audioVariantView(getFile(Number(row.id)) ?? row, selectedAudioIndex)
+        : optimizationView(getFile(Number(row.id)) ?? row),
+      ...(nativeRequested
+        ? {
+            native: {
+              streamUrl: `/api/stream/${Number(row.id)}/original`,
+              preferredAudioLanguage: config.preferredAudioLanguage,
+            },
+          }
+        : {}),
     };
   }, {
     params: t.Object({ fileId: t.Numeric() }),
-    query: t.Object({ caps: t.Optional(t.String()), audio: t.Optional(t.Numeric()) }),
+    query: t.Object({
+      caps: t.Optional(t.String()),
+      audio: t.Optional(t.Numeric()),
+      native: t.Optional(t.String()),
+    }),
   })
 
   /** Community segment lookup is separately opt-in and never blocks stream startup. */
@@ -368,7 +470,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (await usableOptimizedPath(row)) {
       verdict = { path: "direct", reason: "Prepared for playback" };
     } else if (verdict.path === "remux" || verdict.path === "transcode") {
-      enqueueOptimization(Number(row.id));
+      enqueueOptimization(Number(row.id), { urgent: true });
       verdict = { path: "unsupported", reason: "This file must finish preparation before playback. Live conversion is disabled." };
     }
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
@@ -387,8 +489,29 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/stream/:fileId", async (ctx) => {
     const row = await openableFile(Number(ctx.params.fileId));
     if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    // A non-zero audio selection is served from its own prepared copy; the
+    // primary copy only carries the first track.
+    const requestedAudio = ctx.query.audio;
+    if (requestedAudio != null && Number.isInteger(requestedAudio) && requestedAudio > 0) {
+      const variant = await usableAudioVariant(row, requestedAudio);
+      if (!variant) {
+        return Response.json(
+          { error: "This audio track is still being prepared." },
+          { status: 409 },
+        );
+      }
+      const variantInfo = await stat(variant);
+      const response = await rangeResponse(ctx.request, Bun.file(variant), variantInfo.size, "video/mp4");
+      response.headers.set("X-Plexy-Source", "audio-variant");
+      return response;
+    }
     const path = String(row.path);
     const prepared = await usableOptimizedPath(row);
+    // Stale clients can request the direct URL even when the manifest says
+    // preparation is required. Never send an MKV as video/mp4 in that case.
+    if (!prepared && !isStreamableContainer(row.container == null ? null : String(row.container))) {
+      return Response.json({ error: "This file must finish preparation before playback." }, { status: 409 });
+    }
     const servePath = prepared ?? path;
     const st = await stat(servePath);
     const container = String(row.container ?? "").toLowerCase();
@@ -399,7 +522,25 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const response = await rangeResponse(ctx.request, Bun.file(servePath), st.size, mime);
     response.headers.set("X-Plexy-Source", prepared ? "optimized" : "original");
     return response;
-  }, { params: t.Object({ fileId: t.Numeric() }) })
+  }, {
+    params: t.Object({ fileId: t.Numeric() }),
+    query: t.Object({ audio: t.Optional(t.Numeric()) }),
+  })
+
+  /**
+   * Original media bytes, untouched, for native players (mpv). Unlike the
+   * browser stream route this ignores the prepared copy and never rejects an
+   * MKV: mpv decodes the source itself. Authorization is enforced by the
+   * global access guard (`canAccessFile`) before this handler runs.
+   */
+  .get("/stream/:fileId/original", async (ctx) =>
+    serveOriginal(ctx.request, Number(ctx.params.fileId)), {
+    params: t.Object({ fileId: t.Numeric() }),
+  })
+  .head("/stream/:fileId/original", async (ctx) =>
+    serveOriginal(ctx.request, Number(ctx.params.fileId)), {
+    params: t.Object({ fileId: t.Numeric() }),
+  })
 
   /** Authenticated download of the original file, untouched. */
   .get("/download/:fileId/info", async ({ params }) => {

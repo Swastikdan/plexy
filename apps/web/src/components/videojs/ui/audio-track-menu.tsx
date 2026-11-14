@@ -9,6 +9,7 @@ import { AudioTrackRadioGroup } from '@videojs/react/ui/audio-track-radio-group'
 import { MenuChevron } from '@/components/videojs/ui/menu-chevron';
 import { RadioItem } from '@/components/videojs/ui/radio-item';
 import { cn } from '@/lib/resolve-class-name';
+import { languageName } from '@/lib/language';
 
 export interface ServerAudioTrack {
   index: number;
@@ -16,6 +17,8 @@ export interface ServerAudioTrack {
   channels: number;
   language: string;
   isDefault?: boolean;
+  /** False when picking this language needs a short one-time remux first. */
+  prepared?: boolean;
 }
 
 export interface AudioTrackMenuProps extends Omit<Menu.RootProps, 'children'> {
@@ -27,7 +30,7 @@ export interface AudioTrackMenuProps extends Omit<Menu.RootProps, 'children'> {
 function formatLanguage(code?: string): string {
   if (!code) return "";
   try {
-    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code.toUpperCase();
+    return languageName(code) || code.toUpperCase();
   } catch {
     return code.toUpperCase();
   }
@@ -133,6 +136,9 @@ export function AudioTrackMenu({
                 <span className="flex-1 text-xs truncate">
                   {trackLabel(track)}
                   {track.isDefault ? ' (Default)' : ''}
+                  {track.prepared === false && (
+                    <span className="opacity-60"> · prepares on select</span>
+                  )}
                 </span>
               </RadioItem>
             ))}

@@ -15,15 +15,38 @@ export interface OptimizeRequest {
   mode: "remux" | "transcode";
   videoCopy: boolean;
   audioCopy: boolean;
+  /** 0-based index among the source's audio streams; omitted means the first. */
+  audioIndex?: number;
   videoBitrate?: number;
   audioBitrate?: number;
   duration?: number | null;
+  /** Source size in bytes, for progress when the probe has no duration. */
+  sourceSize?: number | null;
+}
+
+/** Live job telemetry; `progress` is a 0…1 fraction of the source clock. */
+export interface OptimizeProgress {
+  progress: number;
+  /** FFmpeg's clock ratio: 1.5 means 1.5 s of media processed per second. */
+  speed?: number | null;
+  /** Estimated seconds until the current job finishes. */
+  etaSeconds?: number | null;
+  /** `prepare` while writing the output, `verify` while validating it. */
+  stage?: "prepare" | "verify";
+}
+
+/** Thrown when a playback request preempts the running job. Not a failure. */
+export class OptimizerCancelledError extends Error {
+  constructor() {
+    super("Preparation was preempted");
+    this.name = "OptimizerCancelledError";
+  }
 }
 
 interface Pending {
   resolve: (size: number) => void;
   reject: (error: Error) => void;
-  onProgress?: (progress: number) => void;
+  onProgress?: (progress: OptimizeProgress) => void;
 }
 
 let child: ChildProcess | null = null;
@@ -61,15 +84,26 @@ function spawnWorker(): ChildProcess {
       try {
         const msg = JSON.parse(line) as {
           id: string;
-          type: "progress" | "done" | "error";
+          type: "progress" | "done" | "error" | "cancelled";
           progress?: number;
+          speed?: number | null;
+          etaSeconds?: number | null;
+          stage?: "prepare" | "verify";
           size?: number;
           error?: string;
         };
         const wait = pending.get(msg.id);
         if (!wait) continue;
         if (msg.type === "progress") {
-          wait.onProgress?.(Number(msg.progress ?? 0));
+          wait.onProgress?.({
+            progress: Number(msg.progress ?? 0),
+            speed: msg.speed == null ? null : Number(msg.speed),
+            etaSeconds: msg.etaSeconds == null ? null : Number(msg.etaSeconds),
+            stage: msg.stage ?? "prepare",
+          });
+        } else if (msg.type === "cancelled") {
+          pending.delete(msg.id);
+          wait.reject(new OptimizerCancelledError());
         } else if (msg.type === "done") {
           pending.delete(msg.id);
           wait.resolve(Number(msg.size ?? 0));
@@ -127,7 +161,7 @@ function ensureWorker(): ChildProcess {
  */
 export function runOptimize(
   request: OptimizeRequest,
-  onProgress?: (progress: number) => void,
+  onProgress?: (progress: OptimizeProgress) => void,
 ): Promise<number> {
   const proc = ensureWorker();
   const id = `o${nextId++}`;
@@ -140,6 +174,21 @@ export function runOptimize(
       reject(err instanceof Error ? err : new Error(String(err)));
     }
   });
+}
+
+/**
+ * Ask the worker to stop the job it is running. The job's promise rejects with
+ * `OptimizerCancelledError` and the caller re-queues the file; the prepared
+ * `.part` file is removed by the worker.
+ */
+export async function cancelOptimize(): Promise<void> {
+  const proc = child;
+  if (!proc || proc.exitCode !== null) return;
+  try {
+    proc.stdin!.write(JSON.stringify({ id: "cancel", op: "cancel" }) + "\n");
+  } catch {
+    // A dead worker already rejects its in-flight jobs via the exit handler.
+  }
 }
 
 /** Terminate the worker (shutdown or a wedged job). Rejects in-flight jobs. */

@@ -15,6 +15,17 @@ import { queries } from "../../queries";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
+import { NativeWatchPage } from "../../components/native-watch";
+import {
+  isNativeAvailable,
+  markNativeAvailable,
+  nativeBridge,
+  PLAYER_ENGINE_EVENT,
+  readPlayerEngine,
+  savePlayerEngine,
+  type PlayerEngine,
+} from "../../lib/native-playback";
+import type { NativePlaybackInfo } from "../../electron";
 
 /// hls.js is only needed when the server hands back a converted (`.m3u8`)
 /// stream. Importing it statically put the whole library into the watch route
@@ -89,6 +100,28 @@ function skipLabel(kind: SkipSegmentKind): string {
   return kind === "outro" ? "Skip ending" : `Skip ${kind}`;
 }
 
+/** "about 2 min left" for the preparation card; null when unknown. */
+function preparationEta(seconds: number | null | undefined): string | null {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return null;
+  const rounded = Math.round(seconds);
+  if (rounded < 5) return "finishing up";
+  if (rounded < 60) return `about ${rounded} sec left`;
+  const minutes = Math.round(rounded / 60);
+  if (minutes < 60) return `about ${minutes} min left`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder > 0 ? `about ${hours} hr ${remainder} min left` : `about ${hours} hr left`;
+}
+
+/** What the server is actually doing, in the owner's words rather than codecs. */
+function preparationHeadline(mode: string | null | undefined, status: string): string {
+  if (status === "failed") return "Playback preparation failed";
+  if (status !== "running" && status !== "queued") return "Playback unavailable";
+  if (mode === "remux") return "Repacking for your browser";
+  if (mode === "transcode") return "Optimizing for your browser";
+  return "Preparing for playback";
+}
+
 /** Mirrors the skin's own controls visibility so the custom chrome fades in sync. */
 function ControlsVisibility({ onChange }: { onChange: (visible: boolean) => void }) {
   const controls = usePlayer(selectControls);
@@ -99,7 +132,7 @@ function ControlsVisibility({ onChange }: { onChange: (visible: boolean) => void
   return null;
 }
 
-function WatchRoute() {
+function BrowserWatchRoute() {
   const { fileId } = useParams({ from: Route.id });
   const navigate = useNavigate();
   const router = useRouter();
@@ -143,6 +176,10 @@ function WatchRoute() {
   const autoAdvanceTriggeredRef = useRef(false);
 
   const [selectedAudioIndex, setSelectedAudioIndex] = useState<number>(0);
+  // -1 means "use the server's default (preferred language) selection".
+  // Choosing a language sends it explicitly so the manifest reports that
+  // track's readiness and preparation progress.
+  const [audioChoice, setAudioChoice] = useState<number>(-1);
   const [subtitleOffset, setSubtitleOffset] = useState<number>(0);
   // Total shift currently applied to loaded cue times relative to their
   // source-absolute values: the user's Sync Offset plus the live-conversion
@@ -203,6 +240,7 @@ function WatchRoute() {
       restartDebounceRef.current = null;
     }
     setSelectedAudioIndex(0);
+    setAudioChoice(-1);
     setSubtitleOffset(0);
     // The cue engine below re-derives the offset from the new file's stream
     // geometry; fresh media elements carry fresh, source-absolute cues.
@@ -224,8 +262,10 @@ function WatchRoute() {
     };
   }, [fileId]);
 
-  const play = useQuery({ ...queries.play(Number(fileId), caps), enabled: !!caps,
-    refetchInterval: query => ["queued", "running"].includes(query.state.data?.optimization?.status ?? "") ? 2000 : false,
+  const play = useQuery({ ...queries.play(Number(fileId), caps, audioChoice), enabled: !!caps,
+    // A percentage alone is not enough while a title is being prepared, so the
+    // card also shows speed and time left; refresh once a second for that.
+    refetchInterval: query => ["queued", "running"].includes(query.state.data?.optimization?.status ?? "") ? 1000 : false,
   });
 
   useEffect(() => {
@@ -239,11 +279,16 @@ function WatchRoute() {
   useEffect(() => {
     if (!hasInitializedAudioRef.current && play.data?.audioTracks && play.data.audioTracks.length > 0) {
       hasInitializedAudioRef.current = true;
-      const preferredIdx = play.data.selectedAudioIndex ?? -1;
-      const defaultIdx = play.data.audioTracks.findIndex((t: any) => t.isDefault);
-      setSelectedAudioIndex(Number.isInteger(preferredIdx) && preferredIdx >= 0
+      const preferredIdx = play.data.selectedAudioIndex ?? 0;
+      const next = Number.isInteger(preferredIdx)
+        && preferredIdx >= 0
+        && preferredIdx < play.data.audioTracks.length
         ? preferredIdx
-        : defaultIdx >= 0 ? defaultIdx : 0);
+        : 0;
+      setSelectedAudioIndex(next);
+      // Ask the server explicitly when the default is a non-first track so it
+      // reports (and starts) that language's prepared copy.
+      if (next > 0) setAudioChoice(next);
     }
   }, [play.data?.audioTracks, play.data?.selectedAudioIndex]);
 
@@ -272,15 +317,12 @@ function WatchRoute() {
         ? restartAt.seconds
         : resumeAt;
 
-  const effectivePath = useMemo(() => {
+  const effectivePath = useMemo((): PlayPath | null => {
     if (!play.data || play.data.path === "unsupported") return null;
-    // If original direct play, but user selected an alternate audio track, remux to preserve choice
-    if (!play.data.directPlayOnly && play.data.path === "direct" && selectedAudioIndex > 0) return "remux";
-    // Prepared HLS bundles contain the preferred language selected at prepare
-    // time. Use the normal conversion path if the viewer chooses another track.
-    if (play.data.path === "hls" && selectedAudioIndex !== (play.data.selectedAudioIndex ?? 0)) return "transcode";
-    return play.data.path;
-  }, [play.data, selectedAudioIndex]);
+    // Every prepared copy — primary or per-language — is a plain fast-start
+    // MP4, so playback is always direct HTTP range seeking.
+    return "direct";
+  }, [play.data]);
 
   const streamUrl = useMemo(() => {
     if (!effectivePath) return null;
@@ -629,6 +671,9 @@ function WatchRoute() {
     const currentPos = video?.currentTime ?? streamStart;
     restartPlaybackRef.current = !video?.paused;
     setSelectedAudioIndex(index);
+    // Explicit selection asks the server for that language's prepared copy;
+    // the manifest reports progress while a one-time remux runs.
+    setAudioChoice(index);
     setRestartAt({ fileId: Number(fileId), seconds: currentPos });
   }, [fileId, selectedAudioIndex, streamStart]);
 
@@ -663,6 +708,11 @@ function WatchRoute() {
       void v.play().then(() => {
         autoAdvanceRef.current = false;
       }).catch(() => {});
+    }
+    // Switching audio replaces the source. The new file shares the same
+    // timeline, so resume exactly where the previous source was.
+    if (restartAt?.fileId === Number(fileId) && restartAt.seconds > 1) {
+      v.currentTime = restartAt.seconds;
     }
     settlePendingRestart();
     const resumePos = play.data?.watch?.position ?? 0;
@@ -939,6 +989,10 @@ function WatchRoute() {
   }, [knownDuration, effectivePath]);
 
   const nextEpisode = play.data?.next ?? null;
+  const preparation = play.data?.optimization ?? null;
+  const preparationPercent = Math.round(Math.min(1, Math.max(0, preparation?.progress ?? 0)) * 100);
+  const preparationRemaining = preparationEta(preparation?.etaSeconds);
+  const preparationSpeed = preparation?.speed && preparation.speed > 0 ? preparation.speed : null;
   // Return to the existing detail entry so Back cannot reopen playback.
   // Direct playback links have no detail entry, so replace them with one.
   const detailItemId = play.data?.parentItemId ?? play.data?.itemId ?? null;
@@ -971,14 +1025,71 @@ function WatchRoute() {
       {playerMenu && (
         <div className="fixed z-[80] min-w-44 rounded-lg border border-white/15 bg-[#171719] p-1 text-sm text-white shadow-2xl" style={{ left: Math.min(playerMenu.x, window.innerWidth - 190), top: Math.min(playerMenu.y, window.innerHeight - 54) }} onContextMenu={(event) => event.preventDefault()}>
           <button type="button" className="w-full rounded-md px-3 py-2 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white" onClick={() => { setPlayerMenu(null); setShowPlaybackStats(true); }}>Stats for nerds</button>
+          {isNativeAvailable() && (
+            <button
+              type="button"
+              className="w-full rounded-md px-3 py-2 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
+              onClick={() => {
+                setPlayerMenu(null);
+                savePlayerEngine("native");
+                window.dispatchEvent(new Event(PLAYER_ENGINE_EVENT));
+              }}
+            >
+              Play in native window
+            </button>
+          )}
         </div>
       )}
       {/* Main Video View / Video.js 10 */}
       <div className="relative flex-1 flex items-center justify-center w-full h-full p-0">
         {play.data?.path === "unsupported" ? (
-          <div className="max-w-md p-6 text-center rounded-2xl bg-[#181818] border border-white/10 text-white z-20">
-            <p className="font-display text-lg font-bold">Unsupported Format</p>
+          <div className="w-full max-w-md p-6 text-center rounded-2xl bg-[#181818] border border-white/10 text-white z-20">
+            <p className="font-display text-lg font-bold">
+              {preparationHeadline(preparation?.mode, preparation?.status ?? "none")}
+            </p>
             <p className="mt-2 text-sm text-ink-muted">{play.data.reason}</p>
+            {preparation?.status === "running" ? (
+              <div className="mt-5 text-left">
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="text-ink-muted">
+                    {preparation.mode === "remux"
+                      ? "Repacking the video into MP4 — no re-encoding"
+                      : "Converting the tracks this browser cannot play"}
+                  </span>
+                  <span className="font-mono tabular-nums text-white">{preparationPercent}%</span>
+                </div>
+                <div
+                  className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10"
+                  role="progressbar"
+                  aria-label="Playback preparation progress"
+                  aria-valuenow={preparationPercent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className="h-full rounded-full bg-[#E50914] transition-[width] duration-500 ease-out"
+                    style={{ width: `${Math.max(2, preparationPercent)}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-ink-muted">
+                  {preparationRemaining ?? "Estimating time left…"}
+                  {preparationSpeed ? ` · ${preparationSpeed.toFixed(1)}× realtime` : ""}
+                </p>
+              </div>
+            ) : preparation?.status === "queued" ? (
+              <p className="mt-4 text-sm text-ink-muted">
+                {preparation.queuePosition && preparation.queuePosition > 0
+                  ? `Starting now — position ${preparation.queuePosition} in the queue. Opened titles jump ahead.`
+                  : "Starting now. This copy is prepared once, then it plays instantly."}
+              </p>
+            ) : (
+              <p className="mt-4 text-sm text-ink-muted">
+                {preparation?.error ?? "This file cannot be prepared right now."}
+              </p>
+            )}
+            <p className="mt-4 text-xs text-white/45">
+              One-time setup. After this, the title starts and seeks instantly.
+            </p>
             <button
               onClick={leavePlayer}
               className="mt-6 rounded-lg bg-[#E50914] px-5 py-2 text-sm font-semibold hover:bg-[#b80710] transition-colors"
@@ -991,7 +1102,7 @@ function WatchRoute() {
             <VideoPlayer>
               <VideoSkin
                 className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
-                serverAudioTracks={play.data?.directPlayOnly ? play.data.audioTracks?.filter(track => track.index === 0) : play.data?.audioTracks}
+                serverAudioTracks={play.data?.audioTracks}
                 selectedAudioIndex={selectedAudioIndex}
                 onSelectAudioTrack={handleSelectAudioTrack}
                 onSeekDragStart={handleSeekDragStart}
@@ -1065,6 +1176,14 @@ function WatchRoute() {
                               {bottomText}
                             </p>
                           )}
+                          <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/75 backdrop-blur-sm">
+                            Browser player
+                            {isNativeAvailable() && (
+                              <span className="font-normal normal-case text-white/50">
+                                · mpv available in the ⋯ menu
+                              </span>
+                            )}
+                          </p>
                         </>
                       );
                     })()}
@@ -1187,6 +1306,68 @@ function WatchRoute() {
 }
 
 export const Route = createFileRoute("/watch/$fileId")({ component: WatchRoute });
+
+/**
+ * Chooses the playback engine. The desktop app prefers its native mpv window
+ * when a bundled engine is present; websites and browsers keep the existing
+ * React player untouched. The choice is persisted, and a native failure always
+ * offers an explicit "use browser player" action.
+ */
+function WatchRoute() {
+  const { fileId } = useParams({ from: Route.id });
+  const [engine, setEngine] = useState<PlayerEngine>(() => readPlayerEngine());
+  const [nativeInfo, setNativeInfo] = useState<NativePlaybackInfo | null | undefined>(() =>
+    nativeBridge() ? undefined : null,
+  );
+
+  useEffect(() => {
+    const bridge = nativeBridge();
+    if (!bridge) {
+      setNativeInfo(null);
+      return;
+    }
+    let cancelled = false;
+    bridge
+      .info()
+      .then((info) => {
+        if (cancelled) return;
+        markNativeAvailable(info.available);
+        setNativeInfo(info.available ? info : null);
+      })
+      .catch(() => {
+        if (!cancelled) setNativeInfo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // "Play in native window" inside the browser player re-mounts this wrapper.
+  useEffect(() => {
+    const onChange = () => setEngine(readPlayerEngine());
+    window.addEventListener(PLAYER_ENGINE_EVENT, onChange);
+    return () => window.removeEventListener(PLAYER_ENGINE_EVENT, onChange);
+  }, []);
+
+  if (nativeInfo === undefined) {
+    return <div className="fixed inset-0 z-50 bg-black" aria-label="Starting player" />;
+  }
+
+  if (nativeInfo && engine === "native") {
+    return (
+      <NativeWatchPage
+        key={fileId}
+        fileId={Number(fileId)}
+        onUseBrowser={() => {
+          savePlayerEngine("browser");
+          setEngine("browser");
+        }}
+      />
+    );
+  }
+
+  return <BrowserWatchRoute />;
+}
 
 function PlaybackStatsOverlay({ video, path, tick, onClose }: { video: HTMLVideoElement | null; path?: string; tick: number; onClose: () => void }) {
   const quality = video && "getVideoPlaybackQuality" in video ? video.getVideoPlaybackQuality() : null;

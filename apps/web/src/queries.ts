@@ -160,6 +160,15 @@ export const queries = {
       },
     }),
 
+  /** Desktop native player manifest: original bytes, never marks unplayable. */
+  playNative: (fileId: number) =>
+    queryOptions({
+      queryKey: ["play-native", fileId],
+      queryFn: () => api.playNative(fileId),
+      staleTime: 10_000,
+      gcTime: 5 * 60_000,
+    }),
+
   optimizer: () =>
     queryOptions({
       queryKey: ["optimizer"],

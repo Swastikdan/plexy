@@ -50,6 +50,22 @@ const api: ElectronAPI = {
       ipcRenderer.removeListener("navigate", handler);
     };
   },
+  nativePlayer: {
+    info: () => ipcRenderer.invoke("native:info"),
+    play: (request) => ipcRenderer.invoke("native:play", request),
+    command: (request) => ipcRenderer.invoke("native:command", request),
+    stop: (request) => ipcRenderer.invoke("native:stop", request),
+    onEvent: (callback) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<typeof callback>[0],
+      ) => callback(payload);
+      ipcRenderer.on("native:event", handler);
+      return () => {
+        ipcRenderer.removeListener("native:event", handler);
+      };
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

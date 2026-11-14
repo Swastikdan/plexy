@@ -28,12 +28,38 @@ import { startServer, stopServer } from "./server";
 import { startStaticUi } from "./static";
 import { ensureDesktopAuth } from "./auth";
 import { checkForUpdates, getUpdateStatus } from "./updater";
+import { NativePlayerManager } from "./native-player";
 
 // The updater downloads only the published Apple Silicon ZIP, verifies the
 // release checksum, then replaces the app bundle while preserving userData.
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let stopStaticUi: (() => Promise<void>) | null = null;
+
+const nativePlayer = new NativePlayerManager((event) => {
+  const target = mainWindow;
+  if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
+    target.webContents.send("native:event", event);
+  }
+});
+
+/** Only the app's own window may drive native playback, never a web frame. */
+function trustedFrameOrigin(event: Electron.IpcMainInvokeEvent): string {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error("Native playback is only available in the Plexy window");
+  }
+  const raw = event.senderFrame?.url ?? "";
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("Untrusted native playback request");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Untrusted native playback request");
+  }
+  return url.origin;
+}
 
 function localServerEnabled(): boolean {
   return readLocalServerEnabled(app.getPath("userData"));
@@ -319,7 +345,10 @@ function setupIpcHandlers() {
     return readServerPreference();
   });
 
-  ipcMain.handle("app:set-server-url", (_event, value: unknown) => {
+  ipcMain.handle("app:set-server-url", async (_event, value: unknown) => {
+    // A native stream is bound to the server it started on; stop it before the
+    // preference can point the next request somewhere else.
+    await nativePlayer.stop();
     writeServerPreference(typeof value === "string" ? value : "");
   });
 
@@ -333,6 +362,7 @@ function setupIpcHandlers() {
       if (changingServer) throw new Error("Server mode is already changing");
       changingServer = true;
       try {
+        await nativePlayer.stop();
         saveLocalServerEnabled(enabled);
         if (enabled) writeServerPreference("");
         // Reopen only after the IPC response reaches the renderer.
@@ -364,6 +394,37 @@ function setupIpcHandlers() {
 
   ipcMain.handle("app:is-fullscreen", () => {
     return mainWindow?.isFullScreen() ?? false;
+  });
+
+  // --- Native (mpv) playback -------------------------------------------------
+  ipcMain.handle("native:info", () => nativePlayer.info());
+  ipcMain.handle("native:play", async (event, request: Record<string, unknown>) => {
+    const serverOrigin = trustedFrameOrigin(event);
+    return nativePlayer.play({
+      fileId: Number(request?.fileId),
+      serverUrl: typeof request?.serverUrl === "string" ? request.serverUrl : serverOrigin,
+      serverOrigin,
+      resumeSeconds: Number(request?.resumeSeconds) || 0,
+      autoSubtitles: request?.autoSubtitles !== false,
+      subtitleLanguage: typeof request?.subtitleLanguage === "string" ? request.subtitleLanguage : undefined,
+    });
+  });
+  ipcMain.handle("native:command", async (event, request: Record<string, unknown>) => {
+    trustedFrameOrigin(event);
+    const action = String(request?.action ?? "");
+    if (!["pause", "resume", "seek", "stop", "set-audio"].includes(action)) {
+      throw new Error("Unsupported player action");
+    }
+    return nativePlayer.command({
+      sessionId: String(request?.sessionId ?? ""),
+      action: action as "pause" | "resume" | "seek" | "stop" | "set-audio",
+      value: Number(request?.value) || 0,
+    });
+  });
+  ipcMain.handle("native:stop", async (event, request: Record<string, unknown>) => {
+    trustedFrameOrigin(event);
+    await nativePlayer.stop(typeof request?.sessionId === "string" ? request.sessionId : undefined);
+    return { ok: true };
   });
 }
 
@@ -430,6 +491,7 @@ async function openMainWindow(): Promise<void> {
   const openedWindow = mainWindow;
   openedWindow.on("closed", () => {
     if (mainWindow === openedWindow) mainWindow = null;
+    void nativePlayer.stop();
   });
   previousWindow?.destroy();
 }
@@ -462,6 +524,7 @@ app.on("before-quit", async (e) => {
   if (!isQuitting) {
     isQuitting = true;
     e.preventDefault();
+    await nativePlayer.dispose();
     await stopServer();
     await closeStaticUi();
     app.exit(0);
@@ -470,6 +533,7 @@ app.on("before-quit", async (e) => {
 
 app.on("window-all-closed", async () => {
   if (!app.isPackaged || process.platform !== "darwin") {
+    await nativePlayer.dispose();
     await stopServer();
     await closeStaticUi();
     app.quit();
@@ -477,18 +541,21 @@ app.on("window-all-closed", async () => {
 });
 
 process.on("SIGINT", async () => {
+  await nativePlayer.dispose();
   await stopServer();
   await closeStaticUi();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
+  await nativePlayer.dispose();
   await stopServer();
   await closeStaticUi();
   process.exit(0);
 });
 
 process.on("exit", () => {
+  void nativePlayer.dispose();
   void stopServer();
   void closeStaticUi();
 });

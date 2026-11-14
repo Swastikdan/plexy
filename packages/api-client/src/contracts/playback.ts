@@ -10,6 +10,8 @@ export interface AudioTrack {
 
 export interface PlayerAudioTrack extends AudioTrack {
   index: number;
+  /** False when selecting this language requires a short one-time remux. */
+  prepared?: boolean;
 }
 
 export interface OptimizationState {
@@ -18,6 +20,12 @@ export interface OptimizationState {
   progress: number | null;
   size: number | null;
   error: string | null;
+  /** FFmpeg's clock ratio while preparing (e.g. 1.4 = 1.4 s of media/second). */
+  speed?: number | null;
+  /** Seconds remaining, derived from progress and speed. */
+  etaSeconds?: number | null;
+  /** 1-based place in the preparation queue while `status` is `queued`. */
+  queuePosition?: number | null;
 }
 
 export interface FileFacts {
@@ -74,6 +82,12 @@ export interface Playability {
   reason: string;
   fileId: number;
   itemId: number | null;
+  /** Native (mpv) playback details. Present only for `?native=1` manifests. */
+  native?: {
+    /** Server-relative URL for the untouched original file. */
+    streamUrl: string;
+    preferredAudioLanguage: string;
+  };
   /** Item to open back from the player: the series for episodes, self for movies. */
   parentItemId?: number | null;
   parentPublicId?: string | null;

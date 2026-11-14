@@ -25,6 +25,7 @@ import { api, probeBrowserCaps, type TitleDetail } from "../../client";
 import { Button, Dropdown, ListBox, Modal, Select } from "@heroui/react";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
+import { PlayerEngineChip } from "../../components/player-engine-chip";
 import { cx } from "../../lib/cx";
 import { PageLoader } from "../../components/page-loader";
 import { artworkUrl } from "../../lib/artwork-url";
@@ -258,11 +259,17 @@ function DetailView({
         />
 
         <div
-          className="absolute inset-0 bg-gradient-to-t from-background via-background/90 via-40% via-background/40 to-transparent pointer-events-none"
+          className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/35 via-38% to-transparent dark:from-background dark:via-background/90 dark:via-40% pointer-events-none"
           aria-hidden
         />
         <div
-          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-background/95 via-background/70 via-50% to-transparent pointer-events-none"
+          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-background/92 via-background/55 via-42% to-transparent dark:from-background/95 dark:via-background/70 dark:via-50% pointer-events-none"
+          aria-hidden
+        />
+        {/* Light theme keeps the artwork visible, so the mark and controls get
+            their own dark scrim instead of a white veil over a white logo. */}
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-[430px] max-w-[70%] bg-gradient-to-r from-black/60 via-black/25 to-transparent dark:hidden"
           aria-hidden
         />
 
@@ -300,10 +307,10 @@ function DetailView({
                 <img
                   src={logo}
                   alt={item.name}
-                  className="max-h-16 sm:max-h-24 max-w-[240px] sm:max-w-[300px] object-contain object-left drop-shadow-md"
+                  className="max-h-16 sm:max-h-24 max-w-[240px] sm:max-w-[300px] object-contain object-left drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] dark:drop-shadow-md"
                 />
               ) : (
-                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-foreground drop-shadow-sm">
+                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)]">
                   {item.name}
                 </h1>
               )}
@@ -326,22 +333,22 @@ function DetailView({
                 >
                   {hasResume ? (
                     <>
-                      {/* Unwatched background layer */}
-                      <span className="absolute inset-0 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
+                      <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
                         <Play size={15} fill="currentColor" />
                         <span>Resume {formatTime(resumePos)}</span>
                       </span>
-
-                      {/* Watched progress layer */}
-                      <div
-                        className="absolute inset-y-0 left-0 bg-foreground overflow-hidden pointer-events-none transition-all duration-300"
-                        style={{ width: `${watchPercent}%` }}
+                      {/* A slim progress bar reads cleanly in both themes; the
+                          old full-height fill looked like a broken black pill
+                          against the light surface. */}
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-x-2.5 bottom-1.5 h-0.5 overflow-hidden rounded-full bg-foreground/15"
                       >
-                        <span className="absolute inset-y-0 left-0 w-[280px] sm:w-[300px] flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-background">
-                          <Play size={15} fill="currentColor" />
-                          <span>Resume {formatTime(resumePos)}</span>
-                        </span>
-                      </div>
+                        <span
+                          className="block h-full rounded-full bg-accent transition-all duration-300"
+                          style={{ width: `${Math.max(2, watchPercent)}%` }}
+                        />
+                      </span>
                     </>
                   ) : isPlayed ? (
                     <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
@@ -470,6 +477,8 @@ function DetailView({
                   </Dropdown.Popover>
                 </Dropdown>
               </div>
+
+              <PlayerEngineChip />
             </div>
 
             <div className="flex flex-col justify-end space-y-3 pb-1">

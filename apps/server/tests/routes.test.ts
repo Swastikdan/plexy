@@ -105,6 +105,37 @@ describe("Elysia API Routes (PRD 9)", () => {
     } finally { run("DELETE FROM media_files WHERE id=700"); await rm(dir, { recursive: true, force: true }); }
   });
 
+  test("direct streaming never sends an unprepared MKV as MP4", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plexy-stream-test-"));
+    const source = join(dir, "source.mkv");
+    const prepared = join(dir, "prepared.mp4");
+    await Bun.write(source, "original-mkv");
+    await Bun.write(prepared, "prepared-mp4");
+    run(`INSERT INTO media_files (id, library_id, item_id, path, folder_key, size, mtime,
+      container, video_codec, audio_json, analysis_status, optimized_status)
+      VALUES (702,1,1,?,'stream-test',12,1,'matroska','hevc',?,'probed','failed')`,
+      source, JSON.stringify([{ codec: "eac3", channels: 6 }]));
+    try {
+      const blocked = await app.handle(new Request("http://localhost/api/stream/702"));
+      expect(blocked.status).toBe(409);
+      expect((await blocked.json()).error).toContain("finish preparation");
+      run("UPDATE media_files SET optimized_path = ?, optimized_mtime = 1 WHERE id = 702", prepared);
+      const ready = await app.handle(new Request("http://localhost/api/stream/702", { headers: { Range: "bytes=0-7" } }));
+      expect(ready.status).toBe(206);
+      expect(ready.headers.get("content-type")).toBe("video/mp4");
+      expect(await ready.text()).toBe("prepared");
+      // Codec support is decided by the manifest's browser capabilities;
+      // the stream guard must still allow an original HEVC MP4.
+      run("UPDATE media_files SET optimized_path = NULL, container = 'mp4' WHERE id = 702");
+      const native = await app.handle(new Request("http://localhost/api/stream/702"));
+      expect(native.status).toBe(200);
+      expect(await native.text()).toBe("original-mkv");
+    } finally {
+      run("DELETE FROM media_files WHERE id=702");
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("audio selections use source track indices, independent of the preferred language", async () => {
     const dir = await mkdtemp(join(tmpdir(), "plexy-audio-test-"));
     const source = join(dir, "source.mp4");

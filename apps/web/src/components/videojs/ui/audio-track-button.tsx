@@ -7,6 +7,7 @@ import { Button } from '@/components/videojs/ui/button';
 import { ButtonTooltip } from '@/components/videojs/ui/button-tooltip';
 import { RadioItem } from '@/components/videojs/ui/radio-item';
 import { cn, resolveClassName } from '@/lib/resolve-class-name';
+import { languageName } from '@/lib/language';
 import type { ServerAudioTrack } from './audio-track-menu';
 
 export interface AudioTrackButtonProps {
@@ -19,7 +20,7 @@ export interface AudioTrackButtonProps {
 function formatLanguage(code?: string): string {
   if (!code) return "";
   try {
-    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code.toUpperCase();
+    return languageName(code) || code.toUpperCase();
   } catch {
     return code.toUpperCase();
   }

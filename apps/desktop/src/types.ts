@@ -27,6 +27,64 @@ export interface ElectronAPI {
   onFullScreenChange?: (
     callback: (isFullScreen: boolean) => void,
   ) => () => void;
+  /** Native mpv playback: absent in browsers and on unsupported platforms. */
+  nativePlayer?: NativePlayerBridge;
+}
+
+export interface NativePlaybackInfo {
+  available: boolean;
+  platform: string;
+  engine: "bundled" | "system" | null;
+  version: string | null;
+  reason?: string;
+}
+
+export interface NativePlayRequest {
+  fileId: number;
+  serverUrl: string;
+  resumeSeconds?: number;
+  autoSubtitles?: boolean;
+  subtitleLanguage?: string;
+}
+
+export interface NativePlayResult {
+  sessionId: string;
+  fileId: number;
+  title: string | null;
+}
+
+export interface NativeCommandRequest {
+  sessionId: string;
+  action: "pause" | "resume" | "seek" | "stop" | "set-audio";
+  value?: number;
+}
+
+export interface NativeAudioTrack {
+  id: number;
+  title: string | null;
+  language: string | null;
+  default: boolean;
+  selected: boolean;
+}
+
+export interface NativePlaybackEvent {
+  sessionId: string;
+  fileId: number;
+  type: "ready" | "time" | "duration" | "pause" | "buffering" | "ended" | "error" | "closed" | "audio";
+  position?: number;
+  duration?: number;
+  paused?: boolean;
+  buffering?: boolean;
+  message?: string;
+  audioTracks?: NativeAudioTrack[];
+}
+
+export interface NativePlayerBridge {
+  info: () => Promise<NativePlaybackInfo>;
+  play: (request: NativePlayRequest) => Promise<NativePlayResult>;
+  command: (request: NativeCommandRequest) => Promise<{ ok: true }>;
+  stop: (request?: { sessionId?: string }) => Promise<{ ok: true }>;
+  onEvent: (callback: (event: NativePlaybackEvent) => void) => () => void;
 }
 
 export interface DesktopSystemUsage {

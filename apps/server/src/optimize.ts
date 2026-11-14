@@ -1,11 +1,20 @@
 /// Prepared-playback queue.
 ///
 /// The scanner records probe facts; this module decides whether a file needs
-/// work and prepares it *before* anyone presses play. Two operations:
+/// work and prepares it *before* anyone presses play. Three operations, in
+/// increasing cost:
 ///
-/// - `remux`     copy every packet into a fast-start MP4 (lossless, ~1 s per GB)
-/// - `transcode` re-encode only the incompatible track(s), keeping the source
-///               resolution and bitrate
+/// - `remux`     copy every packet into a fast-start MP4 (lossless, I/O-bound:
+///               roughly a second per GB on an SSD). H.264 + AAC in MKV is a
+///               container problem only, so it must never be re-encoded.
+/// - `transcode` with `videoCopy: true` — re-encode audio only (say H.264 with
+///               Dolby Digital), which still runs much faster than realtime.
+/// - `transcode` re-encode the incompatible video track, keeping the source
+///               resolution and bitrate.
+///
+/// Playback requests are *priority* jobs: they jump the queue and preempt a
+/// long-running encode, so opening a freshly added title never waits behind
+/// the rest of the library.
 ///
 /// The original file is never modified or deleted. Finished copies live in the
 /// app-data `optimized/` directory and are served through the normal stream
@@ -21,12 +30,14 @@ import {
   canonicalCodec, classifyPlayability, preferredAudioBitrate, preferredVideoBitrate,
   rowPlayabilityFacts,
 } from "./playback";
-import { runOptimize, shutdownOptimizeWorker } from "./optimize-host";
+import { cancelOptimize, OptimizerCancelledError, runOptimize, shutdownOptimizeWorker } from "./optimize-host";
 import { cacheEmbeddedSubtitles } from "./subtitles";
 
 export interface OptimizeFacts {
   container: string | null;
   videoCodec: string | null;
+  /** FFprobe profile, e.g. "High" or "High 10"; controls copy-ability. */
+  videoProfile?: string | null;
   audioJson: string | null;
   height: number | null;
   bitrate: number | null;
@@ -47,6 +58,16 @@ export type OptimizeDecision =
     };
 
 const MP4_LIKE = new Set(["mp4", "m4v", "mov", "mp4f"]);
+
+/** Video codecs an MP4 can hold *and* a browser can decode without re-encoding. */
+const MP4_VIDEO_COPY = new Set(["h264"]);
+/**
+ * H.264 profiles no browser decodes (10-bit, 4:2:2, 4:4:4). Copying these into
+ * MP4 would produce a file Plexy claims is direct playable and then fails.
+ */
+const UNSUPPORTED_H264_PROFILE = /(high 10|high 4:2:2|high 4:4:4)/i;
+/** Audio codecs MP4 can hold that every browser decodes. */
+const MP4_AUDIO_COPY = new Set(["aac", "mp3"]);
 
 function normalizeContainer(container: string | null): string {
   return (container ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -95,22 +116,34 @@ export function decideOptimization(
   const video = canonicalCodec(facts.videoCodec);
   const audioTracks = safeAudio(facts.audioJson);
   const audio = canonicalCodec(audioTracks[0]?.codec ?? null);
-  const isMkv = container === "mkv" || container === "matroska";
-  const videoCopy = !isMkv && video === "h264";
-  const audioCopy = !isMkv && (audio === "aac" || audio === "mp3");
+  // Copy whatever MP4 can carry as-is. The container itself is never a reason
+  // to re-encode: an MKV holding H.264 + AAC is repacked packet-for-packet,
+  // which takes seconds instead of an hour-long encode.
+  const videoCopy = video !== null
+    && MP4_VIDEO_COPY.has(video)
+    && !(video === "h264" && UNSUPPORTED_H264_PROFILE.test(facts.videoProfile ?? ""));
+  const hasAudio = audioTracks.length > 0;
+  const audioCopy = hasAudio && audio !== null && MP4_AUDIO_COPY.has(audio);
+  const sourceLabel = (facts.container ?? "this file").toString().toUpperCase();
 
-  // Both tracks are MP4-native: this is only a container problem, so a remux is
-  // enough even when the classifier called it a transcode (AVI/TS, for example).
-  // Other codecs the browser can decode but MP4 cannot portably hold (VP9/Opus
-  // in MKV, for instance) are transcoded instead, otherwise the prepared copy
-  // would be marked direct-playable yet fail in some browsers.
-  if (videoCopy && audioCopy) {
+  if (videoCopy && (audioCopy || !hasAudio)) {
     return {
       action: "optimize",
       mode: "remux",
       videoCopy: true,
       audioCopy: true,
-      reason: "Repacking into a fast-start MP4 without re-encoding",
+      reason: `Repacking ${sourceLabel} into MP4 — no re-encoding, this finishes in seconds`,
+    };
+  }
+
+  if (videoCopy) {
+    return {
+      action: "optimize",
+      mode: "transcode",
+      videoCopy: true,
+      audioCopy: false,
+      audioBitrate: preferredAudioBitrate(audioTracks[0]?.channels ?? null),
+      reason: "Keeping the original video and converting just the audio track",
     };
   }
 
@@ -118,11 +151,13 @@ export function decideOptimization(
   return {
     action: "optimize",
     mode: "transcode",
-    videoCopy,
+    videoCopy: false,
     audioCopy,
-    ...(videoCopy ? {} : { videoBitrate: preferredVideoBitrate(facts.height, facts.bitrate) }),
+    videoBitrate: preferredVideoBitrate(facts.height, facts.bitrate),
     ...(audioCopy ? {} : { audioBitrate: preferredAudioBitrate(channels) }),
-    reason: isMkv ? "Encoding MKV video and audio into a prepared H.264/AAC MP4" : verdict.reason,
+    reason: video === "hevc"
+      ? "Converting HEVC/H.265 video into H.264, because browsers cannot play HEVC in MP4"
+      : verdict.reason,
   };
 }
 
@@ -202,27 +237,325 @@ export interface OptimizationView {
   progress: number | null;
   size: number | null;
   error: string | null;
+  /** FFmpeg's clock ratio (e.g. 1.4 means 1.4 s of media per second). */
+  speed: number | null;
+  /** Seconds left, derived from progress and speed. Null while queued/unknown. */
+  etaSeconds: number | null;
+  /** 1-based position while queued; null otherwise. */
+  queuePosition: number | null;
 }
 
 export function optimizationView(row: Row): OptimizationView {
+  const fileId = Number(row.id);
+  const status = String(row.optimized_status ?? "none");
   return {
-    status: String(row.optimized_status ?? "none"),
+    status,
     mode: row.optimized_mode == null ? null : String(row.optimized_mode),
     progress: row.optimized_progress == null ? null : Number(row.optimized_progress),
     size: row.optimized_size == null ? null : Number(row.optimized_size),
     error: row.optimized_error == null ? null : String(row.optimized_error),
+    speed: row.optimized_speed == null ? null : Number(row.optimized_speed),
+    etaSeconds: row.optimized_eta_seconds == null ? null : Number(row.optimized_eta_seconds),
+    queuePosition: status === "queued" ? queuePosition(fileId) : null,
   };
+}
+
+// --- audio-track variants ----------------------------------------------------
+
+/**
+ * A second prepared copy that keeps the same video packets but a different
+ * audio track. Browsers cannot switch audio inside one MP4, so the player swaps
+ * sources for the selected language; these copies are built on demand and are
+ * usually a sub-second remux.
+ */
+export interface AudioVariantView extends OptimizationView {
+  audioIndex: number;
+}
+
+const variantQueue: Array<{ fileId: number; audioIndex: number }> = [];
+const variantQueued = new Set<string>();
+let variantRunning = false;
+let variantStopping = false;
+let variantCurrentKey: string | null = null;
+let variantCancelRequested = false;
+
+function variantKey(fileId: number, audioIndex: number): string {
+  return `${fileId}:${audioIndex}`;
+}
+
+function variantPathFor(row: Row, audioIndex: number): string {
+  return join(resolveOptimizedDir(), `${Number(row.id)}-${Number(row.mtime)}-a${audioIndex}.mp4`);
+}
+
+function variantRow(fileId: number, audioIndex: number): Row | undefined {
+  return q<Row, [number, number]>(
+    "SELECT * FROM media_audio_variants WHERE file_id = ? AND audio_index = ?",
+  ).get(fileId, audioIndex);
+}
+
+/** The prepared copy for one audio track, if it still matches the source. */
+export async function usableAudioVariant(row: Row, audioIndex: number): Promise<string | null> {
+  if (audioIndex <= 0) return null;
+  const record = variantRow(Number(row.id), audioIndex);
+  if (!record || record.status !== "done" || !record.path) return null;
+  if (Number(record.source_mtime) !== Number(row.mtime)) return null;
+  try {
+    const info = await stat(String(record.path));
+    if (!info.isFile() || info.size === 0) return null;
+  } catch {
+    return null;
+  }
+  return String(record.path);
+}
+
+function variantDecision(row: Row, audioIndex: number): {
+  mode: "remux" | "transcode";
+  videoCopy: boolean;
+  audioCopy: boolean;
+  audioBitrate?: number;
+  videoBitrate?: number;
+} {
+  const video = canonicalCodec(row.video_codec as string | null);
+  const profile = row.video_profile == null ? "" : String(row.video_profile);
+  const videoCopy = video === "h264" && !UNSUPPORTED_H264_PROFILE.test(profile);
+  const track = safeAudio(row.audio_json as string | null)[audioIndex];
+  const audioCodec = canonicalCodec(track?.codec ?? null);
+  const audioCopy = audioCodec === "aac" || audioCodec === "mp3";
+  return {
+    mode: videoCopy && audioCopy ? "remux" : "transcode",
+    videoCopy,
+    audioCopy,
+    ...(audioCopy ? {} : { audioBitrate: preferredAudioBitrate(track?.channels ?? null) }),
+    ...(videoCopy
+      ? {}
+      : {
+          videoBitrate: preferredVideoBitrate(
+            row.height == null ? null : Number(row.height),
+            row.bitrate == null ? null : Number(row.bitrate),
+          ),
+        }),
+  };
+}
+
+export function audioVariantView(row: Row, audioIndex: number): AudioVariantView {
+  const record = variantRow(Number(row.id), audioIndex);
+  const decision = variantDecision(row, audioIndex);
+  return {
+    audioIndex,
+    status: record ? String(record.status ?? "none") : "none",
+    mode: decision.mode,
+    progress: record?.progress == null ? null : Number(record.progress),
+    size: record?.size == null ? null : Number(record.size),
+    error: record?.error == null ? null : String(record.error),
+    speed: null,
+    etaSeconds: record?.eta_seconds == null ? null : Number(record.eta_seconds),
+    queuePosition: null,
+  };
+}
+
+function upsertVariant(
+  row: Row,
+  audioIndex: number,
+  status: string,
+  patch: Record<string, unknown> = {},
+): void {
+  const fileId = Number(row.id);
+  const mtime = Number(row.mtime);
+  if (!variantRow(fileId, audioIndex)) {
+    run(
+      `INSERT INTO media_audio_variants (file_id, audio_index, source_mtime, status)
+       VALUES (?, ?, ?, ?)`,
+      fileId, audioIndex, mtime, status,
+    );
+  }
+  const values: Record<string, unknown> = { source_mtime: mtime, status, ...patch };
+  const keys = Object.keys(values);
+  run(
+    `UPDATE media_audio_variants SET ${keys.map((key) => `${key} = ?`).join(", ")},
+       updated_at = datetime('now')
+     WHERE file_id = ? AND audio_index = ?`,
+    ...keys.map((key) => values[key]), fileId, audioIndex,
+  );
+}
+
+/** Queue a copy for one audio track because a viewer selected it. */
+export function enqueueAudioVariant(fileId: number, audioIndex: number): void {
+  const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
+  if (!row || Number(row.unavailable ?? 0) !== 0) return;
+  if (row.analysis_status !== "probed") return;
+  const tracks = safeAudio(row.audio_json as string | null);
+  if (!Number.isInteger(audioIndex) || audioIndex < 1 || audioIndex >= tracks.length) return;
+
+  const key = variantKey(fileId, audioIndex);
+  if (variantQueued.has(key)) return;
+  if (variantRunning && variantCurrentKey === key) return;
+
+  // Do not spin on a track that just failed: the player polls this manifest
+  // once a second, and every poll would otherwise restart a doomed job.
+  const existing = variantRow(fileId, audioIndex);
+  if (existing?.status === "failed") {
+    const recent = q<Row, [number, number]>(
+      `SELECT 1 AS recent FROM media_audio_variants
+       WHERE file_id = ? AND audio_index = ? AND updated_at > datetime('now', '-30 seconds')`,
+    ).get(fileId, audioIndex);
+    if (recent) return;
+  }
+
+  variantQueued.add(key);
+  variantQueue.unshift({ fileId, audioIndex });
+  upsertVariant(row, audioIndex, "queued", {
+    progress: 0,
+    eta_seconds: null,
+    error: null,
+    path: null,
+    size: null,
+  });
+
+  // The viewer is waiting: stop whatever preparation is running. The variant
+  // job is queued first, so the worker picks it up immediately after the kill.
+  if (variantRunning && variantCurrentKey !== key && !variantCancelRequested) {
+    variantCancelRequested = true;
+    void cancelOptimize().catch(() => {});
+  } else if (!variantRunning && current) {
+    requestPreemption(fileId);
+  }
+  void pumpVariants();
+}
+
+async function pumpVariants(): Promise<void> {
+  if (variantRunning || variantStopping) return;
+  const job = variantQueue.shift();
+  if (!job) return;
+  const key = variantKey(job.fileId, job.audioIndex);
+  variantQueued.delete(key);
+  variantRunning = true;
+  variantCurrentKey = key;
+  try {
+    await prepareAudioVariant(job.fileId, job.audioIndex);
+  } catch (err) {
+    const cancelled = err instanceof OptimizerCancelledError || variantCancelRequested || cancelRequested;
+    if (cancelled && !variantStopping) {
+      variantQueued.add(key);
+      // Resume behind the newly requested track rather than ahead of it.
+      variantQueue.push(job);
+      const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(job.fileId);
+      if (row) upsertVariant(row, job.audioIndex, "queued", { progress: 0, eta_seconds: null });
+    } else if (!variantStopping) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("optimizer", "audio track preparation failed", {
+        fileId: job.fileId, audioIndex: job.audioIndex, message,
+      });
+      const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(job.fileId);
+      if (row) {
+        upsertVariant(row, job.audioIndex, "failed", {
+          error: message, progress: null, eta_seconds: null,
+        });
+      }
+    }
+  } finally {
+    variantRunning = false;
+    variantCurrentKey = null;
+    variantCancelRequested = false;
+    if (!variantStopping) void pumpVariants();
+  }
+}
+
+async function prepareAudioVariant(fileId: number, audioIndex: number): Promise<void> {
+  const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
+  if (!row) return;
+  const sourcePath = String(row.path);
+  const source = await stat(sourcePath).catch(() => null);
+  if (!source?.isFile()) throw new Error("Source file is missing");
+  const track = safeAudio(row.audio_json as string | null)[audioIndex];
+  if (!track) throw new Error("That audio track no longer exists");
+
+  const decision = variantDecision(row, audioIndex);
+  await mkdir(resolveOptimizedDir(), { recursive: true });
+  const output = variantPathFor(row, audioIndex);
+  const previousPath = variantRow(fileId, audioIndex)?.path;
+  upsertVariant(row, audioIndex, "running", {
+    progress: 0,
+    eta_seconds: null,
+    error: null,
+    path: null,
+    size: null,
+  });
+
+  let lastDbWrite = 0;
+  try {
+    await runOptimize(
+      {
+        path: sourcePath,
+        output,
+        mode: decision.mode,
+        videoCopy: decision.videoCopy,
+        audioCopy: decision.audioCopy,
+        audioIndex,
+        videoBitrate: decision.videoBitrate,
+        audioBitrate: decision.audioBitrate,
+        duration: row.duration == null ? null : Number(row.duration),
+        sourceSize: Number(row.size),
+      },
+      (update) => {
+        const now = Date.now();
+        if (now - lastDbWrite < 900 && update.progress < 1) return;
+        lastDbWrite = now;
+        run(
+          `UPDATE media_audio_variants SET progress = ?, eta_seconds = ?,
+             updated_at = datetime('now') WHERE file_id = ? AND audio_index = ?`,
+          update.progress,
+          update.etaSeconds == null ? null : Math.round(Number(update.etaSeconds)),
+          fileId,
+          audioIndex,
+        );
+      },
+    );
+
+    const info = await stat(output);
+    if (!info.isFile() || info.size === 0) throw new Error("prepared audio track is empty");
+    if (previousPath && String(previousPath) !== output) {
+      await unlink(String(previousPath)).catch(() => {});
+    }
+    upsertVariant(row, audioIndex, "done", {
+      progress: 1,
+      eta_seconds: null,
+      path: output,
+      size: info.size,
+      error: null,
+    });
+    log.debug("optimizer", "audio track prepared", {
+      fileId, audioIndex, mode: decision.mode,
+    });
+  } catch (err) {
+    await unlink(output).catch(() => {});
+    await unlink(`${output}.part`).catch(() => {});
+    throw err;
+  }
 }
 
 // --- queue -------------------------------------------------------------------
 
 const queue: number[] = [];
 const queuedIds = new Set<number>();
+/** Files a viewer is actively waiting on; they stay ahead of requeued work. */
+const urgentIds = new Set<number>();
 let running = false;
 let paused = false;
 const pauseReasons = new Set<string>();
 let stopping = false;
-let current: { fileId: number; progress: number } | null = null;
+let cancelRequested = false;
+let current: {
+  fileId: number;
+  progress: number;
+  speed: number | null;
+  etaSeconds: number | null;
+} | null = null;
+
+function queuePosition(fileId: number): number | null {
+  if (current?.fileId === fileId) return 0;
+  const index = queue.indexOf(fileId);
+  return index < 0 ? null : index + 1;
+}
 
 /** Pause queue advancement while higher-priority work uses the machine. */
 export function pauseOptimizer(reason = "manual"): void {
@@ -245,9 +578,26 @@ function markStatus(fileId: number, status: string, patch: Record<string, unknow
   );
 }
 
-/** Add one file to the queue (no-op when it is already queued/running). */
-export function enqueueOptimization(fileId: number): void {
-  if (queuedIds.has(fileId) || current?.fileId === fileId) return;
+/**
+ * Add one file to the queue (no-op when it is already queued/running).
+ *
+ * `urgent` is set when a viewer is waiting on this exact file: it jumps to the
+ * front and preempts whatever encode is running. Preempted work is put back in
+ * the queue and simply resumes later, so nothing is lost.
+ */
+export function enqueueOptimization(fileId: number, options: { urgent?: boolean } = {}): void {
+  if (queuedIds.has(fileId)) {
+    if (options.urgent) {
+      urgentIds.add(fileId);
+      if (queue[0] !== fileId) {
+        queue.splice(queue.indexOf(fileId), 1);
+        queue.unshift(fileId);
+      }
+      requestPreemption(fileId);
+    }
+    return;
+  }
+  if (current?.fileId === fileId) return;
   const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
   if (!row || Number(row.unavailable ?? 0) !== 0) return;
   if (row.analysis_status !== "probed") return;
@@ -255,12 +605,52 @@ export function enqueueOptimization(fileId: number): void {
   if (!needsPreparation(row)) return;
 
   queuedIds.add(fileId);
-  queue.push(fileId);
+  if (options.urgent) {
+    urgentIds.add(fileId);
+    queue.unshift(fileId);
+  } else {
+    queue.push(fileId);
+  }
   markStatus(fileId, "queued", {
     optimized_progress: 0,
     optimized_error: null,
+    optimized_speed: null,
+    optimized_eta_seconds: null,
   });
+  if (options.urgent) requestPreemption(fileId);
   void pump();
+}
+
+/**
+ * Someone is waiting on `fileId`: stop whatever encode is running so the queue
+ * can start the requested file next. The preempted job returns to the front of
+ * the queue and simply resumes later, so no work is lost.
+ */
+function requestPreemption(fileId: number): void {
+  if (!current || current.fileId === fileId || cancelRequested) return;
+  cancelRequested = true;
+  log.info("optimizer", "preempting preparation for a playback request", {
+    cancelled: current.fileId, requested: fileId,
+  });
+  void cancelOptimize().catch((err) =>
+    log.warn("optimizer", "could not preempt the running job", {
+      message: err instanceof Error ? err.message : String(err),
+    }));
+}
+
+/**
+ * Place preempted work behind every file a viewer is currently waiting on.
+ * Without this, a cancelled encode would jump the queue it was preempted for
+ * and start again immediately.
+ */
+export function requeueAfterUrgent(
+  queue: number[],
+  urgentIds: ReadonlySet<number>,
+  fileId: number,
+): void {
+  let index = 0;
+  while (index < queue.length && urgentIds.has(queue[index]!)) index++;
+  queue.splice(index, 0, fileId);
 }
 
 async function pump(): Promise<void> {
@@ -268,19 +658,41 @@ async function pump(): Promise<void> {
   const fileId = queue.shift();
   if (fileId == null) return;
   queuedIds.delete(fileId);
+  urgentIds.delete(fileId);
   running = true;
-  current = { fileId, progress: 0 };
+  current = { fileId, progress: 0, speed: null, etaSeconds: null };
   try {
     await optimizeOne(fileId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error("optimizer", "job failed", { fileId, message });
-    markStatus(fileId, stopping ? "queued" : "failed", {
-      optimized_error: stopping ? null : message,
-      optimized_progress: stopping ? 0 : null,
-      optimized_at: new Date().toISOString(),
-    });
+    if (err instanceof OptimizerCancelledError || cancelRequested) {
+      // Preempted by a playback request: return to the front of the queue so
+      // it restarts as soon as the urgent file is ready. Not a failure.
+      log.debug("optimizer", "preparation preempted", { fileId });
+      if (!stopping) {
+        if (!queuedIds.has(fileId)) {
+          queuedIds.add(fileId);
+          // Requeue behind any viewer-requested work, never ahead of it.
+          requeueAfterUrgent(queue, urgentIds, fileId);
+        }
+        markStatus(fileId, "queued", {
+          optimized_progress: 0,
+          optimized_speed: null,
+          optimized_eta_seconds: null,
+        });
+      }
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("optimizer", "job failed", { fileId, message });
+      markStatus(fileId, stopping ? "queued" : "failed", {
+        optimized_error: stopping ? null : message,
+        optimized_progress: stopping ? 0 : null,
+        optimized_speed: null,
+        optimized_eta_seconds: null,
+        optimized_at: new Date().toISOString(),
+      });
+    }
   } finally {
+    cancelRequested = false;
     current = null;
     // Cache pruning scans all prepared rows. Do it once after the queue drains,
     // rather than once for each file in a long preparation batch.
@@ -335,9 +747,7 @@ async function optimizeOne(fileId: number): Promise<void> {
   }
 
   const existing = await usableOptimizedPath(row);
-  const upgradeMkv = ["mkv", "matroska"].includes(normalizeContainer(row.container as string | null))
-    && row.optimized_mode === "remux";
-  if (existing && !upgradeMkv) {
+  if (existing) {
     markStatus(fileId, "done", {
       optimized_path: existing,
       optimized_progress: 1,
@@ -352,6 +762,7 @@ async function optimizeOne(fileId: number): Promise<void> {
     {
       container: row.container as string | null,
       videoCodec: row.video_codec as string | null,
+      videoProfile: row.video_profile == null ? null : String(row.video_profile),
       audioJson: row.audio_json as string | null,
       height: row.height == null ? null : Number(row.height),
       bitrate: row.bitrate == null ? null : Number(row.bitrate),
@@ -399,12 +810,15 @@ async function optimizeOne(fileId: number): Promise<void> {
     optimized_mode: decision.mode,
     optimized_progress: 0,
     optimized_error: null,
+    optimized_speed: null,
+    optimized_eta_seconds: null,
+    optimized_started_at: new Date().toISOString(),
   });
 
   let lastDbWrite = 0;
   const startedAt = Date.now();
   try {
-    const size = await runOptimize(
+    await runOptimize(
       {
         path: sourcePath,
         output,
@@ -414,13 +828,26 @@ async function optimizeOne(fileId: number): Promise<void> {
         videoBitrate: decision.videoBitrate,
         audioBitrate: decision.audioBitrate,
         duration: row.duration == null ? null : Number(row.duration),
+        sourceSize: Number(row.size),
       },
-      (progress) => {
-        if (current?.fileId === fileId) current.progress = progress;
+      (update) => {
+        const progress = Number(update.progress ?? 0);
+        if (current?.fileId === fileId) {
+          current.progress = progress;
+          current.speed = update.speed ?? null;
+          current.etaSeconds = update.etaSeconds ?? null;
+        }
         const now = Date.now();
         if (now - lastDbWrite < 900 && progress < 1) return;
         lastDbWrite = now;
-        run("UPDATE media_files SET optimized_progress = ? WHERE id = ?", progress, fileId);
+        run(
+          `UPDATE media_files SET optimized_progress = ?, optimized_speed = ?,
+             optimized_eta_seconds = ? WHERE id = ?`,
+          progress,
+          update.speed == null ? null : Number(update.speed),
+          update.etaSeconds == null ? null : Math.round(Number(update.etaSeconds)),
+          fileId,
+        );
       },
     );
 
@@ -437,6 +864,9 @@ async function optimizeOne(fileId: number): Promise<void> {
       optimized_size: info.size,
       optimized_mtime: Number(row.mtime),
       optimized_progress: 1,
+      optimized_speed: null,
+      optimized_eta_seconds: null,
+      optimized_started_at: null,
       optimized_at: new Date().toISOString(),
       optimized_error: null,
     });
@@ -488,6 +918,7 @@ export async function pruneOptimizerCache(): Promise<number> {
     run(
       `UPDATE media_files SET optimized_status = 'skipped', optimized_path = NULL,
          optimized_size = NULL, optimized_progress = NULL,
+         optimized_speed = NULL, optimized_eta_seconds = NULL,
          optimized_error = 'Removed to keep the playback cache under its size limit'
        WHERE id = ?`,
       Number(row.id),
@@ -527,7 +958,6 @@ export async function enqueueMissingOptimizations(
          optimized_status = 'none'
          OR (optimized_status = 'skipped' AND (optimized_mtime IS NULL OR optimized_mtime != mtime))
          OR (optimized_status = 'done' AND (optimized_mtime IS NULL OR optimized_mtime != mtime))
-         OR (optimized_status = 'done' AND optimized_mode = 'remux' AND lower(container) IN ('mkv', 'matroska'))
          ${options.includeFailed
            ? "OR optimized_status = 'failed' OR (optimized_status = 'skipped' AND optimized_error LIKE 'Removed to keep%')"
            : "OR (optimized_status = 'failed' AND (optimized_at IS NULL OR optimized_at < datetime('now','-6 hours')))"}
@@ -542,18 +972,39 @@ export async function enqueueMissingOptimizations(
 
 /** Reset interrupted jobs and start working through the queue. */
 export async function startOptimizer(): Promise<void> {
-  run("UPDATE media_files SET optimized_status = 'none', optimized_progress = NULL WHERE optimized_status IN ('running', 'queued')");
+  // Scanning can enqueue work before this delayed startup hook runs. Only
+  // reset jobs left by a previous process, preserving this process's queue.
+  const activeIds = [...queuedIds, ...(current ? [current.fileId] : [])];
+  run(`UPDATE media_files SET optimized_status = 'none', optimized_progress = NULL,
+      optimized_speed = NULL, optimized_eta_seconds = NULL, optimized_started_at = NULL
+    WHERE optimized_status IN ('running', 'queued')
+    ${activeIds.length ? `AND id NOT IN (${activeIds.map(() => "?").join(",")})` : ""}`, ...activeIds);
   try {
     await mkdir(resolveOptimizedDir(), { recursive: true });
   } catch { /* the directory is recreated on demand */ }
+  // A previous process may have been killed mid-preparation. Those `.part`
+  // files can be gigabytes; no job is running in this process yet, so every
+  // one of them is stale.
+  const leftovers = await readdir(resolveOptimizedDir()).catch(() => [] as string[]);
+  for (const name of leftovers) {
+    if (!name.endsWith(".part")) continue;
+    await unlink(join(resolveOptimizedDir(), name)).catch(() => {});
+    log.debug("optimizer", "removed an interrupted preparation", { name });
+  }
+  run(`UPDATE media_audio_variants SET status = 'none', progress = NULL,
+    eta_seconds = NULL, error = NULL WHERE status IN ('running', 'queued')`);
   await enqueueMissingOptimizations();
 }
 
 export async function stopOptimizer(): Promise<void> {
   stopping = true;
+  variantStopping = true;
   paused = true;
   queue.length = 0;
   queuedIds.clear();
+  urgentIds.clear();
+  variantQueue.length = 0;
+  variantQueued.clear();
   await shutdownOptimizeWorker();
 }
 
@@ -562,7 +1013,12 @@ export interface OptimizerStatus {
   running: boolean;
   paused: boolean;
   queued: number;
-  current: { fileId: number; progress: number } | null;
+  current: {
+    fileId: number;
+    progress: number;
+    speed: number | null;
+    etaSeconds: number | null;
+  } | null;
   counts: Record<string, number>;
   cacheBytes: number;
   cacheDir: string;
@@ -641,7 +1097,9 @@ export async function clearOptimizerCache(): Promise<number> {
   run(
     `UPDATE media_files SET optimized_status = 'none', optimized_path = NULL,
        optimized_size = NULL, optimized_progress = NULL, optimized_error = NULL,
+       optimized_speed = NULL, optimized_eta_seconds = NULL, optimized_started_at = NULL,
        optimized_mtime = NULL`,
   );
+  run("DELETE FROM media_audio_variants");
   return removed;
 }

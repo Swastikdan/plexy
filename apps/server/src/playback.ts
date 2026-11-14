@@ -23,6 +23,10 @@ const CONSERVATIVE_AUDIO = new Set(["aac", "mp3", "opus", "vorbis", "flac"]);
 /** MKV/AVI/TS cannot be served as-is; MP4/WebM/mov(mostly) can. */
 const STREAMABLE_CONTAINERS = new Set(["mp4", "m4v", "webm", "mov", "mp4f"]);
 
+export function isStreamableContainer(container: string | null): boolean {
+  return STREAMABLE_CONTAINERS.has((container ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+}
+
 const CODEC_ALIASES: Record<string, string> = {
   aac: "aac", mp4a: "aac", mp3: "mp3", opus: "opus", vorbis: "vorbis",
   flac: "flac", ac3: "ac3", ac_3: "ac3", eac3: "ec3", e_ac3: "ec3", ec3: "ec3",
@@ -99,7 +103,7 @@ export function classifyPlayability(
     const label = primaryAudio === "ac3" || primaryAudio === "ec3" ? "Dolby Digital" : primaryAudio?.toUpperCase();
     return { path: "transcode", reason: `Video plays directly, but the ${label} audio track needs conversion` };
   }
-  if (STREAMABLE_CONTAINERS.has(container)) {
+  if (isStreamableContainer(container)) {
     return { path: "direct", reason: "Plays directly in your browser" };
   }
   if (container === "mkv" || container === "matroska" || container === "avi" || container === "ts") {
@@ -134,8 +138,44 @@ export function preferredAudioBitrate(channels: number | null): number {
   return channels && channels > 2 ? 384_000 : 256_000;
 }
 
-/** Compute a quick HTTP Range response for the watch player, backed by a lazy file slice. */
-export function rangeResponse(request: Request, file: Blob, size: number, mime = "video/mp4"): Promise<Response> {
+/**
+ * Content type for the *original* file, used by the native player. The browser
+ * stream route only ever serves streamable containers or prepared MP4s; mpv
+ * reads MKV and friends directly, so the container must be labelled honestly.
+ */
+export function mimeForContainer(container: string | null): string {
+  const key = (container ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  switch (key) {
+    case "mkv":
+    case "matroska":
+    case "webm":
+      return key === "webm" ? "video/webm" : "video/x-matroska";
+    case "avi":
+      return "video/x-msvideo";
+    case "ts":
+    case "mpegts":
+      return "video/mp2t";
+    case "m2ts":
+      return "video/mp2t";
+    case "mov":
+      return "video/quicktime";
+    case "mp4":
+    case "m4v":
+    case "mp4f":
+      return "video/mp4";
+    case "flv":
+      return "video/x-flv";
+    case "wmv":
+      return "video/x-ms-wmv";
+    case "ogg":
+    case "ogv":
+      return "video/ogg";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+/** Compute a quick HTTP Range response for the watch player, backed by a lazy file slice. */export function rangeResponse(request: Request, file: Blob, size: number, mime = "video/mp4"): Promise<Response> {
   const range = request.headers.get("range");
   if (!range) {
     return Promise.resolve(new Response(request.method === "HEAD" ? null : file, {

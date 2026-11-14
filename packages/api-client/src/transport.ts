@@ -120,6 +120,8 @@ export interface PlexyClient {
   };
   playback: {
     play(fileId: number, caps?: BrowserCaps, audioIndex?: number): Promise<Playability>;
+    /** Manifest for the desktop native player: original bytes, no preparation. */
+    playNative(fileId: number): Promise<Playability>;
     skipSegments(fileId: number): Promise<{ enabled: boolean } & SkipSegments>;
     subtitles(fileId: number): Promise<{ tracks: SubtitleTrack[] }>;
   };
@@ -332,6 +334,7 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
           audio: audioIndex >= 0 ? audioIndex : undefined,
         })}`,
       ),
+    playNative: (fileId) => get<Playability>(`/api/play/${fileId}?native=1`),
     skipSegments: (fileId) =>
       get<{ enabled: boolean } & SkipSegments>(`/api/skip-segments/${fileId}`),
     subtitles: (fileId) =>
@@ -395,18 +398,13 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
 
   const urls: PlexyClient["urls"] = {
     streamUrl: (fileId, playPath, start, audioIndex = 0) => {
-      // The server only answers original bytes, remuxes, or transcodes. `hls`
-      // stays in the player's type union, so a stray value falls back to the
-      // transcode route instead of a route that no longer exists.
-      const route =
-        playPath === "remux"
-          ? `/api/stream/${fileId}/remux`
-          : playPath === "transcode" || playPath === "hls"
-            ? `/api/stream/${fileId}/transcode`
-            : `/api/stream/${fileId}`;
-      return `${base()}${route}${query({
+      // Prepared copies are always plain fast-start MP4s. `playPath` is kept in
+      // the signature for older callers; a non-zero audio index asks the server
+      // for that language's prepared copy.
+      void playPath;
+      return `${base()}/api/stream/${fileId}${query({
         start: start && start > 0 ? Math.floor(start) : undefined,
-        audio: playPath !== "direct" ? audioIndex : undefined,
+        audio: audioIndex > 0 ? audioIndex : undefined,
       })}`;
     },
     subtitlesUrl: (fileId, track) => `${base()}/api/subtitles/${fileId}/${track}`,

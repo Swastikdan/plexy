@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decideOptimization, type OptimizeFacts } from "../src/optimize";
+import { decideOptimization, requeueAfterUrgent, type OptimizeFacts } from "../src/optimize";
 import {
   cuesToVtt, fmtVttTimestamp, packetToCues, srtToVtt,
 } from "../src/subtitles";
@@ -15,13 +15,36 @@ const baseFacts: OptimizeFacts = {
 };
 
 describe("playback preparation decisions", () => {
-  test("encodes compatible MKV video and audio ahead of playback", () => {
+  test("repacks an H.264/AAC MKV without re-encoding it", () => {
     const decision = decideOptimization(baseFacts);
+    expect(decision.action).toBe("optimize");
+    if (decision.action !== "optimize") return;
+    expect(decision.mode).toBe("remux");
+    expect(decision.videoCopy).toBe(true);
+    expect(decision.audioCopy).toBe(true);
+  });
+
+  test("copies MKV video and converts only unsupported surround audio", () => {
+    const decision = decideOptimization({
+      ...baseFacts,
+      audioJson: JSON.stringify([{ codec: "eac3", channels: 6 }]),
+    });
+    expect(decision.action).toBe("optimize");
+    if (decision.action !== "optimize") return;
+    expect(decision.mode).toBe("transcode");
+    expect(decision.videoCopy).toBe(true);
+    expect(decision.audioCopy).toBe(false);
+    expect(decision.audioBitrate).toBe(384_000);
+  });
+
+  test("re-encodes HEVC video in an MKV but keeps the AAC audio", () => {
+    const decision = decideOptimization({ ...baseFacts, videoCodec: "hevc" });
     expect(decision.action).toBe("optimize");
     if (decision.action !== "optimize") return;
     expect(decision.mode).toBe("transcode");
     expect(decision.videoCopy).toBe(false);
-    expect(decision.audioCopy).toBe(false);
+    expect(decision.audioCopy).toBe(true);
+    expect(decision.videoBitrate).toBe(12_800_000);
   });
 
   test("skips a directly playable fast-start MP4", () => {
@@ -65,6 +88,14 @@ describe("playback preparation decisions", () => {
     expect(decision.audioBitrate).toBe(384_000);
   });
 
+  test("re-encodes 10-bit H.264 that browsers cannot decode", () => {
+    const decision = decideOptimization({ ...baseFacts, videoProfile: "High 10" });
+    expect(decision.action).toBe("optimize");
+    if (decision.action !== "optimize") return;
+    expect(decision.mode).toBe("transcode");
+    expect(decision.videoCopy).toBe(false);
+  });
+
   test("treats a container-only problem as a remux", () => {
     const decision = decideOptimization({ ...baseFacts, container: "avi" });
     expect(decision.action).toBe("optimize");
@@ -89,6 +120,16 @@ describe("playback preparation decisions", () => {
   test("skips files with no video track", () => {
     const decision = decideOptimization({ ...baseFacts, videoCodec: null });
     expect(decision.action).toBe("skip");
+  });
+
+  test("requeues preempted work behind the file the viewer is waiting on", () => {
+    const queue = [42, 7, 8];
+    requeueAfterUrgent(queue, new Set([42]), 9);
+    expect(queue).toEqual([42, 9, 7, 8]);
+
+    const allUrgent = [42, 43];
+    requeueAfterUrgent(allUrgent, new Set([42, 43]), 9);
+    expect(allUrgent).toEqual([42, 43, 9]);
   });
 });
 
