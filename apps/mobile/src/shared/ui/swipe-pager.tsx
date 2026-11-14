@@ -89,12 +89,33 @@ export function SwipePager({
   const [width, setWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [heights, setHeights] = useState<Record<string, number>>({});
+  const lastHeight = useRef<number | undefined>(undefined);
   const reduceMotion = useReducedMotion();
   const previousWidth = useRef(0);
   const offset = useRef(0);
   const dragStart = useRef(0);
   const keys = pageKeys.join("|");
   const boundedIndex = Math.max(0, Math.min(pageKeys.length - 1, index));
+  // Mount the current page and its neighbours, then keep every visited page
+  // alive. Without this the pager (used for tabs, library kinds, seasons and
+  // detail tabs) renders every page — and every list inside it — at once.
+  const [visited, setVisited] = useState<ReadonlySet<string>>(
+    () =>
+      new Set(
+        pageKeys.slice(Math.max(0, boundedIndex - 1), boundedIndex + 2),
+      ),
+  );
+  useEffect(() => {
+    const current = pageKeys.slice(
+      Math.max(0, boundedIndex - 1),
+      boundedIndex + 2,
+    );
+    setVisited((previous) =>
+      current.every((key) => previous.has(key))
+        ? previous
+        : new Set([...previous, ...current]),
+    );
+  }, [keys, boundedIndex]);
   const snap = (next: number) => {
     scroll.current?.scrollTo({ x: next * width, animated: !reduceMotion });
     if (next !== boundedIndex) onChange(next);
@@ -130,13 +151,19 @@ export function SwipePager({
     });
     previousWidth.current = width;
   }, [boundedIndex, width, keys, reduceMotion, childInteracting]);
+  // Lazy pages have no measured height until they mount. Keep the previous
+  // height during that frame instead of collapsing the pager to zero.
+  const activeHeight = autoHeight ? heights[pageKeys[boundedIndex]!] : undefined;
+  useEffect(() => {
+    if (activeHeight != null) lastHeight.current = activeHeight;
+  }, [activeHeight]);
   return (
     <PagerLock.Provider value={setChildInteracting}>
       <View
         {...boundary}
         style={
           autoHeight
-            ? { height: heights[pageKeys[boundedIndex]!] }
+            ? { height: activeHeight ?? lastHeight.current }
             : { flex: 1 }
         }
         onLayout={(event) => {
@@ -199,7 +226,9 @@ export function SwipePager({
                     : undefined
                 }
               >
-                {renderPage(page)}
+                {visited.has(key) || Math.abs(page - boundedIndex) <= 1
+                  ? renderPage(page)
+                  : null}
               </View>
             ))}
           </ScrollView>

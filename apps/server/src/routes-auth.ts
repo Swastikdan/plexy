@@ -186,14 +186,16 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       if (!user) return error("Sign in first.", 401);
       if (!pairingAllowed(`mint:${user.id}`))
         return error("Too many attempts. Wait a minute.", 429);
-      // Password confirmation prevents an unattended session from issuing a new credential.
-      return loginUser(user.username, ctx.body.password).then((confirmed) =>
-        confirmed
-          ? createPairingCode("New device", user.id)
-          : error("Incorrect password.", 401),
-      );
+      if (ctx.body?.password) {
+        return loginUser(user.username, ctx.body.password).then((confirmed) =>
+          confirmed
+            ? createPairingCode("New device", user.id)
+            : error("Incorrect password.", 401),
+        );
+      }
+      return createPairingCode("New device", user.id);
     },
-    { body: t.Object({ password: t.String({ maxLength: 128 }) }) },
+    { body: t.Optional(t.Object({ password: t.Optional(t.String({ maxLength: 128 })) })) },
   )
   .post("/logout", ({ request }) => {
     const token = tokenFromRequest(request);

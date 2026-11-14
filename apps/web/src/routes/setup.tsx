@@ -128,7 +128,7 @@ function SetupRoute() {
           </section>
         )}
         {step === 2 && (
-          <section className="border border-border bg-surface p-7">
+          <section className="rounded-3xl border border-border bg-surface p-7 shadow-sm">
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 text-foreground" />
               <div>
@@ -225,13 +225,13 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
   const configured = settings.data?.settings.hasTmdbToken || envToken;
 
   return (
-    <section className="border border-border bg-surface p-6">
+    <section className="rounded-3xl border border-border bg-surface p-6 sm:p-7 shadow-sm">
       <h2 className="font-sans text-xl font-bold text-foreground">Connect metadata</h2>
       <p className="mt-1 text-sm text-muted">
         TMDB provides posters, descriptions, release dates, and cast details.
       </p>
       {connected && !showManualInput ? (
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-border bg-surface-secondary p-4">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-surface-secondary p-4">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-foreground" />
             <div>
@@ -259,7 +259,7 @@ function TokenStep({ onContinue }: { onContinue: () => void }) {
       ) : (
         <div className="mt-5 space-y-3">
           {tmdbTest.data && !tmdbTest.data.ok && (
-            <div className="flex gap-2 border border-danger/20 bg-danger/8 p-3 text-xs text-danger-soft-foreground">
+            <div className="flex gap-2 rounded-xl border border-danger/20 bg-danger/8 p-3 text-xs text-danger-soft-foreground">
               <AlertCircle size={15} />
               {tmdbTest.data.message ||
                 "Could not connect to TMDB with the current token."}

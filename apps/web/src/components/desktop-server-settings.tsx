@@ -15,7 +15,7 @@ export function DesktopServerSettings() {
   }, [desktop]);
   if (!desktop?.setLocalServerEnabled) return null;
   return (
-    <div className="my-4 space-y-2 border border-border p-4">
+    <div className="my-4 space-y-2 rounded-2xl border border-border bg-surface p-4">
       <Switch
         isSelected={enabled === true}
         isDisabled={busy || enabled === null}
@@ -30,11 +30,14 @@ export function DesktopServerSettings() {
             setBusy(false);
           }
         }}
+        className="w-full"
       >
-        <Switch.Content>Run local server</Switch.Content>
-        <Switch.Control>
-          <Switch.Thumb />
-        </Switch.Control>
+        <Switch.Content className="flex w-full items-center justify-between gap-4">
+          <span>Run local server</span>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch.Content>
       </Switch>
       <p className="text-xs text-muted">
         Use the bundled library server on this computer. Turn it off to connect

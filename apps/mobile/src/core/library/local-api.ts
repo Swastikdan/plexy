@@ -139,6 +139,20 @@ export class LocalApi extends LocalCatalog {
         }
         return new Map([...groups].map(([name, titles]) => [name, [...titles.values()]]));
     }
+    override counts() {
+        let movie = 0;
+        let series = 0;
+        let anime = 0;
+        for (const card of this.library.cards()) {
+            if (card.isAnime)
+                anime++;
+            else if (card.kind === "movie")
+                movie++;
+            else if (card.kind === "series")
+                series++;
+        }
+        return { movie, series, anime };
+    }
     override collections() {
         const groups = new Map<number, {
             id: number;

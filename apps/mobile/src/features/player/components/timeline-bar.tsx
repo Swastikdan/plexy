@@ -54,11 +54,13 @@ export function TimelineBar({
     outputRange: [1, 4 / 3],
   });
   const width = useRef(1);
-  const track = useRef<View>(null);
-  const origin = useRef(0);
   const target = useRef(value);
   const [remaining, setRemaining] = useState(false);
-  const atPage = (x: number) => { target.current = timeAt(x - origin.current); return target.current; };
+  // locationX is relative to the track, so no measureInWindow round-trip.
+  const atPosition = (x: number) => {
+    target.current = timeAt(x);
+    return target.current;
+  };
   const ratio =
     duration > 0 ? Math.min(1, Math.max(0, value / duration)) : 0;
   const bufferedRatio =
@@ -83,8 +85,6 @@ export function TimelineBar({
       </Text>
       {/* Track */}
       <View
-        ref={track}
-        collapsable={false}
         accessibilityLabel="Playback position"
         accessibilityRole="adjustable"
         accessibilityValue={{
@@ -106,12 +106,11 @@ export function TimelineBar({
         onMoveShouldSetResponder={() => true}
         onResponderTerminationRequest={() => false}
         onResponderTerminate={() => onCommit(target.current)}
-        onResponderGrant={(e) => onScrub(atPage(e.nativeEvent.pageX))}
-        onResponderMove={(e) => onScrub(atPage(e.nativeEvent.pageX))}
-        onResponderRelease={(e) => onCommit(atPage(e.nativeEvent.pageX))}
+        onResponderGrant={(e) => onScrub(atPosition(e.nativeEvent.locationX))}
+        onResponderMove={(e) => onScrub(atPosition(e.nativeEvent.locationX))}
+        onResponderRelease={(e) => onCommit(atPosition(e.nativeEvent.locationX))}
         onLayout={(e) => {
           width.current = Math.max(1, e.nativeEvent.layout.width);
-          track.current?.measureInWindow((left) => { origin.current = left; });
         }}
         className="flex-1 justify-center"
         style={{ height: 40 }}

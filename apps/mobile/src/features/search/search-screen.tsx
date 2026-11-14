@@ -1,24 +1,47 @@
-import React,{ useState } from "react";
+import React, { useState } from "react";
 import {
-Pressable,
-ScrollView,
-Text,
-TextInput,
-useWindowDimensions,
-View,
+  FlatList,
+  Pressable,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
-import { Search as SearchIcon,X } from "@/shared/ui/icons";
+import { Search as SearchIcon, X } from "@/shared/ui/icons";
+import { Card } from "@/shared/ui/media-card";
 import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { OpenTitle } from "@/features/catalog/types";
-import { SearchGrid } from "./components/search-grid";
+
+type ResultRow =
+  | { kind: "header"; key: string; title: string }
+  | { kind: "cards"; key: string; items: ItemCard[] };
+
+function buildResultRows(titles: ItemCard[], episodes: ItemCard[]): ResultRow[] {
+  const rows: ResultRow[] = [];
+  const append = (title: string, items: ItemCard[]) => {
+    if (!items.length) return;
+    rows.push({ kind: "header", key: `header-${title}`, title });
+    for (let index = 0; index < items.length; index += 2) {
+      const slice = items.slice(index, index + 2);
+      rows.push({
+        kind: "cards",
+        key: `cards-${title}-${slice.map((item) => item.id).join("-")}`,
+        items: slice,
+      });
+    }
+  };
+  append("Movies & Shows", titles);
+  append("Episodes", episodes);
+  return rows;
+}
 
 export function SearchScreen({
   open,
@@ -32,7 +55,6 @@ export function SearchScreen({
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [, focused] = useState<number | null>(null);
   const [inputFocus, setInputFocus] = useState(false);
   React.useEffect(() => {
     const timer = setTimeout(() => setDebounced(query.trim()), 300);
@@ -72,10 +94,33 @@ export function SearchScreen({
     },
     [api, play, open],
   );
-  // Grid config (responsive cols for search results)
-  const available = width - 0 - 40;
-  const columns = 2;
-  const cardWidth = Math.floor(available / columns) - 10;
+  // Responsive grid config for search results.
+  const available = width - 40;
+  const cardWidth = Math.floor((available - 12) / 2);
+  const homeRows = React.useMemo(
+    () =>
+      (homeData.value?.rows ?? [])
+        .map((row) => ({
+          ...row,
+          items:
+            row.key === "continue"
+              ? row.items.filter((item) => item.watch?.position && !item.watch?.played)
+              : row.items,
+        }))
+        .filter((row) => row.items.length > 0),
+    [homeData.value],
+  );
+  const resultRows = React.useMemo(
+    () => buildResultRows(data.value?.titles ?? [], data.value?.episodes ?? []),
+    [data.value],
+  );
+  const openItem = React.useCallback(
+    (item: ItemCard) => {
+      if (item.kind === "episode" && item.fileId != null) play(item.fileId);
+      else open(item.publicId);
+    },
+    [play, open],
+  );
   return (
     <View className="flex-1 gap-3.5">
       <PageHeader title="Search" />
@@ -119,8 +164,6 @@ export function SearchScreen({
         )}
       </View>
 
-      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingBottom: 32, gap: 14 }} showsVerticalScrollIndicator={false}>
-      {/* States */}
       {debounced && data.loading ? (
         <Loading />
       ) : debounced && data.error ? (
@@ -128,74 +171,70 @@ export function SearchScreen({
       ) : !debounced ? (
         homeData.loading ? (
           <Loading />
-        ) : (
-          <>
-            {homeData.value?.rows.map((row) => {
-              const isContinue = row.key === "continue";
-              if (isContinue) {
-                return (
-                  <CatalogRow
-                    key={row.key}
-                    title={row.title}
-                    items={row.items.filter(
-                      (i) => i.watch?.position && !i.watch?.played,
-                    )}
-                    open={open}
-                    onPlay={handlePlay}
-                    isContinueWatching={true}
-                    focused={focused}
-                  />
-                );
-              }
-              return (
-                <SearchGrid
-                  key={row.key}
-                  title={row.title}
-                  items={row.items}
-                  open={open}
-                  play={play}
-                  focused={focused}
-                  cardWidth={cardWidth}
-                  columns={columns}
-                />
-              );
-            })}
-            {!homeData.value?.rows.length && (
-              <Text className="font-archivo-regular text-[14px] text-muted px-5">
-                Find a title or an episode in your library.
-              </Text>
+        ) : homeData.error ? (
+          <Notice message={homeData.error} retry={homeData.retry} />
+        ) : homeRows.length ? (
+          <FlatList
+            className="flex-1"
+            data={homeRows}
+            keyExtractor={(row) => row.key}
+            renderItem={({ item: row }) => (
+              <CatalogRow
+                title={row.title}
+                items={row.items}
+                open={open}
+                onPlay={handlePlay}
+                isContinueWatching={row.key === "continue"}
+              />
             )}
-          </>
+            contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          />
+        ) : (
+          <Text className="font-archivo-regular text-[14px] text-muted px-5">
+            Find a title or an episode in your library.
+          </Text>
         )
-      ) : !data.value?.titles.length && !data.value?.episodes.length ? (
-        <View className="flex-1 items-center justify-center px-6"><View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5"><Text className="text-center text-[14px] font-archivo-medium text-muted">No results. Try another one.</Text></View></View>
+      ) : !resultRows.length ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5">
+            <Text className="text-center text-[14px] font-archivo-medium text-muted">
+              No results. Try another one.
+            </Text>
+          </View>
+        </View>
       ) : (
-        <>
-          {!!data.value?.titles.length && (
-            <SearchGrid
-              title="Movies & Shows"
-              items={data.value.titles}
-              open={open}
-              play={play}
-              focused={focused}
-              cardWidth={cardWidth}
-              columns={columns}
-            />
-          )}
-          {!!data.value?.episodes.length && (
-            <SearchGrid
-              title="Episodes"
-              items={data.value.episodes}
-              open={open}
-              play={play}
-              focused={focused}
-              cardWidth={cardWidth}
-              columns={columns}
-            />
-          )}
-        </>
+        <FlatList
+          className="flex-1"
+          data={resultRows}
+          keyExtractor={(row) => row.key}
+          renderItem={({ item: row }) =>
+            row.kind === "header" ? (
+              <Text className="px-5 font-archivo-bold text-[16px] text-foreground tracking-[-0.3px]">
+                {row.title}
+              </Text>
+            ) : (
+              <View className="flex-row gap-3 px-5">
+                {row.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    width={cardWidth}
+                    item={item}
+                    api={api}
+                    onPress={() => openItem(item)}
+                  />
+                ))}
+              </View>
+            )
+          }
+          contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        />
       )}
-      </ScrollView>
     </View>
   );
 }

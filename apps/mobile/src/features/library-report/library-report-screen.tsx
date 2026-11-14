@@ -3,7 +3,7 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Image } from "expo-image";
-import { useEffect,useState } from "react";
+import { useEffect,useMemo,useState } from "react";
 import {
 FlatList,
 ScrollView,
@@ -29,14 +29,27 @@ export function LibraryReportScreen() {
   const showDialog = useAppDialog();
   const colors = useColors();
   const { api, runtime } = useClient();
-  const [, update] = useState(0);
+  const [revision, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
   const filters = ["all", "review", "files"] as const;
   const [editing, setEditing] = useState<ItemCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
-  const all = api.report("all");
+  const reports = useMemo(
+    () => ({
+      all: api.report("all"),
+      review: api.report("review"),
+      files: api.report("files"),
+    }),
+    [api, revision],
+  );
+  const all = reports.all;
+  const filesByTitle = useMemo(() => {
+    const files = new Map<number, ReturnType<typeof api.titleFile>>();
+    for (const item of all) files.set(item.id, api.titleFile(item.id));
+    return files;
+  }, [api, all]);
   async function add(kind: LocalRoot["kind"]) {
     setBusy(true);
     setMessage("");
@@ -71,7 +84,6 @@ export function LibraryReportScreen() {
                       { text: "Movies", onPress: () => void add("movies") },
                       { text: "TV shows", onPress: () => void add("tv") },
                       { text: "Anime", onPress: () => void add("anime") },
-                      { text: "Cancel", style: "cancel" },
                     ],
                   )
                 }
@@ -107,7 +119,7 @@ export function LibraryReportScreen() {
             {!!message && <Notice message={message} />}
           </View>
       <SwipePager pageKeys={filters} index={filters.indexOf(filter)} onChange={index => { triggerHaptic("selection"); setFilter(filters[index]!); }} renderPage={index => <FlatList
-        data={api.report(filters[index]!)}
+        data={reports[filters[index]!]}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={{ padding: 20, paddingBottom: 30, gap: 12 }}
         keyboardShouldPersistTaps="handled"
@@ -119,7 +131,7 @@ export function LibraryReportScreen() {
           </Text>
         }
         renderItem={({ item }) => {
-          const record = api.titleFile(item.id);
+          const record = filesByTitle.get(item.id);
           return (
             <View className="gap-3 rounded-[12px] bg-surface p-3.5">
               <View className="flex-row gap-3.5">
@@ -196,7 +208,6 @@ export function LibraryReportScreen() {
                       "Remove this title?",
                       "It will stay excluded from folder scans. The video file will stay untouched.",
                       [
-                        { text: "Cancel" },
                         {
                           text: "Remove",
                           style: "destructive",

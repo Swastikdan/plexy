@@ -2,7 +2,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { ArrowLeft, Play, Pause, SlidersHorizontal, PictureInPicture, Maximize, Crop, MoveHorizontal } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
-import { isPictureInPictureSupported, useVideoPlayer, VideoView } from "expo-video";
+import {
+  isPictureInPictureSupported,
+  useVideoPlayer,
+  VideoView,
+  type VideoPlayer,
+} from "expo-video";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -177,12 +182,13 @@ export function PlaybackScreen({
     lastInteraction,
     toggleControls,
   } = usePlayerControls({ playing, status, scrub });
+  const playerRef = useRef<VideoPlayer | null>(null);
   const {
     fitMode,
-    zoom,
+    zoomValue,
+    brightnessValue,
+    volumeValue,
     applyFit,
-    brightness,
-    volume,
     adjusting,
     videoGestures,
     viewportWidth,
@@ -201,6 +207,9 @@ export function PlaybackScreen({
     toggleControls,
     controlsVisible: visible,
     enabled: !locked && !resume && !menu && !speedPanel && !audioPanel,
+    onVolumeChange: (level) => {
+      if (playerRef.current) playerRef.current.volume = level;
+    },
   });
   const isTvShow = Boolean(
     manifest.parentItemId ||
@@ -286,11 +295,11 @@ export function PlaybackScreen({
     onError: setMessage,
   });
   useEffect(() => {
+    playerRef.current = player;
+  }, [player]);
+  useEffect(() => {
     player.bufferOptions = bufferOptionsForDuration(duration);
   }, [player, duration]);
-  useEffect(() => {
-    player.volume = volume;
-  }, [player, volume]);
   const save = useCallback(
     (completed = false) => {
       if (!manifest.itemId || !initialized.current) return;
@@ -652,18 +661,27 @@ export function PlaybackScreen({
         className="absolute inset-0"
         {...(!locked ? videoGestures.panHandlers : {})}
       >
-        <VideoView
-          {...videoViewProps}
-          nativeControls={false}
+        <Animated.View
           style={[
             StyleSheet.absoluteFill,
-            zoom !== 1 && { transform: [{ scale: zoom }] },
+            { transform: [{ scale: zoomValue }] },
           ]}
-        />
-        <View
+        >
+          <VideoView
+            {...videoViewProps}
+            nativeControls={false}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        <Animated.View
           pointerEvents="none"
           className="absolute inset-0 bg-black"
-          style={{ opacity: (1 - brightness) * 0.9 }}
+          style={{
+            opacity: brightnessValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.9, 0],
+            }),
+          }}
         />
 
         {openingVideo && !resume && <PlayerLoading />}
@@ -947,8 +965,8 @@ export function PlaybackScreen({
           </Animated.View>
           {!openingVideo && !ended && (
             <PlayerGestureHud
-              brightness={brightness}
-              volume={volume}
+              brightness={brightnessValue}
+              volume={volumeValue}
               adjusting={adjusting}
             />
           )}
@@ -1005,7 +1023,7 @@ export function PlaybackScreen({
               onPress={() => setAutoNextCancelled(true)}
             />
           )}
-          {manifest.nextFileId && (
+          {!!manifest.nextFileId && (
             <EndPill
               label="Next Episode"
               variant="light"
@@ -1020,7 +1038,7 @@ export function PlaybackScreen({
           {ended &&
             preferences.autoNext &&
             !autoNextCancelled &&
-            manifest.nextFileId && (
+            !!manifest.nextFileId && (
               <EndPill
                 label="Cancel"
                 variant="ghost"
@@ -1131,7 +1149,6 @@ export function PlaybackScreen({
         picture={{
           fitMode,
           applyFit,
-          zoom,
           startPictureInPicture: () => {
             pip.current = true;
             void video.current?.startPictureInPicture().catch(() => {

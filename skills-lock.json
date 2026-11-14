@@ -1,41 +1,59 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
+    "animate-expo": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/animate-expo/SKILL.md",
+      "computedHash": "f221c9cfe03d9255ac3e2383bfb8b1481036142fe2fe9567403eb071d21092bb"
+    },
     "elysiajs": {
       "source": "elysiajs/skills",
       "sourceType": "github",
       "skillPath": "elysia/SKILL.md",
-      "computedHash": "e0bc0ecce6cecc34f14cf445c72f7df0cec278e64dfd4ea99f26c503e98624d6"
+      "computedHash": ""
+    },
+    "expo-project-structure": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/expo/skills/expo-project-structure/SKILL.md",
+      "computedHash": "cda1f6cd63eac4dda715e661a778126de168f9d2a4ffe9f1f33f9cec15cda2af"
     },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "skillPath": "skills/frontend-design/SKILL.md",
-      "computedHash": "89496d5dd00f4810205f351759594fc2742bf8eea85a2f2b2d1de59f4bd91576"
+      "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c"
     },
     "logo-maker": {
       "source": "panel-ui/PanelUI",
       "sourceType": "github",
       "skillPath": "skills/logo-maker/SKILL.md",
-      "computedHash": "231e7b61f97f3eb9baea33d8903222a1235450dc93ae03cd3876110a8ba7d6e7"
+      "computedHash": "7c0726b1f9a2cba04b7f971fd03f2d87e4a4732194d90277c19ee4c04ec510ae"
     },
     "panelui": {
       "source": "panel-ui/PanelUI",
       "sourceType": "github",
       "skillPath": "skills/panelui/SKILL.md",
-      "computedHash": "fdb514f87c7e5083d4cd12002b56f10e822f3aa6bc9ea0611fb35676b2b22627"
+      "computedHash": "cb68bdd334365dbb3e72bac8b0bfda465a61c2cf882374f31ad1cd9bbda65bf7"
     },
     "tvos-design-guidelines": {
       "source": "ehmo/platform-design-skills",
       "sourceType": "github",
       "skillPath": "skills/tvos/SKILL.md",
-      "computedHash": "7e8751618b4421617d083191150b6324eaa2bdf03509b3cc846763b770ff5b3f"
+      "computedHash": ""
     },
     "untangle-codebase": {
       "source": "caldoai/skills",
       "sourceType": "github",
       "skillPath": "skills/untangle-codebase/SKILL.md",
-      "computedHash": "d5e9e1c4a1f30f34c0120dea773d0170004d6c19ef5e8f236c35773bd6c5bdbc"
+      "computedHash": "73791c30d4da2e001bc095732771966338b764e2e7b57bb30a81439cff85aef4"
+    },
+    "vercel-react-native-skills": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-native-skills/SKILL.md",
+      "computedHash": "4c160f1f4e623b989cadb71f42a0813be574d172acf5e32a6411c87f3e28c05a"
     }
   }
 }

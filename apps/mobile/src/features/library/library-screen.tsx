@@ -66,47 +66,20 @@ export function LibraryScreen({
     () => api.collections(),
     [api, collectionsTick],
   );
-  const movieProbe = useResource(
-    (signal) => api.items("movie", 0, "name", signal),
-    [api, defaultSubTab, "movie-probe"],
+  // One scan for tab availability instead of three paginated queries that each
+  // sort the whole library.
+  const counts = React.useMemo(
+    () => api.counts(),
+    [api, collectionsTick],
   );
-  const seriesProbe = useResource(
-    (signal) => api.items("series", 0, "name", signal),
-    [api, defaultSubTab, "series-probe"],
-  );
-  const animeProbe = useResource(
-    (signal) => api.items("anime", 0, "name", signal),
-    [api, defaultSubTab, "anime-probe"],
-  );
-  const hasMovies = (movieProbe.value?.items?.length ?? 0) > 0;
-  const hasSeries = (seriesProbe.value?.items?.length ?? 0) > 0;
-  const hasAnime = (animeProbe.value?.items?.length ?? 0) > 0;
-  const probesDone =
-    movieProbe.value != null &&
-    seriesProbe.value != null &&
-    animeProbe.value != null;
   const libraryTabs = React.useMemo(() => {
     const base: LibraryTab[] = ["all"];
-    if (!probesDone) {
-      base.push("movie", "series");
-      base.push("anime");
-    } else {
-      if (hasMovies) base.push("movie");
-      if (hasSeries) base.push("series");
-      if (hasAnime) base.push("anime");
-      if (base.length === 0) base.push("movie", "series");
-    }
+    if (counts.movie) base.push("movie");
+    if (counts.series) base.push("series");
+    if (counts.anime) base.push("anime");
     if (collections.length) base.push("collection");
     return base;
-  }, [
-    defaultSubTab,
-    probesDone,
-    hasMovies,
-    hasSeries,
-    hasAnime,
-    runtime,
-    collections,
-  ]);
+  }, [collections, counts]);
   useEffect(() => {
     if (!libraryTabs.includes(activeTab)) setActiveTab("all");
   }, [libraryTabs, activeTab]);

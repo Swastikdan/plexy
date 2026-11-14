@@ -23,7 +23,7 @@ function Users() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <section className="space-y-5 rounded-xl border border-border p-5">
+    <section className="space-y-5 rounded-2xl border border-border p-5">
       <h2 className="text-xl font-bold">Users & permissions</h2>
       <p className="text-sm text-muted">
         New users have no library access until you grant it. Administrators have
@@ -76,9 +76,11 @@ function Users() {
             className="mt-2"
           />
         </label>
-        <Button isDisabled={busy} type="submit">
-          Create user
-        </Button>
+        <div className="flex justify-end pt-2">
+          <Button isDisabled={busy} type="submit" variant="primary">
+            Create user
+          </Button>
+        </div>
         {error && (
           <p role="alert" className="text-danger-soft-foreground">
             {error}
@@ -193,11 +195,14 @@ function UserEditor({ user }: { user: AccountUser }) {
           onChange={(isSelected) =>
             setSettings({ ...settings, disabled: isSelected })
           }
+          className="w-full"
         >
-          <Switch.Content>Disable account</Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
+          <Switch.Content className="flex w-full items-center justify-between gap-4">
+            <span>Disable account</span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
         </Switch>
         <label className="block text-sm">
           Maximum maturity age
@@ -237,11 +242,14 @@ function UserEditor({ user }: { user: AccountUser }) {
           onChange={(isSelected) =>
             setSettings({ ...settings, blockUnrated: isSelected })
           }
+          className="w-full"
         >
-          <Switch.Content>Block unrated titles when a maturity limit is set</Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
+          <Switch.Content className="flex w-full items-center justify-between gap-4">
+            <span>Block unrated titles when a maturity limit is set</span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
         </Switch>
         <p className="text-xs text-muted">
           Choose a library, folder, or title from the suggestions, or paste the
@@ -377,12 +385,15 @@ function UserEditor({ user }: { user: AccountUser }) {
             {error}
           </p>
         )}
-        <Button
-          type="submit"
-          isDisabled={busy || existing.isLoading}
-        >
-          {busy ? "Saving…" : "Save permissions"}
-        </Button>
+        <div className="flex justify-end pt-2">
+          <Button
+            type="submit"
+            variant="primary"
+            isDisabled={busy || existing.isLoading}
+          >
+            {busy ? "Saving…" : "Save permissions"}
+          </Button>
+        </div>
       </form>
     </details>
   );

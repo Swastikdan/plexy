@@ -156,7 +156,7 @@ export function ConnectScreen({
         </div>
 
         <DesktopServerSettings />
-        <div className="border border-border bg-surface p-5 sm:p-7">
+        <div className="rounded-3xl border border-border bg-surface p-5 sm:p-7 shadow-sm">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -246,21 +246,21 @@ export function ConnectScreen({
           </form>
 
           {error && !mixedContentRisk && (
-            <div className="mt-3 flex items-start gap-2.5 border border-danger/20 bg-danger/8 p-3 text-xs leading-relaxed text-danger-soft-foreground">
+            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-danger/20 bg-danger/8 p-3 text-xs leading-relaxed text-danger-soft-foreground">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {connectedVersion && (
-            <div className="mt-3 flex items-center gap-2 border border-border bg-surface-secondary p-3 text-xs font-medium text-foreground">
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-surface-secondary p-3 text-xs font-medium text-foreground">
               <CheckCircle2 size={14} className="shrink-0 text-muted" />
               Connected to Plexy v{connectedVersion}. Opening your library…
             </div>
           )}
 
           {mixedContentRisk && (
-            <div className="mt-3 flex items-start gap-2.5 border border-warning/20 bg-warning/8 p-3 text-xs leading-relaxed text-warning-soft-foreground">
+            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-warning/20 bg-warning/8 p-3 text-xs leading-relaxed text-warning-soft-foreground">
               <ShieldAlert size={14} className="mt-0.5 shrink-0" />
               <div className="min-w-0 space-y-2">
                 <p>
@@ -271,7 +271,7 @@ export function ConnectScreen({
                 <button
                   type="button"
                   onClick={() => window.location.assign(normalized)}
-                  className="inline-flex max-w-full items-center gap-1.5 border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs font-semibold text-warning-soft-foreground transition-colors hover:bg-warning/20 focus-visible:outline-2 focus-visible:outline-warning-soft-foreground focus-visible:outline-offset-2"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs font-semibold text-warning-soft-foreground transition-colors hover:bg-warning/20 focus-visible:outline-2 focus-visible:outline-warning-soft-foreground focus-visible:outline-offset-2"
                 >
                   <span className="truncate">Open {normalized}</span>
                   <ArrowRight size={13} className="shrink-0" />
@@ -284,7 +284,7 @@ export function ConnectScreen({
             <button
               type="button"
               onClick={useOrigin}
-              className="mt-3 flex w-full items-center justify-between gap-3 border border-border bg-surface-secondary px-3.5 py-3 text-left transition-colors hover:bg-surface-tertiary"
+              className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-surface-secondary px-3.5 py-3 text-left transition-colors hover:bg-surface-tertiary"
             >
               <span className="flex min-w-0 items-center gap-2.5">
                 <Wifi size={14} className="shrink-0 text-muted" />

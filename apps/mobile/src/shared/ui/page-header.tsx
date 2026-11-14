@@ -26,7 +26,7 @@ export function PageHeader({
   right?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const router = useRouter();
+  const { canGoBack, back, replace } = useRouter();
   const colors = useColors();
   return (
     <View
@@ -46,7 +46,7 @@ export function PageHeader({
             accessibilityLabel="Go back"
             onPress={
               onBack ??
-              (() => (router.canGoBack() ? router.back() : router.replace("/")))
+              (() => (canGoBack() ? back() : replace("/")))
             }
             hitSlop={6}
             className="h-9 w-11 items-center justify-center active:opacity-60"

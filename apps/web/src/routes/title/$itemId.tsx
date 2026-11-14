@@ -244,7 +244,7 @@ function DetailView({
 
   return (
     <div className="space-y-10">
-      <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-2xl sm:rounded-sm bg-surface flex flex-col justify-end">
+      <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-3xl bg-surface flex flex-col justify-end border border-border/50 shadow-sm">
         <img
           src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
           alt={item.name}
@@ -258,11 +258,11 @@ function DetailView({
         />
 
         <div
-          className="absolute inset-0 bg-gradient-to-t from-background via-background/85 via-35% via-background/30 to-black/10 pointer-events-none"
+          className="absolute inset-0 bg-gradient-to-t from-background via-background/90 via-40% via-background/40 to-transparent pointer-events-none"
           aria-hidden
         />
         <div
-          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-background/90 via-background/65 via-45% to-transparent pointer-events-none"
+          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-background/95 via-background/70 via-50% to-transparent pointer-events-none"
           aria-hidden
         />
 
@@ -271,7 +271,7 @@ function DetailView({
             <Link
               to="/title/$itemId"
               params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
-              className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 text-xs font-semibold text-white/90 transition-all hover:bg-black/80 hover:text-white active:scale-95"
+              className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-surface/85 backdrop-blur-md border border-border px-3.5 py-1 text-xs font-semibold text-foreground transition-all hover:bg-surface-secondary active:scale-95 shadow-xs"
             >
               <ArrowLeft size={13} />
               Back to {item.parentTitle || "Series"}
@@ -279,7 +279,7 @@ function DetailView({
           )}
 
           {unmatched && item.kind !== "episode" && (
-            <div className="mb-5 flex items-center gap-3 rounded-lg border border-warning/25 bg-warning/8 px-4 py-2 text-sm text-warning-soft-foreground">
+            <div className="mb-5 flex items-center gap-3 rounded-xl border border-warning/25 bg-warning/8 px-4 py-2 text-sm text-warning-soft-foreground">
               <Sparkles size={16} className="shrink-0" />
               <span className="text-xs sm:text-sm">
                 Not identified yet{matchReason ? `: ${matchReason}` : ""}.
@@ -303,7 +303,7 @@ function DetailView({
                   className="max-h-16 sm:max-h-24 max-w-[240px] sm:max-w-[300px] object-contain object-left drop-shadow-md"
                 />
               ) : (
-                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-white drop-shadow-md">
+                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-foreground drop-shadow-sm">
                   {item.name}
                 </h1>
               )}
@@ -315,37 +315,41 @@ function DetailView({
                   onPointerEnter={() => prefetchPlay(primaryFileId)}
                   onFocus={() => prefetchPlay(primaryFileId)}
                   className={cx(
-                    "group relative overflow-hidden inline-flex items-center justify-center rounded-lg h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
-                    "border border-white/20 font-semibold transition-all duration-150 ease-out shadow-lg active:scale-[0.98]",
-                    hasResume ? "bg-[#353538] hover:bg-[#404044]" : isPlayed ? "bg-white/15 hover:bg-white/25 text-white" : "bg-white hover:bg-white/90 text-black",
+                    "group relative overflow-hidden inline-flex items-center justify-center rounded-xl h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
+                    "font-semibold transition-all duration-150 ease-out shadow-md active:scale-[0.98]",
+                    hasResume
+                      ? "bg-surface-secondary hover:bg-surface-tertiary text-foreground border border-border"
+                      : isPlayed
+                        ? "bg-surface hover:bg-surface-secondary text-foreground border border-border"
+                        : "bg-foreground hover:bg-foreground/90 text-background",
                   )}
                 >
                   {hasResume ? (
                     <>
-                      {/* Unwatched background layer: dark gray with crisp white text */}
-                      <span className="absolute inset-0 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-white/90">
+                      {/* Unwatched background layer */}
+                      <span className="absolute inset-0 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
                         <Play size={15} fill="currentColor" />
                         <span>Resume {formatTime(resumePos)}</span>
                       </span>
 
-                      {/* Watched progress layer: solid white fill with crisp black text clipped to watchPercent */}
+                      {/* Watched progress layer */}
                       <div
-                        className="absolute inset-y-0 left-0 bg-white overflow-hidden pointer-events-none transition-all duration-300"
+                        className="absolute inset-y-0 left-0 bg-foreground overflow-hidden pointer-events-none transition-all duration-300"
                         style={{ width: `${watchPercent}%` }}
                       >
-                        <span className="absolute inset-y-0 left-0 w-[280px] sm:w-[300px] flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-black">
+                        <span className="absolute inset-y-0 left-0 w-[280px] sm:w-[300px] flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-background">
                           <Play size={15} fill="currentColor" />
                           <span>Resume {formatTime(resumePos)}</span>
                         </span>
                       </div>
                     </>
                   ) : isPlayed ? (
-                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-white">
+                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
                       <RotateCcw size={15} />
                       <span>Watch again</span>
                     </span>
                   ) : (
-                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-black">
+                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-background">
                       <Play size={15} fill="currentColor" />
                       <span>Play</span>
                     </span>
@@ -360,7 +364,7 @@ function DetailView({
                   onPress={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
                   isDisabled={watchMutation.isPending || clearWatchMutation.isPending}
                   aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-                  className="rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white"
+                  className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs"
                 >
                   {isPlayed ? <CheckCircle2 size={16} className="text-accent" /> : <Eye size={16} />}
                 </Button>
@@ -371,8 +375,8 @@ function DetailView({
                   onPress={toggleWatchlist}
                   aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
                   className={cx(
-                    "rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white",
-                    inWatchlist && "text-accent bg-white/20",
+                    "rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs",
+                    inWatchlist && "text-accent bg-surface-secondary",
                   )}
                 >
                   <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
@@ -384,8 +388,8 @@ function DetailView({
                   onPress={toggleFavorite}
                   aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
                   className={cx(
-                    "rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white",
-                    isFavorite && "text-warning bg-white/20",
+                    "rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs",
+                    isFavorite && "text-warning bg-surface-secondary",
                   )}
                 >
                   <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
@@ -397,7 +401,7 @@ function DetailView({
                     variant="ghost"
                     onPress={() => setTrailerOpen(true)}
                     aria-label="Watch trailer"
-                    className="rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white"
+                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs"
                   >
                     <Video size={16} />
                   </Button>
@@ -406,7 +410,7 @@ function DetailView({
                     isIconOnly
                     variant="ghost"
                     aria-label="Collection"
-                    className="rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md hover:bg-white/20 hover:text-white"
+                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs"
                   >
                     <FolderPlus size={16} />
                   </Button>
@@ -415,7 +419,7 @@ function DetailView({
                 <Dropdown>
                   <Dropdown.Trigger
                     aria-label="More options"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/80 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white active:scale-95"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md transition-all hover:bg-surface-secondary active:scale-95 shadow-2xs"
                   >
                     <MoreHorizontal size={16} />
                   </Dropdown.Trigger>
@@ -469,7 +473,7 @@ function DetailView({
             </div>
 
             <div className="flex flex-col justify-end space-y-3 pb-1">
-              <h2 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-md">
+              <h2 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-foreground drop-shadow-sm">
                 {item.kind === "series" && activeEpisode ? (
                   <>
                     {episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)}
@@ -479,33 +483,33 @@ function DetailView({
                 )}
               </h2>
 
-              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-white/70">
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-muted">
                 {item.kind === "series" && activeEpisode && (
-                  <span className="font-medium text-white/90">
+                  <span className="font-semibold text-foreground">
                     Episode {activeEpisode.episodeNumber ?? 1}
                   </span>
                 )}
                 {displayRuntime && (
-                  <span className="font-medium text-white/85">{displayRuntime} min</span>
+                  <span className="font-medium text-foreground/85">{displayRuntime} min</span>
                 )}
                 {displayDate && (
-                  <span className="text-white/75">{displayDate}</span>
+                  <span className="text-muted">{displayDate}</span>
                 )}
                 {displayCert && (
-                  <span className="rounded-xs border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-white/90">
+                  <span className="rounded-md border border-border bg-surface-secondary/70 px-1.5 py-0.5 text-[10px] font-bold text-foreground">
                     {displayCert}
                   </span>
                 )}
-                <span className="rounded-xs border border-white/20 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/90">
+                <span className="rounded-md border border-border bg-surface-secondary/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-foreground">
                   {resolutionBadge}
                 </span>
                 {displayGenres && (
-                  <span className="text-white/70">{displayGenres}</span>
+                  <span className="text-muted">{displayGenres}</span>
                 )}
               </div>
 
               {displayOverview && (
-                <p className="max-w-2xl text-xs sm:text-sm leading-relaxed text-white/80 line-clamp-3 sm:line-clamp-4">
+                <p className="max-w-2xl text-xs sm:text-sm leading-relaxed text-muted line-clamp-3 sm:line-clamp-4">
                   {displayOverview}
                 </p>
               )}
@@ -516,7 +520,7 @@ function DetailView({
                   <span className="rounded-xs bg-[#01b4e4] px-1 py-0.5 text-[9px] font-black uppercase text-black leading-none">
                     TMDB
                   </span>
-                  <span className="text-white/90 tabular-nums">{tmdbScore}%</span>
+                  <span className="text-foreground font-semibold tabular-nums">{tmdbScore}%</span>
                 </div>
               )}
             </div>
@@ -663,7 +667,7 @@ function DetailView({
 
                           <div className="min-w-0 flex-1 py-0.5">
                             <div className="flex items-center gap-2">
-                              <h3 className="truncate text-xs sm:text-sm font-semibold text-foreground transition-colors group-hover:text-white">
+                              <h3 className="truncate text-xs sm:text-sm font-semibold text-foreground transition-colors group-hover:text-foreground">
                                 {displayTitle}
                               </h3>
                               {ep.runtime && (

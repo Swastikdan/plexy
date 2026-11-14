@@ -90,39 +90,26 @@ function AccountRoute() {
         </div>
         <ThemePicker />
       </section>
-      <section className="space-y-4 rounded-xl border border-border p-5">
+      <section className="space-y-4 rounded-2xl border border-border p-5">
         <h2 className="text-xl font-bold">Pair another device</h2>
         <p className="text-sm text-muted">
           A six-digit code grants access to your account. Share it only with a device you
           trust. It expires after ten minutes and can be used once. Generating a
           new code invalidates the previous one.
         </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void action(async () => {
-              setKey(await createPairingCode(password));
-              setPassword("");
-            });
-          }}
-          className="space-y-3"
-        >
-          <label className="block text-sm">
-            Confirm your password
-            <Input
-              required
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              fullWidth
-              className="mt-2"
-            />
-          </label>
-          <Button isDisabled={busy} type="submit">
+        <div className="flex justify-end pt-1">
+          <Button
+            isDisabled={busy}
+            variant="primary"
+            onPress={() => {
+              void action(async () => {
+                setKey(await createPairingCode());
+              });
+            }}
+          >
             Create my pairing code
           </Button>
-        </form>
+        </div>
         {key && (
           <div className="space-y-2">
             <p className="rounded-lg border border-border bg-surface p-4 font-mono text-center text-3xl tracking-[0.3em] tabular-nums select-all">
@@ -216,9 +203,11 @@ function AccountRoute() {
             Changing your password signs out your other devices and invalidates
             pairing codes.
           </p>
-          <Button isDisabled={busy} type="submit">
-            Change password
-          </Button>
+          <div className="flex justify-end pt-2">
+            <Button isDisabled={busy} type="submit" variant="primary">
+              Change password
+            </Button>
+          </div>
         </form>
       </section>
       <Button

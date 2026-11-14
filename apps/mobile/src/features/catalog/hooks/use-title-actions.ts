@@ -45,7 +45,6 @@ export function useTitleActions() {
             "Delete title?",
             "This permanently deletes the video files from your device.",
             [
-              { text: "Cancel", style: "cancel" },
               {
                 text: "Delete",
                 style: "destructive",
@@ -54,7 +53,6 @@ export function useTitleActions() {
             ],
           ),
       },
-      { text: "Cancel", style: "cancel" },
     ]);
   };
 }

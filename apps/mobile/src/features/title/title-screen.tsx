@@ -6,8 +6,9 @@ import { Button as NativeButton } from "heroui-native/button";
 import React, { useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { ProgressQueue } from "@/core/client/progress-queue";
 import { useClient } from "@/core/client/client-provider";
-import type { ItemCard } from "@/core/library/catalog-api";
+import type { ItemCard, LocalCatalog } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
@@ -23,6 +24,7 @@ import {
   Play,
   Trash2,
 } from "@/shared/ui/icons";
+import { Button } from "@/shared/ui/button";
 import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
 import { Hero } from "@/features/catalog/components/hero";
@@ -50,7 +52,7 @@ export function TitleScreen({
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
-  const router = useRouter();
+  const { push } = useRouter();
   const online = useOnline();
   const detailScroll = useRef<ScrollView>(null);
   const seasonStrip = useRef<ScrollView>(null);
@@ -390,46 +392,23 @@ export function TitleScreen({
                                   );
                                 }}
                                 renderPage={(seasonIndex) => (
-                                  <View className="gap-[18px] pt-3">
-                                    {detail.episodes
-                                      ?.filter(
+                                  <SeasonEpisodes
+                                    episodes={
+                                      detail.episodes?.filter(
                                         (e: any) =>
                                           !detail.seasons?.length ||
                                           e.seasonNumber ===
                                             detail.seasons?.[seasonIndex]
                                               ?.number,
-                                      )
-                                      .map((ep: any) => {
-                                        const isEpWatched =
-                                          episodesWatchedOverride[ep.id] ??
-                                          (progress.latest(ep.id)?.played ||
-                                            Boolean(ep.watch?.played));
-                                        return (
-                                          <EpisodeCard
-                                            key={ep.id}
-                                            ep={{
-                                              ...ep,
-                                              watch: {
-                                                ...ep.watch,
-                                                played: isEpWatched,
-                                                position: isEpWatched
-                                                  ? ep.watch?.duration ||
-                                                    (ep.runtime
-                                                      ? ep.runtime * 60
-                                                      : 3600)
-                                                  : ep.watch?.position || 0,
-                                              },
-                                            }}
-                                            api={api}
-                                            play={play}
-                                            item={item}
-                                            onToggleWatched={
-                                              toggleEpisodeWatched
-                                            }
-                                          />
-                                        );
-                                      })}
-                                  </View>
+                                      ) ?? []
+                                    }
+                                    item={item}
+                                    api={api}
+                                    play={play}
+                                    progress={progress}
+                                    overrides={episodesWatchedOverride}
+                                    onToggleWatched={toggleEpisodeWatched}
+                                  />
                                 )}
                               />
                             </>
@@ -513,7 +492,7 @@ export function TitleScreen({
         items={personName ? personTitles(personName) : []}
         close={() => setPersonName(null)}
         open={(id) =>
-          router.push({ pathname: "/item/[id]", params: { id: String(id) } })
+          push({ pathname: "/item/[id]", params: { id: String(id) } })
         }
       />
       {item && detail && (
@@ -567,7 +546,6 @@ export function TitleScreen({
                     "Delete title?",
                     "This permanently deletes the video files from your device.",
                     [
-                      { text: "Cancel", style: "cancel" },
                       {
                         text: "Delete",
                         style: "destructive",
@@ -658,6 +636,68 @@ export function TitleScreen({
             )}
           </View>
         </>
+      )}
+    </View>
+  );
+}
+
+const EPISODE_PAGE_SIZE = 30;
+
+/**
+ * A season can hold hundreds of episodes. Render a bounded page instead of
+ * mounting every card inside the title screen's ScrollView.
+ */
+function SeasonEpisodes({
+  episodes,
+  item,
+  api,
+  play,
+  progress,
+  overrides,
+  onToggleWatched,
+}: {
+  episodes: any[];
+  item: ItemCard;
+  api: LocalCatalog;
+  play: (fileId: number) => void;
+  progress: ProgressQueue;
+  overrides: Record<number, boolean>;
+  onToggleWatched: (ep: any) => void;
+}) {
+  const [limit, setLimit] = useState(EPISODE_PAGE_SIZE);
+  const visible = episodes.slice(0, limit);
+  return (
+    <View className="gap-[18px] pt-3">
+      {visible.map((ep: any) => {
+        const isEpWatched =
+          overrides[ep.id] ??
+          (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+        return (
+          <EpisodeCard
+            key={ep.id}
+            ep={{
+              ...ep,
+              watch: {
+                ...ep.watch,
+                played: isEpWatched,
+                position: isEpWatched
+                  ? ep.watch?.duration ||
+                    (ep.runtime ? ep.runtime * 60 : 3600)
+                  : ep.watch?.position || 0,
+              },
+            }}
+            api={api}
+            play={play}
+            item={item}
+            onToggleWatched={onToggleWatched}
+          />
+        );
+      })}
+      {episodes.length > limit && (
+        <Button
+          label={`Show ${Math.min(EPISODE_PAGE_SIZE, episodes.length - limit)} more episodes`}
+          onPress={() => setLimit((current) => current + EPISODE_PAGE_SIZE)}
+        />
       )}
     </View>
   );

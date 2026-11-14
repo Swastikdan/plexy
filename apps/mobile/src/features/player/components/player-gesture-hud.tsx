@@ -8,7 +8,7 @@ function EdgeIndicator({
   icon,
   side,
 }: {
-  level: number;
+  level: Animated.Value;
   active: boolean;
   icon: React.ReactNode;
   side: "left" | "right";
@@ -36,9 +36,19 @@ function EdgeIndicator({
       {icon}
       {/* Vertical fill bar: 0 at the bottom, fills upward with the level. */}
       <View className="h-[180px] w-[5px] overflow-hidden rounded-full bg-white/25">
-        <View
+        <Animated.View
           className="absolute bottom-0 left-0 right-0 rounded-full bg-white"
-          style={{ height: `${Math.round(level * 100)}%` }}
+          style={{
+            height: 180,
+            transform: [
+              {
+                translateY: level.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [180, 0],
+                }),
+              },
+            ],
+          }}
         />
       </View>
     </Animated.View>
@@ -56,8 +66,8 @@ export function PlayerGestureHud({
   volume,
   adjusting,
 }: {
-  brightness: number;
-  volume: number;
+  brightness: Animated.Value;
+  volume: Animated.Value;
   adjusting: "brightness" | "volume" | null;
 }) {
   return (

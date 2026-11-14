@@ -52,12 +52,14 @@ export function useHeroTransition(items: ItemCard[]) {
     if (entering.current !== visible.revision) return;
     entering.current = null;
     const version = visible.revision;
-    opacity.value = withTiming(
-      1,
-      { duration: motion.duration.enter, easing: easeOut },
-      (finished) => {
-        if (finished) runOnJS(finish)(version);
-      },
+    opacity.set(
+      withTiming(
+        1,
+        { duration: motion.duration.enter, easing: easeOut },
+        (finished) => {
+          if (finished) runOnJS(finish)(version);
+        },
+      ),
     );
   }, [visible, opacity, finish]);
 
@@ -73,17 +75,19 @@ export function useHeroTransition(items: ItemCard[]) {
       cancelAnimation(opacity);
       if (!animate) {
         setVisible({ id: target.publicId, revision: version });
-        opacity.value = 1;
+        opacity.set(1);
         setChanging(false);
         return;
       }
       setChanging(true);
-      opacity.value = withTiming(
-        0,
-        { duration: motion.duration.exit, easing: easeOut },
-        (finished) => {
-          if (finished) runOnJS(commit)(version);
-        },
+      opacity.set(
+        withTiming(
+          0,
+          { duration: motion.duration.exit, easing: easeOut },
+          (finished) => {
+            if (finished) runOnJS(commit)(version);
+          },
+        ),
       );
     },
     [opacity, commit],
@@ -105,7 +109,7 @@ export function useHeroTransition(items: ItemCard[]) {
       entering.current = null;
       requestedId.current = null;
       cancelAnimation(opacity);
-      opacity.value = 1;
+      opacity.set(1);
       setChanging(false);
       return;
     }
@@ -127,8 +131,8 @@ export function useHeroTransition(items: ItemCard[]) {
 
   const contentStyle = useAnimatedStyle(
     () => ({
-      opacity: opacity.value,
-      transform: [{ translateY: reducedMotion ? 0 : (1 - opacity.value) * 8 }],
+      opacity: opacity.get(),
+      transform: [{ translateY: reducedMotion ? 0 : (1 - opacity.get()) * 8 }],
     }),
     [reducedMotion],
   );

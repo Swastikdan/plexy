@@ -25,7 +25,16 @@ import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
-import { Download, Film, Library, RefreshCw, X } from "@/shared/ui/icons";
+import {
+  Download,
+  Film,
+  Library,
+  Moon,
+  RefreshCw,
+  Sun,
+  System,
+  X,
+} from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
@@ -41,12 +50,13 @@ export function SettingsScreen({
   const showDialog = useAppDialog();
   const colors = useColors();
   const online = useOnline();
-  const router = useRouter();
+  const { push } = useRouter();
   const [, update] = useState(0);
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState("");
   const folderScroll = useRef<ScrollView>(null);
   const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
+  const [folderLimit, setFolderLimit] = useState(50);
   const [markerStatus, setMarkerStatus] = useState("");
   const [refreshingMarkers, setRefreshingMarkers] = useState(false);
   const [folderFiles, setFolderFiles] = useState(false);
@@ -62,6 +72,7 @@ export function SettingsScreen({
     }, [expandedFolder, folderFiles]),
   );
   useEffect(() => {
+    setFolderLimit(50);
     folderScroll.current?.scrollTo({ y: 0, animated: false });
   }, [expandedFolder, folderFiles]);
   const [message, setMessage] = useState("");
@@ -109,7 +120,6 @@ export function SettingsScreen({
           text: "Choose folder",
           onPress: () => void action(() => pickFolder(kind)),
         },
-        { text: "Cancel", style: "cancel" },
       ],
     );
   };
@@ -161,6 +171,10 @@ export function SettingsScreen({
       ]),
     ).values(),
   ];
+  // A connected folder can hold thousands of files. Render a bounded page
+  // instead of mounting every row inside this ScrollView at once.
+  const folderList = folderFiles ? folderRecords : folderTitles;
+  const visibleFolderList = folderList.slice(0, folderLimit);
   return (
     <View className="flex-1 bg-background">
       <PageHeader
@@ -255,7 +269,6 @@ export function SettingsScreen({
                     }}
                   />
                 ))}
-                <SettingsRow title="Cancel" onPress={() => setPicker(null)} />
               </ScrollView>
             </View>
           </View>
@@ -266,21 +279,47 @@ export function SettingsScreen({
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Appearance
             </Text>
-            <View className="overflow-hidden rounded-[18px] bg-surface">
-              {(["system", "dark", "light"] as const).map((value) => (
-                <SettingsRow
-                  key={value}
-                  title={
-                    value === "system"
-                      ? "System"
-                      : value === "dark"
-                        ? "Dark mode"
-                        : "Light mode"
-                  }
-                  selected={preferences.theme === value}
-                  onPress={() => updatePreferences({ theme: value })}
-                />
-              ))}
+            <View className="flex-row gap-2 rounded-[18px] bg-surface p-2">
+              {(
+                [
+                  { value: "system", label: "System", icon: System },
+                  { value: "dark", label: "Dark mode", icon: Moon },
+                  { value: "light", label: "Light mode", icon: Sun },
+                ] as const
+              ).map(({ value, label, icon: Icon }) => {
+                const active = preferences.theme === value;
+                return (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: active }}
+                    accessibilityLabel={
+                      value === "system" ? "System appearance" : label
+                    }
+                    onPress={() => updatePreferences({ theme: value })}
+                    className={cn(
+                      "flex-1 items-center justify-center gap-1.5 rounded-[14px] py-3",
+                      active
+                        ? "bg-foreground"
+                        : "bg-surface-secondary active:opacity-75",
+                    )}
+                  >
+                    <Icon
+                      size={20}
+                      color={active ? colors.canvas : colors.muted}
+                      strokeWidth={2}
+                    />
+                    <Text
+                      className={cn(
+                        "text-[12px] font-archivo-medium",
+                        active ? "text-background" : "text-muted",
+                      )}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Library
@@ -291,21 +330,21 @@ export function SettingsScreen({
                 title="Library report"
                 subtitle={`${fileCount} files, ${review ? `${review} need attention` : "all titles identified"}`}
                 icon={Library}
-                onPress={() => router.push("/settings/report")}
+                onPress={() => push("/settings/report")}
               />
               <SettingsRow
                 navigation
                 title="Metadata & markers"
                 subtitle="Artwork and skip markers"
                 icon={Film}
-                onPress={() => router.push("/settings/metadata")}
+                onPress={() => push("/settings/metadata")}
               />
               <SettingsRow
                 navigation
                 title="Media folders"
                 subtitle={`${localLibrary.state.roots.filter((r) => !r.singleFile).length} folders connected`}
                 icon={Film}
-                onPress={() => router.push("/settings/folders")}
+                onPress={() => push("/settings/folders")}
               />
               <SettingsRow
                 title={localLibrary.scanning ? "Scanning…" : "Scan library"}
@@ -338,7 +377,6 @@ export function SettingsScreen({
                         onPress: () =>
                           updatePreferences({ seekSeconds: value }),
                       })),
-                      { text: "Cancel", style: "cancel" },
                     ],
                   )
                 }
@@ -475,7 +513,6 @@ export function SettingsScreen({
                         { text: "Movies", onPress: () => addFolder("movies") },
                         { text: "TV shows", onPress: () => addFolder("tv") },
                         { text: "Anime", onPress: () => addFolder("anime") },
-                        { text: "Cancel", style: "cancel" },
                       ],
                     )
                   }
@@ -515,32 +552,36 @@ export function SettingsScreen({
                   </View>
                 )}
                 <View className="overflow-hidden rounded-[18px] bg-surface">
-                  {(folderFiles ? folderRecords : folderTitles).map(
-                    (record) => (
-                      <SettingsRow
-                        key={record.id}
-                        navigation
-                        title={
-                          folderFiles
-                            ? record.file.name
-                            : record.card.parentTitle || record.card.name
-                        }
-                        subtitle={folderFiles ? record.card.name : undefined}
-                        onPress={() =>
-                          router.push({
-                            pathname: "/item/[id]",
-                            params: {
-                              id: folderFiles
-                                ? record.card.publicId
-                                : record.card.parentPublicId ||
-                                  record.card.publicId,
-                            },
-                          })
-                        }
-                      />
-                    ),
-                  )}
+                  {visibleFolderList.map((record) => (
+                    <SettingsRow
+                      key={record.id}
+                      navigation
+                      title={
+                        folderFiles
+                          ? record.file.name
+                          : record.card.parentTitle || record.card.name
+                      }
+                      subtitle={folderFiles ? record.card.name : undefined}
+                      onPress={() =>
+                        push({
+                          pathname: "/item/[id]",
+                          params: {
+                            id: folderFiles
+                              ? record.card.publicId
+                              : record.card.parentPublicId ||
+                                record.card.publicId,
+                          },
+                        })
+                      }
+                    />
+                  ))}
                 </View>
+                {folderList.length > folderLimit && (
+                  <Button
+                    label={`Show more (${folderList.length - folderLimit} remaining)`}
+                    onPress={() => setFolderLimit((limit) => limit + 50)}
+                  />
+                )}
                 {!folderFiles && (
                   <>
                     <Button
@@ -562,7 +603,6 @@ export function SettingsScreen({
                           "Remove folder?",
                           "Your original videos will stay untouched.",
                           [
-                            { text: "Cancel", style: "cancel" },
                             {
                               text: "Remove",
                               style: "destructive",

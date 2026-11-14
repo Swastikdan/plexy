@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Image,Pressable,Text,View } from "react-native";
+import { Image } from "expo-image";
+import { Pressable,Text,View } from "react-native";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
@@ -19,7 +19,6 @@ export function EpisodeCard({
   onToggleWatched?: (ep: any) => void;
 }) {
   const colors = useColors();
-  const [, setFocused] = useState(false);
   const watched = Boolean(ep.watch?.played);
   const hasProgress = Boolean(ep.watch?.position && !watched);
   const duration = ep.runtime ? `${ep.runtime}:00` : null;
@@ -37,22 +36,10 @@ export function EpisodeCard({
   const epDisplayTitle =
     cleanedTitle ||
     (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName);
-  const epItem: ItemCard = {
-    ...item,
-    id: ep.id,
-    name: ep.name || `Episode ${ep.episodeNumber}`,
-    poster: ep.poster || item.poster,
-    kind: "episode",
-    seasonNumber: ep.seasonNumber,
-    episodeNumber: ep.episodeNumber,
-  };
-  (epItem as any).seriesName = item.name;
   return (
     <Pressable
       onPress={() => ep.fileId && play(ep.fileId)}
       disabled={!ep.fileId}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
     >
       <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
@@ -60,7 +47,9 @@ export function EpisodeCard({
           <Image
             source={api.image(ep.poster)}
             className="h-full w-full"
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={ep.poster}
           />
         ) : (
           <View className="h-full w-full bg-surface-secondary" />

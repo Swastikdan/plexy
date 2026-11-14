@@ -96,13 +96,13 @@ export interface PairingCode {
   expiresAt: string;
 }
 
-/** Owner-only: mint a code to type on another device. */
-export async function createPairingCode(password: string): Promise<PairingCode> {
+/** Mint a code to type on another device. For signed-in users, password is not required. */
+export async function createPairingCode(password?: string): Promise<PairingCode> {
   const res = await fetch(apiUrl("/api/auth/pairing-code"), {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(password ? { password } : {}),
   });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as PairingCode;

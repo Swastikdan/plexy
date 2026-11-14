@@ -24,6 +24,7 @@ export function usePlayerGestures({
   toggleControls,
   controlsVisible,
   enabled,
+  onVolumeChange,
 }: {
   hasLoaded: boolean;
   height: number;
@@ -34,13 +35,25 @@ export function usePlayerGestures({
   toggleControls: () => void;
   controlsVisible: boolean;
   enabled: boolean;
+  onVolumeChange?: (level: number) => void;
 }) {
-  const callbacks = useRef({ seekBy, toggleControls, seekSeconds });
-  callbacks.current = { seekBy, toggleControls, seekSeconds };
+  const callbacks = useRef({
+    seekBy,
+    toggleControls,
+    seekSeconds,
+    onVolumeChange,
+  });
+  callbacks.current = {
+    seekBy,
+    toggleControls,
+    seekSeconds,
+    onVolumeChange,
+  };
   const [fitMode, setFitMode] = useState<FitMode>("contain");
-  const [zoom, setZoom] = useState(1);
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
+  const zoomRef = useRef(1);
+  const [zoomValue] = useState(() => new Animated.Value(1));
+  const [brightnessValue] = useState(() => new Animated.Value(1));
+  const [volumeValue] = useState(() => new Animated.Value(1));
   const gestureBlockedUntil = useRef(0);
   const viewportWidth = useRef(1);
   const enabledRef = useRef(enabled);
@@ -105,7 +118,7 @@ export function usePlayerGestures({
     setFitMode(mode);
     const nextZoom = clampZoom(scale);
     zoomRef.current = nextZoom;
-    setZoom(nextZoom);
+    zoomValue.setValue(nextZoom);
     showFitToast(
       scale === 1
         ? mode === "contain"
@@ -116,15 +129,11 @@ export function usePlayerGestures({
         : `${Math.round(scale * 100)}% zoom`,
     );
   };
-  const [brightness, setBrightness] = useState(1);
-  const [volume, setVolume] = useState(1);
   const [adjusting, setAdjusting] = useState<"brightness" | "volume" | null>(
     null,
   );
-  const brightnessRef = useRef(brightness);
-  brightnessRef.current = brightness;
-  const volumeRef = useRef(volume);
-  volumeRef.current = volume;
+  const brightnessRef = useRef(1);
+  const volumeRef = useRef(1);
   const hasLoadedRef = useRef(hasLoaded);
   hasLoadedRef.current = hasLoaded;
   const screenRef = useRef({ h: height });
@@ -139,6 +148,9 @@ export function usePlayerGestures({
     level: number;
   } | null>(null);
   const finishGesture = () => {
+    if (gestureMode.current === "pinch") {
+      showFitToast(`${Math.round(zoomRef.current * 100)}% zoom`);
+    }
     gestureMode.current = null;
     avCandidate.current = null;
     avStart.current = null;
@@ -221,8 +233,7 @@ export function usePlayerGestures({
               currentDist,
             );
             zoomRef.current = newZoom;
-            setZoom(newZoom);
-            showFitToast(`${Math.round(newZoom * 100)}% zoom`);
+            zoomValue.setValue(newZoom);
           }
           return;
         }
@@ -234,11 +245,20 @@ export function usePlayerGestures({
           const dy = avStart.current.y - touches[0]!.pageY;
           const delta = dy / (screenRef.current.h * 0.55);
           if (avStart.current.side === "left") {
-            setBrightness(
-              Math.min(1, Math.max(0.2, avStart.current.level + delta)),
+            const level = Math.min(
+              1,
+              Math.max(0.2, avStart.current.level + delta),
             );
+            brightnessRef.current = level;
+            brightnessValue.setValue(level);
           } else {
-            setVolume(Math.min(1, Math.max(0, avStart.current.level + delta)));
+            const level = Math.min(
+              1,
+              Math.max(0, avStart.current.level + delta),
+            );
+            volumeRef.current = level;
+            volumeValue.setValue(level);
+            callbacks.current.onVolumeChange?.(level);
           }
         }
       },
@@ -266,10 +286,10 @@ export function usePlayerGestures({
   );
   return {
     fitMode,
-    zoom,
+    zoomValue,
+    brightnessValue,
+    volumeValue,
     applyFit,
-    brightness,
-    volume,
     adjusting,
     videoGestures,
     viewportWidth,

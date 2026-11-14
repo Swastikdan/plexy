@@ -943,11 +943,14 @@ function Settings() {
         <Switch
           isSelected={s.skipSegmentsEnabled}
           onChange={(isSelected) => save.mutate({ skipSegmentsEnabled: isSelected })}
+          className="w-full"
         >
-          <Switch.Content>Enable community skip markers (IntroDB)</Switch.Content>
-          <Switch.Control>
-            <Switch.Thumb />
-          </Switch.Control>
+          <Switch.Content className="flex w-full items-center justify-between gap-4">
+            <span>Enable community skip markers (IntroDB)</span>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
         </Switch>
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -1128,11 +1131,14 @@ function Settings() {
                   setDiagnosticsEnabled(enabled);
                   setPlaybackDiagnosticsEnabled(enabled);
                 }}
+                className="w-full"
               >
-                <Switch.Content>Share playback diagnostics</Switch.Content>
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
+                <Switch.Content className="flex w-full items-center justify-between gap-4">
+                  <span>Share playback diagnostics</span>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Content>
               </Switch>
               <p className="text-xs text-muted">
                 Shares startup, rebuffer, and error details from this device with this server. The server keeps the latest 100 events in memory.
@@ -1217,11 +1223,14 @@ function Settings() {
               size="sm"
               isSelected={playbackPrefs.autoSubtitles}
               onChange={(isSelected) => updatePlaybackPrefs({ autoSubtitles: isSelected })}
+              className="w-full"
             >
-              <Switch.Content>Turn on subtitles automatically</Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
+              <Switch.Content className="flex w-full items-center justify-between gap-4">
+                <span>Turn on subtitles automatically</span>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+              </Switch.Content>
             </Switch>
           </label>
           <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
@@ -1734,14 +1743,13 @@ function OfflineLibrarySettings() {
  * paired, and revoke a device.
  */
 function SecuritySettings() {
-  const [pairPassword, setPairPassword] = useState("");
   const queryClient = useQueryClient();
   const [pairing, setPairing] = useState<{ code: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const devices = useQuery({ queryKey: ["auth-devices"], queryFn: listDevices });
 
   const mint = useMutation({
-    mutationFn: () => createPairingCode(pairPassword),
+    mutationFn: () => createPairingCode(),
     onSuccess: (result) => {
       setPairing(result);
       setCopied(false);
@@ -1781,7 +1789,7 @@ function SecuritySettings() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2 rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5">
+        <div className="space-y-3 rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5">
           <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
             Pair a new device
           </span>
@@ -1789,25 +1797,16 @@ function SecuritySettings() {
             Generate a six-digit code for your own account, then enter it on the other device. Each
             code works once and expires after 10 minutes.
           </p>
-          <label className="block space-y-1 text-xs">
-            Confirm your password
-            <Input
-              type="password"
-              autoComplete="current-password"
-              value={pairPassword}
-              onChange={(event) => setPairPassword(event.target.value)}
-              fullWidth
-            />
-          </label>
-          <Button
-            variant="secondary"
-            isDisabled={mint.isPending || !pairPassword}
-            onPress={() => mint.mutate()}
-            className="mt-1"
-          >
-            {mint.isPending ? <RotateCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
-            {mint.isPending ? "Generating…" : "Generate pairing code"}
-          </Button>
+          <div className="flex justify-end pt-1">
+            <Button
+              variant="primary"
+              isDisabled={mint.isPending}
+              onPress={() => mint.mutate()}
+            >
+              {mint.isPending ? <RotateCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
+              {mint.isPending ? "Generating…" : "Generate pairing code"}
+            </Button>
+          </div>
 
           {pairing && (
             <div className="mt-2 rounded-xl border border-accent/30 bg-accent/10 p-3">
@@ -2369,7 +2368,7 @@ function Logs() {
             isSelected={follow}
             onChange={setFollow}
           >
-            <Switch.Content>
+            <Switch.Content className="flex items-center gap-2.5">
               <span className="inline-flex items-center gap-2">
                 <span className={cx(
                   "h-2 w-2 rounded-full transition-colors",
@@ -2377,10 +2376,10 @@ function Logs() {
                 )} />
                 Follow newest
               </span>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
             </Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
           </Switch>
         </div>
       </div>
@@ -2390,8 +2389,8 @@ function Logs() {
         {isError && <span className="text-danger-soft-foreground font-medium">Failed to read live logs</span>}
       </div>
 
-      <div className="rounded-xl border border-border bg-surface-secondary shadow-inner font-mono overflow-hidden">
-        <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3 py-2 border-b border-white/10 bg-white/[0.03] text-[11px] font-semibold text-white/50 uppercase tracking-wider">
+      <div className="rounded-2xl border border-border bg-surface-secondary shadow-inner font-mono overflow-hidden">
+        <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3.5 py-2.5 border-b border-border bg-surface-tertiary/40 text-[11px] font-semibold text-muted uppercase tracking-wider">
           <span>Time</span>
           <span>Level</span>
           <span>Component</span>
@@ -2400,14 +2399,14 @@ function Logs() {
 
         <div
           ref={scrollRef}
-          className="min-h-[360px] max-h-[540px] overflow-auto divide-y divide-white/[0.04]"
+          className="min-h-[360px] max-h-[540px] overflow-auto divide-y divide-border/40"
           role="log"
           aria-live="polite"
         >
           {isLoading && !data ? (
             <PageLoader label="Loading logs" className="min-h-[360px]" />
           ) : entries.length === 0 ? (
-            <div className="p-8 text-center text-xs text-white/50">
+            <div className="p-8 text-center text-xs text-muted">
               {allEntries.length === 0 ? "No server log messages recorded yet." : "No log messages match the active filters."}
             </div>
           ) : (
@@ -2426,9 +2425,9 @@ function LogRow({ entry }: { entry: LogEntry }) {
   const hasContext = entry.context !== undefined && entry.context !== null;
 
   return (
-    <div className="hover:bg-white/[0.03] text-xs transition-colors">
-      <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] items-baseline gap-3 px-3 py-1.5 font-mono">
-        <span className="text-[11px] tabular-nums text-white/45 shrink-0">
+    <div className="hover:bg-surface-tertiary/40 text-xs transition-colors">
+      <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] items-baseline gap-3 px-3.5 py-2 font-mono">
+        <span className="text-[11px] tabular-nums text-muted shrink-0">
           {logTime(entry)}
         </span>
         <span className={cx(
@@ -2440,7 +2439,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
         <span className="truncate text-[11px] font-semibold text-muted shrink-0" title={entry.component}>
           {entry.component}
         </span>
-        <div className="min-w-0 break-words text-white/90 leading-relaxed">
+        <div className="min-w-0 break-words text-foreground leading-relaxed">
           <span>{entry.message}</span>
           {hasContext && (
             <button
@@ -2467,11 +2466,11 @@ function LogRow({ entry }: { entry: LogEntry }) {
               {entry.component}
             </span>
           </div>
-          <span className="text-[10px] tabular-nums text-white/40">
+          <span className="text-[10px] tabular-nums text-muted">
             {logTime(entry)}
           </span>
         </div>
-        <p className="text-xs text-white/90 break-words leading-relaxed">
+        <p className="text-xs text-foreground break-words leading-relaxed">
           {entry.message}
         </p>
         {hasContext && (
@@ -2486,7 +2485,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
       </div>
 
       {hasContext && expanded && (
-        <pre className="mx-3 mb-2 p-2.5 rounded-lg bg-black/80 border border-white/10 text-[11px] text-white/80 overflow-x-auto whitespace-pre-wrap">
+        <pre className="mx-3.5 mb-2.5 p-3 rounded-xl bg-surface-tertiary/60 border border-border text-[11px] text-foreground overflow-x-auto whitespace-pre-wrap">
           {JSON.stringify(entry.context, null, 2)}
         </pre>
       )}

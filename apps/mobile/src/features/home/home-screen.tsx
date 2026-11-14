@@ -20,20 +20,17 @@ import { HeroCarousel } from "./components/hero-carousel";
 export function HomeScreen({
   open,
   play,
-  focusId,
-  focused,
   active,
 }: {
   open: OpenTitle;
   play?: (fileId: number) => void;
-  focusId?: number | null;
-  focused: (id: number) => void;
   active: boolean;
 }) {
   const colors = useColors();
-  const homeRouter = useRouter();
+  const { push } = useRouter();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
+  const [scrolled, setScrolled] = React.useState(false);
   const data = useResource((signal) => api.home(signal), [api]);
   const previousActive = useRef(active);
   React.useEffect(() => {
@@ -161,6 +158,17 @@ export function HomeScreen({
   return (
     <View className="flex-1 bg-background">
       <TopFade />
+      {scrolled && (
+        <View
+          pointerEvents="none"
+          className="absolute left-0 right-0 top-0 border-b border-border"
+          style={{
+            height: insets.top + 72,
+            backgroundColor: colors.canvas,
+            zIndex: 19,
+          }}
+        />
+      )}
       <PageHeader
         logo
         style={[
@@ -185,6 +193,11 @@ export function HomeScreen({
         ]}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+          const next = event.nativeEvent.contentOffset.y > 8;
+          setScrolled((previous) => (previous === next ? previous : next));
+        }}
         refreshControl={
           <RefreshControl
             refreshing={data.loading}
@@ -200,8 +213,8 @@ export function HomeScreen({
               items={carouselItems}
               onPlay={handlePlay}
               open={open}
+              active={active && !scrolled}
               onHeroFocus={() => {
-                if (focusId != null) focused(null as any);
                 scrollRef.current?.scrollTo({ y: 0, animated: true });
               }}
             />
@@ -220,7 +233,6 @@ export function HomeScreen({
               open={open}
               onPlay={handlePlay}
               isContinueWatching={true}
-              focused={focused}
             />
           </View>
         )}
@@ -234,7 +246,6 @@ export function HomeScreen({
               items={row.items}
               open={open}
               onPlay={handlePlay}
-              focused={focused}
             />
           </View>
         ))}
@@ -252,7 +263,7 @@ export function HomeScreen({
               className="self-start rounded-full bg-accent"
               size="lg"
               onPress={() =>
-                homeRouter.push({
+                push({
                   pathname: "/settings/folders",
                 })
               }

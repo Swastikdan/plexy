@@ -82,9 +82,10 @@ function MobileTabBar({
         height: 64 + bottomPadding,
       }}
     >
-      {tabs.map((tab, index) => {
+      {state.routes.map((route, index) => {
+        const tab = tabs.find((entry) => entry.name === route.name);
+        if (!tab) return null;
         const isFocused = state.index === index;
-        const route = state.routes[index];
         const onPress = () => {
           // Tab switches are the most frequent deliberate input — a
           // selection tick, not an impact, matches their lightness.
@@ -100,7 +101,7 @@ function MobileTabBar({
         };
         return (
           <Pressable
-            key={tab.name}
+            key={route.key}
             onPress={onPress}
             // Scale toward the finger on touch-down, not opacity — keeps
             // the icon present while answering the touch instantly.

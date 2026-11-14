@@ -81,7 +81,6 @@ export function Updates() {
             disabled={!online || busy}
             onPress={() => showDialog("Download update?", `Download ${update.tagName}? Android will ask you to confirm installation after the download.`, [
               { text: "Download update", onPress: () => void install() },
-              { text: "Cancel", style: "cancel" },
             ])}
           />
           <Button

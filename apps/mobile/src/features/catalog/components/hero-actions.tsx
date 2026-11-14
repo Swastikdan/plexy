@@ -2,7 +2,7 @@ import { useTitleActions } from "../hooks/use-title-actions";
 import BadgeInfoIcon from "@hugeicons/core-free-icons/BadgeInfoIcon";
 import { HugeiconsIcon } from "@hugeicons/react-native";
 import { useColors } from "@/shared/theme";
-import { useState } from "react";
+import { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useClient } from "@/core/client/client-provider";
@@ -41,14 +41,15 @@ export function HeroActions({
   const colors = useColors();
   const titleActions = useTitleActions();
   const { api } = useClient();
-  const [, setPlayFocus] = useState(false);
-  const [, setDetailFocus] = useState(false);
-  const [, setTrailerFocus] = useState(false);
-  const [, setWatchedFocus] = useState(false);
-  const [, setDeleteFocus] = useState(false);
-  const action = playbackAction(
-    item,
-    item.kind === "series" ? api.episodes(item.id) : [],
+  // Scanning every record for a series is too expensive to repeat on each
+  // focus change; the item and local catalog are stable.
+  const action = useMemo(
+    () =>
+      playbackAction(
+        item,
+        item.kind === "series" ? api.episodes(item.id) : [],
+      ),
+    [api, item],
   );
   const playLabel = actionLabel ?? action.label;
   return (
@@ -68,10 +69,8 @@ export function HeroActions({
         accessibilityRole="button"
         accessibilityLabel={action.accessibilityLabel}
         onFocus={() => {
-          setPlayFocus(true);
           onHeroFocus?.();
         }}
-        onBlur={() => setPlayFocus(false)}
         className={cn(
           "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-accent px-5 py-3.5",
           disabled && "opacity-40",
@@ -93,10 +92,8 @@ export function HeroActions({
             onDetails();
           }}
           onFocus={() => {
-            setDetailFocus(true);
             onHeroFocus?.();
           }}
-          onBlur={() => setDetailFocus(false)}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full bg-surface border border-border",
             "active:opacity-78",
@@ -115,10 +112,8 @@ export function HeroActions({
             onTrailer();
           }}
           onFocus={() => {
-            setTrailerFocus(true);
             onHeroFocus?.();
           }}
-          onBlur={() => setTrailerFocus(false)}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-foreground/45 bg-foreground/12",
             "active:opacity-78",
@@ -137,10 +132,8 @@ export function HeroActions({
             onToggleWatched();
           }}
           onFocus={() => {
-            setWatchedFocus(true);
             onHeroFocus?.();
           }}
-          onBlur={() => setWatchedFocus(false)}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px]",
             isWatched ? "border-foreground bg-foreground" : "border-foreground/45 bg-foreground/12",
@@ -164,10 +157,8 @@ export function HeroActions({
             onDelete();
           }}
           onFocus={() => {
-            setDeleteFocus(true);
             onHeroFocus?.();
           }}
-          onBlur={() => setDeleteFocus(false)}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-danger/50 bg-danger/15",
             "active:opacity-78",

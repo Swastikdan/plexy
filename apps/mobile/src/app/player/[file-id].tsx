@@ -6,7 +6,7 @@ export default function PlayerRoute() {
   const { "file-id": fileId } = useLocalSearchParams<{
     "file-id": string;
   }>();
-  const router = useRouter();
+  const { setParams } = useRouter();
   const { back } = useMediaNavigation();
   const id = Number(fileId);
   if (!Number.isSafeInteger(id) || id <= 0)
@@ -16,7 +16,7 @@ export default function PlayerRoute() {
       fileId={id}
       back={back}
       next={(next) =>
-        router.setParams({ "file-id": String(next) })
+        setParams({ "file-id": String(next) })
       }
     />
   );

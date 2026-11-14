@@ -69,7 +69,6 @@ export function useAppUpdates(online: boolean) {
     if (!availableUpdate || updateDownloading) return;
     showDialog("Download update?", `Download ${availableUpdate.tagName} (${(availableUpdate.apkSize / 1024 ** 2).toFixed(1)} MB)? Android will ask you to confirm installation after the download.`, [
       { text: "Download update", onPress: () => void downloadAndInstall() },
-      { text: "Cancel", style: "cancel" },
     ]);
   };
 

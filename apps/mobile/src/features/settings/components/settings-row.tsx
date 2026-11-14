@@ -40,7 +40,7 @@ export function SettingsRow({
       disabled={!onPress}
       className={cn(
         "min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5 active:bg-surface-hover",
-        selected && "bg-accent/15",
+        selected && "bg-foreground/[0.06]",
       )}
     >
       {Icon && (
@@ -52,11 +52,7 @@ export function SettingsRow({
         <Text
           className={cn(
             "text-[15px] font-archivo-medium",
-            danger
-              ? "text-danger"
-              : onPress && !navigation && selected === undefined && !children
-                ? "text-accent"
-                : "text-foreground",
+            danger ? "text-danger" : "text-foreground",
           )}
         >
           {title}
@@ -69,7 +65,7 @@ export function SettingsRow({
       </View>
       {children ||
         (selected ? (
-          <Check size={22} color={colors.brand} />
+          <Check size={22} color={colors.ink} />
         ) : navigation ? (
           <ChevronRight size={20} color={colors.muted} />
         ) : null)}

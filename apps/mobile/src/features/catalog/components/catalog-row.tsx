@@ -1,6 +1,5 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { useTitleActions } from "../hooks/use-title-actions";
-import { useRef } from "react";
 import { FlatList,Text,View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
@@ -14,8 +13,6 @@ export function CatalogRow({
   open,
   onPlay,
   isContinueWatching = false,
-  focusId,
-  focused,
   onRowFocus,
 }: {
   title: string;
@@ -23,15 +20,13 @@ export function CatalogRow({
   open: OpenTitle;
   onPlay?: (item: ItemCard) => void;
   isContinueWatching?: boolean;
-  focusId?: number | null;
-  focused: (id: number) => void;
   onRowFocus?: () => void;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const { api } = useClient();
   const titleActions = useTitleActions();
-  const ref = useRef<FlatList<ItemCard>>(null);
   const cardWidth = isContinueWatching ? 220 : 150;
+  const itemWidth = isContinueWatching ? 168 : cardWidth;
   return (
     <View className="mb-5 gap-1.5">
       {/* Section header */}
@@ -40,12 +35,11 @@ export function CatalogRow({
       </View>
 
       <FlatList {...pagerBoundary}
-        ref={ref}
         horizontal
         data={items}
         getItemLayout={(_, index) => ({
-          length: cardWidth + 12,
-          offset: 16 + (cardWidth + 12) * index,
+          length: itemWidth + 10,
+          offset: 20 + (itemWidth + 10) * index,
           index,
         })}
         keyExtractor={(item) => String(item.id)}

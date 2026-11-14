@@ -1,9 +1,10 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
-import { Image,Pressable,ScrollView,Text,View } from "react-native";
+import { FlatList,Pressable,Text,View } from "react-native";
 import type {
 LocalCatalog,
 TitleDetail,
 } from "@/core/library/catalog-api";
+import { PosterImage } from "@/shared/ui/poster-image";
 export function CastRow({
   people,
   api,
@@ -22,23 +23,28 @@ export function CastRow({
       <Text className="font-archivo-bold text-[18px] tracking-[-0.2px] text-foreground">
         Cast & Crew
       </Text>
-      <ScrollView {...pagerBoundary}
+      <FlatList {...pagerBoundary}
         horizontal
+        data={people}
+        keyExtractor={(person: any, index) => `${person.name}-${index}`}
+        getItemLayout={(_, index) => ({
+          length: 110,
+          offset: 110 * index,
+          index,
+        })}
+        initialNumToRender={8}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 14 }}
-      >
-        {people.map((person: any, i: number) => (
+        renderItem={({ item: person }: { item: any }) => (
           <Pressable
             disabled={!canOpen(person.name)}
             onPress={() => onSelect(person.name)}
-            key={`${person.name}-${i}`}
             className="w-24 gap-1.5"
           >
             {person.photo ? (
-              <Image
-                source={api.image(person.photo)}
-                className="aspect-[2/3] w-full rounded-lg bg-surface"
-              />
+              <View className="aspect-[2/3] w-full overflow-hidden rounded-lg bg-surface">
+                <PosterImage source={api.image(person.photo)} />
+              </View>
             ) : (
               <View className="aspect-[2/3] w-full items-center justify-center rounded-lg bg-surface">
                 <Text className="font-archivo-black text-[24px] text-muted">
@@ -53,8 +59,8 @@ export function CastRow({
               {person.character}
             </Text>
           </Pressable>
-        ))}
-      </ScrollView>
+        )}
+      />
     </View>
   );
 }

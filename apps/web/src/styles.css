@@ -667,3 +667,19 @@
     bottom: calc(var(--media-slider-chapter-start) + var(--media-spacing) * var(--media-chapter-inset-start));
     clip-path: inset(-1px);
 }
+
+/* HeroUI button overrides: secondary buttons use neutral foreground (no blue text on gray) */
+.button--secondary {
+  --button-fg: var(--default-foreground) !important;
+  color: var(--default-foreground) !important;
+}
+
+/* Switch styling: full-width alignment with control on the right */
+.switch {
+  width: 100%;
+  cursor: pointer;
+}
+
+.switch .switch__content {
+  width: 100%;
+}

@@ -1,6 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
+import { Image } from "expo-image";
 import React from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
@@ -109,7 +110,8 @@ export function Hero({
               source={api.image(logo)}
               accessibilityLabel={item.name}
               className="mb-2 h-[70px] w-[240px]"
-              resizeMode="contain"
+              contentFit="contain"
+              cachePolicy="memory-disk"
             />
           ) : (
             <Text

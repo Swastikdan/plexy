@@ -4,6 +4,7 @@ import { X, Check } from "@/shared/ui/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  FlatList,
   Modal,
   Pressable,
   ScrollView,
@@ -22,6 +23,10 @@ import { Film, Minus, Plus } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { SheetChips, SheetSection } from "./player-sheet";
 
+// Fixed row height lets the episode list jump straight to the playing title
+// without measuring or rendering every cell.
+const EPISODE_ROW_HEIGHT = 74;
+
 interface PlayerDrawerProps {
   menu: PlayerMenu;
   setMenu: React.Dispatch<React.SetStateAction<PlayerMenu>>;
@@ -33,7 +38,6 @@ interface PlayerDrawerProps {
   picture: {
     fitMode: FitMode;
     applyFit: (mode: FitMode, scale: number) => void;
-    zoom: number;
     startPictureInPicture: () => void;
   };
   subtitles: { position: number; setPosition: (position: number) => void };
@@ -92,7 +96,18 @@ export function PlayerDrawer({
     }
     return () => drawerAnim.stopAnimation();
   }, [menu, reduceMotion]);
-  const episodesScrollRef = useRef<ScrollView>(null);
+  const isCurrentEpisode = (ep: ItemCard) =>
+    ep.fileId === manifest.fileId ||
+    ep.id === manifest.itemId ||
+    (ep.seasonNumber === manifest.seasonNumber &&
+      ep.episodeNumber === manifest.episodeNumber);
+  const initialEpisodeIndex = Math.min(
+    Math.max(
+      0,
+      sortedEpisodes.findIndex((ep) => isCurrentEpisode(ep)),
+    ),
+    Math.max(0, sortedEpisodes.length - 1),
+  );
   const [drawerWatchedOverride, setDrawerWatchedOverride] = useState<
     Record<number, boolean>
   >({});
@@ -180,19 +195,26 @@ export function PlayerDrawer({
               </Pressable>
             </View>
             {renderedMenu === "episodes" && (
-              <ScrollView
-                ref={episodesScrollRef}
+              <FlatList
+                className="flex-1"
+                data={sortedEpisodes}
+                keyExtractor={(ep, idx) =>
+                  String(ep.id || `${ep.seasonNumber}-${ep.episodeNumber}-${idx}`)
+                }
+                getItemLayout={(_, index) => ({
+                  length: EPISODE_ROW_HEIGHT,
+                  offset: EPISODE_ROW_HEIGHT * index,
+                  index,
+                })}
+                initialScrollIndex={
+                  sortedEpisodes.length ? initialEpisodeIndex : undefined
+                }
                 contentContainerStyle={{
                   paddingBottom: Math.max(insets.bottom, 24),
                 }}
-                showsVerticalScrollIndicator={true}
-              >
-                {sortedEpisodes.map((ep, idx) => {
-                  const isCurrent =
-                    ep.fileId === manifest.fileId ||
-                    ep.id === manifest.itemId ||
-                    (ep.seasonNumber === manifest.seasonNumber &&
-                      ep.episodeNumber === manifest.episodeNumber);
+                showsVerticalScrollIndicator
+                renderItem={({ item: ep, index: idx }) => {
+                  const isCurrent = isCurrentEpisode(ep);
                   const isEpWatched =
                     drawerWatchedOverride[ep.id] ??
                     (progress.latest(ep.id)?.played ||
@@ -203,23 +225,13 @@ export function PlayerDrawer({
                       : `Episode ${ep.episodeNumber ?? idx + 1}`;
                   return (
                     <Pressable
-                      key={ep.id || `${ep.seasonNumber}-${ep.episodeNumber}`}
-                      onLayout={
-                        isCurrent
-                          ? (event) => {
-                              episodesScrollRef.current?.scrollTo({
-                                y: event.nativeEvent.layout.y,
-                                animated: false,
-                              });
-                            }
-                          : undefined
-                      }
                       onPress={() => {
                         if (ep.fileId) {
                           setMenu(null);
                           next(ep.fileId);
                         }
                       }}
+                      style={{ height: EPISODE_ROW_HEIGHT }}
                       className={cn(
                         "flex-row items-center px-5 py-3 border-b-[0.33px] border-border active:opacity-[0.75]",
                         isCurrent &&
@@ -267,7 +279,7 @@ export function PlayerDrawer({
                               ? "text-foreground font-bold"
                               : "text-foreground/90 font-semibold",
                           )}
-                          numberOfLines={2}
+                          numberOfLines={1}
                         >
                           {ep.name || `Episode ${ep.episodeNumber ?? idx + 1}`}
                         </Text>
@@ -301,8 +313,8 @@ export function PlayerDrawer({
                       </Pressable>
                     </Pressable>
                   );
-                })}
-              </ScrollView>
+                }}
+              />
             )}
 
             {renderedMenu !== "episodes" && (

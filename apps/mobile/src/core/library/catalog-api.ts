@@ -41,6 +41,11 @@ export abstract class LocalCatalog {
         count: number;
         poster: string | null;
     }[];
+    abstract counts(): {
+        movie: number;
+        series: number;
+        anime: number;
+    };
     abstract collectionItems(id: number): ItemCard[];
     abstract episodes(id: number): ItemCard[];
     abstract report(filter: "all" | "review" | "files"): ItemCard[];

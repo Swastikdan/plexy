@@ -1,6 +1,6 @@
+import { Image } from "expo-image";
 import { useState } from "react";
 import {
-Image,
 Text,
 View,
 type StyleProp,
@@ -47,7 +47,8 @@ export function UserAvatar({
         <Image
           source={{ uri: avatarUrl }}
           style={{ width: size, height: size, borderRadius: size / 2 }}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
           onError={() => setLoadError(true)}
         />
       ) : (
