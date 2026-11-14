@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
+  Camera,
   Captions,
   CheckCircle2,
   ChevronRight,
@@ -23,6 +24,7 @@ import { accountRequest, listDevices, type AccountUser, type AuthDevice } from "
 import { queries } from "../../queries";
 import type { LibraryItem } from "../../client";
 import { cx } from "../../lib/cx";
+import { UserAvatar } from "../user-avatar";
 
 interface MeResponse {
   user: AccountUser;
@@ -120,7 +122,6 @@ function ProfileCard({
   scanning: boolean;
   online: boolean;
 }) {
-  const initial = me?.user.username.slice(0, 1).toUpperCase() ?? "?";
   return (
     <section className="relative overflow-hidden rounded-3xl border border-border bg-surface p-5 sm:p-6">
       <div
@@ -128,9 +129,18 @@ function ProfileCard({
         className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_14%,transparent),transparent_68%)]"
       />
       <div className="relative flex flex-wrap items-center gap-4 sm:gap-5">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface-secondary font-sans text-xl font-bold text-foreground">
-          {initial}
-        </span>
+        <Link
+          to="/settings"
+          search={{ tab: "account" }}
+          aria-label="Change profile photo"
+          title="Change profile photo"
+          className="group/avatar relative shrink-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        >
+          <UserAvatar user={me?.user} size={56} className="rounded-2xl" />
+          <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/45 text-white opacity-0 transition-opacity duration-150 group-hover/avatar:opacity-100 group-focus-visible/avatar:opacity-100">
+            <Camera size={16} />
+          </span>
+        </Link>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate font-sans text-xl font-bold tracking-tight text-foreground">
@@ -138,7 +148,7 @@ function ProfileCard({
             </h2>
             <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-secondary px-2 py-0.5 text-[11px] font-semibold text-muted">
               {me?.user.role === "admin" ? <Users size={11} /> : <UserRound size={11} />}
-              {me?.user.role === "admin" ? "Administrator" : "Viewer"}
+              {me?.user.role === "admin" ? "Administrator" : "User"}
             </span>
           </div>
           <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">

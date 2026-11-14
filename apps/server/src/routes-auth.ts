@@ -286,6 +286,29 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       }),
     },
   )
+  .put(
+    "/avatar",
+    ({ request, body }) => {
+      const user = signedIn(request);
+      if (!user) return error("Sign in first.", 401);
+      const avatar = body.avatar === "" ? null : body.avatar;
+      if (avatar !== null) {
+        // Accept only the raster formats the client produces. SVG is excluded
+        // deliberately; profile art never needs vector input.
+        if (!/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/]+=*$/i.test(avatar))
+          return error("Use a PNG, JPEG, WebP, or GIF image.");
+        if (avatar.length > 600_000)
+          return error("That profile photo is too large.", 413);
+      }
+      run("UPDATE users SET avatar=? WHERE id=?", avatar, user.id);
+      return { user: getUser(user.id) };
+    },
+    {
+      body: t.Object({
+        avatar: t.Union([t.Null(), t.String({ maxLength: 600_000 })]),
+      }),
+    },
+  )
   .get("/users", ({ request }) =>
     admin(request)
       ? { users: listUsers() }

@@ -14,18 +14,14 @@ import { probeBrowserCaps, type PlayPath } from "@plexy/api-client";
 import { queries } from "../../queries";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
+import { subtitleTrackLabel } from "../../lib/subtitle-label";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
 import { NativeWatchPage } from "../../components/native-watch";
 import {
   isNativeAvailable,
-  markNativeAvailable,
-  nativeBridge,
   PLAYER_ENGINE_EVENT,
-  readPlayerEngine,
   savePlayerEngine,
-  type PlayerEngine,
 } from "../../lib/native-playback";
-import type { NativePlaybackInfo } from "../../electron";
 
 /// hls.js is only needed when the server hands back a converted (`.m3u8`)
 /// stream. Importing it statically put the whole library into the watch route
@@ -410,7 +406,7 @@ function BrowserWatchRoute() {
       {tracks.map((t) => (
         <track
           key={t.track}
-          label={t.title || t.language || `Track ${t.track}`}
+          label={subtitleTrackLabel(t) || `Track ${t.track}`}
           kind="subtitles"
           src={api.subtitlesUrl(Number(fileId), t.track.endsWith(".vtt") ? t.track : `${t.track}.vtt`)}
           srcLang={t.language ?? undefined}
@@ -1067,8 +1063,8 @@ function BrowserWatchRoute() {
                   aria-valuemax={100}
                 >
                   <div
-                    className="h-full rounded-full bg-[#E50914] transition-[width] duration-500 ease-out"
-                    style={{ width: `${Math.max(2, preparationPercent)}%` }}
+                    className="h-full origin-left rounded-full bg-[#E50914] transition-transform duration-500 ease-out"
+                    style={{ transform: `scaleX(${Math.max(2, preparationPercent) / 100})` }}
                   />
                 </div>
                 <p className="mt-2 text-xs text-ink-muted">
@@ -1307,65 +1303,12 @@ function BrowserWatchRoute() {
 
 export const Route = createFileRoute("/watch/$fileId")({ component: WatchRoute });
 
-/**
- * Chooses the playback engine. The desktop app prefers its native mpv window
- * when a bundled engine is present; websites and browsers keep the existing
- * React player untouched. The choice is persisted, and a native failure always
- * offers an explicit "use browser player" action.
- */
+/** Desktop always uses mpv; browser playback is only used outside Electron. */
 function WatchRoute() {
   const { fileId } = useParams({ from: Route.id });
-  const [engine, setEngine] = useState<PlayerEngine>(() => readPlayerEngine());
-  const [nativeInfo, setNativeInfo] = useState<NativePlaybackInfo | null | undefined>(() =>
-    nativeBridge() ? undefined : null,
-  );
-
-  useEffect(() => {
-    const bridge = nativeBridge();
-    if (!bridge) {
-      setNativeInfo(null);
-      return;
-    }
-    let cancelled = false;
-    bridge
-      .info()
-      .then((info) => {
-        if (cancelled) return;
-        markNativeAvailable(info.available);
-        setNativeInfo(info.available ? info : null);
-      })
-      .catch(() => {
-        if (!cancelled) setNativeInfo(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // "Play in native window" inside the browser player re-mounts this wrapper.
-  useEffect(() => {
-    const onChange = () => setEngine(readPlayerEngine());
-    window.addEventListener(PLAYER_ENGINE_EVENT, onChange);
-    return () => window.removeEventListener(PLAYER_ENGINE_EVENT, onChange);
-  }, []);
-
-  if (nativeInfo === undefined) {
-    return <div className="fixed inset-0 z-50 bg-black" aria-label="Starting player" />;
+  if (typeof window !== "undefined" && window.electronAPI) {
+    return <NativeWatchPage key={fileId} fileId={Number(fileId)} />;
   }
-
-  if (nativeInfo && engine === "native") {
-    return (
-      <NativeWatchPage
-        key={fileId}
-        fileId={Number(fileId)}
-        onUseBrowser={() => {
-          savePlayerEngine("browser");
-          setEngine("browser");
-        }}
-      />
-    );
-  }
-
   return <BrowserWatchRoute />;
 }
 

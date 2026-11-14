@@ -95,11 +95,26 @@ export function CaptionsSubmenu({ ...props }: CaptionsSubmenuProps = {}) {
               'media-transitioning:[&_*]:before:hidden',
               'media-anchored:has-data-[highlighted=]:before:duration-0'
             )}
-            renderItem={(props, item) => (
-              <RadioItem {...props}>
-                <span>{item.label}</span>
-              </RadioItem>
-            )}
+            renderItem={(props, item) => {
+              // Track labels are formatted as "Name · Language" so native
+              // menus still contain both. Split the two here so the in-player
+              // menu can put the language above the name, even on narrow
+              // screens where one long line would truncate.
+              const [name, ...rest] = item.label.split(" · ");
+              const detail = rest.join(" · ");
+              return (
+                <RadioItem {...props}>
+                  <span className="flex min-w-0 flex-1 flex-col text-left">
+                    {detail ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-media-muted-foreground">
+                        {detail}
+                      </span>
+                    ) : null}
+                    <span title={name} className="line-clamp-2 whitespace-normal">{name}</span>
+                  </span>
+                </RadioItem>
+              );
+            }}
           ></CaptionsRadioGroup.Options>
         </Menu.Content>
       </CaptionsRadioGroup.Root>

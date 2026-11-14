@@ -19,7 +19,7 @@ import { clearTmdbCache, testToken } from "./tmdb";
 import { denyIfNotLocal, isAdminContext } from "./essentials";
 import { tokenFromRequest, verifyToken } from "./auth";
 import { startScan, currentScan, onScanProgress } from "./scan";
-import { clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
+import { cancelOptimization, clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
 import { VIDEO_EXTENSIONS } from "./parse";
 import { getServerId } from "./server-identity";
 import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
@@ -274,10 +274,25 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Preparation queue state: what is running, how far along, cache size. */
   .get("/optimize/status", async () => optimizerStatus())
 
+  /** Stop CPU-intensive preparation and hold the queue until explicitly resumed. */
+  .post("/optimize/cancel", async (ctx) => {
+    const denied = denyIfNotLocal(ctx);
+    if (denied) return denied;
+    await cancelOptimization();
+    return optimizerStatus();
+  })
+  .post("/optimize/resume", async (ctx) => {
+    const denied = denyIfNotLocal(ctx);
+    if (denied) return denied;
+    resumeOptimizer("manual");
+    return optimizerStatus();
+  })
+
   /** Queue every probed file again, including previous failures. */
   .post("/optimize/run", async (ctx) => {
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
+    resumeOptimizer("manual");
     const requested = await enqueueMissingOptimizations({ includeFailed: true });
     log.debug("optimizer", "manual preparation run requested", { queued: requested });
     return { ...(await optimizerStatus()), requested };

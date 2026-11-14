@@ -42,6 +42,7 @@ import {
   type PlaybackPreferences,
 } from "../../lib/playback-preferences";
 import { cx } from "../../lib/cx";
+import { ProfilePhotoEditor } from "../profile-photo";
 import type { ThemePreference } from "../../theme";
 
 interface MeResponse {
@@ -192,7 +193,7 @@ export function AccountPanel({ admin }: { admin: boolean }) {
         </div>
         <dl className="mt-4 grid gap-x-6 gap-y-3 border-t border-border/60 pt-4 sm:grid-cols-2">
           <Detail label="Username" value={user?.username ?? "…"} />
-          <Detail label="Role" value={user?.role === "admin" ? "Administrator" : "Viewer"} />
+          <Detail label="Role" value={user?.role === "admin" ? "Administrator" : "User"} />
           <Detail label="This device" value={me.data?.device.name ?? "…"} />
           <Detail
             label="Maturity limit"
@@ -204,6 +205,8 @@ export function AccountPanel({ admin }: { admin: boolean }) {
           />
         </dl>
       </section>
+
+      <ProfilePhotoEditor user={user} />
 
       <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
         <h2 className="text-sm font-semibold text-foreground">Change password</h2>
@@ -336,7 +339,7 @@ export function DevicesPanel() {
           </div>
 
           {pairing ? (
-            <div className="mt-4 rounded-2xl border border-border bg-surface-secondary/50 p-4">
+            <div className="page-enter mt-4 rounded-2xl border border-border bg-surface-secondary/50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="select-all font-mono text-3xl font-semibold tracking-[0.24em] tabular-nums text-foreground">
                   {pairing.code}
@@ -363,7 +366,7 @@ export function DevicesPanel() {
             </p>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
             <Button
               isDisabled={busy}
               onPress={() => void mint()}

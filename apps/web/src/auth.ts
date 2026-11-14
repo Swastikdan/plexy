@@ -138,7 +138,7 @@ export async function removeRevokedDevice(id: number): Promise<void> {
   if (!res.ok) throw new Error(await readError(res));
 }
 
-export interface AccountUser { id: number; username: string; role: "admin" | "user"; disabled: boolean; maxAge: number | null; blockUnrated: boolean }
+export interface AccountUser { id: number; username: string; role: "admin" | "user"; disabled: boolean; maxAge: number | null; blockUnrated: boolean; avatar: string | null }
 export interface SetupState { ownerCreated: boolean; setupComplete: boolean; step: number }
 export async function accountRequest<T = any>(path: string, body?: unknown, method?: string): Promise<T> {
   if (!isLoopbackServerUrl(getApiBase()) && new URL(getApiBase()).protocol !== "https:") throw new Error("Use the server’s HTTPS address to sign in securely.");

@@ -19,8 +19,13 @@ import {
   Star,
   FolderPlus,
   MoreHorizontal,
+  BookOpen,
+  ListVideo,
+  Users,
+  HardDrive,
 } from "lucide-react";
 import { queries } from "../../queries";
+import { nativeBridge } from "../../lib/native-playback";
 import { api, probeBrowserCaps, type TitleDetail } from "../../client";
 import { Button, Dropdown, ListBox, Modal, Select } from "@heroui/react";
 import { TrailerModal } from "../../components/trailer-modal";
@@ -224,7 +229,7 @@ function DetailView({
   // lands on a play control, so the navigation has nothing left to wait for.
   const prefetchPlay = (fileId: number | null | undefined) => {
     if (!fileId || !BROWSER_CAPS) return;
-    void queryClient.prefetchQuery(queries.play(fileId, BROWSER_CAPS));
+    void queryClient.prefetchQuery(nativeBridge() ? queries.playNative(fileId) : queries.play(fileId, BROWSER_CAPS));
   };
 
   const primaryFileId = (() => {
@@ -244,7 +249,7 @@ function DetailView({
   };
 
   return (
-    <div className="space-y-10">
+    <div className="staggered space-y-8">
       <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-3xl bg-surface flex flex-col justify-end border border-border/50 shadow-sm">
         <img
           src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
@@ -252,7 +257,7 @@ function DetailView({
           fetchPriority="high"
           loading="eager"
           decoding="async"
-          className="absolute inset-0 h-full w-full object-cover object-[center_24%] sm:object-[center_28%] transition-transform duration-700 ease-out hover:scale-102"
+          className="hero-media absolute inset-0 h-full w-full object-cover object-[center_24%] sm:object-[center_28%]"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}
@@ -273,12 +278,12 @@ function DetailView({
           aria-hidden
         />
 
-        <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12 page-enter">
+        <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12">
           {item.kind === "episode" && item.parentId && (
             <Link
               to="/title/$itemId"
               params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
-              className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-surface/85 backdrop-blur-md border border-border px-3.5 py-1 text-xs font-semibold text-foreground transition-all hover:bg-surface-secondary active:scale-95 shadow-xs"
+              className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-surface/85 backdrop-blur-md border border-border px-3.5 py-1 text-xs font-semibold text-foreground transition-[background-color,transform] duration-150 hover:bg-surface-secondary active:scale-95 shadow-xs"
             >
               <ArrowLeft size={13} />
               Back to {item.parentTitle || "Series"}
@@ -323,7 +328,7 @@ function DetailView({
                   onFocus={() => prefetchPlay(primaryFileId)}
                   className={cx(
                     "group relative overflow-hidden inline-flex items-center justify-center rounded-xl h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
-                    "font-semibold transition-all duration-150 ease-out shadow-md active:scale-[0.98]",
+                    "font-semibold transition-[background-color,color,transform] duration-150 ease-out shadow-md active:scale-[0.98]",
                     hasResume
                       ? "bg-surface-secondary hover:bg-surface-tertiary text-foreground border border-border"
                       : isPlayed
@@ -345,8 +350,8 @@ function DetailView({
                         className="pointer-events-none absolute inset-x-2.5 bottom-1.5 h-0.5 overflow-hidden rounded-full bg-foreground/15"
                       >
                         <span
-                          className="block h-full rounded-full bg-accent transition-all duration-300"
-                          style={{ width: `${Math.max(2, watchPercent)}%` }}
+                          className="block h-full origin-left rounded-full bg-accent transition-transform duration-300 ease-out"
+                          style={{ transform: `scaleX(${Math.max(2, watchPercent) / 100})` }}
                         />
                       </span>
                     </>
@@ -371,7 +376,7 @@ function DetailView({
                   onPress={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
                   isDisabled={watchMutation.isPending || clearWatchMutation.isPending}
                   aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-                  className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs"
+                  className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs transition-[background-color,color,transform] duration-150"
                 >
                   {isPlayed ? <CheckCircle2 size={16} className="text-accent" /> : <Eye size={16} />}
                 </Button>
@@ -408,7 +413,7 @@ function DetailView({
                     variant="ghost"
                     onPress={() => setTrailerOpen(true)}
                     aria-label="Watch trailer"
-                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs"
+                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs transition-[background-color,color,transform] duration-150"
                   >
                     <Video size={16} />
                   </Button>
@@ -417,7 +422,7 @@ function DetailView({
                     isIconOnly
                     variant="ghost"
                     aria-label="Collection"
-                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs"
+                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs transition-[background-color,color,transform] duration-150"
                   >
                     <FolderPlus size={16} />
                   </Button>
@@ -426,7 +431,7 @@ function DetailView({
                 <Dropdown>
                   <Dropdown.Trigger
                     aria-label="More options"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md transition-all hover:bg-surface-secondary active:scale-95 shadow-2xs"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md transition-[background-color,transform] duration-150 hover:bg-surface-secondary active:scale-95 shadow-2xs"
                   >
                     <MoreHorizontal size={16} />
                   </Dropdown.Trigger>
@@ -544,29 +549,26 @@ function DetailView({
         </div>
       </section>
 
-      <div className="grid gap-12 lg:grid-cols-[1fr_380px]">
-        <div className="min-w-0 space-y-10">
-          {item.overview && (
-            <div>
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted">
-                Synopsis
-              </h2>
-              <p className="mt-3 max-w-[75ch] text-base leading-relaxed text-muted">
-                {item.overview}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-10">
+        <div className="min-w-0 space-y-8">
+          {displayOverview && (
+            <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+              <SectionHeading icon={BookOpen} title="Synopsis" />
+              <p className="mt-4 max-w-[75ch] text-sm leading-relaxed text-muted sm:text-base">
+                {displayOverview}
               </p>
-            </div>
+            </section>
           )}
 
           {/* Series: seasons & episodes (PRD 10.3) */}
           {item.kind === "series" && (
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
-                <div className="flex items-center gap-3">
-                  <h2 className="font-display text-2xl font-bold text-foreground">Episodes</h2>
-                  <span className="text-xs text-muted">
-                    {filteredEpisodes.length} {filteredEpisodes.length === 1 ? "episode" : "episodes"}
-                  </span>
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <SectionHeading
+                  icon={ListVideo}
+                  title="Episodes"
+                  hint={`${filteredEpisodes.length} ${filteredEpisodes.length === 1 ? "episode" : "episodes"}`}
+                />
 
                 {seasonList.length > 1 && (
                   <Select
@@ -616,7 +618,7 @@ function DetailView({
                         data-backdrop={ep.backdrop ?? undefined}
                         className={cx(
                           "group relative flex w-full items-center justify-between gap-2.5 rounded-xl border bg-surface p-2 sm:p-2.5 sm:gap-3.5",
-                          "transition-all duration-150 ease-out hover:border-border hover:bg-surface-tertiary/80 active:scale-[0.99]",
+                          "transition-[background-color,border-color,transform] duration-150 ease-out hover:border-border hover:bg-surface-tertiary/80 active:scale-[0.99]",
                           played ? "border-border/40 opacity-80 hover:opacity-100" : "border-border/70",
                         )}
                       >
@@ -644,7 +646,7 @@ function DetailView({
                                 alt={displayTitle}
                                 loading="lazy"
                                 decoding="async"
-                                className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
+                                className="zoom-on-hover-strong h-full w-full object-cover"
                               />
                             ) : (
                               <div className="flex h-full w-full flex-col items-center justify-center p-2 font-display text-[10px] text-muted text-center bg-gradient-to-t from-black/60 to-transparent">
@@ -710,7 +712,7 @@ function DetailView({
                             aria-label={played ? `Mark ${displayTitle} unwatched` : `Mark ${displayTitle} watched`}
                             title={played ? "Mark unwatched" : "Mark watched"}
                             className={cx(
-                              "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all active:scale-95 disabled:opacity-50",
+                              "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-95 disabled:opacity-50",
                               played
                                 ? "text-muted hover:bg-accent/10"
                                 : "text-muted hover:text-foreground hover:bg-surface-secondary",
@@ -725,7 +727,7 @@ function DetailView({
                               disabled={clearWatchMutation.isPending}
                               aria-label={`Remove progress for ${displayTitle}`}
                               title="Remove progress"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-all hover:bg-danger/10 hover:text-danger-soft-foreground active:scale-95 disabled:opacity-50"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-[background-color,color,transform] duration-150 hover:bg-danger/10 hover:text-danger-soft-foreground active:scale-95 disabled:opacity-50"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -746,22 +748,23 @@ function DetailView({
         </div>
 
         {(cast?.length || file) && (
-          <aside className="h-fit space-y-6">
+          <aside className="h-fit space-y-5">
             {cast && cast.length > 0 && (
               <section className="space-y-4 rounded-2xl border border-border bg-surface p-5 sm:p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted">
-                    Top Cast
-                  </h2>
-                  {cast.length > 6 && (
-                    <button
-                      onClick={() => setCastExpanded((v) => !v)}
-                      className="shrink-0 text-xs text-muted transition-colors hover:text-foreground"
-                    >
-                      {castExpanded ? "Show Less" : `View All (${cast.length})`}
-                    </button>
-                  )}
-                </div>
+                <SectionHeading
+                  icon={Users}
+                  title="Top cast"
+                  action={
+                    cast.length > 6 ? (
+                      <button
+                        onClick={() => setCastExpanded((v) => !v)}
+                        className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                      >
+                        {castExpanded ? "Show less" : `View all (${cast.length})`}
+                      </button>
+                    ) : undefined
+                  }
+                />
 
                 <div className="grid grid-cols-1 gap-2.5">
                   {(castExpanded ? cast : cast.slice(0, 6)).map((c) => (
@@ -798,11 +801,9 @@ function DetailView({
             )}
 
             {file && <section className="h-fit space-y-6 rounded-2xl border border-border bg-surface p-5 sm:p-6">
-            <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-              <h3 className="mb-3 font-display text-xs font-bold uppercase tracking-widest text-muted">
-                Media Details
-              </h3>
-              <dl className="space-y-2.5 text-xs">
+            <div>
+              <SectionHeading icon={HardDrive} title="Media details" />
+              <dl className="mt-4 space-y-2.5 text-xs">
                 {file.width && file.height && (
                   <div className="flex justify-between">
                     <dt className="text-muted">Resolution</dt>
@@ -924,6 +925,33 @@ function DetailView({
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+    </div>
+  );
+}
+
+function SectionHeading({
+  icon: Icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: typeof BookOpen;
+  title: string;
+  hint?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-muted">
+          <Icon size={15} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+        </div>
+      </div>
+      {action}
     </div>
   );
 }

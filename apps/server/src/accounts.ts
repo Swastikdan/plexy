@@ -8,6 +8,7 @@ export interface User {
   disabled: boolean;
   maxAge: number | null;
   blockUnrated: boolean;
+  avatar: string | null;
 }
 export function userView(row: Row): User {
   return {
@@ -17,6 +18,7 @@ export function userView(row: Row): User {
     disabled: Boolean(row.disabled),
     maxAge: row.max_age == null ? null : Number(row.max_age),
     blockUnrated: Boolean(row.block_unrated),
+    avatar: row.avatar == null ? null : String(row.avatar),
   };
 }
 export function getUser(id: number): User | null {

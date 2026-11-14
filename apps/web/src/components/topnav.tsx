@@ -9,8 +9,9 @@ import { queries } from "../queries";
 import { cx } from "../lib/cx";
 import { useIsFullscreen } from "../lib/use-fullscreen";
 import { isElectronMac } from "../lib/platform";
-import { getSignedInUser } from "../auth";
+import { accountRequest, getSignedInUser, type AccountUser } from "../auth";
 import { BackButton } from "./back-button";
+import { UserAvatar } from "./user-avatar";
 
 function resolvePageTitle(
   pathname: string,
@@ -87,8 +88,15 @@ export function TopNav() {
       : []),
   ];
 
+  const account = useQuery({
+    queryKey: ["account"],
+    queryFn: () => accountRequest<{ user: AccountUser }>("/me"),
+    staleTime: 30_000,
+    retry: false,
+  });
+
   const electronMac = isElectronMac();
-  const signedIn = getSignedInUser();
+  const signedIn = account.data?.user ?? getSignedInUser();
 
   useEffect(() => {
     if (window.electronAPI?.onNavigate) {
@@ -209,9 +217,12 @@ export function TopNav() {
               title="Account and settings"
               className="group ml-0.5 hidden h-8 items-center justify-center rounded-full p-0.5 text-muted transition-colors hover:text-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2 sm:inline-flex [&.active]:text-foreground"
             >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-secondary text-[11px] font-bold uppercase text-foreground transition-colors group-hover:border-foreground/25 group-hover:bg-surface-tertiary">
-                {signedIn?.username.slice(0, 1) ?? "?"}
-              </span>
+              <UserAvatar
+                user={signedIn}
+                size={24}
+                alt=""
+                className="transition-[border-color,background-color] duration-150 group-hover:border-foreground/25 group-hover:bg-surface-tertiary"
+              />
             </Link>
           </div>
         </div>

@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import { UserRound } from "lucide-react";
 import { queries } from "../../queries";
 import { PageLoader } from "../../components/page-loader";
-import { PageHeader } from "../../components/page-header";
 import { Poster } from "../../components/poster";
 import { State } from "../../components/state";
 import { artworkUrl } from "../../lib/artwork-url";
@@ -34,32 +33,38 @@ function PersonRoute() {
   const { person, items } = data;
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 sm:px-8">
-      <PageHeader title={person.name} />
-
-      <div className="mb-8 flex items-center gap-5">
-        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-full bg-surface-secondary">
-          {person.photo ? (
-            <img
-              src={artworkUrl(person.photo) ?? ""}
-              alt={person.name}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-muted">
-              <UserRound size={30} />
-            </div>
-          )}
+    <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 pt-8 sm:px-8">
+      <section className="relative mb-8 overflow-hidden rounded-3xl border border-border bg-surface p-5 sm:p-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_14%,transparent),transparent_68%)]"
+        />
+        <div className="relative flex items-center gap-4 sm:gap-5">
+          <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-border bg-surface-secondary sm:h-24 sm:w-24">
+            {person.photo ? (
+              <img
+                src={artworkUrl(person.photo) ?? ""}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-muted">
+                <UserRound size={28} />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate font-sans text-lg font-bold tracking-tight text-foreground sm:text-xl">
+              {person.name}
+            </h2>
+            <p className="mt-1 text-xs text-muted sm:text-sm">
+              {items.length === 0
+                ? "No titles in your library"
+                : `${items.length} ${items.length === 1 ? "title" : "titles"} in your library`}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="text-lg font-semibold text-foreground">{person.name}</p>
-          <p className="mt-1 text-sm text-muted">
-            {items.length === 0
-              ? "No titles in your library"
-              : `${items.length} ${items.length === 1 ? "title" : "titles"} in your library`}
-          </p>
-        </div>
-      </div>
+      </section>
 
       {items.length === 0 ? (
         <State

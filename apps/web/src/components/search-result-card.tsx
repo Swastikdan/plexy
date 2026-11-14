@@ -50,7 +50,7 @@ export function SearchResultCard({ item }: { item: ItemCard }) {
       params={{ itemId: item.publicId }}
       className={cx(
         "group flex min-h-[96px] items-center gap-3 sm:gap-4 rounded-2xl border border-border/70 bg-surface p-2 sm:p-2.5",
-        "shadow-2xs transition-all duration-200 hover:border-border hover:bg-surface-secondary/80 hover:shadow-sm active:scale-[0.99]",
+        "shadow-2xs transition-[border-color,background-color,box-shadow,transform] duration-200 hover:border-border hover:bg-surface-secondary/80 hover:shadow-sm active:scale-[0.99]",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
       )}
     >
@@ -61,7 +61,7 @@ export function SearchResultCard({ item }: { item: ItemCard }) {
             alt=""
             loading="lazy"
             decoding="async"
-            className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+            className="zoom-on-hover h-full w-full object-cover"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-secondary to-surface text-muted">

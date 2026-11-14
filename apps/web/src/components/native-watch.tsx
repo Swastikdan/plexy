@@ -20,10 +20,8 @@ type SkipSegment = { start: number; end: number } | null | undefined;
 
 export function NativeWatchPage({
   fileId,
-  onUseBrowser,
 }: {
   fileId: number;
-  onUseBrowser: () => void;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -81,7 +79,12 @@ export function NativeWatchPage({
   // Start one native session per file, resuming where the viewer stopped.
   useEffect(() => {
     const bridge = nativeBridge();
-    if (!bridge || !manifest?.fileId) return;
+    if (!bridge) {
+      setError("The native player is unavailable. Update the desktop app and try again.");
+      setStarting(false);
+      return;
+    }
+    if (!manifest?.fileId) return;
     let cancelled = false;
     setStarting(true);
     setError(null);
@@ -318,12 +321,7 @@ export function NativeWatchPage({
             </p>
           </div>
         </div>
-        <button
-          onClick={onUseBrowser}
-          className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/75 transition-colors hover:border-white/30 hover:text-white"
-        >
-          Use browser player
-        </button>
+
       </div>
 
       <div className="flex flex-1 items-center justify-center px-6">
@@ -333,12 +331,6 @@ export function NativeWatchPage({
               <p className="font-display text-xl font-bold">Native playback stopped</p>
               <p className="mt-2 text-sm text-ink-muted">{error}</p>
               <div className="mt-6 flex justify-center gap-3">
-                <button
-                  onClick={onUseBrowser}
-                  className="rounded-lg bg-[#E50914] px-5 py-2 text-sm font-semibold transition-colors hover:bg-[#b80710]"
-                >
-                  Play in browser
-                </button>
                 <button
                   onClick={leave}
                   className="rounded-lg border border-white/20 px-5 py-2 text-sm font-semibold text-white/80 transition-colors hover:border-white/40 hover:text-white"
@@ -375,7 +367,7 @@ export function NativeWatchPage({
                 {ended && manifest?.nextFileId
                   ? "Starting the next episode…"
                   : closed
-                    ? "Your progress is saved. Reopen the player or continue in the browser."
+                    ? "Your progress is saved. Reopen the native player to continue."
                     : "Seeking, volume, audio tracks and subtitles are in the mpv window. This surface keeps your progress."}
               </p>
 
@@ -454,7 +446,7 @@ export function NativeWatchPage({
               aria-valuemax={100}
               aria-valuenow={Math.round(percent)}
             >
-              <div className="h-full rounded-full bg-[#E50914] transition-[width] duration-700 ease-out" style={{ width: `${percent}%` }} />
+              <div className="h-full origin-left rounded-full bg-[#E50914] transition-transform duration-700 ease-out" style={{ transform: `scaleX(${percent / 100})` }} />
             </div>
             <span>{duration ? formatClock(duration) : "—"}</span>
           </div>

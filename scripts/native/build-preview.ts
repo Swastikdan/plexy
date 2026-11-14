@@ -75,6 +75,9 @@ async function run(command: string[], cwd: string) {
       ":app:assembleRelease",
       `-PreactNativeArchitectures=${Bun.env.PLEXY_ANDROID_ARCHITECTURES || "arm64-v8a"}`,
       `--max-workers=${Bun.env.PLEXY_GRADLE_WORKERS || "2"}`,
+      ...(Bun.env.PLEXY_GRADLE_JVMARGS
+        ? [`-Dorg.gradle.jvmargs=${Bun.env.PLEXY_GRADLE_JVMARGS}`]
+        : []),
       "--build-cache",
       "--parallel",
     ],

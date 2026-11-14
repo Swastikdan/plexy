@@ -1,4 +1,4 @@
-/// Horizontal Netflix-style row of posters with arrow paging and smooth scrolling.
+/// Horizontal row of posters with arrow paging and smooth scrolling.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Poster } from "./poster";
@@ -7,12 +7,14 @@ import type { ItemCard } from "../client";
 
 export function Row({
   title,
+  subtitle,
   items,
   action,
   directPlay = false,
   wide = false,
 }: {
   title: string;
+  subtitle?: string;
   items: ItemCard[];
   action?: ReactNode;
   /** Cards with a file open the player immediately instead of the detail page. */
@@ -59,12 +61,17 @@ export function Row({
   };
 
   return (
-    <section className="group/row relative min-w-0 my-6">
-      <div className="mb-2 flex items-baseline justify-between gap-4 px-3 sm:mb-3">
-        <h2 className="font-sans text-base font-semibold tracking-tight text-foreground sm:text-lg">
-          {title}
-        </h2>
-        {action}
+    <section className="group/row relative min-w-0 py-2">
+      <div className="mb-3 flex items-end justify-between gap-4 px-3">
+        <div className="min-w-0">
+          <h2 className="font-sans text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>
+          )}
+        </div>
+        {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
       </div>
 
       <div className="relative">
@@ -75,7 +82,7 @@ export function Row({
           className={cx(
             "absolute left-0 top-0 bottom-0 z-30 flex w-16 items-center justify-start pl-1",
             "bg-gradient-to-r from-background via-background/80 to-transparent text-muted",
-            "transition-all duration-200",
+            "transition-[opacity,color] duration-150",
             "opacity-0 hover:text-foreground group-hover/row:opacity-100 disabled:pointer-events-none",
             "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-foreground",
           )}
@@ -111,7 +118,7 @@ export function Row({
           className={cx(
             "absolute right-0 top-0 bottom-0 z-30 flex w-16 items-center justify-end pr-1",
             "bg-gradient-to-l from-background via-background/80 to-transparent text-muted",
-            "transition-all duration-200",
+            "transition-[opacity,color] duration-150",
             "opacity-0 hover:text-foreground group-hover/row:opacity-100 disabled:pointer-events-none",
             "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-foreground",
           )}

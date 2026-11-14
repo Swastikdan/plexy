@@ -44,6 +44,7 @@ export interface OptimizerStatus {
   enabled: boolean;
   running: boolean;
   paused: boolean;
+  manuallyPaused?: boolean;
   queued: number;
   current: { fileId: number; progress: number } | null;
   counts: Record<string, number>;

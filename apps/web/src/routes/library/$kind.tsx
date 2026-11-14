@@ -36,6 +36,7 @@ function LibraryRoute() {
   return (
     <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 sm:px-8">
       <PageHeader
+        eyebrow="Library"
         title={label}
         action={
           <>

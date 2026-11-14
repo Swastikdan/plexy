@@ -197,12 +197,34 @@
   /* HeroUI Native keeps inputs slightly taller than buttons. */
   --field-radius: calc(var(--radius) * 1.75);
 
+  /* Fields sit on cards, so a plain surface fill disappeared against the card
+   * in both themes. A secondary fill and a hairline border keep every input,
+   * select, and search field legible without leaving HeroUI's palette. */
+  --field-background: var(--surface-secondary);
+  --field-border: var(--border);
+  --field-border-width: 1px;
+
+  /* Motion: one strong ease-out for entrances and one for on-screen travel.
+   * HeroUI exposes the individual curves; these aliases keep our own CSS from
+   * silently falling back to `ease`. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
   /* Shared page gutter for poster scrollers (3 == px-3). */
   --row-inset: calc(var(--spacing) * 3);
 }
 
+/* Dark theme redefines surface tokens; repeat the field aliases so they resolve
+   against the dark surfaces instead of the light defaults. */
+[data-theme="dark"] {
+  --field-background: var(--surface-secondary);
+  --field-border: var(--border);
+  --field-border-width: 1px;
+}
+
+
 @keyframes rise {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -210,21 +232,63 @@
  * No fill mode: the transform is gone once the animation ends, so fixed
  * descendants are not trapped in a containing block. */
 @keyframes page-enter {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .page-enter {
-  animation: page-enter 180ms var(--ease-out);
+  animation: page-enter 220ms var(--ease-out);
+}
+
+/* Hero artwork drifts in at most a few pixels. It runs once, off the main
+ * thread, and only transforms the image layer. */
+@keyframes hero-media-in {
+  from { transform: scale(1.035); }
+  to   { transform: scale(1); }
+}
+.hero-media {
+  animation: hero-media-in 1100ms var(--ease-out) both;
 }
 
 /* One orchestrated entrance: hero and rows rise on first paint */
 .staggered > * {
-  animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: rise 420ms var(--ease-out) both;
 }
-.staggered > *:nth-child(2) { animation-delay: 50ms; }
-.staggered > *:nth-child(3) { animation-delay: 100ms; }
-.staggered > *:nth-child(4) { animation-delay: 150ms; }
-.staggered > *:nth-child(n+5) { animation-delay: 200ms; }
+.staggered > *:nth-child(2) { animation-delay: 45ms; }
+.staggered > *:nth-child(3) { animation-delay: 90ms; }
+.staggered > *:nth-child(4) { animation-delay: 135ms; }
+.staggered > *:nth-child(n+5) { animation-delay: 180ms; }
+
+/* Poster hover is a pointer affordance, not a touch state. Keeping the
+ * transform here (rather than on a Tailwind hover class) means touch devices
+ * never fire a false lift on tap, and the menu-open freeze can share it. */
+.poster-frame {
+  transition:
+    transform 200ms var(--ease-out),
+    border-color 200ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .poster-frame:hover {
+    transform: scale(1.03);
+  }
+}
+.poster-frame[data-open="true"] {
+  transform: scale(1.03);
+}
+
+/* Artwork zoom inside search rows and episode cards follows the same pointer
+ * rule: it is an affordance on hover-capable devices, never a tap state. */
+.zoom-on-hover,
+.zoom-on-hover-strong {
+  transition: transform 300ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .zoom-on-hover {
+    transform: scale(1.04);
+  }
+  .group:hover .zoom-on-hover-strong {
+    transform: scale(1.05);
+  }
+}
 
 @layer base {
   html {
@@ -295,6 +359,15 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  .poster-frame:hover,
+  .poster-frame[data-open="true"],
+  .group:hover .zoom-on-hover,
+  .group:hover .zoom-on-hover-strong {
+    transform: none;
+  }
+  .hero-media {
+    animation: none;
   }
 }
 /* ---break---

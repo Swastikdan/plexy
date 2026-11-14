@@ -185,7 +185,7 @@ export function MatchesPanel() {
               onClick={() => setFilter(f.key)}
               aria-pressed={filter === f.key}
               className={cx(
-                "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
+                "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-95",
                 filter === f.key
                   ? "bg-foreground text-background"
                   : "text-muted hover:text-foreground hover:bg-surface-tertiary/50",
@@ -749,7 +749,8 @@ export function ServerPreferencesPanel() {
             </Switch.Control>
           </Switch.Content>
         </Switch>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {skipMessage && <p className="text-xs font-medium text-muted">{skipMessage}</p>}
           <Button
             variant="secondary"
             isDisabled={!s.skipSegmentsEnabled || refreshSkipMarkers.isPending}
@@ -758,7 +759,6 @@ export function ServerPreferencesPanel() {
             {refreshSkipMarkers.isPending && <RotateCw size={13} className="animate-spin" />}
             {refreshSkipMarkers.isPending ? "Refreshing…" : "Refresh markers now"}
           </Button>
-          {skipMessage && <p className="text-xs font-medium text-muted">{skipMessage}</p>}
         </div>
         <p className="text-[11px] text-muted">
           Markers are cached in the library database during scans and refreshed when you play an
@@ -887,7 +887,7 @@ export function ServerPreferencesPanel() {
                     <button
                       type="button"
                       onClick={() => copyLanUrl(url)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-all"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-[background-color,color,transform] duration-150"
                       title="Copy address"
                     >
                       {copiedUrl === url ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
@@ -1193,8 +1193,8 @@ function DesktopUpdateSettings() {
             aria-valuenow={progressPercent ?? undefined}
           >
             <div
-              className={`h-full rounded-full bg-accent transition-[width] duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
-              style={progressPercent === null ? undefined : { width: `${progressPercent}%` }}
+              className={`h-full origin-left rounded-full bg-accent transition-transform duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
+              style={progressPercent === null ? undefined : { transform: `scaleX(${progressPercent / 100})` }}
             />
           </div>
           {updateProgress.phase === "downloading" && (
@@ -1489,6 +1489,20 @@ function OptimizerSettings() {
     },
   });
 
+  const cancel = useMutation({
+    mutationFn: api.cancelOptimization,
+    onSuccess: () => {
+      setMessage("Optimization cancelled. The queue is paused until you resume it.");
+      refresh();
+    },
+    onError: (error) => setMessage(error.message),
+  });
+  const resume = useMutation({
+    mutationFn: api.resumeOptimization,
+    onSuccess: () => { setMessage("Optimization resumed."); refresh(); },
+    onError: (error) => setMessage(error.message),
+  });
+
   const clear = useMutation({
     mutationFn: api.clearOptimizationCache,
     onSuccess: (r) => {
@@ -1520,7 +1534,9 @@ function OptimizerSettings() {
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
           <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Status</span>
           <p className="mt-1 text-sm font-semibold text-muted truncate">
-            {data.running
+            {data.manuallyPaused
+              ? data.running ? "Stopping optimization…" : "Paused"
+              : data.running
               ? current
                 ? `Preparing (${Math.round(current.progress * 100)}%)`
                 : "Preparing files…"
@@ -1539,8 +1555,8 @@ function OptimizerSettings() {
           </div>
           <div className="w-full bg-surface-secondary rounded-full h-2 overflow-hidden border border-border/40">
             <div
-              className="bg-accent h-full rounded-full transition-all duration-300"
-              style={{ width: `${percent}%` }}
+              className="bg-accent h-full origin-left rounded-full transition-transform duration-300 ease-out"
+              style={{ transform: `scaleX(${percent / 100})` }}
             />
           </div>
         </div>
@@ -1642,7 +1658,7 @@ function OptimizerSettings() {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-all"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-[background-color,color,transform] duration-150"
               title="Copy path"
             >
               {copied ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
@@ -1715,6 +1731,18 @@ function OptimizerSettings() {
         </div>
 
         <div className="flex items-center gap-2 sm:ml-auto">
+          {data.manuallyPaused ? (
+            <Button variant="secondary" onPress={() => resume.mutate()}
+              isDisabled={resume.isPending || data.running} className="h-9 px-3 text-xs">
+              Resume optimization
+            </Button>
+          ) : (
+            <Button variant="danger" onPress={() => cancel.mutate()}
+              isDisabled={cancel.isPending || (!data.running && !data.queued)} className="h-9 px-3 text-xs">
+              {cancel.isPending ? "Cancelling…" : "Cancel optimization"}
+            </Button>
+          )}
+
           <Button
             variant="secondary"
             onPress={() => run.mutate()}
@@ -1970,7 +1998,7 @@ function Logs() {
                 onClick={() => setLevel(l)}
                 aria-pressed={level === l}
                 className={cx(
-                  "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-all active:scale-95",
+                  "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-[background-color,color,transform] duration-150 active:scale-95",
                   level === l
                     ? "bg-foreground text-background"
                     : "bg-surface-secondary text-muted hover:text-foreground hover:bg-surface-tertiary",

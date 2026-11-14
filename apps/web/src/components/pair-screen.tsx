@@ -34,7 +34,7 @@ export function PairScreen({
             }}
             aria-pressed={mode === "password"}
             className={cx(
-              "flex-1 rounded-full py-1.5 text-xs transition-all text-center font-medium",
+              "flex-1 rounded-full py-1.5 text-xs transition-[background-color,color,box-shadow] duration-150 text-center font-medium",
               mode === "password"
                 ? "bg-surface text-foreground font-semibold shadow-xs"
                 : "text-muted hover:text-foreground",
@@ -50,7 +50,7 @@ export function PairScreen({
             }}
             aria-pressed={mode === "pair"}
             className={cx(
-              "flex-1 rounded-full py-1.5 text-xs transition-all text-center font-medium",
+              "flex-1 rounded-full py-1.5 text-xs transition-[background-color,color,box-shadow] duration-150 text-center font-medium",
               mode === "pair"
                 ? "bg-surface text-foreground font-semibold shadow-xs"
                 : "text-muted hover:text-foreground",

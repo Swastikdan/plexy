@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { PageLoader } from "./page-loader";
+import { UserAvatar } from "./user-avatar";
 
 const ERROR_TEXT = "text-danger-soft-foreground";
 
@@ -141,13 +142,8 @@ function UserRow({
       ? "No maturity limit"
       : `Maturity up to ${user.maxAge}${user.blockUnrated ? " · unrated blocked" : ""}`;
   return (
-    <li className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 sm:px-5">
-      <span
-        aria-hidden="true"
-        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-sm font-semibold uppercase text-foreground"
-      >
-        {user.username.slice(0, 1)}
-      </span>
+    <li className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3.5 transition-colors duration-150 last:border-b-0 hover:bg-surface-secondary/40 sm:px-5">
+      <UserAvatar user={user} size={36} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-semibold text-foreground">
@@ -369,17 +365,20 @@ function EditUserDialog({
         <Modal.Container>
           <Modal.Dialog className="w-[min(94vw,680px)] max-w-none">
             <Modal.Header className="mb-4 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <Modal.Heading className="truncate font-sans text-xl font-bold text-foreground">
-                  {user.username}
-                </Modal.Heading>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <RoleBadge role={settings.role} />
-                  {settings.disabled && (
-                    <span className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger-soft-foreground">
-                      Disabled
-                    </span>
-                  )}
+              <div className="flex min-w-0 items-center gap-3">
+                <UserAvatar user={user} size={44} />
+                <div className="min-w-0">
+                  <Modal.Heading className="truncate font-sans text-xl font-bold text-foreground">
+                    {user.username}
+                  </Modal.Heading>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <RoleBadge role={settings.role} />
+                    {settings.disabled && (
+                      <span className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger-soft-foreground">
+                        Disabled
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <Modal.CloseTrigger

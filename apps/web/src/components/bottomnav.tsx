@@ -6,9 +6,17 @@ import { useQuery } from "@tanstack/react-query";
 import { Home, Film, Tv, UserRound } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "../lib/cx";
+import { accountRequest, getSignedInUser, type AccountUser } from "../auth";
+import { UserAvatar } from "./user-avatar";
 
 export function BottomNav() {
   const { data: libraries } = useQuery(queries.libraries());
+  const account = useQuery({
+    queryKey: ["account"],
+    queryFn: () => accountRequest<{ user: AccountUser }>("/me"),
+    staleTime: 30_000,
+    retry: false,
+  });
 
   const movieCount = libraries
     ? libraries.filter((l) => l.type === "movies").reduce((sum, l) => sum + (l.counts?.items ?? 0), 0)
@@ -46,12 +54,21 @@ export function BottomNav() {
             activeOptions={{ exact: item.label === "Home" }}
             className={cx(
               "group flex flex-1 flex-col items-center justify-center gap-1 py-1 text-center select-none",
-              "text-muted transition-all duration-150 active:scale-95",
+              "text-muted transition-[color,background-color,transform] duration-150 active:scale-95",
               "[&.active]:text-foreground",
             )}
           >
             <div className="relative flex h-7 w-7 items-center justify-center transition-colors">
-              <item.icon size={19} className="transition-transform group-[.active]:scale-110" />
+              {item.label === "You" ? (
+                <UserAvatar
+                  user={account.data?.user ?? getSignedInUser()}
+                  size={24}
+                  alt=""
+                  className="transition-[border-color,transform] duration-150 group-[.active]:border-foreground/40"
+                />
+              ) : (
+                <item.icon size={19} className="transition-transform group-[.active]:scale-110" />
+              )}
             </div>
             <span className="text-[10px] font-medium tracking-tight transition-colors">
               {item.label}

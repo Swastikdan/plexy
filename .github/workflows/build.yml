@@ -421,6 +421,9 @@ jobs:
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN || secrets.EXPO_PUBLIC_TMDB_TOKEN || secrets.TMDB_ACCESS_TOKEN || secrets.VITE_PUBLIC_TMDB_ACCESS_TOKEN }}
           PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
+          # Use the standard public Linux runner's 4 vCPUs and 16 GB RAM.
+          PLEXY_GRADLE_WORKERS: "4"
+          PLEXY_GRADLE_JVMARGS: "-Xmx4096m -XX:MaxMetaspaceSize=512m"
       - uses: actions/upload-artifact@v7
         with:
           name: plexy-android-mobile

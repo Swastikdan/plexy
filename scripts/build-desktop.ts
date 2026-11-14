@@ -137,9 +137,11 @@ async function buildDesktop() {
   await chmod(ffmpegOut, 0o755);
   console.log(`✓ FFmpeg bundled: ${ffmpegOut}`);
 
-  // 2b. Optional native playback engine (mpv)
-  console.log("\n2b. Bundling native playback engine (optional)...");
-  await bundleMpv(rootDir);
+  // 2b. Required native playback engine (mpv)
+  console.log("\n2b. Bundling native playback engine...");
+  if (!await bundleMpv(rootDir)) {
+    throw new Error("Desktop requires mpv. Set PLEXY_MPV_PATH or configure scripts/mpv-manifest.json before packaging.");
+  }
 
   // 3. Generate High-Resolution Apple Application Icon (.icns)
   console.log("\n3. Generating High-Resolution Apple Application Icon...");

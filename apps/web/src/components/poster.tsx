@@ -10,6 +10,7 @@ import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle,
 import { Dropdown } from "@heroui/react";
 import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
+import { nativeBridge } from "../lib/native-playback";
 import { artworkUrl } from "../lib/artwork-url";
 import { cx } from "../lib/cx";
 
@@ -93,7 +94,7 @@ export function Poster({
     prefetchTimerRef.current = setTimeout(() => {
       if (canPlayDirect) {
         if (BROWSER_CAPS) {
-          void queryClient.prefetchQuery(queries.play(item.fileId!, BROWSER_CAPS));
+          void queryClient.prefetchQuery(nativeBridge() ? queries.playNative(item.fileId!) : queries.play(item.fileId!, BROWSER_CAPS));
         }
       } else {
         void queryClient.prefetchQuery(queries.title(item.publicId ?? item.id));
@@ -128,14 +129,15 @@ export function Poster({
       )}
     >
       <div
+        data-open={menuOpen || undefined}
         className={cx(
-          "group relative block h-full overflow-hidden rounded-lg",
+          "poster-frame group relative block h-full overflow-hidden rounded-lg",
           "bg-surface border border-border/40",
-          "transition-[transform,border-color] duration-200 ease-out hover:z-20 hover:scale-[1.03] hover:border-separator",
+          "hover:z-20 hover:border-separator",
           "focus-within:ring-2 focus-within:ring-white/20",
           // Freeze the zoom while the menu is open (covers hover-out), and stay
           // above neighboring cards even when the pointer isn't on us.
-          menuOpen && "z-30 scale-[1.03] border-separator",
+          menuOpen && "z-30 border-separator",
           className,
         )}
       >
@@ -196,8 +198,8 @@ export function Poster({
           aria-hidden
         >
           <div
-            className="h-full bg-accent transition-all"
-            style={{ width: `${Math.min(100, Math.max(2, item.watch.percent))}%` }}
+            className="h-full origin-left bg-accent transition-transform duration-300 ease-out"
+            style={{ transform: `scaleX(${Math.min(100, Math.max(2, item.watch.percent)) / 100})` }}
           />
         </div>
       )}
@@ -220,7 +222,7 @@ export function Poster({
                 e.stopPropagation();
               }}
               aria-label={`Options for ${item.name}`}
-              className="flex size-7 items-center justify-center rounded-md border border-white/20 bg-black/75 text-white/90 shadow-lg backdrop-blur-md transition-all hover:scale-105 hover:bg-black/95 hover:text-white active:scale-95"
+              className="flex size-7 items-center justify-center rounded-md border border-white/20 bg-black/75 text-white/90 shadow-lg backdrop-blur-md transition-[background-color,color,transform] duration-150 hover:bg-black/95 hover:text-white active:scale-95"
             >
               <MoreVertical size={13} />
             </Dropdown.Trigger>

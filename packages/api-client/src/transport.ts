@@ -134,6 +134,8 @@ export interface PlexyClient {
     testTmdb(): Promise<{ ok: boolean; message: string }>;
     localFolders(path?: string): Promise<LocalFoldersResponse>;
     optimizeStatus(): Promise<OptimizerStatus>;
+    cancelOptimization(): Promise<OptimizerStatus>;
+    resumeOptimization(): Promise<OptimizerStatus>;
     runOptimization(): Promise<{ requested: number } & OptimizerStatus>;
     clearOptimizationCache(): Promise<{ removed: number }>;
   };
@@ -355,6 +357,8 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
     testTmdb: () => send<{ ok: boolean; message: string }>("/api/settings/tmdb/test", "POST"),
     localFolders: (path) => get<LocalFoldersResponse>(`/api/local-folders${query({ path })}`),
     optimizeStatus: () => get<OptimizerStatus>("/api/optimize/status"),
+    cancelOptimization: () => send<OptimizerStatus>("/api/optimize/cancel", "POST"),
+    resumeOptimization: () => send<OptimizerStatus>("/api/optimize/resume", "POST"),
     runOptimization: () =>
       send<{ requested: number } & OptimizerStatus>("/api/optimize/run", "POST"),
     clearOptimizationCache: () => send<{ removed: number }>("/api/optimize/clear", "POST"),

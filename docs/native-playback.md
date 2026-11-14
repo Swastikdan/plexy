@@ -1,7 +1,6 @@
 # Native playback (desktop, mpv)
 
-Plexy's desktop app can play media with a native mpv window instead of the
-browser player. This exists because the browser has to repack MKV files and
+Plexy's desktop app plays media with a native mpv window. This exists because the browser has to repack MKV files and
 cannot decode HEVC, Dolby audio or PGS subtitles; mpv plays the original file
 directly, so no preparation is involved.
 
@@ -17,9 +16,8 @@ the existing React player.
   exist, and next-episode handoff.
 - Plexy still records watch progress, resume points, watched state and next
   episode from mpv's position events.
-- `Use browser player` in the session surface (and `Play in native window` in
-  the browser player's right-click menu) switches engines; the choice is
-  remembered on the device.
+- Desktop always uses mpv, ignoring old browser-player preferences. Native errors
+  remain visible without falling back to browser preparation.
 - Native playback never shows the "Preparing for playback" blocker. It reads
   the original file even if a prepared MP4 also exists.
 
@@ -46,11 +44,9 @@ Both are covered by `apps/server/tests/native-playback.test.ts` and
 
 ## Which player is running?
 
-Desktop exposes a small engine chip on the title page: **Browser player** or
-**Native player (mpv)**, with a one-click switch when mpv is available. The
-browser player labels itself in its bottom title block, and the native surface
-says "Native playback · separate mpv window". The choice is remembered per
-device.
+Desktop exposes a small engine chip on the title page: **Native player (mpv)**
+or **Native player unavailable**. Hover prefetches use the native manifest too,
+so pointing at Play never starts browser optimization in the desktop app.
 
 ## Desktop architecture
 
@@ -85,8 +81,8 @@ is used.
 
 ## Packaging
 
-Native playback is optional at build time; without an engine the app still
-ships and simply uses the browser player.
+Native playback is required at build time. Packaging fails when no engine is
+configured, so desktop releases cannot silently ship with browser-only playback.
 
 1. Pin an engine in `scripts/mpv-manifest.json` (`url` + `sha256`) **or** set
    `PLEXY_MPV_PATH` to a local binary when building.

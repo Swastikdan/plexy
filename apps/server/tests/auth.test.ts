@@ -70,6 +70,24 @@ describe("accounts and scoped pairing", () => {
       ).status,
     ).toBe(409);
   });
+  test("profile photos round-trip and reject non-image data", async () => {
+    const photo = "data:image/jpeg;base64,eA==";
+    const saved = await request("/auth/avatar", owner, { avatar: photo }, "PUT");
+    expect(saved.status).toBe(200);
+    expect((await (await request("/auth/me", owner)).json()).user.avatar).toBe(photo);
+    expect(
+      (
+        await request(
+          "/auth/avatar",
+          owner,
+          { avatar: "data:image/svg+xml;base64,PHN2Zy8+" },
+          "PUT",
+        )
+      ).status,
+    ).toBe(400);
+    expect((await request("/auth/avatar", owner, { avatar: null }, "PUT")).status).toBe(200);
+    expect((await (await request("/auth/me", owner)).json()).user.avatar).toBeNull();
+  });
   test("setup completion persists independently of metadata and cannot be reset", async () => {
     expect(
       (await request("/auth/setup/progress", owner, { step: 2 })).status,

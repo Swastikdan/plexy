@@ -155,7 +155,7 @@ function SettingsRoute() {
                 search={{ tab: entry.key }}
                 aria-current={active ? "page" : undefined}
                 className={cx(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
                   active
                     ? "bg-foreground text-background"
                     : "text-muted hover:bg-surface-secondary hover:text-foreground",
@@ -224,7 +224,7 @@ function NavGroup({
                 search={{ tab: entry.key }}
                 aria-current={selected ? "page" : undefined}
                 className={cx(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors",
+                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                   selected
                     ? "bg-surface-secondary text-foreground"
                     : "text-muted hover:bg-surface-secondary/60 hover:text-foreground",

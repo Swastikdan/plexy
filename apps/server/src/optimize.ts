@@ -459,7 +459,7 @@ export function enqueueAudioVariant(fileId: number, audioIndex: number): void {
 }
 
 async function pumpVariants(): Promise<void> {
-  if (variantRunning || variantStopping) return;
+  if (variantRunning || variantStopping || paused) return;
   const job = variantQueue.shift();
   if (!job) return;
   const key = variantKey(job.fileId, job.audioIndex);
@@ -518,6 +518,9 @@ async function prepareAudioVariant(fileId: number, audioIndex: number): Promise<
 
   let lastDbWrite = 0;
   try {
+    if (cancelRequested || variantCancelRequested || pauseReasons.has("manual")) {
+      throw new OptimizerCancelledError();
+    }
     await runOptimize(
       {
         path: sourcePath,
@@ -601,7 +604,18 @@ export function pauseOptimizer(reason = "manual"): void {
 export function resumeOptimizer(reason = "manual"): void {
   pauseReasons.delete(reason);
   paused = pauseReasons.size > 0;
-  if (!paused) void pump();
+  if (!paused) {
+    void pump();
+    void pumpVariants();
+  }
+}
+
+/** Stop active encodes and hold all queued work until the owner resumes. */
+export async function cancelOptimization(): Promise<void> {
+  pauseOptimizer("manual");
+  if (running) cancelRequested = true;
+  if (variantRunning) variantCancelRequested = true;
+  await cancelOptimize();
 }
 
 function markStatus(fileId: number, status: string, patch: Record<string, unknown> = {}) {
@@ -1035,6 +1049,9 @@ async function optimizeOne(fileId: number): Promise<void> {
   let lastDbWrite = 0;
   const startedAt = Date.now();
   try {
+    if (cancelRequested || variantCancelRequested || pauseReasons.has("manual")) {
+      throw new OptimizerCancelledError();
+    }
     await runOptimize(
       {
         path: sourcePath,
@@ -1255,6 +1272,7 @@ export interface OptimizerStatus {
   enabled: boolean;
   running: boolean;
   paused: boolean;
+  manuallyPaused: boolean;
   queued: number;
   current: {
     fileId: number;
@@ -1319,9 +1337,10 @@ export async function optimizerStatus(
   ).all();
   return {
     enabled: true,
-    running,
+    running: running || variantRunning,
     paused,
-    queued: queue.length,
+    manuallyPaused: pauseReasons.has("manual"),
+    queued: queue.length + variantQueue.length,
     current: current ? { ...current } : null,
     counts,
     cacheBytes: Number(cache?.bytes ?? 0),
