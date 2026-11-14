@@ -95,8 +95,9 @@ export function decideOptimization(
   const video = canonicalCodec(facts.videoCodec);
   const audioTracks = safeAudio(facts.audioJson);
   const audio = canonicalCodec(audioTracks[0]?.codec ?? null);
-  const videoCopy = video === "h264";
-  const audioCopy = audio === "aac" || audio === "mp3";
+  const isMkv = container === "mkv" || container === "matroska";
+  const videoCopy = !isMkv && video === "h264";
+  const audioCopy = !isMkv && (audio === "aac" || audio === "mp3");
 
   // Both tracks are MP4-native: this is only a container problem, so a remux is
   // enough even when the classifier called it a transcode (AVI/TS, for example).
@@ -121,7 +122,7 @@ export function decideOptimization(
     audioCopy,
     ...(videoCopy ? {} : { videoBitrate: preferredVideoBitrate(facts.height, facts.bitrate) }),
     ...(audioCopy ? {} : { audioBitrate: preferredAudioBitrate(channels) }),
-    reason: verdict.reason,
+    reason: isMkv ? "Encoding MKV video and audio into a prepared H.264/AAC MP4" : verdict.reason,
   };
 }
 
@@ -334,7 +335,9 @@ async function optimizeOne(fileId: number): Promise<void> {
   }
 
   const existing = await usableOptimizedPath(row);
-  if (existing) {
+  const upgradeMkv = ["mkv", "matroska"].includes(normalizeContainer(row.container as string | null))
+    && row.optimized_mode === "remux";
+  if (existing && !upgradeMkv) {
     markStatus(fileId, "done", {
       optimized_path: existing,
       optimized_progress: 1,
@@ -524,6 +527,7 @@ export async function enqueueMissingOptimizations(
          optimized_status = 'none'
          OR (optimized_status = 'skipped' AND (optimized_mtime IS NULL OR optimized_mtime != mtime))
          OR (optimized_status = 'done' AND (optimized_mtime IS NULL OR optimized_mtime != mtime))
+         OR (optimized_status = 'done' AND optimized_mode = 'remux' AND lower(container) IN ('mkv', 'matroska'))
          ${options.includeFailed
            ? "OR optimized_status = 'failed' OR (optimized_status = 'skipped' AND optimized_error LIKE 'Removed to keep%')"
            : "OR (optimized_status = 'failed' AND (optimized_at IS NULL OR optimized_at < datetime('now','-6 hours')))"}

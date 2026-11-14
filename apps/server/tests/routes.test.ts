@@ -120,15 +120,15 @@ describe("Elysia API Routes (PRD 9)", () => {
       for (const language of ["en", "hi"]) {
         await save({ preferredAudioLanguage: language });
         const preferred = await (await app.handle(new Request("http://localhost:8765/api/play/701"))).json();
-        expect(preferred.selectedAudioIndex).toBe(language === "en" ? 1 : 0);
-        expect(preferred.path).toBe(language === "en" ? "remux" : "direct");
+        expect(preferred.selectedAudioIndex).toBe(0);
+        expect(preferred.path).toBe("direct");
         // Repeated transitions must select the actual requested track, including index zero.
         for (const audio of [1, 0, 1, 0]) {
           const response = await app.handle(new Request(`http://localhost:8765/api/play/701?audio=${audio}`));
           expect(response.status).toBe(200);
           const manifest = await response.json();
           expect(manifest.selectedAudioIndex).toBe(audio);
-          expect(manifest.path).toBe(audio === 0 ? "direct" : "remux");
+          expect(manifest.path).toBe(audio === 0 ? "direct" : "unsupported");
         }
       }
       const metadata = await (await app.handle(new Request("http://localhost:8765/api/download/701/info"))).json();
@@ -138,11 +138,19 @@ describe("Elysia API Routes (PRD 9)", () => {
       expect(await download.text()).toBe("all-audio-tracks");
       run("UPDATE media_files SET optimized_path = NULL WHERE id = 701");
       const original = await (await app.handle(new Request("http://localhost:8765/api/play/701?audio=0"))).json();
-      expect(original.path).toBe("remux");
+      expect(original.path).toBe("direct");
     } finally {
       await save({ preferredAudioLanguage: "en" });
       run("DELETE FROM media_files WHERE id=701");
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("live conversion endpoints reject requests without launching FFmpeg", async () => {
+    for (const mode of ["remux", "transcode"]) {
+      const response = await app.handle(new Request(`http://localhost:8765/api/stream/1/${mode}`));
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toContain("Live conversion is disabled");
     }
   });
 

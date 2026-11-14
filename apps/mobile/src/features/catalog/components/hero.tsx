@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import React from "react";
+import React, { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
@@ -46,6 +46,7 @@ export function Hero({
 }) {
   const { api } = useClient();
   const colors = useColors();
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   // Build metadata line: Year, runtime, rating, episode info, and genres all in the same row
   const metaParts: React.ReactNode[] = [];
@@ -105,11 +106,12 @@ export function Hero({
       >
         {/* Slide header: non-focusable, unselectable title, logo, metadata and overview */}
         <View className="rounded-[8px] p-[2px]">
-          {logo ? (
+          {logo && failedLogo !== logo ? (
             <Image
               source={api.image(logo)}
               accessibilityLabel={item.name}
-              className="mb-2 h-[70px] w-[240px]"
+              style={{ marginBottom: 8, height: 70, width: 240 }}
+              onError={() => setFailedLogo(logo)}
               contentFit="contain"
               cachePolicy="memory-disk"
             />

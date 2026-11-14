@@ -1,4 +1,3 @@
-import { SwipePager } from "@/shared/ui/swipe-pager";
 import { Tabs } from "expo-router";
 import React,{ useEffect,useRef,useState } from "react";
 import { Animated,Pressable,View } from "react-native";
@@ -143,12 +142,10 @@ export default function TabLayout() {
       <Tabs
         backBehavior="initialRoute"
         layout={({ state, navigation, descriptors }) => <View style={{ flex: 1 }}>
-          <SwipePager pageKeys={state.routes.map(route => route.key)} index={state.index}
-            onChange={index => { triggerHaptic("selection"); navigation.navigate(state.routes[index]!.name); }}
-            renderPage={index => <SafeAreaView edges={state.routes[index]!.name === "index" ? [] : ["top"]} style={{ flex: 1, backgroundColor: colors.canvas }}>
-              {state.routes[index]!.name !== "index" && <LibraryAttention />}
-              {descriptors[state.routes[index]!.key]!.render()}
-            </SafeAreaView>} />
+          <SafeAreaView edges={state.routes[state.index]!.name === "index" ? [] : ["top"]} style={{ flex: 1, backgroundColor: colors.canvas }}>
+            {state.routes[state.index]!.name !== "index" && <LibraryAttention />}
+            {descriptors[state.routes[state.index]!.key]!.render()}
+          </SafeAreaView>
           <MobileTabBar state={state} navigation={navigation} attention={attention} />
         </View>}
         screenOptions={{

@@ -8,8 +8,8 @@ import { requestUser } from "./auth";
 /// - `GET /api/stream/:fileId`           direct HTTP Range streaming. Serves
 ///                                       the prepared fast-start copy when one
 ///                                       exists, otherwise the original.
-/// - `GET /api/stream/:fileId/remux`     container/audio-track selection fallback.
-/// - `GET /api/stream/:fileId/transcode` fallback re-encode for the same case.
+/// - `GET /api/stream/:fileId/remux`     rejects live conversion (409).
+/// - `GET /api/stream/:fileId/transcode` rejects live conversion (409).
 /// - `GET /api/subtitles/:fileId`        discovered tracks (embedded + sidecar).
 /// - `GET /api/subtitles/:fileId/:track` WebVTT, from the extracted cache.
 ///
@@ -19,27 +19,22 @@ import { requestUser } from "./auth";
 import { Elysia, t } from "elysia";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
-import { spawn } from "node:child_process";
 import { q, type Row } from "./db";
 import { log } from "./logger";
 import {
-  canonicalCodec, classifyPlayability, preferredAudioBitrate, preferredVideoBitrate,
+  classifyPlayability,
   rangeResponse, rowPlayabilityFacts, type BrowserCaps,
 } from "./playback";
 import {
-  enqueueOptimization, optimizationView, usableOptimizedPath, pauseOptimizer, resumeOptimizer,
+  enqueueOptimization, optimizationView, usableOptimizedPath,
 } from "./optimize";
 import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
-import { resolveFfmpeg } from "./ffmpeg";
 import { getConfig } from "./config";
 import { storeProbeFacts } from "./media-facts";
 import { getSkipSegments } from "./skip-segments";
 import {
-  enqueueTrickplay, trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
+  trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
-
-const MAX_LIVE_CONVERSIONS = 2;
-let activeLiveConversions = 0;
 
 // --- helpers -----------------------------------------------------------------
 
@@ -60,11 +55,6 @@ async function openableFile(fileOrItemId: number): Promise<Row | null> {
   } catch { /* fall through */ }
   q("UPDATE media_files SET unavailable = 1 WHERE id = ?").run(Number(row.id));
   return null;
-}
-
-function audioIndex(value: unknown): number {
-  const index = Number(value);
-  return Number.isInteger(index) && index >= 0 ? index : 0;
 }
 
 function watchStateFor(itemId: number | null, request: Request) {
@@ -99,194 +89,6 @@ async function ensureFileProbed(row: Row): Promise<Row> {
   return row;
 }
 
-interface ConversionOptions {
-  trimStart?: number;
-  audioIndex?: number;
-  mode: "remux" | "transcode";
-  height: number | null;
-  sourceBitrate: number | null;
-  channels: number | null;
-  /** Remux can copy video but still needs AAC audio for browser compatibility. */
-  audioCodec?: string | null;
-}
-
-function conversionArgs(path: string, options: ConversionOptions): string[] {
-  const args = ["-hide_banner", "-loglevel", "error", "-nostdin"];
-  if (options.trimStart && options.trimStart > 0.5) {
-    // Input-side seek: FFmpeg resets timestamps so the player's display
-    // timeline (source offset + currentTime) stays correct.
-    args.push("-ss", options.trimStart.toFixed(3));
-  }
-  args.push("-i", path, "-map", "0:v:0", "-map", `0:a:${options.audioIndex ?? 0}?`);
-
-  if (options.mode === "remux") {
-    args.push("-c:v", "copy");
-    const audio = canonicalCodec(options.audioCodec);
-    if (audio === "aac" || audio === "mp3") {
-      args.push("-c:a", "copy");
-    } else {
-      args.push("-c:a", "aac", "-b:a", String(preferredAudioBitrate(options.channels)));
-    }
-  } else {
-    // Conversion always targets the source: same resolution, same bitrate
-    // class. There is no quality ladder and no client-selected ceiling.
-    const outputHeight = options.height;
-    const selectedBitrate = preferredVideoBitrate(outputHeight, options.sourceBitrate);
-    args.push(
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-pix_fmt", "yuv420p",
-      "-b:v", String(selectedBitrate),
-      "-maxrate", String(Math.round(selectedBitrate * 1.4)),
-      "-bufsize", String(Math.round(selectedBitrate * 3)),
-      "-c:a", "aac",
-      "-b:a", String(preferredAudioBitrate(options.channels)),
-    );
-  }
-
-  args.push(
-    "-sn", "-dn", "-map_metadata", "-1",
-    "-avoid_negative_ts", "make_zero",
-    // Fragmented MP4 lets the browser start before FFmpeg has finished and
-    // survives a non-seekable pipe.
-    "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
-    "-f", "mp4", "pipe:1",
-  );
-  return args;
-}
-
-/**
- * Stream a live remux/transcode from an FFmpeg **child process**.
- *
- * This used to run the native decoder inside the HTTP process, where one bad
- * file could segfault the whole server. FFmpeg now owns the codec state; a
- * crash only ends this response and the player's recovery logic rejoins at the
- * current timestamp. Client disconnects terminate the child immediately.
- */
-async function conversionResponse(path: string, options: ConversionOptions): Promise<Response> {
-  const ffmpeg = resolveFfmpeg();
-  if (!ffmpeg) {
-    log.error("media", "ffmpeg unavailable for live conversion", { mode: options.mode });
-    return Response.json(
-      { error: "Server conversion is unavailable: FFmpeg was not found." },
-      { status: 503 },
-    );
-  }
-
-  if (activeLiveConversions >= MAX_LIVE_CONVERSIONS) {
-    return Response.json(
-      { error: "The server is handling its maximum number of live conversions. Try again shortly." },
-      { status: 503, headers: { "Retry-After": "5" } },
-    );
-  }
-
-  const args = conversionArgs(path, options);
-  // Keep prepared-file work from starting while any live conversion is active.
-  // The shared pause reason is released only when the last conversion exits.
-  if (activeLiveConversions === 0) pauseOptimizer("live-conversion");
-  activeLiveConversions++;
-  let conversionReleased = false;
-  const releaseConversion = () => {
-    if (conversionReleased) return;
-    conversionReleased = true;
-    activeLiveConversions = Math.max(0, activeLiveConversions - 1);
-    if (activeLiveConversions === 0) resumeOptimizer("live-conversion");
-  };
-  let child: ReturnType<typeof spawn>;
-  try {
-    child = spawn(ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"] });
-  } catch (err) {
-    releaseConversion();
-    throw err;
-  }
-
-  let closed = false;
-  let received = 0;
-  let stderr = "";
-  const stop = () => {
-    if (closed) return;
-    closed = true;
-    if (child.exitCode === null) {
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (child.exitCode === null) child.kill("SIGKILL");
-      }, 1500).unref?.();
-    } else {
-      releaseConversion();
-    }
-  };
-
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      child.stdout!.on("data", (chunk: Buffer) => {
-        if (closed) return;
-        received += chunk.length;
-        try { controller.enqueue(new Uint8Array(chunk)); } catch { stop(); }
-      });
-      child.stderr!.on("data", (chunk: Buffer) => {
-        if (stderr.length < 4_000) stderr += chunk.toString();
-      });
-      child.on("error", (err) => {
-        if (closed) return;
-        closed = true;
-        releaseConversion();
-        log.error("media", `${options.mode} process failed`, { message: err.message });
-        try { controller.error(new Error("conversion failed")); } catch { /* done */ }
-      });
-      child.on("exit", (code, signal) => {
-        releaseConversion();
-        if (closed) return;
-        closed = true;
-        if (code === 0) {
-          try { controller.close(); } catch { /* done */ }
-          return;
-        }
-        const message = stderr.trim().slice(0, 600) || `ffmpeg exited ${code ?? signal}`;
-        log.error("media", `${options.mode} failed`, {
-          code, signal, bytes: received, message,
-        });
-        try { controller.error(new Error("conversion failed")); } catch { /* done */ }
-      });
-    },
-    cancel() { stop(); },
-  });
-
-  // Give FFmpeg a moment to reject an unreadable file *before* committing to a
-  // 200 response, so the player sees a real error instead of a dead stream.
-  const early = await new Promise<"started" | "failed">((resolve) => {
-    let settled = false;
-    const finish = (result: "started" | "failed") => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
-    child.stdout!.once("data", () => finish("started"));
-    child.once("spawn", () => setTimeout(() => finish("started"), 350));
-    child.once("error", () => finish("failed"));
-    child.once("exit", (code) => {
-      if (code !== 0 && received === 0) finish("failed");
-    });
-    setTimeout(() => finish("started"), 1200);
-  });
-  if (early === "failed") {
-    stop();
-    releaseConversion();
-    return Response.json(
-      { error: `${options.mode === "remux" ? "Remux" : "Conversion"} could not start for this file.` },
-      { status: options.mode === "remux" ? 500 : 503 },
-    );
-  }
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "video/mp4",
-      "Cache-Control": "no-store",
-      "X-Plexy-Path": options.mode,
-      "Accept-Ranges": "none",
-    },
-  });
-}
-
 function parseCaps(raw: string | undefined): BrowserCaps | null {
   if (!raw) return null;
   try {
@@ -315,35 +117,6 @@ function audioTracksFor(row: Row): Array<{ codec: string; channels: number; lang
   } catch {
     return [];
   }
-}
-
-function firstChannelCount(row: Row, index = 0): number | null {
-  try {
-    const audio = audioTracksFor(row);
-    return audio[index] ? Number(audio[index].channels ?? 0) || null : null;
-  } catch {
-    return null;
-  }
-}
-
-function firstAudioCodec(row: Row, index = 0): string | null {
-  try {
-    const audio = audioTracksFor(row);
-    return audio[index] ? String(audio[index].codec ?? "") || null : null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizedLanguage(language: unknown): string {
-  const value = String(language ?? "").trim().toLowerCase().split(/[-_]/, 1)[0];
-  const aliases: Record<string, string> = {
-    eng: "en", spa: "es", fre: "fr", fra: "fr", deu: "de", ger: "de", hin: "hi",
-    jpn: "ja", kor: "ko", chi: "zh", zho: "zh", por: "pt", ita: "it", rus: "ru",
-    english: "en", spanish: "es", french: "fr", german: "de", hindi: "hi", japanese: "ja",
-    korean: "ko", chinese: "zh", portuguese: "pt", italian: "it", russian: "ru",
-  };
-  return aliases[value] ?? value;
 }
 
 export interface NextEpisode {
@@ -477,19 +250,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     row = await ensureFileProbed(row);
 
     const audioTracks = audioTracksFor(row).map((track, index) => ({ ...track, index }));
-    const config = await getConfig();
-    const requestedLanguage = normalizedLanguage(config.preferredAudioLanguage || "en");
-    const languageIndex = audioTracks.findIndex((track) => normalizedLanguage(track.language) === requestedLanguage);
-    const defaultAudioIndex = languageIndex >= 0
-      ? languageIndex
-      : Math.max(0, audioTracks.findIndex((track) => track.isDefault));
     const requestedAudioIndex = ctx.query.audio;
     const selectedAudioIndex = requestedAudioIndex != null
       && Number.isInteger(requestedAudioIndex)
       && requestedAudioIndex >= 0
       && requestedAudioIndex < audioTracks.length
       ? requestedAudioIndex
-      : defaultAudioIndex;
+      : 0;
     // Optimizer output always maps 0:a:0, independently of language preferences.
     const selectedAudioNeedsConversion = selectedAudioIndex !== 0;
 
@@ -501,13 +268,16 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (prepared) {
       verdict = { path: "direct", reason: "Prepared for instant playback and seeking" };
     }
-    if (verdict.path === "direct" && !prepared && audioTracks.length > 1) {
+    if (verdict.path === "direct" && !prepared && selectedAudioIndex > 0) {
       verdict = { path: "remux", reason: "Remuxing with selected audio track" };
     }
     // Identify the fallback immediately and prepare it in the background so the
     // next play is direct. This never blocks the current request.
     if (!prepared && (verdict.path === "remux" || verdict.path === "transcode")) {
-      enqueueOptimization(Number(row.id));
+      if (!selectedAudioNeedsConversion) enqueueOptimization(Number(row.id));
+      verdict = { path: "unsupported", reason: selectedAudioNeedsConversion
+        ? "This audio track is not prepared. Live conversion is disabled; select the first audio track."
+        : "This file must finish preparation before playback. Live conversion is disabled." };
     }
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
 
@@ -538,7 +308,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     });
 
     // Lazy, idempotent: the first play starts one background FFmpeg pass.
-    if (verdict.path !== "unsupported") enqueueTrickplay(row);
+    // Thumbnail extraction is queued by scanning, never by playback.
     const trickplay = trickplayView(row);
 
     log.debug("player", "play manifest", {
@@ -550,7 +320,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       ...verdict,
       fileId: Number(row.id),
       itemId: row.item_id as number | null,
-      directPlayOnly: false,
+      directPlayOnly: true,
       audioTracks,
       selectedAudioIndex,
       versions,
@@ -566,7 +336,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       watch,
       tracks,
       trickplay,
-      optimization: optimizationView(row),
+      optimization: optimizationView(getFile(Number(row.id)) ?? row),
     };
   }, {
     params: t.Object({ fileId: t.Numeric() }),
@@ -595,8 +365,11 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     row = await ensureFileProbed(row);
     let verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
 
-    if (verdict.path === "remux" || verdict.path === "transcode") {
+    if (await usableOptimizedPath(row)) {
+      verdict = { path: "direct", reason: "Prepared for playback" };
+    } else if (verdict.path === "remux" || verdict.path === "transcode") {
       enqueueOptimization(Number(row.id));
+      verdict = { path: "unsupported", reason: "This file must finish preparation before playback. Live conversion is disabled." };
     }
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
     return {
@@ -667,71 +440,16 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     params: t.Object({ fileId: t.Numeric() }),
   })
 
-  /** Remux = container-only problem (PRD 5.8). Copy packets, near instant. */
-  .get("/stream/:fileId/remux", async (ctx) => {
-    const fileId = Number(ctx.params.fileId);
-    const row = await openableFile(fileId);
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const path = String(row.path);
-    const requestedAudio = audioIndex(ctx.query.audio);
-    try {
-      return await conversionResponse(path, {
-        mode: "remux",
-        height: (row.height as number | null) ?? null,
-        sourceBitrate: (row.bitrate as number | null) ?? null,
-        channels: firstChannelCount(row, requestedAudio),
-        audioCodec: firstAudioCodec(row, requestedAudio),
-        audioIndex: requestedAudio,
-        trimStart: Number.isFinite(Number(ctx.query.start)) && Number(ctx.query.start) > 0
-          ? Number(ctx.query.start)
-          : undefined,
-      });
-    } catch (err) {
-      log.error("media", "remux failed to start", {
-        fileId, message: err instanceof Error ? err.message : String(err),
-      });
-      return Response.json(
-        { error: "Remux failed for this file. It may need a full conversion instead." },
-        { status: 500 },
-      );
-    }
+  /** Legacy clients receive an explicit rejection instead of starting conversion. */
+  .get("/stream/:fileId/remux", () => {
+    return Response.json({ error: "Live conversion is disabled. Prepare the file before playback." }, { status: 409 });
   }, {
     params: t.Object({ fileId: t.Numeric() }),
     query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
   })
 
-  /**
-   * On-demand transcode fallback for a file that is still being prepared.
-   * `start=` seconds resumes from a position; the player restarts the stream
-   * on long seeks. Failures return honest errors, never a fake stream.
-   * The output keeps the source resolution and bitrate — there is no quality
-   * ladder to choose from.
-   */
-  .get("/stream/:fileId/transcode", async (ctx) => {
-    const fileId = Number(ctx.params.fileId);
-    const row = await openableFile(fileId);
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
-    const path = String(row.path);
-    const start = ctx.query.start ? Number(ctx.query.start) : 0;
-    const audio = audioIndex(ctx.query.audio);
-    try {
-      return await conversionResponse(path, {
-        mode: "transcode",
-        height: (row.height as number | null) ?? null,
-        sourceBitrate: (row.bitrate as number | null) ?? null,
-        channels: firstChannelCount(row, audio),
-        audioIndex: audio,
-        trimStart: Number.isFinite(start) && start > 0 ? start : undefined,
-      });
-    } catch (err) {
-      log.error("media", "transcode failed to start", {
-        fileId, message: err instanceof Error ? err.message : String(err),
-      });
-      return Response.json(
-        { error: "Server conversion could not start for this file on this machine." },
-        { status: 503 },
-      );
-    }
+  .get("/stream/:fileId/transcode", () => {
+    return Response.json({ error: "Live conversion is disabled. Prepare the file before playback." }, { status: 409 });
   }, {
     params: t.Object({ fileId: t.Numeric() }),
     query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),

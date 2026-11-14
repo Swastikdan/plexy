@@ -19,13 +19,11 @@ describe("playback conversion routes", () => {
     await initConfig();
   });
 
-  test("does not block remux or transcode before media work starts", async () => {
+  test("blocks live conversion before media work starts", async () => {
     for (const path of ["/stream/1/remux", "/stream/1/transcode"]) {
       const response = await app.handle(new Request(`http://localhost/api${path}`));
-      // The file does not exist here; what matters is that the request is not
-      // rejected by a "conversion is disabled" guard (409).
-      expect(response.status).not.toBe(409);
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toContain("Live conversion is disabled");
     }
   });
 

@@ -227,12 +227,12 @@ async function extractOne(fileId: number): Promise<void> {
 
   const args = [
     "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-    "-threads", "0",
+    "-threads", "1", "-filter_threads", "1",
     "-skip_frame", "nokey",
     "-i", source,
     "-map", "0:v:0", "-an", "-sn", "-dn",
     "-vf", filter,
-    "-q:v", "5",
+    "-threads", "1", "-q:v", "5",
     "-start_number", "0",
     pattern,
   ];

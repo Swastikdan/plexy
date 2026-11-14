@@ -15,13 +15,13 @@ const baseFacts: OptimizeFacts = {
 };
 
 describe("playback preparation decisions", () => {
-  test("remuxes a compatible MKV without re-encoding", () => {
+  test("encodes compatible MKV video and audio ahead of playback", () => {
     const decision = decideOptimization(baseFacts);
     expect(decision.action).toBe("optimize");
     if (decision.action !== "optimize") return;
-    expect(decision.mode).toBe("remux");
-    expect(decision.videoCopy).toBe(true);
-    expect(decision.audioCopy).toBe(true);
+    expect(decision.mode).toBe("transcode");
+    expect(decision.videoCopy).toBe(false);
+    expect(decision.audioCopy).toBe(false);
   });
 
   test("skips a directly playable fast-start MP4", () => {
