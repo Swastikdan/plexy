@@ -470,6 +470,12 @@ export function SettingsScreen({
                 />
               </View>
               <SettingsRow
+                title="Open Source Licenses"
+                subtitle="Credits, copyright and license notices"
+                navigation
+                onPress={() => push("/settings/licenses")}
+              />
+              <SettingsRow
                 title="Download from GitHub"
                 subtitle="Open the latest Android download"
                 onPress={() =>

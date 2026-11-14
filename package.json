@@ -32,7 +32,9 @@
     "test:native": "bun test apps/mobile/tests packages/local-library/tests",
     "bundle:native": "bun run --filter @plexy/mobile bundle",
     "build:native:preview": "bun scripts/native/build-preview.ts",
-    "test:desktop": "bun test apps/desktop/tests"
+    "test:desktop": "bun test apps/desktop/tests",
+    "licenses:mobile": "bun scripts/native/generate-licenses.ts",
+    "licenses:mobile:check": "bun scripts/native/generate-licenses.ts --check"
   },
   "devDependencies": {
     "@plexy/tsconfig": "workspace:*",

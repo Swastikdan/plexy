@@ -6,9 +6,10 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "prebuild": "expo prebuild --platform android",
-    "bundle": "expo export --platform android",
-    "typecheck": "tsc --noEmit"
+    "prebuild": "bun ../../scripts/native/generate-licenses.ts && expo prebuild --platform android",
+    "bundle": "bun ../../scripts/native/generate-licenses.ts && expo export --platform android",
+    "typecheck": "tsc --noEmit",
+    "eas-build-post-install": "bun ../../scripts/native/generate-licenses.ts"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",

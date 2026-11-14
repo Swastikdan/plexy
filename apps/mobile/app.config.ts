@@ -50,6 +50,7 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "../../scripts/native/with-shared-build-inputs.cjs",
+    "../../scripts/native/with-open-source-licenses.cjs",
     "expo-sqlite",
     [
       "expo-splash-screen",
