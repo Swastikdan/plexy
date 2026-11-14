@@ -1,20 +1,39 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { LibraryFolderForm } from "../components/library-folder-form";
 import { Button } from "@heroui/react";
 
 function AddLibraryRoute() {
   const navigate = useNavigate();
   return (
-    <main className="mx-auto min-h-dvh max-w-4xl px-4 pb-24 pt-10 sm:px-8">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Library management</p>
-          <h1 className="mt-1 font-sans text-3xl font-bold tracking-tight text-foreground">Add a library</h1>
-          <p className="mt-2 text-sm text-muted">Choose what kind of media this library contains, then select its folders.</p>
+    <main className="mx-auto min-h-dvh max-w-6xl px-4 pb-24 pt-6 sm:px-8 sm:pt-8">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <Link
+            to="/settings"
+            search={{ tab: "libraries" }}
+            className="inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-muted transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2"
+          >
+            <ArrowLeft size={13} />
+            Libraries
+          </Link>
+          <h1 className="mt-2 font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Add media
+          </h1>
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">
+            Pick what you are adding first. The folder step only shows the
+            places that fit that media type.
+          </p>
         </div>
-        <Link to="/admin" search={{ tab: "libraries" }}><Button variant="secondary">Done</Button></Link>
-      </div>
-      <LibraryFolderForm onComplete={() => void navigate({ to: "/admin", search: { tab: "libraries" } })} />
+        <Link to="/settings" search={{ tab: "libraries" }}>
+          <Button variant="secondary" className="h-9 px-3 text-xs font-semibold">
+            Done
+          </Button>
+        </Link>
+      </header>
+      <LibraryFolderForm
+        onComplete={() => void navigate({ to: "/settings", search: { tab: "libraries" } })}
+      />
     </main>
   );
 }

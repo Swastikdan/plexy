@@ -1,17 +1,14 @@
 /// Mobile Bottom Navigation Bar
-/// Provides thumb-accessible navigation on mobile devices for Home, Libraries and Settings.
+/// Provides thumb-accessible navigation on mobile devices. Account and server
+/// controls share one destination because they share one dashboard.
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Film, Tv, Settings, UserRound } from "lucide-react";
+import { Home, Film, Tv, UserRound } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "../lib/cx";
-import { getClientRuntime } from "../runtime-config";
 
 export function BottomNav() {
   const { data: libraries } = useQuery(queries.libraries());
-  // Administration is loopback-only on the server, so a phone or another
-  // computer gets the viewer navigation only.
-  const runtime = getClientRuntime();
 
   const movieCount = libraries
     ? libraries.filter((l) => l.type === "movies").reduce((sum, l) => sum + (l.counts?.items ?? 0), 0)
@@ -28,10 +25,7 @@ export function BottomNav() {
     ...(tvCount === null || tvCount > 0
       ? [{ to: "/library/$kind" as const, label: "TV Shows", icon: Tv, params: { kind: "tv" as const } }]
       : []),
-    { to: "/account" as const, label: "Account", icon: UserRound, params: undefined },
-    ...(runtime.canManageServer
-      ? [{ to: "/admin" as const, label: "Settings", icon: Settings, params: undefined }]
-      : []),
+    { to: "/settings" as const, label: "You", icon: UserRound, params: undefined },
   ];
 
   return (
@@ -49,7 +43,7 @@ export function BottomNav() {
             key={item.label}
             to={item.to}
             params={"params" in item ? item.params : undefined}
-            activeOptions={{ exact: item.label === "Home" || item.label === "Settings" }}
+            activeOptions={{ exact: item.label === "Home" }}
             className={cx(
               "group flex flex-1 flex-col items-center justify-center gap-1 py-1 text-center select-none",
               "text-muted transition-all duration-150 active:scale-95",

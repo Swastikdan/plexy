@@ -1,15 +1,15 @@
-import { getClientRuntime } from "../runtime-config";
 /// Top navigation — sticky header that transitions to a solid blur on scroll,
 /// with an intelligent responsive layout for desktop & mobile,
 /// zero-title library filtering, and interactive feedback.
 import { useEffect, useState } from "react";
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Settings, Film, Tv, Home, Server, UserRound } from "lucide-react";
+import { Search, Film, Tv, Home, Server } from "lucide-react";
 import { queries } from "../queries";
 import { cx } from "../lib/cx";
 import { useIsFullscreen } from "../lib/use-fullscreen";
 import { isElectronMac } from "../lib/platform";
+import { getSignedInUser } from "../auth";
 import { BackButton } from "./back-button";
 
 function resolvePageTitle(
@@ -32,7 +32,9 @@ function resolvePageTitle(
   }
   if (pathname.startsWith("/search")) return "Search";
   if (pathname.startsWith("/person/")) return "Cast";
+  if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/admin")) return "Settings";
+  if (pathname.startsWith("/account")) return "Settings";
   if (pathname.startsWith("/add-library")) return "Add Library";
   if (pathname.startsWith("/setup")) return "Setup";
   if (pathname.startsWith("/connect")) return "Server";
@@ -86,6 +88,7 @@ export function TopNav() {
   ];
 
   const electronMac = isElectronMac();
+  const signedIn = getSignedInUser();
 
   useEffect(() => {
     if (window.electronAPI?.onNavigate) {
@@ -196,18 +199,20 @@ export function TopNav() {
               <Search size={17} />
             </Link>
 
-            <Link to="/account" title="My account" aria-label="My account" className="inline-flex h-8 w-8 items-center justify-center text-muted hover:text-foreground"><UserRound size={17} /></Link>
-
-            {/* Server settings are visible only to a local administrator. */}
-            {getClientRuntime().canManageServer && <Link
-              to="/admin"
-              search={{ tab: "settings" }}
-              aria-label="Settings"
-              title="Settings"
-              className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-muted transition-colors hover:text-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2"
+            {/* One entry point for the account and server dashboard. The
+                avatar keeps the header quiet while making "this is you"
+                obvious on desktop. */}
+            <Link
+              to="/settings"
+              search={{ tab: "overview" }}
+              aria-label="Account and settings"
+              title="Account and settings"
+              className="group ml-0.5 hidden h-8 items-center justify-center rounded-full p-0.5 text-muted transition-colors hover:text-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2 sm:inline-flex [&.active]:text-foreground"
             >
-              <Settings size={17} />
-            </Link>}
+              <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-secondary text-[11px] font-bold uppercase text-foreground transition-colors group-hover:border-foreground/25 group-hover:bg-surface-tertiary">
+                {signedIn?.username.slice(0, 1) ?? "?"}
+              </span>
+            </Link>
           </div>
         </div>
 

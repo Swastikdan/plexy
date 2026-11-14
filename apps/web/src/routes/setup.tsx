@@ -31,7 +31,7 @@ function SetupRoute() {
       window.location.replace("/");
       return;
     }
-    if (setup.data) setStepLocal(Math.max(0, setup.data.step - 1));
+    if (setup.data) setStepLocal(Math.min(2, Math.max(0, setup.data.step - 1)));
   }, [setup.data]);
   const setStep = async (next: number) => {
     setError("");
@@ -58,137 +58,173 @@ function SetupRoute() {
     );
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center px-4 py-12 sm:px-8">
-      <div className="space-y-8">
-        <header className="space-y-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-foreground">
-            <Server size={20} />
+    <main className="mx-auto min-h-dvh max-w-6xl px-4 py-8 sm:px-8 lg:py-14">
+      <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-14">
+        <aside className="min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground">
+              <Server size={18} />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold text-muted">Plexy first run</p>
+              <p className="font-sans text-sm font-bold tracking-tight text-foreground">Server setup</p>
+            </div>
           </div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            Plexy · First run
-          </p>
-          <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">
+          <h1 className="mt-6 font-sans text-3xl font-bold tracking-tight text-foreground">
             Set up your server
           </h1>
-          <p className="max-w-xl text-sm leading-relaxed text-muted">
-            Your owner account is ready. Connect metadata and add your media
-            folders. You can change these settings or manage libraries later
-            from the admin page.
+          <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
+            Your owner account is ready. Connect metadata, choose what Plexy
+            should scan, and finish. You can change everything later from
+            Settings.
           </p>
-        </header>
 
-        <nav aria-label="Setup progress" className="grid grid-cols-3 gap-2">
-          {["Metadata", "First library", "Ready"].map((label, index) => (
-            <div
-              key={label}
-              className={`border-t-2 pt-2 text-xs ${step >= index ? "border-foreground text-foreground" : "border-border text-muted"}`}
-            >
-              <span className="mr-2 tabular-nums">0{index + 1}</span>
-              {label}
-            </div>
-          ))}
-        </nav>
+          <nav aria-label="Setup progress" className="mt-7 grid grid-cols-3 gap-2 lg:grid-cols-1 lg:gap-1">
+            {[
+              { label: "Metadata", detail: "Connect TMDB" },
+              { label: "First library", detail: "Pick a type, then folders" },
+              { label: "Ready", detail: "Connect your devices" },
+            ].map((entry, index) => {
+              const active = step === index;
+              const done = step > index;
+              return (
+                <div
+                  key={entry.label}
+                  className={[
+                    "rounded-xl border px-3 py-2.5 transition-colors lg:border-transparent lg:px-2",
+                    active
+                      ? "border-border bg-surface lg:bg-surface-secondary/60"
+                      : "border-transparent",
+                  ].join(" ")}
+                  aria-current={active ? "step" : undefined}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={[
+                        "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold tabular-nums",
+                        done
+                          ? "border-foreground bg-foreground text-background"
+                          : active
+                            ? "border-foreground text-foreground"
+                            : "border-border text-muted",
+                      ].join(" ")}
+                    >
+                      {done ? <CheckCircle2 size={12} /> : index + 1}
+                    </span>
+                    <span className={active || done ? "text-xs font-semibold text-foreground" : "text-xs font-medium text-muted"}>
+                      {entry.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 hidden pl-7 text-[11px] text-muted lg:block">{entry.detail}</p>
+                </div>
+              );
+            })}
+          </nav>
+        </aside>
 
-        {error && (
-          <p role="alert" className="text-danger-soft-foreground">
-            {error}
-          </p>
-        )}
-        {step === 0 && <TokenStep onContinue={() => setStep(1)} />}
-        {step === 1 && (
-          <section className="space-y-4">
-            <div>
-              <h2 className="font-sans text-xl font-bold text-foreground">
-                Add your first library
-              </h2>
-              <p className="mt-1 text-sm text-muted">
-                Choose a library type and the folders Plexy should scan.
-              </p>
-            </div>
-            <LibraryFolderForm
-              onComplete={() => setStep(2)}
-              completeLabel="Create library & continue"
-            />
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={() => setStep(0)}
-                className="text-xs text-muted hover:text-foreground"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="text-xs text-muted underline hover:text-foreground"
-              >
-                Set up a library later
-              </button>
-            </div>
-          </section>
-        )}
-        {step === 2 && (
-          <section className="rounded-3xl border border-border bg-surface p-7 shadow-sm">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 text-foreground" />
+        <section className="min-w-0 lg:pt-1">
+          {error && (
+            <p role="alert" className="mb-4 text-sm text-danger-soft-foreground">
+              {error}
+            </p>
+          )}
+          {step === 0 && <TokenStep onContinue={() => setStep(1)} />}
+          {step === 1 && (
+            <div className="space-y-4">
               <div>
                 <h2 className="font-sans text-xl font-bold text-foreground">
-                  Your server is ready
+                  Add your first library
                 </h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted">
-                  Plexy will scan your library in the background. You can add,
-                  remove, and configure libraries whenever you need.
+                <p className="mt-1 text-sm leading-relaxed text-muted">
+                  Choose what you are adding, then point Plexy at the folders
+                  that hold it.
                 </p>
               </div>
+              <LibraryFolderForm
+                onComplete={() => setStep(2)}
+                completeLabel="Create library & continue"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(0)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-muted transition-colors hover:text-foreground"
+                >
+                  <ChevronRight size={13} className="rotate-180" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="text-xs font-medium text-muted underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                >
+                  Set up a library later
+                </button>
+              </div>
             </div>
-            <div className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
-              <p className="font-semibold">Connect your other devices</p>
-              {status.data?.lanUrls?.length ? (
-                status.data.lanUrls.map((url) => (
-                  <p key={url}>
-                    <a className="break-all underline" href={`${url}/connect`}>
-                      {url}/connect
-                    </a>
+          )}
+          {step === 2 && (
+            <section className="rounded-3xl border border-border bg-surface p-6 shadow-sm sm:p-7">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 text-foreground" />
+                <div>
+                  <h2 className="font-sans text-xl font-bold text-foreground">
+                    Your server is ready
+                  </h2>
+                  <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
+                    Plexy scans your library in the background. Add, remove, and
+                    configure libraries whenever you need from Settings.
                   </p>
-                ))
-              ) : (
-                <p className="text-muted">
-                  Enable LAN access in Server settings after setup to connect
-                  other devices. Your client entry link is <code>/connect</code>
-                  ; this server setup link is <code>/setup</code>.
+                </div>
+              </div>
+              <div className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
+                <p className="font-semibold text-foreground">Connect your other devices</p>
+                {status.data?.lanUrls?.length ? (
+                  status.data.lanUrls.map((url) => (
+                    <p key={url}>
+                      <a className="break-all underline" href={`${url}/connect`}>
+                        {url}/connect
+                      </a>
+                    </p>
+                  ))
+                ) : (
+                  <p className="text-muted">
+                    Enable LAN access in Server settings after setup to connect
+                    other devices. Your client entry link is <code>/connect</code>.
+                  </p>
+                )}
+                <p className="text-xs text-muted">
+                  Pairing codes, users, and content permissions live in Settings
+                  in the app.
                 </p>
-              )}
-              <p className="text-xs text-muted">
-                Manage users, content permissions, and your own pairing codes in
-                My account.
-              </p>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button
-                className="h-10 px-5"
-                onPress={async () => {
-                  try {
-                    await accountRequest("/setup/complete", {});
-                    window.location.assign("/");
-                  } catch (error) {
-                    setError(
-                      error instanceof Error
-                        ? error.message
-                        : "Could not complete setup.",
-                    );
-                  }
-                }}
-              >
-                Finish setup <ChevronRight size={16} />
-              </Button>
-              <Link to="/add-library">
-                <Button variant="secondary" className="h-10 px-5">
-                  Add another library
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  className="h-10 px-5"
+                  onPress={async () => {
+                    try {
+                      await accountRequest("/setup/complete", {});
+                      window.location.assign("/");
+                    } catch (error) {
+                      setError(
+                        error instanceof Error
+                          ? error.message
+                          : "Could not complete setup.",
+                      );
+                    }
+                  }}
+                >
+                  Finish setup <ChevronRight size={16} />
                 </Button>
-              </Link>
-            </div>
-          </section>
-        )}
+                <Link to="/add-library">
+                  <Button variant="secondary" className="h-10 px-5">
+                    Add another library
+                  </Button>
+                </Link>
+              </div>
+            </section>
+          )}
+        </section>
       </div>
     </main>
   );
@@ -330,98 +366,130 @@ function OwnerStep() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center gap-6 px-5 py-12">
-      <header>
-        <p className="text-sm text-muted">Plexy Server · First launch</p>
-        <h1 className="mt-3 text-3xl font-bold">Create your owner account</h1>
-        <p className="mt-3 text-sm text-muted">
-          This account manages the server, users, and libraries. Setup runs once
-          for this server installation.
+    <main className="mx-auto grid min-h-dvh max-w-5xl items-center gap-10 px-5 py-12 lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)]">
+      <section className="hidden lg:block">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground">
+            <Server size={18} />
+          </div>
+          <p className="font-sans text-sm font-bold tracking-tight text-foreground">Plexy Server</p>
+        </div>
+        <h1 className="mt-8 max-w-md font-sans text-4xl font-bold tracking-tight text-foreground">
+          Your media, on your machine.
+        </h1>
+        <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">
+          Plexy reads the folders you already own, matches them with posters
+          and metadata, and streams them to your devices without a cloud account.
         </p>
-      </header>
-      <form
-        className="space-y-4"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setError("");
-          if (password !== confirm) {
-            setError("The passwords do not match.");
-            return;
-          }
-          setBusy(true);
-          try {
-            await accountRequest("/setup/owner", { username, password });
-            window.location.replace("/setup");
-          } catch (error) {
-            setError(
-              error instanceof Error
-                ? error.message
-                : "Could not create account.",
-            );
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <label className="block text-sm">
-          Username
-          <Input
-            required
-            minLength={3}
-            maxLength={40}
-            autoComplete="username"
-            pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,39}"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            fullWidth
-            className="mt-2"
-          />
-        </label>
-        <label className="block text-sm">
-          Password
-          <Input
-            required
-            minLength={12}
-            maxLength={128}
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            fullWidth
-            className="mt-2"
-          />
-          <span className="mt-1 block text-xs text-muted">
-            Use at least 12 characters.
-          </span>
-        </label>
-        <label className="block text-sm">
-          Confirm password
-          <Input
-            required
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            fullWidth
-            className="mt-2"
-          />
-        </label>
-        {error && (
-          <p role="alert" className="text-sm text-danger-soft-foreground">
-            {error}
+        <ul className="mt-7 space-y-3">
+          {[
+            "One owner account controls the server, users, and libraries.",
+            "Every other device pairs with a short code.",
+            "Your files, watch progress, and artwork stay local.",
+          ].map((line) => (
+            <li key={line} className="flex items-start gap-2.5 text-sm text-muted">
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-foreground" />
+              <span className="leading-relaxed">{line}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="mx-auto w-full max-w-md">
+        <header>
+          <p className="text-xs font-semibold text-muted">Plexy Server / First launch</p>
+          <h1 className="mt-2 font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Create your owner account
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            This account manages the server, users, and libraries. Setup runs
+            once for this installation.
           </p>
-        )}
-        <Button
-          type="submit"
-          isDisabled={busy}
-          className="h-11 w-full"
+        </header>
+        <form
+          className="mt-6 space-y-4 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-6"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setError("");
+            if (password !== confirm) {
+              setError("The passwords do not match.");
+              return;
+            }
+            setBusy(true);
+            try {
+              await accountRequest("/setup/owner", { username, password });
+              window.location.replace("/setup");
+            } catch (error) {
+              setError(
+                error instanceof Error
+                  ? error.message
+                  : "Could not create account.",
+              );
+            } finally {
+              setBusy(false);
+            }
+          }}
         >
-          {busy ? "Creating account…" : "Create account & continue"}
-        </Button>
-      </form>
-      <a href="/connect" className="text-sm underline text-muted">
-        Looking for a server? Open Plexy Client
-      </a>
+          <label className="block text-sm">
+            Username
+            <Input
+              required
+              minLength={3}
+              maxLength={40}
+              autoComplete="username"
+              pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,39}"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              fullWidth
+              className="mt-2"
+            />
+          </label>
+          <label className="block text-sm">
+            Password
+            <Input
+              required
+              minLength={12}
+              maxLength={128}
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              fullWidth
+              className="mt-2"
+            />
+            <span className="mt-1 block text-xs text-muted">
+              Use at least 12 characters.
+            </span>
+          </label>
+          <label className="block text-sm">
+            Confirm password
+            <Input
+              required
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              fullWidth
+              className="mt-2"
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-danger-soft-foreground">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            isDisabled={busy}
+            className="h-11 w-full"
+          >
+            {busy ? "Creating account…" : "Create account & continue"}
+          </Button>
+        </form>
+        <a href="/connect" className="mt-4 inline-block text-sm text-muted underline-offset-4 hover:text-foreground hover:underline">
+          Looking for a server? Open Plexy Client
+        </a>
+      </section>
     </main>
   );
 }
