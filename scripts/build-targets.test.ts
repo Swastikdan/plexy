@@ -32,6 +32,11 @@ test("manual targets, shared inputs and documentation", () => {
   expect(selected([], "mobile")).toEqual(["mobile"]);
   expect(selected(["README.md", "docs/API.md"])).toEqual([]);
   expect(selected(["bun.lock"])).toEqual(["desktop", "server", "mobile"]);
+  expect(selected(["packages/tsconfig/base.json"])).toEqual([
+    "desktop",
+    "server",
+    "mobile",
+  ]);
   expect(selected([], "all")).toHaveLength(3);
   expect(() => selected([], "tv")).toThrow();
   expect(() => selected([], "web")).toThrow();

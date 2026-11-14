@@ -1,4 +1,4 @@
-import type { ItemCard, TitleDetail, Watch, SkipSegments } from "../../api-client/src/types";
+import type { ItemCard, SubtitleTrack, TitleDetail, Watch, SkipSegments } from "@plexy/api-client/types";
 
 export interface LocalFile {
   uri: string;
@@ -31,7 +31,7 @@ export interface LocalRecord {
   seriesMetadata?: Partial<ItemCard>;
   manualIdentity?: boolean;
   identityRevision?: number;
-  externalSubtitles?: import("../../api-client/src/types").SubtitleTrack[];
+  externalSubtitles?: SubtitleTrack[];
   isAnime?: boolean;
 }
 export interface MetadataSettings {

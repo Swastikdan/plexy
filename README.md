@@ -6,7 +6,25 @@ Plexy has three deliverables:
 - **Backend server** (`apps/server`): a standalone Bun executable with FFmpeg, migrations, and the built browser UI. Open its address in a browser, or disable UI serving with `--no-ui`.
 - **Mobile app** (`apps/mobile`): Expo Router app for files on the Android device. No Plexy server, account, pairing, remote playback, or server downloads. Metadata, artwork, community skip markers, and app updates can use their external services.
 
-`apps/web` is the frontend source embedded into desktop and backend releases. It is not a separate release artifact. `packages/api-client` contains browser API contracts/client logic; mobile reuses the data contracts. `packages/local-library` contains device indexing and metadata logic. Mobile app infrastructure lives in `apps/mobile/src/core`, screen-specific UI and logic in `apps/mobile/src/features`, and reusable controls in `apps/mobile/src/shared`.
+## Repository layout
+
+This is a Bun workspace monorepo. Apps are deliverables; packages are source-only code shared across them.
+
+```text
+apps/
+  web/        Browser frontend embedded into desktop and server builds
+  server/     Bun backend and HTTP API
+  desktop/    Electron shell and desktop updater
+  mobile/     Expo Router Android app
+packages/
+  api-client/     HTTP contracts, browser capability probing, transport policy
+  local-library/  Device-local catalog, scanning, metadata, and skip-marker logic
+  tsconfig/       Shared TypeScript presets
+```
+
+Dependencies point from `apps/*` to `packages/*`, and between packages only in that direction. Apps own their runtime dependencies; the root holds workspace tooling. Mobile app infrastructure lives in `apps/mobile/src/core`, screen-specific UI and logic in `apps/mobile/src/features`, and reusable controls in `apps/mobile/src/shared`.
+
+See [monorepo layout and ownership](docs/MONOREPO.md) before adding a package or moving shared code.
 
 ## Development
 
@@ -18,13 +36,14 @@ Use Bun 1.4.4, then run `bun install`.
 | `bun run dev:desktop` | Electron shell (build the UI first, or set `VITE_DEV_SERVER_URL`) |
 | `bun run dev:mobile` | Expo development server |
 | `bun run android:mobile` | Generate and run the Android development app |
-| `bun run typecheck` | Backend, browser, and desktop types |
+| `bun run typecheck` | Backend, browser, desktop, shared packages, and root script types |
 | `bun run typecheck:native` | Mobile types |
 | `bun run test:server` | Isolated backend tests |
 | `bun run test:desktop` | Desktop API proxy tests |
+| `bun run test:packages` | Shared-package tests |
 | `bun run test:native` | Local-library and mobile logic tests |
 
-See [mobile structure and build instructions](apps/mobile/README.md), [local library behavior](docs/MOBILE_LOCAL_LIBRARY.md), and [API documentation](docs/API.md).
+See [monorepo layout and ownership](docs/MONOREPO.md), [mobile structure and build instructions](apps/mobile/README.md), [local library behavior](docs/MOBILE_LOCAL_LIBRARY.md), and [API documentation](docs/API.md).
 
 ## Build
 

@@ -1,12 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "isolatedModules": true
-  },
-  "include": ["src/**/*"]
+  "extends": "@plexy/tsconfig/base.json",
+  "include": ["src/**/*.ts"]
 }

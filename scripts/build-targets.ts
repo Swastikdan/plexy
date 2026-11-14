@@ -12,7 +12,7 @@ export function buildTargets(files: string[], target = "", fullBuild = false) {
   else
     for (const file of files) {
       if (
-        /^(package\.json|bun\.lock|tsconfig[^/]*\.json|\.github\/workflows\/build\.yml|scripts\/build-targets)/.test(
+        /^(package\.json|bun\.lock|tsconfig[^/]*\.json|packages\/tsconfig\/|\.github\/workflows\/build\.yml|scripts\/build-targets)/.test(
           file,
         )
       )

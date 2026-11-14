@@ -1,0 +1,4 @@
+{
+  "extends": "@plexy/tsconfig/bun.json",
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

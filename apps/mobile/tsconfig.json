@@ -7,12 +7,6 @@
     "paths": {
       "@/*": [
         "./src/*"
-      ],
-      "@plexy/api-client/*": [
-        "../../packages/api-client/src/*"
-      ],
-      "@plexy/local-library/*": [
-        "../../packages/local-library/src/*"
       ]
     }
   },

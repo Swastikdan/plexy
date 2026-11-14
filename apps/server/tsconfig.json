@@ -1,11 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "types": ["bun"]
-  },
+  "extends": "@plexy/tsconfig/bun.json",
   "include": ["src/**/*", "tests/**/*"]
 }

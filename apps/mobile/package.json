@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
+    "@plexy/api-client": "workspace:*",
+    "@plexy/local-library": "workspace:*",
     "@expo-google-fonts/geist": "^0.4.2",
     "@hugeicons/core-free-icons": "^4.4.0",
     "@hugeicons/react-native": "^1.0.16",

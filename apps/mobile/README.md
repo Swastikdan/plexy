@@ -16,7 +16,7 @@ A standalone Android library and player. Files and watch progress stay on the de
 - `src/shared/theme.ts`: colors, typography, and shape tokens.
 - `tests`: mobile regression and architecture checks.
 
-Use `@/` for imports from mobile `src` (for example, `@/shared/theme`). Shared package source uses `@plexy/api-client/*` and `@plexy/local-library/*`. These aliases are defined in `tsconfig.json` and resolved by Expo Metro and Bun. Keep asset/configuration filesystem paths relative.
+Use `@/` for imports from mobile `src` (for example, `@/shared/theme`). Shared code comes from real workspace packages: import `@plexy/api-client`, `@plexy/api-client/types`, `@plexy/local-library/library`, or `@plexy/local-library/metadata`. Do not add path aliases for those names; Expo Metro and Bun resolve them through the workspace links created by `bun install`. Keep asset/configuration filesystem paths relative.
 
 Use kebab-case for files and folders. React component symbols remain PascalCase. Expo Router keeps its required `_layout.tsx` and `index.tsx` names; dynamic routes use `[id].tsx` and `[file-id].tsx`. The player still opens at `/player/<id>`.
 

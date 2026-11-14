@@ -1,21 +1,13 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@plexy/tsconfig/bun.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
     "paths": {
-      "@plexy/api-client": ["./packages/api-client/src/index.ts"]
+      "@plexy/api-client": ["./packages/api-client/src/index.ts"],
+      "@plexy/api-client/*": ["./packages/api-client/src/*"],
+      "@plexy/local-library": ["./packages/local-library/src/library.ts"],
+      "@plexy/local-library/*": ["./packages/local-library/src/*"]
     }
   },
-  "references": [
-    { "path": "./packages/api-client" },
-    { "path": "./apps/server" },
-    { "path": "./apps/web" },
-    { "path": "./apps/desktop" }
-  ]
+  "include": ["scripts/**/*.ts"]
 }

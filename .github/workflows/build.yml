@@ -82,6 +82,8 @@ jobs:
           SKIP_FFMPEG: "true"
       - name: Verify target selection
         run: bun test scripts/build-targets.test.ts
+      - name: Verify shared packages
+        run: bun run --filter @plexy/api-client typecheck && bun run --filter @plexy/local-library typecheck
       - name: Build and verify embedded website
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         run: bun run build:web && bun run --filter @plexy/web typecheck
@@ -96,7 +98,7 @@ jobs:
         run: bun run --filter @plexy/server typecheck && bun run test:server
       - name: Verify desktop
         if: needs.plan.outputs.build_desktop == 'true'
-        run: bun x tsc --noEmit -p apps/desktop/tsconfig.json && bun run test:desktop
+        run: bun run --filter @plexy/desktop typecheck && bun run test:desktop
       - name: Verify Android clients
         if: needs.plan.outputs.build_mobile == 'true'
         run: bun run typecheck:native && bun run test:native

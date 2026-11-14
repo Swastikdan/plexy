@@ -1,8 +1,16 @@
-import { applyTitleAction } from "../../../apps/mobile/src/features/catalog/lib/title-actions";
-import { ProgressQueue } from "../../../apps/mobile/src/core/client/progress-queue";
 import { describe, expect, test } from "bun:test";
-import { LocalLibrary, parseLocalName, localSegments, localFileKey, type LocalFile, type LocalIO, type LocalState } from "../src/library";
-import { LocalApi } from "../../../apps/mobile/src/core/library/local-api";
+import {
+  LocalLibrary,
+  localFileKey,
+  localSegments,
+  parseLocalName,
+  type LocalFile,
+  type LocalIO,
+  type LocalState,
+} from "@plexy/local-library/library";
+import { ProgressQueue } from "@/core/client/progress-queue";
+import { LocalApi } from "@/core/library/local-api";
+import { applyTitleAction } from "@/features/catalog/lib/title-actions";
 const file = (name = "Arrival.2016.mp4", size = 100): LocalFile => ({
   uri: `content://videos/${name}`, name, relativePath: name, size, modified: size,
 });

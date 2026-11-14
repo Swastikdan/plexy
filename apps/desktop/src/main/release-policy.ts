@@ -89,3 +89,15 @@ export function checksumForAsset(
       return match[1]!.toLowerCase();
   }
 }
+
+/** A late macOS upload may be absent from the shared release manifest. */
+export function updateChecksum(
+  asset: ReleaseAsset,
+  manifest: string | null,
+): string | undefined {
+  const listed = manifest === null ? undefined : checksumForAsset(manifest, asset.name ?? "");
+  // Keep a manifest checksum authoritative when present: a mismatch must fail.
+  return listed ?? (/^sha256:[a-f0-9]{64}$/i.test(asset.digest ?? "")
+    ? asset.digest!.slice(7).toLowerCase()
+    : undefined);
+}

@@ -1,12 +1,22 @@
 import { expect, test } from "bun:test";
 import {
   checksumForAsset,
+  updateChecksum,
   compareReleaseTags,
   desktopUpdateAssets,
   selectDesktopRelease,
   type Release,
 } from "../src/main/release-policy";
 const digest = "a".repeat(64);
+test("late Mac assets use GitHub's digest when the manifest lists only servers", () => {
+  const asset = { name: "Plexy.Beta-1.0.7-arm64.zip", digest: `sha256:${digest}` };
+  const serverManifest = `${"b".repeat(64)}  plexy-server-linux-x64.tar.gz\n`;
+  expect(updateChecksum(asset, serverManifest)).toBe(digest);
+  expect(updateChecksum(asset, null)).toBe(digest);
+  expect(updateChecksum({ ...asset, digest: null }, serverManifest)).toBeUndefined();
+  expect(updateChecksum({ ...asset, digest: "sha256:invalid" }, serverManifest)).toBeUndefined();
+  expect(updateChecksum(asset, `${"c".repeat(64)}  ${asset.name}`)).toBe("c".repeat(64));
+});
 function release(tag: string, names: string[], withDigest = false): Release {
   return {
     tag_name: tag,

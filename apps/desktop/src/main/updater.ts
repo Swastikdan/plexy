@@ -1,5 +1,5 @@
 import {
-  checksumForAsset,
+  updateChecksum,
   compareReleaseTags,
   desktopUpdateAssets,
   selectDesktopRelease,
@@ -269,9 +269,7 @@ export async function checkForUpdates(
       const checksumFile = sums?.browser_download_url
         ? await fetchBytes(sums.browser_download_url, 100_000)
         : null;
-      const expected = checksumFile
-        ? checksumForAsset(checksumFile.toString("utf8"), zip.name!)
-        : zip.digest?.replace(/^sha256:/i, "");
+      const expected = updateChecksum(zip, checksumFile?.toString("utf8") ?? null);
       const actual = createHash("sha256").update(archive).digest("hex");
       if (
         !expected ||

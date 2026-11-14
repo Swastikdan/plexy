@@ -1,5 +1,5 @@
 import { parseLocalName, type LocalRecord } from "./library";
-import type { ItemCard } from "../../api-client/src/types";
+import type { ItemCard } from "@plexy/api-client/types";
 export interface MetadataIO {
   settings?: { language: string; region: string; posterSize: string };
   request(path: string): Promise<any>;
