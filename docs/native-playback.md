@@ -92,8 +92,15 @@ configured, so desktop releases cannot silently ship with browser-only playback.
 3. `scripts/after-pack-mpv.cjs` (electron-builder `afterPack`) copies the engine
    into `Contents/Resources/bin` before DMG/ZIP artifacts are produced.
 
-Downloads are refused without a checksum. Document the chosen mpv version in
-`scripts/mpv-manifest.json` and keep its license notices with the build.
+Downloads are refused without a checksum. The manifest currently pins the
+official mpv 0.42.0 macOS 15+ arm64 CI build. It arrives as a zip containing an
+`mpv.app`; the build extracts the nested archive, copies the engine's `lib/`
+and Vulkan ICD files, and signs them for the app bundle. Document any engine
+change in `scripts/mpv-manifest.json` and keep its license notices with the
+build.
+
+The macOS workflow caches `.build/mpv`, so the verified archive is downloaded
+once per manifest revision.
 
 ## Checks
 

@@ -446,7 +446,7 @@ export function SettingsScreen({
                       ? updateDownloading
                         ? updateProgress === 100
                           ? "Install…"
-                          : `${updateProgress ?? 0}%`
+                          : "Downloading…"
                         : "Update now"
                       : updateChecking
                         ? "Checking…"

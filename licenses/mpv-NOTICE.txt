@@ -1,0 +1,13 @@
+Plexy bundles mpv for native desktop playback.
+
+Engine: mpv 0.42.0
+Source: https://github.com/mpv-player/mpv
+Binary: https://github.com/mpv-player/mpv/releases/download/v0.42.0/mpv-v0.42.0-macos-15-arm.zip
+SHA-256: be1b8d2445e6880860869c080b8710dee189721f1fa4689840db6a2c10d7be69
+License: GNU General Public License, version 3 or later (GPLv3+)
+
+The official mpv release notes describe these CI builds as GPLv3, containing
+mpv with its GPL components and FFmpeg built with --enable-gpl
+--enable-version3. The full license text is in mpv-GPL-3.0.txt. The complete
+corresponding source is available from the mpv repository at the tagged
+release above.

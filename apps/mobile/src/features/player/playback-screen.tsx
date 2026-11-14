@@ -323,11 +323,13 @@ export function PlaybackScreen({
   const seekWithFeedback = (seconds: number) => {
     const now = Date.now();
     const previous = seekBurst.current;
-    const total = now - previous.at < 1200 && Math.sign(previous.seconds) === Math.sign(seconds)
-      ? previous.seconds + seconds : seconds;
+    const repeated = now - previous.at < 600 && Math.sign(previous.seconds) === Math.sign(seconds);
+    const total = repeated ? previous.seconds + seconds : seconds;
     seekBurst.current = { seconds: total, at: now };
     seek(currentPosition.current + seconds);
-    showFitToast(`${total > 0 ? "Forward" : "Back"} ${Math.abs(total)} seconds`);
+    if (repeated) {
+      showFitToast(`${total > 0 ? "Forward" : "Back"} ${Math.abs(total)} seconds`);
+    }
   };
   const seek = (seconds: number) => {
     const target = Math.max(

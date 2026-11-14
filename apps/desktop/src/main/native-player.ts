@@ -465,7 +465,13 @@ export class NativePlayerManager {
       streamUrl,
     ];
 
-    const proc = spawn(session.binary, args, { stdio: ["ignore", "ignore", "pipe"] });
+    // The official macOS mpv bundle ships MoltenVK; the ICD path is rewritten
+    // during bundling so Vulkan works from inside the Plexy app resources.
+    const icd = path.join(path.dirname(session.binary), "vulkan", "icd.d", "MoltenVK_icd.json");
+    const env = existsSync(icd)
+      ? { ...process.env, VK_ICD_FILENAMES: icd }
+      : process.env;
+    const proc = spawn(session.binary, args, { stdio: ["ignore", "ignore", "pipe"], env });
     session.proc = proc;
     proc.stderr?.on("data", (chunk: Buffer) => {
       const text = redact(chunk.toString());

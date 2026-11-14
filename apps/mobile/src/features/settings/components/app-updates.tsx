@@ -77,7 +77,7 @@ export function Updates() {
           <Button
             primary
             style={{ width: 120, flexShrink: 0 }}
-            label={progress === 100 ? "Install…" : progress !== null ? `${progress}%` : "Update now"}
+            label={progress === 100 ? "Install…" : progress !== null ? "Downloading…" : "Update now"}
             disabled={!online || busy}
             onPress={() => showDialog("Download update?", `Download ${update.tagName}? Android will ask you to confirm installation after the download.`, [
               { text: "Download update", onPress: () => void install() },

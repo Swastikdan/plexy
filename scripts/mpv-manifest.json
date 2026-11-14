@@ -1,6 +1,6 @@
 {
-  "version": "",
-  "url": "",
-  "sha256": "",
-  "notes": "Pin a macOS arm64 mpv archive here (url + sha256). No checksum means the build skips native playback instead of shipping an unverified engine. PLEXY_MPV_URL, PLEXY_MPV_SHA256 and PLEXY_MPV_PATH override this file."
+  "version": "v0.42.0 (macOS 15+ arm64)",
+  "url": "https://github.com/mpv-player/mpv/releases/download/v0.42.0/mpv-v0.42.0-macos-15-arm.zip",
+  "sha256": "be1b8d2445e6880860869c080b8710dee189721f1fa4689840db6a2c10d7be69",
+  "notes": "Official mpv 0.42.0 CI build for Apple Silicon Macs running macOS 15 or newer. The zip wraps an mpv.app bundle; the build copies its lib/, Frameworks/ and Vulkan ICD next to the engine. Downloads are refused unless the archive matches this checksum."
 }

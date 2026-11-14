@@ -1,5 +1,4 @@
-import { SwipePager, usePagerDrag } from "@/shared/ui/swipe-pager";
-import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
+import { SwipePager } from "@/shared/ui/swipe-pager";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
@@ -45,8 +44,6 @@ export function TitleScreen({
   play: (fileId: number) => void;
 }) {
   const showDialog = useAppDialog();
-  const detailPager = usePagerDrag();
-  const titleActions = useTitleActions();
   const colors = useColors();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
@@ -225,7 +222,6 @@ export function TitleScreen({
                 {hasEpisodes ? (
                   <>
                     <View
-                      {...detailPager.panHandlers}
                       className="mb-1.5 mt-1 flex-row gap-1.5 rounded-full bg-surface p-1"
                     >
                       <Pressable
@@ -284,8 +280,78 @@ export function TitleScreen({
                       </Pressable>
                     </View>
 
+                    {detailTab === "episodes" && !!detail.seasons?.length && (
+                      <View>
+                        <ScrollView
+                          ref={seasonStrip}
+                          horizontal
+                          accessibilityRole="tablist"
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={{
+                            gap: 28,
+                            paddingBottom: 2,
+                          }}
+                        >
+                          {detail.seasons.map((s: any) => {
+                            const active =
+                              selectedSeason === s.number;
+                            const label =
+                              s.number === 0
+                                ? "Specials"
+                                : `Season ${s.number}`;
+                            return (
+                              <Pressable
+                                key={s.number}
+                                onLayout={(event) => {
+                                  seasonLayouts.current[s.number] =
+                                    event.nativeEvent.layout.x;
+                                }}
+                                accessibilityRole="tab"
+                                accessibilityLabel={label}
+                                accessibilityState={{
+                                  selected: active,
+                                }}
+                                onPress={() => {
+                                  triggerHaptic("selection");
+                                  setSeason(s.number);
+                                }}
+                                onFocus={() =>
+                                  setSeasonFocus(s.number)
+                                }
+                                onBlur={() => setSeasonFocus(null)}
+                                className={cn(
+                                  "min-h-12 justify-center border-b-2 py-3 active:opacity-65",
+                                  // Mutually exclusive states: uniwind
+                                  // resolves conflicting border-b-*/text-*
+                                  // classes by stylesheet order, not
+                                  // className order. Border weight and
+                                  // padding never change, so the pill keeps
+                                  // its exact height.
+                                  active
+                                    ? "border-b-foreground"
+                                    : seasonFocus === s.number
+                                      ? "border-b-accent"
+                                      : "border-b-transparent",
+                                )}
+                              >
+                                <Text
+                                  className={cn(
+                                    "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
+                                    active
+                                      ? "text-foreground"
+                                      : "text-muted",
+                                  )}
+                                >
+                                  {label}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+
                     <SwipePager
-                      controller={detailPager.controller}
                       autoHeight
                       pageKeys={[...(detail.seasons?.length ? detail.seasons.map(s => `season-${s.number}`) : ["episodes"]), "details"]}
                       index={detailTab === "details" ? Math.max(1, detail.seasons?.length ?? 0) : Math.max(0, detail.seasons?.findIndex(s => s.number === selectedSeason) ?? 0)}
@@ -298,76 +364,6 @@ export function TitleScreen({
                         <View className="gap-[18px]">
                           {page < Math.max(1, detail.seasons?.length ?? 0) ? (
                             <>
-                              {!!detail.seasons?.length && (
-                                <View {...detailPager.panHandlers}>
-                                  <ScrollView
-                                    ref={seasonStrip}
-                                    horizontal
-                                    accessibilityRole="tablist"
-                                    showsHorizontalScrollIndicator={false}
-                                    contentContainerStyle={{
-                                      gap: 28,
-                                      paddingBottom: 2,
-                                    }}
-                                  >
-                                    {detail.seasons.map((s: any) => {
-                                      const active =
-                                        selectedSeason === s.number;
-                                      const label =
-                                        s.number === 0
-                                          ? "Specials"
-                                          : `Season ${s.number}`;
-                                      return (
-                                        <Pressable
-                                          key={s.number}
-                                          onLayout={(event) => {
-                                            seasonLayouts.current[s.number] =
-                                              event.nativeEvent.layout.x;
-                                          }}
-                                          accessibilityRole="tab"
-                                          accessibilityLabel={label}
-                                          accessibilityState={{
-                                            selected: active,
-                                          }}
-                                          onPress={() => {
-                                            triggerHaptic("selection");
-                                            setSeason(s.number);
-                                          }}
-                                          onFocus={() =>
-                                            setSeasonFocus(s.number)
-                                          }
-                                          onBlur={() => setSeasonFocus(null)}
-                                          className={cn(
-                                            "min-h-12 justify-center border-b-2 py-3 active:opacity-65",
-                                            // Mutually exclusive states: uniwind
-                                            // resolves conflicting border-b-*/text-*
-                                            // classes by stylesheet order, not
-                                            // className order. Border weight and
-                                            // padding never change, so the pill keeps
-                                            // its exact height.
-                                            active
-                                              ? "border-b-foreground"
-                                              : seasonFocus === s.number
-                                                ? "border-b-accent"
-                                                : "border-b-transparent",
-                                          )}
-                                        >
-                                          <Text
-                                            className={cn(
-                                              "text-[17px] leading-[22px] font-archivo-medium tracking-[0.1px]",
-                                              active
-                                                ? "text-foreground"
-                                                : "text-muted",
-                                            )}
-                                          >
-                                            {label}
-                                          </Text>
-                                        </Pressable>
-                                      );
-                                    })}
-                                  </ScrollView>
-                                </View>
-                              )}
                               <SeasonEpisodes
                                 episodes={detail.episodes?.filter(e => !detail.seasons?.length || e.seasonNumber === detail.seasons[page]?.number) ?? []}
                                 item={item} api={api} play={play} progress={progress}
@@ -533,17 +529,6 @@ export function TitleScreen({
               style={{ height: control.height, minHeight: control.height }}
               size="lg"
               accessibilityLabel={detailAction.accessibilityLabel}
-              onLongPress={() =>
-                titleActions(
-                  item,
-                  () => {
-                    const fid = getFirstPlayableFileId();
-                    if (fid) play(fid);
-                  },
-                  true,
-                )
-              }
-              delayLongPress={1000}
               isDisabled={!getFirstPlayableFileId()}
               onPress={() => {
                 const fileId = getFirstPlayableFileId();

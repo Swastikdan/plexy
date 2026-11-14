@@ -29,19 +29,37 @@ exports.default = async function afterPackMpv(context) {
     fs.copyFileSync(versionFile, path.join(binDir, "mpv.version"));
   }
 
-  const libs = path.join(projectDir, "dist", "bin", "mpv-libs");
-  if (fs.existsSync(libs)) {
-    fs.cpSync(libs, path.join(binDir, "mpv-libs"), { recursive: true });
+  for (const name of ["lib", "mpv-libs"]) {
+    const libs = path.join(projectDir, "dist", "bin", name);
+    if (fs.existsSync(libs)) {
+      fs.cpSync(libs, path.join(binDir, name), { recursive: true });
+    }
+  }
+
+  const vulkan = path.join(projectDir, "dist", "bin", "vulkan");
+  if (fs.existsSync(vulkan)) {
+    fs.cpSync(vulkan, path.join(binDir, "vulkan"), { recursive: true });
+  }
+
+  const licenses = path.join(projectDir, "licenses");
+  if (fs.existsSync(licenses)) {
+    fs.cpSync(licenses, path.join(resources, "licenses"), { recursive: true });
   }
 
   // Re-sign ad-hoc after copying binaries into the bundle.
   try {
     const { execFileSync } = require("node:child_process");
-    execFileSync(
-      "codesign",
-      ["--force", "--sign", "-", path.join(binDir, "mpv")],
-      { stdio: "ignore" },
-    );
+    const files = [path.join(binDir, "mpv")];
+    for (const name of ["lib", "mpv-libs"]) {
+      const libs = path.join(binDir, name);
+      if (!fs.existsSync(libs)) continue;
+      for (const lib of fs.readdirSync(libs)) {
+        if (lib.endsWith(".dylib")) files.push(path.join(libs, lib));
+      }
+    }
+    for (const file of files) {
+      execFileSync("codesign", ["--force", "--sign", "-", file], { stdio: "ignore" });
+    }
   } catch {
     /* signing is best effort for unsigned development builds */
   }

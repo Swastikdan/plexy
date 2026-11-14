@@ -62,8 +62,6 @@ export function HeroActions({
           triggerHaptic("medium");
           onOpen();
         }}
-        onLongPress={() => titleActions(item, onOpen, playLabel.toLowerCase().includes("continue"))}
-        delayLongPress={1000}
         disabled={disabled || busy}
         accessibilityState={{ disabled: disabled || busy, busy }}
         accessibilityRole="button"
