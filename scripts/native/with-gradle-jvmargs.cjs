@@ -1,3 +1,4 @@
+const { requiredGradleJvmArgs } = require('./gradle-jvmargs.cjs');
 const path = require('node:path');
 const { withGradleProperties } = require(require.resolve('expo/config-plugins', { paths: [path.join(__dirname, '../../apps/mobile')] }));
 
@@ -6,8 +7,7 @@ const { withGradleProperties } = require(require.resolve('expo/config-plugins', 
 // to Reference.referent, which fails every configureCMake* task with:
 //   InaccessibleObjectException: module java.base does not "opens java.lang.ref"
 // Opening the package to the Gradle daemon is the narrow fix.
-const flag = '--add-opens=java.base/java.lang.ref=ALL-UNNAMED';
-const fallback = `-Xmx2048m -XX:MaxMetaspaceSize=512m ${flag}`;
+const fallback = requiredGradleJvmArgs('-Xmx2048m -XX:MaxMetaspaceSize=512m');
 
 module.exports = config =>
   withGradleProperties(config, mod => {
@@ -16,9 +16,7 @@ module.exports = config =>
       item => item.type === 'property' && item.key === 'org.gradle.jvmargs',
     );
     if (entry) {
-      if (!String(entry.value || '').includes(flag)) {
-        entry.value = `${String(entry.value || '').trim()} ${flag}`.trim();
-      }
+      entry.value = requiredGradleJvmArgs(entry.value);
     } else {
       properties.push({ type: 'property', key: 'org.gradle.jvmargs', value: fallback });
     }

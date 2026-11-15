@@ -1,3 +1,4 @@
+import { requiredGradleJvmArgs } from "./gradle-jvmargs.cjs";
 import { createHash } from "node:crypto";
 import { prepareMobileRelease } from "./prepare-mobile-release";
 /** Build standalone internal-test APKs. These use a dedicated preview signing
@@ -48,7 +49,7 @@ async function run(command: string[], cwd: string) {
       `-PreactNativeArchitectures=${Bun.env.PLEXY_ANDROID_ARCHITECTURES || "arm64-v8a"}`,
       `--max-workers=${Bun.env.PLEXY_GRADLE_WORKERS || "2"}`,
       ...(Bun.env.PLEXY_GRADLE_JVMARGS
-        ? [`-Dorg.gradle.jvmargs=${Bun.env.PLEXY_GRADLE_JVMARGS}`]
+        ? [`-Dorg.gradle.jvmargs=${requiredGradleJvmArgs(Bun.env.PLEXY_GRADLE_JVMARGS)}`]
         : []),
       "--build-cache",
       "--parallel",
