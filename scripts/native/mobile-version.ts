@@ -5,7 +5,9 @@ import { isVersion } from "../../apps/mobile/src/features/settings/lib/mobile-up
 export function nextMobileVersion(previous: string, bump: string = "patch", explicit?: string) {
   if (!isVersion(previous)) throw Error("Mobile builds require a stable major.minor.patch version.");
   const [major, minor, patch] = previous.split(".").map(Number) as [number, number, number];
-  const next = explicit || (bump === "major" ? `${major + 1}.0.0` : bump === "minor" ? `${major}.${minor + 1}.0` : bump === "patch" ? `${major}.${minor}.${patch + 1}` : "");
+  // Push-triggered Actions runs provide empty strings for manual inputs.
+  const increment = bump || "patch";
+  const next = explicit || (increment === "major" ? `${major + 1}.0.0` : increment === "minor" ? `${major}.${minor + 1}.0` : increment === "patch" ? `${major}.${minor}.${patch + 1}` : "");
   if (!isVersion(next) || compareSemver(next, previous) <= 0) throw Error("The mobile version must increase.");
   mobileVersionCode(next);
   return next;

@@ -45,6 +45,8 @@ test("malformed policies, untrusted assets, incompatible channels, and impossibl
 });
 test("version increments support patch, minor, and major; Android code stays above old builds", () => {
   expect(nextMobileVersion("1.0.8")).toBe("1.0.9");
+  expect(nextMobileVersion("1.0.8", "")).toBe("1.0.9");
+  expect(() => nextMobileVersion("1.0.8", "invalid")).toThrow();
   expect(nextMobileVersion("1.0.8", "minor")).toBe("1.1.0");
   expect(nextMobileVersion("1.0.8", "major")).toBe("2.0.0");
   expect(mobileVersionCode("1.0.9")).toBeGreaterThan(100_089_999);
@@ -75,7 +77,7 @@ test("allocator reserves distinct builds, reuses draft workflow identity, and pr
     const request = (async (url) => String(url).includes("api.github.com") ? Response.json(releases) : Response.json(policy("1.0.9", "1.0.9", "necessary"))) as typeof fetch;
     const calls: string[][] = [];
     const reserve = async (args: string[]) => { calls.push(args); return ""; };
-    const first = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_RUN_ID: "42", GITHUB_SHA: "abc" } });
+    const first = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_RUN_ID: "42", GITHUB_SHA: "abc", PLEXY_VERSION_BUMP: "", PLEXY_UPDATE_TYPE: "" } });
     expect(first.version).toBe("1.0.10");
     expect(first.minimumSupportedVersion).toBe("1.0.9");
     expect(calls).toHaveLength(1);
