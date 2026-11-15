@@ -9,11 +9,12 @@ the existing React player.
 
 ## What the viewer sees
 
-- Clicking Play opens a separate mpv window with mpv's own controls: seeking,
-  volume, speed, audio tracks and subtitles.
-- The Plexy window shows a small session surface: title, position, play/pause,
-  ±seek, stop, an audio-language selector, skip intro/recap when markers
-  exist, and next-episode handoff.
+- Clicking Play opens the video in a native mpv window. mpv's own on-screen
+  controller is disabled: Plexy draws the player chrome in the app window, using
+  the same layout and controls as the Video.js skin (time slider, ±10s, volume,
+  audio, subtitles, speed, fullscreen). mpv is only the video surface.
+- Seeking, volume, mute, speed, audio and subtitle track selection and
+  fullscreen are all driven from that one control surface over mpv's JSON IPC.
 - Plexy still records watch progress, resume points, watched state and next
   episode from mpv's position events.
 - Desktop always uses mpv, ignoring old browser-player preferences. Native errors
@@ -21,8 +22,21 @@ the existing React player.
 - Native playback never shows the "Preparing for playback" blocker. It reads
   the original file even if a prepared MP4 also exists.
 
-The Plexy overlays do not appear inside the mpv window; that is a deliberate
-limitation of the separate-window milestone.
+### Why the video is not drawn inside the app window
+
+True single-window playback needs libmpv rendered into an app-owned macOS
+`NSView`, which means a native Node addon (Objective-C++, AppKit/OpenGL or
+Metal), packaging for arm64, and its own signing story. The bundled player is the
+`mpv` application, not libmpv. `mpv --wid` exists on macOS, but it takes an
+`NSView*` and is not a supported drop-in: it covers the whole window (and the
+React UI with it) and is known to produce a black video surface inside Electron.
+So the current architecture keeps the video in mpv's window and owns every
+control in the Plexy window instead of faking an embedded surface.
+
+Background preparation (`apps/server/src/optimize.ts`) is what removes the
+remaining wait: files that cannot stream as-is are converted right after a scan,
+not when someone presses Play, so a browser client never sees a preparation
+screen for a library that has already settled.
 
 ## Backend
 
@@ -61,7 +75,12 @@ so pointing at Play never starts browser optimization in the desktop app.
   server.
 - `apps/desktop/src/preload/index.ts` — typed bridge (`native:info`,
   `native:play`, `native:command`, `native:stop`, `native:event`).
-- `apps/web/src/components/native-watch.tsx` — the in-app session surface.
+- `apps/web/src/components/native-watch.tsx` — the player surface: the only
+  control UI (shaped like the Video.js skin), fed by mpv events and driving mpv
+  commands.
+- `apps/web/src/components/home-hero.tsx` + the `/home` route — the hero's Play
+  button opens the file the server resolved: a movie's own file, or the last
+  watched / first episode of a series.
 
 The renderer names a file id, never a URL or executable. The main process
 fetches the manifest with Chromium's session cookies, validates that the

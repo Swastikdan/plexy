@@ -13,20 +13,31 @@ import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { useColors } from "@/shared/theme";
 import { ChevronLeft } from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
+import { usePlayTitle } from "../hooks/use-play-title";
+import { useTitleActions } from "../hooks/use-title-actions";
 
 export function TitleBrowser({
   title,
   items,
   close,
   open,
+  play,
+  onChanged,
 }: {
   title: string | null;
   items: ItemCard[];
   close: () => void;
   open: (id: string | number) => void;
+  play?: (fileId: number) => void;
+  onChanged?: () => void;
 }) {
   const colors = useColors();
   const { api } = useClient();
+  const titleActions = useTitleActions();
+  const playTitle = usePlayTitle(play, (item) => {
+    close();
+    open(item.publicId);
+  });
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
@@ -82,6 +93,12 @@ export function TitleBrowser({
                 close();
                 open(item.publicId);
               }}
+              onLongPress={() =>
+                titleActions(item, {
+                  play: () => playTitle(item),
+                  onChanged,
+                })
+              }
             />
           )}
         />

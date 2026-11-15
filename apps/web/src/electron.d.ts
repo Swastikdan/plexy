@@ -47,7 +47,17 @@ export interface NativePlayResult {
 
 export interface NativeCommandRequest {
   sessionId: string;
-  action: "pause" | "resume" | "seek" | "stop" | "set-audio";
+  action:
+    | "pause"
+    | "resume"
+    | "seek"
+    | "stop"
+    | "set-audio"
+    | "set-subtitle"
+    | "set-volume"
+    | "set-mute"
+    | "set-speed"
+    | "toggle-fullscreen";
   value?: number;
 }
 
@@ -57,18 +67,38 @@ export interface NativeAudioTrack {
   language: string | null;
   default: boolean;
   selected: boolean;
+  external?: boolean;
 }
 
 export interface NativePlaybackEvent {
   sessionId: string;
   fileId: number;
-  type: "ready" | "time" | "duration" | "pause" | "buffering" | "ended" | "error" | "closed" | "audio";
+  type:
+    | "ready"
+    | "time"
+    | "duration"
+    | "pause"
+    | "buffering"
+    | "ended"
+    | "error"
+    | "closed"
+    | "audio"
+    | "tracks"
+    | "volume"
+    | "speed"
+    | "fullscreen";
   position?: number;
   duration?: number;
   paused?: boolean;
   buffering?: boolean;
   message?: string;
   audioTracks?: NativeAudioTrack[];
+  subtitleTracks?: NativeAudioTrack[];
+  cachedSeconds?: number;
+  volume?: number;
+  muted?: boolean;
+  speed?: number;
+  fullscreen?: boolean;
 }
 
 export interface NativePlayerBridge {

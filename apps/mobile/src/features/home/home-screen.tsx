@@ -233,6 +233,7 @@ export function HomeScreen({
               open={open}
               onPlay={handlePlay}
               isContinueWatching={true}
+              onChanged={data.retry}
             />
           </View>
         )}
@@ -246,6 +247,7 @@ export function HomeScreen({
               items={row.items}
               open={open}
               onPlay={handlePlay}
+              onChanged={data.retry}
             />
           </View>
         ))}

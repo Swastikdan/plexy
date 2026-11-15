@@ -8,6 +8,24 @@ Plexy prepares files that browsers cannot play directly. Preparation is one of:
 
 By default prepared copies are cache files. They are never the library source.
 
+## When preparation starts
+
+Nothing has to be played first. The scanner queues every file that cannot stream
+as-is, and the optimizer works through that queue in a child process while the
+server keeps serving requests:
+
+- On boot, `startOptimizer()` re-queues interrupted jobs and sweeps the library
+  for unprepared files.
+- A scan pauses the queue while it probes (so probing stays fast) and starts it
+  again as soon as each library's walk finishes.
+- Opening a title never *starts* the work: if a browser asks for a copy that is
+  still queued it moves that file to the front (and playback begins as soon as
+  it is ready), but libraries that finished scanning are already prepared.
+
+The optimizer runs one job at a time to keep CPU and disk contention
+predictable; its progress is visible in Settings → Preparation cache and in
+`GET /api/server/status`.
+
 ## Where prepared copies live
 
 | Setting | Location |

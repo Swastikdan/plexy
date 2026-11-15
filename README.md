@@ -24,7 +24,7 @@ It exists because personal video libraries are messy in practice: files live in 
 **Desktop (`apps/desktop`) — Electron shell**
 
 - Bundles the same frontend and a child backend process. **Run local server** toggles between running its own backend and acting as a client to another Plexy server via an authenticated API proxy (cookies/credentials are never forwarded across servers).
-- Optional native mpv window that streams the original over an authenticated loopback relay, bypassing browser preparation.
+- Native mpv video window with the Plexy player chrome (matching the browser player) that streams the original over an authenticated loopback relay, bypassing browser preparation.
 
 **Mobile (`apps/mobile`) — fully independent offline Android app**
 

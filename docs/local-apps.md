@@ -14,7 +14,8 @@ The standalone backend ships the same browser UI as static files. `--no-ui` or
 `PLEXY_NO_UI=1` disables serving those files. It keeps the API and backend services
 running for desktop clients. There is no separate frontend release or UI process.
 
-Desktop can also play media with a native mpv window instead of the browser
-player. It streams the original file through an authenticated loopback relay and
+Desktop can also play media with a native mpv video window instead of the browser
+player. Plexy draws the player controls in the app window (matching the browser
+player), streams the original file through an authenticated loopback relay, and
 never waits for browser preparation. See `docs/native-playback.md`; browsers and
 the website are unaffected.

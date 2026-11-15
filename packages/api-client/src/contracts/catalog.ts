@@ -28,6 +28,15 @@ export interface ItemCard {
   genres: string[];
   matchStatus: string;
   watch: Watch | null;
+  /**
+   * File a Play button should open for this card. Only set where the client
+   * cannot derive it (a series hero card), because it depends on watch state.
+   */
+  playFileId?: number | null;
+  /** "S01E03" for the episode a hero Play button would start. */
+  playSubtitle?: string | null;
+  /** Watch state of the episode a hero Play button would start. */
+  playWatch?: Watch | null;
   isAnime?: boolean;
   logo?: string | null;
   still?: string | null;

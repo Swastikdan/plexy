@@ -22,6 +22,7 @@ import {
   MoreHorizontal,
   Play,
   Trash2,
+  X,
 } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/button";
 import { Loading } from "@/shared/ui/loading";
@@ -30,6 +31,8 @@ import { Hero } from "@/features/catalog/components/hero";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
 import { TopFade } from "@/features/catalog/components/top-fade";
 import { playbackAction } from "@/features/catalog/lib/playback-action";
+import { applyEpisodeAction } from "@/features/catalog/lib/title-actions";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { CastRow } from "./components/cast-row";
 import { EpisodeCard } from "./components/episode-card";
 import { TitleMenuAction } from "./components/title-menu-action";
@@ -45,6 +48,7 @@ export function TitleScreen({
 }) {
   const showDialog = useAppDialog();
   const colors = useColors();
+  const titleActions = useTitleActions();
   const { api, progress } = useClient();
   const insets = useSafeAreaInsets();
   const data = useResource((signal) => api.detail(id, signal), [api, id]);
@@ -56,6 +60,10 @@ export function TitleScreen({
   const reducedMotion = useReducedMotion();
   const [personName, setPersonName] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectingEpisodes, setSelectingEpisodes] = useState(false);
+  const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(
+    () => new Set(),
+  );
   const [season, setSeason] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"episodes" | "details">(
     "episodes",
@@ -154,11 +162,130 @@ export function TitleScreen({
       data.retry();
     } catch {}
   }
+  function startEpisodeSelection(ep?: any) {
+    triggerHaptic("selection");
+    setSelectingEpisodes(true);
+    setSelectedEpisodes(ep ? new Set([ep.id]) : new Set());
+  }
+  function endEpisodeSelection() {
+    setSelectingEpisodes(false);
+    setSelectedEpisodes(new Set());
+  }
+  function toggleEpisodeSelected(ep: any) {
+    triggerHaptic("selection");
+    setSelectedEpisodes((previous) => {
+      const next = new Set(previous);
+      if (next.has(ep.id)) next.delete(ep.id);
+      else next.add(ep.id);
+      return next;
+    });
+  }
   const detailAction = playbackAction(item ?? {}, detail?.episodes ?? []);
   function getFirstPlayableFileId() {
     return detail?.file?.fileId ?? detailAction.fileId;
   }
   const selectedSeason = season ?? detail?.seasons?.[0]?.number;
+  const seasonEpisodes = React.useMemo(
+    () =>
+      detail?.episodes?.filter(
+        (episode) =>
+          !detail.seasons?.length || episode.seasonNumber === selectedSeason,
+      ) ?? [],
+    [detail, selectedSeason],
+  );
+  const selectedCount = selectedEpisodes.size;
+  const allSeasonSelected =
+    seasonEpisodes.length > 0 &&
+    seasonEpisodes.every((episode) => selectedEpisodes.has(episode.id));
+  function toggleSelectSeason() {
+    triggerHaptic("selection");
+    setSelectedEpisodes((previous) => {
+      const next = new Set(previous);
+      if (allSeasonSelected) {
+        for (const episode of seasonEpisodes) next.delete(episode.id);
+      } else {
+        for (const episode of seasonEpisodes) next.add(episode.id);
+      }
+      return next;
+    });
+  }
+  async function finishSelectedEpisodes() {
+    const ids = [...selectedEpisodes];
+    if (!ids.length) return;
+    setEpisodesWatchedOverride((previous) => {
+      const next = { ...previous };
+      for (const id of ids) next[id] = true;
+      return next;
+    });
+    try {
+      await applyEpisodeAction(api, progress, ids, "finished");
+      data.retry();
+      endEpisodeSelection();
+    } catch (e) {
+      setActionError(
+        e instanceof Error ? e.message : "Could not update episode progress.",
+      );
+    }
+  }
+  async function deleteEpisodes(ids: number[]) {
+    if (!ids.length) return;
+    const remaining = (detail?.episodes?.length ?? 0) - ids.length;
+    try {
+      await applyEpisodeAction(api, progress, ids, "delete");
+      endEpisodeSelection();
+      if (remaining <= 0) back();
+      else data.retry();
+    } catch (e) {
+      setActionError(
+        e instanceof Error ? e.message : "Could not delete episode files.",
+      );
+      data.retry();
+    }
+  }
+  function deleteSelectedEpisodes() {
+    const ids = [...selectedEpisodes];
+    if (!ids.length) return;
+    showDialog(
+      ids.length === 1 ? "Delete episode?" : `Delete ${ids.length} episodes?`,
+      ids.length === 1
+        ? "This permanently deletes this episode's video file from your device."
+        : "This permanently deletes the selected video files from your device.",
+      [
+        {
+          text: ids.length === 1 ? "Delete" : "Delete episodes",
+          style: "destructive",
+          onPress: () => void deleteEpisodes(ids),
+        },
+      ],
+    );
+  }
+  function openEpisodeActions(ep: any, watched: boolean) {
+    const clearOverride = () =>
+      setEpisodesWatchedOverride((previous) => {
+        if (!(ep.id in previous)) return previous;
+        const next = { ...previous };
+        delete next[ep.id];
+        return next;
+      });
+    titleActions(
+      {
+        ...ep,
+        watch: { ...ep.watch, played: watched },
+      },
+      {
+        onSelect: () => startEpisodeSelection(ep),
+        onChanged: () => {
+          clearOverride();
+          data.retry();
+        },
+        onDeleted: () => {
+          clearOverride();
+          if ((detail?.episodes?.length ?? 0) <= 1) back();
+          else data.retry();
+        },
+      },
+    );
+  }
   React.useEffect(() => {
     if (selectedSeason != null)
       seasonStrip.current?.scrollTo({
@@ -256,7 +383,10 @@ export function TitleScreen({
                         accessibilityState={{
                           selected: detailTab === "details",
                         }}
-                        onPress={() => setDetailTab("details")}
+                        onPress={() => {
+                          if (selectingEpisodes) endEpisodeSelection();
+                          setDetailTab("details");
+                        }}
                         onFocus={() => setTabFocus("details")}
                         onBlur={() => setTabFocus(null)}
                         className={cn(
@@ -279,6 +409,35 @@ export function TitleScreen({
                         </Text>
                       </Pressable>
                     </View>
+
+                    {detailTab === "episodes" && (
+                      <View className="flex-row items-center justify-between">
+                        <Text className="font-archivo-medium text-[12px] text-muted">
+                          {seasonEpisodes.length}{" "}
+                          {seasonEpisodes.length === 1
+                            ? "episode"
+                            : "episodes"}
+                        </Text>
+                        {!selectingEpisodes && (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Select episodes"
+                            onPress={() => startEpisodeSelection()}
+                            hitSlop={8}
+                            className="flex-row items-center gap-1.5 rounded-full bg-surface px-3 py-2 active:opacity-70"
+                          >
+                            <Check
+                              size={13}
+                              color={colors.brand}
+                              strokeWidth={2.4}
+                            />
+                            <Text className="font-archivo-bold text-[12px] text-accent">
+                              Select
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    )}
 
                     {detailTab === "episodes" && !!detail.seasons?.length && (
                       <View>
@@ -357,7 +516,13 @@ export function TitleScreen({
                       index={detailTab === "details" ? Math.max(1, detail.seasons?.length ?? 0) : Math.max(0, detail.seasons?.findIndex(s => s.number === selectedSeason) ?? 0)}
                       onChange={(index) => {
                         triggerHaptic("selection");
-                        setDetailTab(index < Math.max(1, detail.seasons?.length ?? 0) ? "episodes" : "details");
+                        const nextTab =
+                          index < Math.max(1, detail.seasons?.length ?? 0)
+                            ? "episodes"
+                            : "details";
+                        if (nextTab === "details" && selectingEpisodes)
+                          endEpisodeSelection();
+                        setDetailTab(nextTab);
                         if (detail.seasons?.[index]) setSeason(detail.seasons[index]!.number);
                       }}
                       renderPage={(page) => (
@@ -365,9 +530,24 @@ export function TitleScreen({
                           {page < Math.max(1, detail.seasons?.length ?? 0) ? (
                             <>
                               <SeasonEpisodes
-                                episodes={detail.episodes?.filter(e => !detail.seasons?.length || e.seasonNumber === detail.seasons[page]?.number) ?? []}
-                                item={item} api={api} play={play} progress={progress}
-                                overrides={episodesWatchedOverride} onToggleWatched={toggleEpisodeWatched}
+                                episodes={
+                                  detail.episodes?.filter(
+                                    (episode) =>
+                                      !detail.seasons?.length ||
+                                      episode.seasonNumber ===
+                                        detail.seasons[page]?.number,
+                                  ) ?? []
+                                }
+                                item={item}
+                                api={api}
+                                play={play}
+                                progress={progress}
+                                overrides={episodesWatchedOverride}
+                                onToggleWatched={toggleEpisodeWatched}
+                                selecting={selectingEpisodes}
+                                selectedIds={selectedEpisodes}
+                                onToggleSelected={toggleEpisodeSelected}
+                                onLongPressEpisode={openEpisodeActions}
                               />
                             </>
                           ) : (
@@ -452,6 +632,8 @@ export function TitleScreen({
         open={(id) =>
           push({ pathname: "/item/[id]", params: { id: String(id) } })
         }
+        play={play}
+        onChanged={() => data.retry()}
       />
       {item && detail && (
         <>
@@ -479,6 +661,7 @@ export function TitleScreen({
                 icon={Info}
                 label="Details"
                 onPress={() => {
+                  if (selectingEpisodes) endEpisodeSelection();
                   setDetailTab("details");
                   setMenuOpen(false);
                   detailScroll.current?.scrollTo({
@@ -520,47 +703,126 @@ export function TitleScreen({
               />
             </View>
           )}
-          <View
-            className="absolute bottom-0 left-0 right-0 flex-row gap-3 border-t border-t-border bg-background px-5 pt-3"
-            style={{ paddingBottom: Math.max(insets.bottom, 14) }}
-          >
-            <NativeButton
-              className="flex-1 justify-center rounded-full bg-accent px-5"
-              style={{ height: control.height, minHeight: control.height }}
-              size="lg"
-              accessibilityLabel={detailAction.accessibilityLabel}
-              isDisabled={!getFirstPlayableFileId()}
-              onPress={() => {
-                const fileId = getFirstPlayableFileId();
-                if (fileId) play(fileId);
-              }}
+          {selectingEpisodes ? (
+            <View
+              className="absolute bottom-0 left-0 right-0 gap-3 border-t border-t-border bg-background px-5 pt-3"
+              style={{ paddingBottom: Math.max(insets.bottom, 14) }}
             >
-              <Play size={22} color="#fff" fill="#fff" />
-              <View style={{ alignItems: "center", flexShrink: 1 }}>
-                <NativeButton.Label className="text-white">
-                  {detailAction.label}
-                </NativeButton.Label>
+              <View className="flex-row items-center justify-between gap-2">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Exit episode selection"
+                  onPress={endEpisodeSelection}
+                  hitSlop={10}
+                  className="h-9 w-9 items-center justify-center rounded-full bg-surface active:opacity-70"
+                >
+                  <X size={18} color={colors.ink} />
+                </Pressable>
+                <Text className="flex-1 text-center font-archivo-bold text-[15px] text-foreground">
+                  {selectedCount === 0
+                    ? "Select episodes"
+                    : `${selectedCount} selected`}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    allSeasonSelected
+                      ? "Clear season selection"
+                      : "Select all episodes in this season"
+                  }
+                  onPress={toggleSelectSeason}
+                  hitSlop={8}
+                  className="min-h-[36px] justify-center rounded-full bg-surface px-3 active:opacity-70"
+                >
+                  <Text className="font-archivo-bold text-[12px] text-accent">
+                    {allSeasonSelected ? "Clear" : "Select all"}
+                  </Text>
+                </Pressable>
               </View>
-            </NativeButton>
-            {detail.trailer?.provider?.toLowerCase() === "youtube" && (
+              <View className="flex-row gap-3">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Mark selected episodes finished"
+                  accessibilityState={{ disabled: selectedCount === 0 }}
+                  disabled={selectedCount === 0}
+                  onPress={() => {
+                    triggerHaptic("light");
+                    void finishSelectedEpisodes();
+                  }}
+                  className={cn(
+                    "min-h-[50px] flex-1 flex-row items-center justify-center gap-2 rounded-full bg-accent px-4",
+                    selectedCount === 0 && "opacity-40",
+                  )}
+                >
+                  <Check size={18} color="#fff" strokeWidth={2.6} />
+                  <Text className="font-archivo-bold text-[15px] text-white">
+                    Mark as finished
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete selected episodes"
+                  accessibilityState={{ disabled: selectedCount === 0 }}
+                  disabled={selectedCount === 0}
+                  onPress={() => {
+                    triggerHaptic("medium");
+                    deleteSelectedEpisodes();
+                  }}
+                  className={cn(
+                    "min-h-[50px] flex-1 flex-row items-center justify-center gap-2 rounded-full bg-danger/15 px-4",
+                    selectedCount === 0 && "opacity-40",
+                  )}
+                >
+                  <Trash2 size={18} color={colors.danger} strokeWidth={2.2} />
+                  <Text className="font-archivo-bold text-[15px] text-danger">
+                    Delete
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View
+              className="absolute bottom-0 left-0 right-0 flex-row gap-3 border-t border-t-border bg-background px-5 pt-3"
+              style={{ paddingBottom: Math.max(insets.bottom, 14) }}
+            >
               <NativeButton
-                variant="secondary"
+                className="flex-1 justify-center rounded-full bg-accent px-5"
+                style={{ height: control.height, minHeight: control.height }}
                 size="lg"
-                isIconOnly
-                accessibilityLabel="Watch trailer"
-                className="rounded-full bg-surface"
-                style={{ width: control.height, height: control.height }}
-                isDisabled={!online}
+                accessibilityLabel={detailAction.accessibilityLabel}
+                isDisabled={!getFirstPlayableFileId()}
                 onPress={() => {
-                  void Linking.openURL(
-                    `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
-                  ).catch((e) => setActionError(String(e)));
+                  const fileId = getFirstPlayableFileId();
+                  if (fileId) play(fileId);
                 }}
               >
-                <Film size={22} color={colors.ink} />
+                <Play size={22} color="#fff" fill="#fff" />
+                <View style={{ alignItems: "center", flexShrink: 1 }}>
+                  <NativeButton.Label className="text-white">
+                    {detailAction.label}
+                  </NativeButton.Label>
+                </View>
               </NativeButton>
-            )}
-          </View>
+              {detail.trailer?.provider?.toLowerCase() === "youtube" && (
+                <NativeButton
+                  variant="secondary"
+                  size="lg"
+                  isIconOnly
+                  accessibilityLabel="Watch trailer"
+                  className="rounded-full bg-surface"
+                  style={{ width: control.height, height: control.height }}
+                  isDisabled={!online}
+                  onPress={() => {
+                    void Linking.openURL(
+                      `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
+                    ).catch((e) => setActionError(String(e)));
+                  }}
+                >
+                  <Film size={22} color={colors.ink} />
+                </NativeButton>
+              )}
+            </View>
+          )}
         </>
       )}
     </View>
@@ -581,6 +843,10 @@ function SeasonEpisodes({
   progress,
   overrides,
   onToggleWatched,
+  selecting,
+  selectedIds,
+  onToggleSelected,
+  onLongPressEpisode,
 }: {
   episodes: any[];
   item: ItemCard;
@@ -589,6 +855,10 @@ function SeasonEpisodes({
   progress: ProgressQueue;
   overrides: Record<number, boolean>;
   onToggleWatched: (ep: any) => void;
+  selecting: boolean;
+  selectedIds: Set<number>;
+  onToggleSelected: (ep: any) => void;
+  onLongPressEpisode: (ep: any, watched: boolean) => void;
 }) {
   const [limit, setLimit] = useState(EPISODE_PAGE_SIZE);
   const visible = episodes.slice(0, limit);
@@ -616,6 +886,16 @@ function SeasonEpisodes({
             play={play}
             item={item}
             onToggleWatched={onToggleWatched}
+            selecting={selecting}
+            selected={selectedIds.has(ep.id)}
+            onPress={() =>
+              selecting ? onToggleSelected(ep) : ep.fileId && play(ep.fileId)
+            }
+            onLongPress={() =>
+              selecting
+                ? onToggleSelected(ep)
+                : onLongPressEpisode(ep, isEpWatched)
+            }
           />
         );
       })}

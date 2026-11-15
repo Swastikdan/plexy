@@ -10,7 +10,10 @@ import {
 } from "@plexy/local-library/library";
 import { ProgressQueue } from "@/core/client/progress-queue";
 import { LocalApi } from "@/core/library/local-api";
-import { applyTitleAction } from "@/features/catalog/lib/title-actions";
+import {
+  applyEpisodeAction,
+  applyTitleAction,
+} from "@/features/catalog/lib/title-actions";
 const file = (name = "Arrival.2016.mp4", size = 100): LocalFile => ({
   uri: `content://videos/${name}`, name, relativePath: name, size, modified: size,
 });
@@ -342,4 +345,38 @@ test("series menu actions clear pending playback, mark every episode finished an
   expect(deleted.sort()).toEqual(expectedFiles.sort());
   expect(f.library.state.records).toHaveLength(0);
   expect((await api.home()).rows).toHaveLength(0);
+});
+
+test("episode actions finish, delete one, and delete a selected set without touching siblings", async () => {
+  const f = fixture();
+  f.files([
+    file("Show.S01E01.mkv"),
+    file("Show.S01E02.mkv"),
+    file("Show.S01E03.mkv"),
+  ]);
+  await f.library.addRoot({ ...root, kind: "tv" });
+  const api = new LocalApi(f.library, async () => "", async () => []);
+  const series = f.library.cards()[0]!;
+  const episodes = api.episodes(series.id);
+  expect(episodes).toHaveLength(3);
+  const queue = new ProgressQueue({ load: async () => [], save: async () => {} });
+  const [first, second, third] = episodes;
+  await applyEpisodeAction(api, queue, first!.id, "finished");
+  expect(f.library.record(first!.id).card.watch?.played).toBe(true);
+  expect(f.library.record(second!.id).card.watch).toBeNull();
+  expect(f.library.record(third!.id).card.watch).toBeNull();
+
+  const deleted: string[] = [];
+  f.io.deleteFile = async uri => { deleted.push(uri); };
+  const firstUri = f.library.record(first!.id).file.uri;
+  const secondUri = f.library.record(second!.id).file.uri;
+  const thirdUri = f.library.record(third!.id).file.uri;
+  await applyEpisodeAction(api, queue, [second!.id], "delete");
+  expect(deleted).toEqual([secondUri]);
+  expect(f.library.state.records.map(record => record.id)).not.toContain(second!.id);
+  expect(f.library.state.records.map(record => record.id)).toContain(third!.id);
+
+  await applyEpisodeAction(api, queue, [first!.id, third!.id], "delete");
+  expect(deleted.sort()).toEqual([firstUri, secondUri, thirdUri].sort());
+  expect(f.library.state.records).toHaveLength(0);
 });

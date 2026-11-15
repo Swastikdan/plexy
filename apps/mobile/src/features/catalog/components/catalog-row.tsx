@@ -14,6 +14,7 @@ export function CatalogRow({
   onPlay,
   isContinueWatching = false,
   onRowFocus,
+  onChanged,
 }: {
   title: string;
   items: ItemCard[];
@@ -21,6 +22,7 @@ export function CatalogRow({
   onPlay?: (item: ItemCard) => void;
   isContinueWatching?: boolean;
   onRowFocus?: () => void;
+  onChanged?: () => void;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const { api } = useClient();
@@ -50,7 +52,13 @@ export function CatalogRow({
             <ContinueWatchingCard
               item={item}
               api={api}
-              onLongPress={() => titleActions(item, () => onPlay ? onPlay(item) : open(item.publicId), isContinueWatching)}
+              onLongPress={() =>
+                titleActions(item, {
+                  play: () => (onPlay ? onPlay(item) : open(item.publicId)),
+                  continueWatching: isContinueWatching,
+                  onChanged,
+                })
+              }
               onFocus={() => {
                 onRowFocus?.();
               }}
@@ -67,7 +75,13 @@ export function CatalogRow({
               width={cardWidth}
               item={item}
               api={api}
-              onLongPress={() => titleActions(item, () => onPlay ? onPlay(item) : open(item.publicId), isContinueWatching)}
+              onLongPress={() =>
+                titleActions(item, {
+                  play: () => (onPlay ? onPlay(item) : open(item.publicId)),
+                  continueWatching: isContinueWatching,
+                  onChanged,
+                })
+              }
               onFocus={() => {
                 onRowFocus?.();
               }}

@@ -412,12 +412,24 @@ function setupIpcHandlers() {
   ipcMain.handle("native:command", async (event, request: Record<string, unknown>) => {
     trustedFrameOrigin(event);
     const action = String(request?.action ?? "");
-    if (!["pause", "resume", "seek", "stop", "set-audio"].includes(action)) {
+    const actions = [
+      "pause",
+      "resume",
+      "seek",
+      "stop",
+      "set-audio",
+      "set-subtitle",
+      "set-volume",
+      "set-mute",
+      "set-speed",
+      "toggle-fullscreen",
+    ] as const;
+    if (!actions.includes(action as (typeof actions)[number])) {
       throw new Error("Unsupported player action");
     }
     return nativePlayer.command({
       sessionId: String(request?.sessionId ?? ""),
-      action: action as "pause" | "resume" | "seek" | "stop" | "set-audio",
+      action: action as (typeof actions)[number],
       value: Number(request?.value) || 0,
     });
   });

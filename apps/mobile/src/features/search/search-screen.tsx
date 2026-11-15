@@ -18,6 +18,7 @@ import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
 
 type ResultRow =
@@ -52,6 +53,7 @@ export function SearchScreen({
 }) {
   const colors = useColors();
   const { api } = useClient();
+  const titleActions = useTitleActions();
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -185,6 +187,7 @@ export function SearchScreen({
                 open={open}
                 onPlay={handlePlay}
                 isContinueWatching={row.key === "continue"}
+                onChanged={homeData.retry}
               />
             )}
             contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
@@ -224,6 +227,12 @@ export function SearchScreen({
                     item={item}
                     api={api}
                     onPress={() => openItem(item)}
+                    onLongPress={() =>
+                      titleActions(item, {
+                        play: () => handlePlay(item),
+                        onChanged: data.retry,
+                      })
+                    }
                   />
                 ))}
               </View>

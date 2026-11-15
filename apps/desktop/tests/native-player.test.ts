@@ -16,6 +16,13 @@ const args = process.argv.slice(2);
 const socketArg = args.find((arg) => arg.startsWith("--input-ipc-server=")) || "";
 const socketPath = socketArg.split("=").slice(1).join("=");
 const log = process.env.FAKE_MPV_LOG || "";
+const TRACKS = [
+  { id: 1, type: "video", selected: true },
+  { id: 2, type: "audio", lang: "en", title: "English", default: true, selected: true },
+  { id: 3, type: "audio", lang: "hi", title: "Hindi", selected: false },
+  { id: 4, type: "sub", lang: "en", title: "English", selected: false },
+  { id: 5, type: "sub", lang: "fr", title: "French", selected: false },
+];
 const write = (entry) => { if (log) fs.appendFileSync(log, JSON.stringify(entry) + "\\n"); };
 if (process.env.FAKE_MPV_EXIT_AFTER_MS) {
   setTimeout(() => process.exit(3), Number(process.env.FAKE_MPV_EXIT_AFTER_MS));
@@ -38,9 +45,20 @@ const server = net.createServer((socket) => {
         setTimeout(() => process.exit(0), 10);
         continue;
       }
-      socket.write(JSON.stringify({ request_id: id, error: "success", data: name === "get_property" ? [] : null }) + "\\n");
+      const property = message.command[1];
+      const data = name === "get_property" && property === "track-list" ? TRACKS : null;
+      socket.write(JSON.stringify({ request_id: id, error: "success", data }) + "\\n");
       if (name === "seek") {
         socket.write(JSON.stringify({ event: "property-change", name: "time-pos", data: Number(message.command[1]) }) + "\\n");
+      }
+      if (name === "set_property" && property === "volume") {
+        socket.write(JSON.stringify({ event: "property-change", name: "volume", data: Number(message.command[2]) }) + "\\n");
+      }
+      if (name === "set_property" && property === "mute") {
+        socket.write(JSON.stringify({ event: "property-change", name: "mute", data: Boolean(message.command[2]) }) + "\\n");
+      }
+      if (name === "set_property" && property === "fullscreen") {
+        socket.write(JSON.stringify({ event: "property-change", name: "fullscreen", data: Boolean(message.command[2]) }) + "\\n");
       }
       if (name === "observe_property" && message.command[2] === "duration") {
         socket.write(JSON.stringify({ event: "file-loaded" }) + "\\n");
@@ -137,6 +155,49 @@ test("native session loads the relay URL, resumes, and accepts commands", async 
   await expect(
     manager.command({ sessionId: result.sessionId, action: "pause" }),
   ).rejects.toThrow();
+});
+
+test("player controls map onto mpv properties", async () => {
+  const { log } = await setup();
+  const events: NativePlaybackEvent[] = [];
+  const manager = new NativePlayerManager((event) => events.push(event), { fetch: manifestFetch, platform: "darwin" });
+  const result = await manager.play({
+    fileId: 7,
+    serverUrl: "http://127.0.0.1:8765",
+    serverOrigin: "http://127.0.0.1:8765",
+  });
+  expect(await waitFor(() => Promise.resolve(events.some((event) => event.type === "ready")))).toBe(true);
+
+  await manager.command({ sessionId: result.sessionId, action: "set-volume", value: 40 });
+  await manager.command({ sessionId: result.sessionId, action: "set-mute", value: 1 });
+  await manager.command({ sessionId: result.sessionId, action: "set-speed", value: 1.5 });
+  await manager.command({ sessionId: result.sessionId, action: "set-subtitle", value: 4 });
+  await manager.command({ sessionId: result.sessionId, action: "toggle-fullscreen" });
+
+  const commands = await readCommands(log);
+  const has = (...expected: unknown[]) => commands.some(
+    (entry) => expected.every((value, index) => entry.command[index] === value),
+  );
+  expect(has("set_property", "volume", 40)).toBe(true);
+  expect(has("set_property", "mute", true)).toBe(true);
+  expect(has("set_property", "speed", 1.5)).toBe(true);
+  expect(has("set_property", "sid", 4)).toBe(true);
+  expect(has("set_property", "fullscreen", true)).toBe(true);
+
+  // Volume and track state come back to the player surface.
+  expect(await waitFor(() => Promise.resolve(events.some(
+    (event) => event.type === "volume" && event.volume === 40 && event.muted === true,
+  )))).toBe(true);
+  expect(events.some(
+    (event) => event.type === "tracks"
+      && (event.audioTracks?.length ?? 0) >= 2
+      && (event.subtitleTracks?.length ?? 0) >= 2,
+  )).toBe(true);
+
+  await expect(
+    manager.command({ sessionId: result.sessionId, action: "set-speed", value: 99 }),
+  ).rejects.toThrow();
+  await manager.dispose();
 });
 
 test("stopping a session removes its IPC socket and relay", async () => {

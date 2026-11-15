@@ -29,16 +29,14 @@ import {
   Download,
   Film,
   Library,
-  Moon,
   RefreshCw,
-  Sun,
-  System,
   X,
 } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
 import { Updates } from "./components/app-updates";
+import { AppearanceModeSelector } from "./components/appearance-mode-selector";
 import { SettingsRow } from "./components/settings-row";
 import { useAppUpdates } from "./hooks/use-app-updates";
 
@@ -277,50 +275,12 @@ export function SettingsScreen({
         {page === "settings" && (
           <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-              Appearance
+              Mode
             </Text>
-            <View className="flex-row gap-2 rounded-[18px] bg-surface p-2">
-              {(
-                [
-                  { value: "system", label: "System", icon: System },
-                  { value: "dark", label: "Dark mode", icon: Moon },
-                  { value: "light", label: "Light mode", icon: Sun },
-                ] as const
-              ).map(({ value, label, icon: Icon }) => {
-                const active = preferences.theme === value;
-                return (
-                  <Pressable
-                    key={value}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: active }}
-                    accessibilityLabel={
-                      value === "system" ? "System appearance" : label
-                    }
-                    onPress={() => updatePreferences({ theme: value })}
-                    className={cn(
-                      "flex-1 items-center justify-center gap-1.5 rounded-[14px] py-3",
-                      active
-                        ? "bg-foreground"
-                        : "bg-surface-secondary active:opacity-75",
-                    )}
-                  >
-                    <Icon
-                      size={20}
-                      color={active ? colors.canvas : colors.muted}
-                      strokeWidth={2}
-                    />
-                    <Text
-                      className={cn(
-                        "text-[12px] font-archivo-medium",
-                        active ? "text-background" : "text-muted",
-                      )}
-                    >
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <AppearanceModeSelector
+              value={preferences.theme}
+              onChange={(theme) => updatePreferences({ theme })}
+            />
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Library
             </Text>

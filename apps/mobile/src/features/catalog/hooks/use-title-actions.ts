@@ -1,19 +1,48 @@
-import { applyTitleAction, type TitleAction } from "../lib/title-actions";
+import {
+  applyEpisodeAction,
+  applyTitleAction,
+  type EpisodeAction,
+  type TitleAction,
+} from "../lib/title-actions";
 import { useRef } from "react";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { triggerHaptic } from "@/shared/lib/haptics";
 
+export interface TitleActionOptions {
+  /** Resolves the title's next playable file. Episodes ignore this: tapping plays. */
+  play?: () => void;
+  /** Marks the source row as Continue Watching, adding its remove action. */
+  continueWatching?: boolean;
+  /** Refresh the surface that owns this card after a change. */
+  onChanged?: () => void;
+  /** Run instead of `onChanged` after a file is deleted. */
+  onDeleted?: () => void;
+  /** Offered for episodes so a long press can start multi-select. */
+  onSelect?: () => void;
+}
+
 export function useTitleActions() {
   const { api, progress } = useClient();
   const showDialog = useAppDialog();
   const working = useRef(false);
-  const run = async (item: ItemCard, action: TitleAction) => {
+  const run = async (
+    item: ItemCard,
+    action: TitleAction | EpisodeAction,
+    options: TitleActionOptions,
+  ) => {
     if (working.current) return;
     working.current = true;
     try {
-      await applyTitleAction(api, progress, item.id, action);
+      if (item.kind === "episode" && action === "finished") {
+        await applyEpisodeAction(api, progress, item.id, action);
+      } else {
+        await applyTitleAction(api, progress, item.id, action);
+      }
+      if (action === "delete")
+        (options.onDeleted ?? options.onChanged)?.();
+      else options.onChanged?.();
     } catch (error) {
       showDialog(
         "Could not update title",
@@ -24,35 +53,66 @@ export function useTitleActions() {
       working.current = false;
     }
   };
-  return (item: ItemCard, play: () => void, continueWatching = false) => {
+  return (item: ItemCard, options: TitleActionOptions = {}) => {
     triggerHaptic("medium");
-    showDialog(item.parentTitle || item.name, "Title actions", [
-      { text: "Continue watching", onPress: play },
-      ...(continueWatching
+    const isEpisode = item.kind === "episode";
+    const isWatched = Boolean(item.watch?.played);
+    const title =
+      item.kind === "episode" && item.parentTitle
+        ? `${item.parentTitle} · ${item.name}`
+        : item.parentTitle || item.name;
+    const toggleWatched = {
+      text: isWatched ? "Mark as unwatched" : "Mark as finished",
+      onPress: () =>
+        void run(item, isWatched ? "remove" : "finished", options),
+    };
+    const remove = {
+      text: "Delete from device",
+      style: "destructive" as const,
+      onPress: () =>
+        showDialog(
+          isEpisode ? "Delete episode?" : "Delete title?",
+          isEpisode
+            ? "This permanently deletes this episode's video file from your device."
+            : "This permanently deletes the video files from your device.",
+          [
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: () => void run(item, "delete", options),
+            },
+          ],
+        ),
+    };
+    if (isEpisode) {
+      showDialog(title, "Episode actions", [
+        toggleWatched,
+        ...(options.onSelect
+          ? [
+              {
+                text: "Select episodes",
+                onPress: options.onSelect,
+              },
+            ]
+          : []),
+        remove,
+      ]);
+      return;
+    }
+    showDialog(title, "Title actions", [
+      ...(options.play
+        ? [{ text: "Continue watching", onPress: options.play }]
+        : []),
+      ...(options.continueWatching
         ? [
             {
               text: "Remove from Continue Watching",
-              onPress: () => void run(item, "remove"),
+              onPress: () => void run(item, "remove", options),
             },
           ]
         : []),
-      { text: "Mark finished", onPress: () => void run(item, "finished") },
-      {
-        text: "Delete from device",
-        style: "destructive",
-        onPress: () =>
-          showDialog(
-            "Delete title?",
-            "This permanently deletes the video files from your device.",
-            [
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: () => void run(item, "delete"),
-              },
-            ],
-          ),
-      },
+      toggleWatched,
+      remove,
     ]);
   };
 }

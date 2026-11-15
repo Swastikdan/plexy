@@ -1,16 +1,22 @@
 /// Home billboard. The best-rated title gets one cinematic, full-width card
 /// so the desktop home has a clear focal point instead of starting with a row.
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Clock3, Info, Play, Sparkles, Star } from "lucide-react";
+import { Clock3, Info, Play, Star } from "lucide-react";
 import { artworkUrl } from "../lib/artwork-url";
 import type { ItemCard } from "../client";
 
 export function HomeHero({ item }: { item: ItemCard }) {
   const navigate = useNavigate();
   const backdrop = artworkUrl(item.backdrop ?? item.poster);
-  const percent = Math.min(100, Math.max(0, item.watch?.percent ?? 0));
-  const resuming = percent > 0 && !item.watch?.played;
-  const canPlay = item.fileId != null;
+  // A series hero resumes an episode, so its progress lives on that episode
+  // rather than on the series row.
+  const watch = item.playWatch ?? item.watch;
+  const percent = Math.min(100, Math.max(0, watch?.percent ?? 0));
+  const resuming = percent > 0 && !watch?.played;
+  // A series hero plays an episode, not the series row itself, so the server
+  // resolves the file: the last watched episode, else the first one.
+  const playFileId = item.playFileId ?? item.fileId ?? null;
+  const canPlay = playFileId != null;
 
   const play = () => {
     if (!canPlay) {
@@ -19,7 +25,7 @@ export function HomeHero({ item }: { item: ItemCard }) {
     }
     void navigate({
       to: "/watch/$fileId",
-      params: { fileId: String(item.fileId) },
+      params: { fileId: String(playFileId) },
       state: { playerFromTitle: true },
     });
   };
@@ -52,11 +58,6 @@ export function HomeHero({ item }: { item: ItemCard }) {
       />
 
       <div className="relative z-10 flex min-h-[380px] flex-col justify-end gap-3.5 p-5 sm:min-h-[460px] sm:p-8 lg:min-h-[520px] lg:p-10">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-black/30 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-white/85 backdrop-blur-md">
-          <Sparkles size={11} />
-          Featured
-        </span>
-
         {item.logo ? (
           <img
             src={item.logo}
@@ -104,8 +105,10 @@ export function HomeHero({ item }: { item: ItemCard }) {
             {!canPlay
               ? "View title"
               : resuming
-                ? `Resume ${formatTime(item.watch?.position ?? 0)}`
-                : "Play"}
+                ? `Resume ${formatTime(watch?.position ?? 0)}`
+                : item.playSubtitle
+                  ? `Play ${item.playSubtitle}`
+                  : "Play"}
           </button>
           {canPlay && (
             <Link

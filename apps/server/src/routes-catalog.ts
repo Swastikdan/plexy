@@ -235,8 +235,98 @@ async function nextUpEpisodes(request: Request): Promise<ItemCard[]> {
   return attachArt(picks.slice(0, 20), request);
 }
 
-// --- routes ------------------------------------------------------------------
+/**
+ * The file the hero's Play button opens.
+ *
+ * A movie card names its own file. A series card names an episode: the episode
+ * the viewer last watched (so Play continues the story), or the first episode
+ * when they have not started it. The server decides because it already knows
+ * the user's watch state, and the client only ever receives a file id.
+ */
+function heroPlayback(
+  row: Row,
+  request: Request,
+): {
+  playFileId: number | null;
+  playSubtitle: string | null;
+  playWatch: { position: number; duration: number | null; played: boolean; percent: number } | null;
+} {
+  const user = requestUser(request);
+  const itemId = Number(row.id);
+  const kind = String(row.kind ?? "");
 
+  /** Accept a file only when it exists and the viewer may stream it. */
+  const accessible = (candidate: Row | undefined | null): number | null => {
+    if (!candidate) return null;
+    const id = Number(candidate.id);
+    if (!Number.isSafeInteger(id)) return null;
+    // Mirrors accessSql: a server with no signed-in viewer is running open.
+    return !user || canAccessFile(user, id) ? id : null;
+  };
+
+  const watchOf = (candidate: Row | undefined | null) => {
+    if (!candidate || candidate.position_seconds == null) return null;
+    const position = Number(candidate.position_seconds) || 0;
+    const duration = candidate.duration_seconds == null ? null : Number(candidate.duration_seconds);
+    if (!(position > 0)) return null;
+    return {
+      position,
+      duration,
+      played: Boolean(candidate.played),
+      percent: duration && duration > 0 ? Math.min(100, (position / duration) * 100) : 0,
+    };
+  };
+
+  if (kind === "series") {
+    const watched = q<Row>(
+      `SELECT f.id, e.season_number, e.episode_number,
+              w.position_seconds, w.duration_seconds, w.played
+       FROM watch_state w
+       JOIN items e ON e.id = w.item_id AND e.kind = 'episode' AND e.parent_id = ?
+       JOIN media_files f ON f.item_id = e.id AND f.unavailable = 0
+       WHERE w.user_id = ? AND w.position_seconds > 0
+       ORDER BY w.updated_at DESC, w.item_id DESC LIMIT 1`,
+    ).get(itemId, user?.id ?? 0);
+    const resumeFile = accessible(watched);
+    if (resumeFile != null) {
+      return {
+        playFileId: resumeFile,
+        playSubtitle: episodeLabel(watched),
+        playWatch: watchOf(watched),
+      };
+    }
+
+    const firstEpisode = q<Row>(
+      `SELECT f.id, e.season_number, e.episode_number FROM items e
+       JOIN media_files f ON f.item_id = e.id AND f.unavailable = 0
+       WHERE e.parent_id = ? AND e.kind = 'episode'
+       ORDER BY e.season_number, e.episode_number, f.height DESC, f.id
+       LIMIT 1`,
+    ).get(itemId);
+    return {
+      playFileId: accessible(firstEpisode),
+      playSubtitle: episodeLabel(firstEpisode),
+      playWatch: null,
+    };
+  }
+
+  const own = q<Row>(
+    `SELECT id FROM media_files WHERE item_id = ? AND unavailable = 0
+     ORDER BY height DESC, size DESC, id DESC LIMIT 1`,
+  ).get(itemId);
+  return { playFileId: accessible(own), playSubtitle: null, playWatch: null };
+}
+
+/** "S01E03" for the episode a hero Play button would start. */
+function episodeLabel(row: Row | undefined | null): string | null {
+  if (!row) return null;
+  const season = Number(row.season_number);
+  const episode = Number(row.episode_number);
+  if (!Number.isFinite(season) || !Number.isFinite(episode)) return null;
+  return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+}
+
+// --- routes ------------------------------------------------------------------
 export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Home rows (PRD 10.2): hero + continue watching + next up + recently added. */
   .get("/home", async ({ request }) => {
@@ -274,7 +364,14 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const nextUp = await nextUpEpisodes(request);
 
     const [featured, continueWatching, recentlyMovies, recentlyShows] = await Promise.all([
-      featuredRow ? attachArt([featuredRow], request).then((r) => r[0] ?? null) : Promise.resolve(null),
+      featuredRow
+        ? attachArt([featuredRow], request).then((r) => {
+            const card = r[0];
+            if (!card) return null;
+            const playback = heroPlayback(featuredRow, request);
+            return { ...card, ...playback };
+          })
+        : Promise.resolve(null),
       attachArt(continueRows, request),
       attachArt(recentMovies, request),
       attachArt(recentShows, request),

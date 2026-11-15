@@ -243,8 +243,20 @@ async function runScan(libraryIds: number[]): Promise<void> {
   Bun.env.PLEXY_PROBE_CONCURRENCY = String(cfg.probeConcurrency);
   const pool = createProbePool(cfg.probeConcurrency);
 
+  // Preparation is a background job: every file the scanner discovers that
+  // cannot play directly is queued for conversion, without waiting for a
+  // viewer to press Play. Optimizer jobs run in a child process, one at a
+  // time, so this never blocks the HTTP server.
+  const flushPreparation = async () => {
+    resumeOptimizer("scan");
+    await enqueueMissingOptimizations().catch((err) =>
+      log.warn("optimizer", "could not queue preparation", {
+        message: err instanceof Error ? err.message : String(err),
+      }));
+  };
+
   try {
-    for (const library of libraryRows) {
+    for (const [index, library] of libraryRows.entries()) {
       const roots = q<{ path: string }, [number]>("SELECT path FROM library_paths WHERE library_id = ?")
         .all(library.id).map((r) => r.path);
       const type = (q<{ type: string }, [number]>("SELECT type FROM libraries WHERE id = ?")
@@ -284,6 +296,11 @@ async function runScan(libraryIds: number[]): Promise<void> {
         log.warn("tmdb", "could not hydrate missing episodes after library scan", {
           message: err instanceof Error ? err.message : String(err),
         }));
+
+      // This library is fully walked: start preparing what it revealed now.
+      // Later libraries pause the queue again so probing stays fast.
+      await flushPreparation();
+      if (index < libraryRows.length - 1) pauseOptimizer("scan");
     }
     progress.status = "done";
     progress.finishedAt = new Date().toISOString();
@@ -311,11 +328,7 @@ async function runScan(libraryIds: number[]): Promise<void> {
     void import("./hydrate").then(({ refreshStaleLocalMetadata }) => refreshStaleLocalMetadata()).catch(() => {});
     // Start preparing everything the walk just discovered. Optimizer jobs run
     // one at a time in a child process, so this never blocks the event loop.
-    resumeOptimizer("scan");
-    void enqueueMissingOptimizations().catch((err) =>
-      log.warn("optimizer", "could not queue preparation after scan", {
-        message: err instanceof Error ? err.message : String(err),
-      }));
+    await flushPreparation();
     void import("./artwork").then(({ cacheMissingArtwork }) => cacheMissingArtwork()).catch((err) =>
       log.warn("artwork", "could not run background artwork pre-cache after scan", {
         message: err instanceof Error ? err.message : String(err),

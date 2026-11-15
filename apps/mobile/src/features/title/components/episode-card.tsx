@@ -11,12 +11,20 @@ export function EpisodeCard({
   play,
   item,
   onToggleWatched,
+  onPress,
+  onLongPress,
+  selecting = false,
+  selected = false,
 }: {
   ep: any;
   api: any;
   play: (fileId: number) => void;
   item: ItemCard;
   onToggleWatched?: (ep: any) => void;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  selecting?: boolean;
+  selected?: boolean;
 }) {
   const colors = useColors();
   const watched = Boolean(ep.watch?.played);
@@ -39,11 +47,21 @@ export function EpisodeCard({
     (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName || "Episode");
   return (
     <Pressable
-      onPress={() => ep.fileId && play(ep.fileId)}
-      disabled={!ep.fileId}
+      onPress={onPress ?? (() => ep.fileId && play(ep.fileId))}
+      onLongPress={onLongPress}
+      delayLongPress={800}
+      disabled={!selecting && !ep.fileId}
+      accessibilityRole="button"
+      accessibilityState={selecting ? { selected } : undefined}
+      accessibilityLabel={`${epDisplayTitle}${watched ? ", watched" : ""}${selecting ? (selected ? ", selected" : ", not selected") : ""}`}
       className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
     >
-      <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
+      <View
+        className={cn(
+          "aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface",
+          selected && "border-2 border-accent",
+        )}
+      >
         {artwork ? (
           <Image
             source={api.image(artwork)}
@@ -55,10 +73,24 @@ export function EpisodeCard({
         ) : (
           <View className="h-full w-full bg-surface-secondary" />
         )}
-        <View className="absolute left-1/2 top-1/2 -ml-[22px] -mt-[22px] h-[44px] w-[44px] items-center justify-center rounded-full bg-white">
-          <Play size={24} color={"#000"} fill={"#000"} />
-        </View>
-        {duration && (
+        {!selecting && (
+          <View className="absolute left-1/2 top-1/2 -ml-[22px] -mt-[22px] h-[44px] w-[44px] items-center justify-center rounded-full bg-white">
+            <Play size={24} color={"#000"} fill={"#000"} />
+          </View>
+        )}
+        {selecting && (
+          <View
+            className={cn(
+              "absolute right-2 top-2 h-7 w-7 items-center justify-center rounded-full border-2",
+              selected
+                ? "border-accent bg-accent"
+                : "border-white/85 bg-black/45",
+            )}
+          >
+            {selected && <Check size={15} color="#fff" strokeWidth={3} />}
+          </View>
+        )}
+        {duration && !selecting && (
           <View className="absolute right-1.5 top-1.5 rounded-[5px] bg-black/[0.65] px-1.5 py-0.5">
             <Text className="font-archivo-medium text-[10px] text-white">
               {duration}
@@ -90,7 +122,7 @@ export function EpisodeCard({
             {epDisplayTitle}
           </Text>
           <View className="flex-row items-center gap-1.5">
-            {onToggleWatched && (
+            {onToggleWatched && !selecting && (
               <Pressable
                 onPress={() => onToggleWatched(ep)}
                 hitSlop={10}

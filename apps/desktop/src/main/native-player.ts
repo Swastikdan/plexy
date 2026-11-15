@@ -56,28 +56,65 @@ export interface NativePlayRequest {
 
 export interface NativeCommandRequest {
   sessionId: string;
-  action: "pause" | "resume" | "seek" | "stop" | "set-audio";
+  action:
+    | "pause"
+    | "resume"
+    | "seek"
+    | "stop"
+    | "set-audio"
+    | "set-subtitle"
+    | "set-volume"
+    | "set-mute"
+    | "set-speed"
+    | "toggle-fullscreen";
   value?: number;
 }
 
+/**
+ * A language track as mpv sees it. Audio and subtitle tracks share the shape so
+ * the Plexy player can render the same menu for both.
+ */
 export interface NativeAudioTrack {
   id: number;
   title: string | null;
   language: string | null;
   default: boolean;
   selected: boolean;
+  /** External (sidecar) track rather than one embedded in the container. */
+  external?: boolean;
 }
 
 export interface NativePlaybackEvent {
   sessionId: string;
   fileId: number;
-  type: "ready" | "time" | "duration" | "pause" | "buffering" | "ended" | "error" | "closed" | "audio";
+  type:
+    | "ready"
+    | "time"
+    | "duration"
+    | "pause"
+    | "buffering"
+    | "ended"
+    | "error"
+    | "closed"
+    | "audio"
+    | "tracks"
+    | "volume"
+    | "speed"
+    | "fullscreen";
   position?: number;
   duration?: number;
   paused?: boolean;
   buffering?: boolean;
   message?: string;
   audioTracks?: NativeAudioTrack[];
+  subtitleTracks?: NativeAudioTrack[];
+  /** Seconds of media mpv has cached ahead of the playhead. */
+  cachedSeconds?: number;
+  /** 0–100, mpv's own volume scale. */
+  volume?: number;
+  muted?: boolean;
+  speed?: number;
+  fullscreen?: boolean;
 }
 
 export interface NativePlayResult {
@@ -110,6 +147,8 @@ interface MpvTrack {
   title?: string;
   default?: boolean;
   selected?: boolean;
+  external?: boolean;
+  image?: boolean;
 }
 
 interface PendingRequest {
@@ -135,6 +174,12 @@ interface Session {
   duration: number | null;
   position: number;
   paused: boolean;
+  volume: number;
+  muted: boolean;
+  speed: number;
+  fullscreen: boolean;
+  /** Absolute media time (seconds) mpv has cached up to, or 0. */
+  cacheEnd: number;
   stopping: boolean;
   cleaned: boolean;
   startedAt: number;
@@ -238,6 +283,11 @@ function clampPosition(value: unknown, duration: number | null): number {
   return Math.min(number, limit);
 }
 
+/** mpv reports flags as booleans or "yes"/"no" depending on the property. */
+function truthy(value: unknown): boolean {
+  return value === true || value === "yes" || Number(value) > 0;
+}
+
 function redact(value: string): string {
   return value.replace(/\/s\/[a-f0-9]+\/[a-f0-9]+/g, "/s/<redacted>");
 }
@@ -333,6 +383,11 @@ export class NativePlayerManager {
       duration: manifest.duration ?? manifest.watch?.duration ?? null,
       position: 0,
       paused: false,
+      volume: 100,
+      muted: false,
+      speed: 1,
+      fullscreen: false,
+      cacheEnd: 0,
       stopping: false,
       cleaned: false,
       startedAt: Date.now(),
@@ -387,7 +442,35 @@ export class NativePlayerManager {
         const trackId = Number(request.value);
         if (!Number.isInteger(trackId) || trackId < 0) throw new Error("Invalid audio track");
         await sendCommand(session, ["set_property", "aid", trackId]);
-        await this.emitAudioTracks(session);
+        await this.emitTracks(session);
+        return { ok: true };
+      }
+      case "set-subtitle": {
+        const trackId = Number(request.value);
+        if (!Number.isInteger(trackId) || trackId < 0) throw new Error("Invalid subtitle track");
+        // 0 means "off"; any other value is an mpv subtitle track id.
+        await sendCommand(session, ["set_property", "sid", trackId === 0 ? "no" : trackId]);
+        await this.emitTracks(session);
+        return { ok: true };
+      }
+      case "set-volume": {
+        const volume = Number(request.value);
+        if (!Number.isFinite(volume)) throw new Error("Invalid volume");
+        await sendCommand(session, ["set_property", "volume", Math.min(130, Math.max(0, volume))]);
+        return { ok: true };
+      }
+      case "set-mute": {
+        await sendCommand(session, ["set_property", "mute", Number(request.value) > 0]);
+        return { ok: true };
+      }
+      case "set-speed": {
+        const speed = Number(request.value);
+        if (!Number.isFinite(speed) || speed < 0.25 || speed > 4) throw new Error("Invalid playback speed");
+        await sendCommand(session, ["set_property", "speed", speed]);
+        return { ok: true };
+      }
+      case "toggle-fullscreen": {
+        await sendCommand(session, ["set_property", "fullscreen", !session.fullscreen]);
         return { ok: true };
       }
       case "stop":
@@ -459,6 +542,9 @@ export class NativePlayerManager {
       "--save-position-on-quit=no",
       "--sub-auto=no",
       "--audio-file-auto=no",
+      // Plexy owns the player chrome. mpv's on-screen controller would show a
+      // second, differently styled control surface in the video window.
+      "--osc=no",
       "--user-agent=Plexy-Native",
       `--title=${session.title}`,
       ...(resume > 1 ? [`--start=${resume.toFixed(3)}`] : []),
@@ -521,7 +607,18 @@ export class NativePlayerManager {
         session.socket = socket;
         this.attachSocket(session, socket);
         // Observe only what the Plexy session surface needs.
-        for (const [index, name] of ["time-pos", "duration", "pause", "paused-for-cache"].entries()) {
+        for (const [index, name] of [
+          "time-pos",
+          "duration",
+          "pause",
+          "paused-for-cache",
+          "demuxer-cache-time",
+          "volume",
+          "mute",
+          "speed",
+          "fullscreen",
+          "sid",
+        ].entries()) {
           void sendCommand(session, ["observe_property", index + 1, name]).catch(() => {});
         }
         return;
@@ -613,6 +710,37 @@ export class NativePlayerManager {
       case "paused-for-cache":
         this.emitEvent(session, { type: "buffering", buffering: Boolean(data) });
         return;
+      case "demuxer-cache-time": {
+        const cached = Number(data);
+        session.cacheEnd = Number.isFinite(cached) && cached > 0 ? cached : 0;
+        return;
+      }
+      case "volume": {
+        const volume = Number(data);
+        if (!Number.isFinite(volume)) return;
+        session.volume = volume;
+        this.emitEvent(session, { type: "volume", volume, muted: session.muted });
+        return;
+      }
+      case "mute":
+        session.muted = truthy(data);
+        this.emitEvent(session, { type: "volume", volume: session.volume, muted: session.muted });
+        return;
+      case "speed": {
+        const speed = Number(data);
+        if (!Number.isFinite(speed) || speed <= 0) return;
+        session.speed = speed;
+        this.emitEvent(session, { type: "speed", speed });
+        return;
+      }
+      case "fullscreen":
+        session.fullscreen = truthy(data);
+        this.emitEvent(session, { type: "fullscreen", fullscreen: session.fullscreen });
+        return;
+      case "sid":
+        // The engine selected or cleared a subtitle track (sidecars included).
+        void this.emitTracks(session).catch(() => {});
+        return;
       default:
         return;
     }
@@ -626,6 +754,7 @@ export class NativePlayerManager {
       type: "time",
       position: session.position,
       duration: session.duration ?? session.manifest.duration ?? session.manifest.watch?.duration ?? undefined,
+      cachedSeconds: Math.max(0, session.cacheEnd - session.position),
     });
   }
 
@@ -638,7 +767,7 @@ export class NativePlayerManager {
     await this.addSidecarSubtitles(session).catch(() => {});
     // Let the in-app surface show every embedded language, not just the one
     // mpv selected; the viewer can switch without opening mpv's own menus.
-    await this.emitAudioTracks(session).catch(() => {});
+    await this.emitTracks(session).catch(() => {});
   }
 
   private async readTracks(session: Session): Promise<MpvTrack[] | null> {
@@ -646,20 +775,25 @@ export class NativePlayerManager {
     return Array.isArray(tracks) ? tracks as MpvTrack[] : null;
   }
 
-  private async emitAudioTracks(session: Session): Promise<void> {
+  private async emitTracks(session: Session): Promise<void> {
     const tracks = await this.readTracks(session);
     if (!tracks) return;
+    const map = (track: MpvTrack): NativeAudioTrack => ({
+      id: track.id,
+      title: track.title ?? null,
+      language: track.lang ?? null,
+      default: Boolean(track.default),
+      selected: Boolean(track.selected),
+      external: Boolean(track.external),
+    });
     this.emitEvent(session, {
-      type: "audio",
-      audioTracks: tracks
-        .filter((track) => track.type === "audio")
-        .map((track) => ({
-          id: track.id,
-          title: track.title ?? null,
-          language: track.lang ?? null,
-          default: Boolean(track.default),
-          selected: Boolean(track.selected),
-        })),
+      type: "tracks",
+      audioTracks: tracks.filter((track) => track.type === "audio").map(map),
+      // Image-based subtitles (PGS/VobSub) are still selectable; the menu only
+      // needs their language and title.
+      subtitleTracks: tracks
+        .filter((track) => track.type === "sub")
+        .map(map),
     });
   }
 

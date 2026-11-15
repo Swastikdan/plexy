@@ -31,15 +31,19 @@ import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
+import { usePlayTitle } from "@/features/catalog/hooks/use-play-title";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
 
 export function LibraryScreen({
   kind,
   open,
+  play,
   defaultSubTab,
 }: {
   kind: "movie" | "series" | "anime";
   open: OpenTitle;
+  play?: (fileId: number) => void;
   defaultSubTab?: "movie" | "series" | "anime";
 }) {
   const tabBoundary = usePagerGestureBoundary();
@@ -148,6 +152,7 @@ export function LibraryScreen({
         items={collection ? api.collectionItems(collection.id) : []}
         close={() => setCollection(null)}
         open={open}
+        play={play}
       />
       {showLibTabs && (
         <View className="px-5 pb-3">
@@ -276,6 +281,7 @@ export function LibraryScreen({
               sort={sort}
               unwatched={unwatched}
               open={open}
+              play={play}
             />
           )
         }
@@ -384,13 +390,17 @@ function LibraryTitles({
   sort,
   unwatched,
   open,
+  play,
 }: {
   tab: "all" | "movie" | "series" | "anime";
   sort: string;
   unwatched: boolean;
   open: OpenTitle;
+  play?: (fileId: number) => void;
 }) {
   const { api } = useClient();
+  const titleActions = useTitleActions();
+  const playTitle = usePlayTitle(play, (item) => open(item.publicId));
   const { width } = useWindowDimensions();
   const [extra, setExtra] = useState<ItemCard[]>([]);
   const [more, setMore] = useState(false);
@@ -461,6 +471,12 @@ function LibraryTitles({
           onPress={() => {
             open(item.publicId);
           }}
+          onLongPress={() =>
+            titleActions(item, {
+              play: () => playTitle(item),
+              onChanged: data.retry,
+            })
+          }
         />
       )}
       onScrollToIndexFailed={() => {}}
