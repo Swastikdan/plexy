@@ -28,6 +28,6 @@ describe("mobile open source notices", () => {
     expect(addProject(project)).toBe(project);
     expect(addApp(app)).toBe(app);
     expect(project).toContain("oss-licenses-plugin:0.13.0");
-    expect(app).toContain("play-services-oss-licenses:17.5.3");
+    expect(app).toContain("play-services-oss-licenses:17.5.2");
   });
 });

@@ -38,7 +38,7 @@ function TabIcon({
 }) {
   const colors = useColors();
   const reduceMotion = useReducedMotion();
-  const scale = useRef(new Animated.Value(1)).current;
+  const [scale] = React.useState(() => new Animated.Value(1));
   const wasFocused = useRef(focused);
   useEffect(() => {
     if (wasFocused.current === focused) return;
@@ -127,7 +127,7 @@ function MobileTabBar({
 }
 export default function TabLayout() {
   const colors = useColors();
-  const { runtime } = useClient();
+  const { runtime, preferences } = useClient();
   const [attention, setAttention] = useState(0);
   useEffect(() => {
     const update = () => setAttention(runtime.getAttentionCount());
@@ -143,7 +143,7 @@ export default function TabLayout() {
         backBehavior="initialRoute"
         layout={({ state, navigation, descriptors }) => <View style={{ flex: 1 }}>
           <SafeAreaView edges={state.routes[state.index]!.name === "index" ? [] : ["top"]} style={{ flex: 1, backgroundColor: colors.canvas }}>
-            {state.routes[state.index]!.name !== "index" && <LibraryAttention />}
+            {state.routes[state.index]!.name !== "index" && preferences.source !== "remote" && <LibraryAttention />}
             {descriptors[state.routes[state.index]!.key]!.render()}
           </SafeAreaView>
           <MobileTabBar state={state} navigation={navigation} attention={attention} />

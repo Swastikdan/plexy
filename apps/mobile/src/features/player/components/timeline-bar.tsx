@@ -34,7 +34,7 @@ export function TimelineBar({
 }: TimelineBarProps) {
   const colors = useColors();
   const reduceMotion = useReducedMotion();
-  const emphasis = useRef(new Animated.Value(scrubbing ? 1 : 0)).current;
+  const [emphasis] = React.useState(() => new Animated.Value(scrubbing ? 1 : 0));
   useEffect(() => {
     const animation = Animated.timing(emphasis, {
       toValue: scrubbing ? 1 : 0,

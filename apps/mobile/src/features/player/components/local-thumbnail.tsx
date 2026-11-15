@@ -1,8 +1,8 @@
+import { useLayoutEffect , useEffect, useRef, useState } from "react";
 import { Directory, File, Paths } from "expo-file-system";
 import { Image } from "expo-image";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import type { VideoPlayer } from "expo-video";
-import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 // Only visited timestamps are decoded. JPEGs survive app restarts in private storage.
@@ -86,7 +86,7 @@ export function LocalThumbnail({
   const busy = useRef(false);
   const alive = useRef(true);
   const second = Math.floor(Math.max(0, time) / 2) * 2;
-  wanted.current = second;
+  useLayoutEffect(() => { wanted.current = second; }, [second]);
   useEffect(() => {
     alive.current = true;
     return () => {

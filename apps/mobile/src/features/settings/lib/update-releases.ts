@@ -3,10 +3,11 @@ import type { GitHubRelease } from "./app-updater";
 const RELEASES_URL = "https://api.github.com/repos/Swastikdan/plexy/releases";
 
 /** Releases may contain only desktop/server assets, so inspect multiple pages. */
-export async function fetchUpdateReleases(request: typeof fetch = fetch): Promise<GitHubRelease[]> {
+export async function fetchUpdateReleases(request: typeof fetch = fetch, signal?: AbortSignal): Promise<GitHubRelease[]> {
   const releases: GitHubRelease[] = [];
   for (let page = 1; page <= 10; page++) {
     const response = await request(`${RELEASES_URL}?per_page=100&page=${page}`, {
+      signal,
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "Plexy-App",

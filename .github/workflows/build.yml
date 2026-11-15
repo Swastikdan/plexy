@@ -20,10 +20,20 @@ on:
           - mobile
           - desktop
           - backend
+      mobile_update_type:
+        description: "Mobile update urgency"
+        type: choice
+        default: optional
+        options: [optional, feature, necessary]
+      mobile_version_bump:
+        description: "Mobile version increment"
+        type: choice
+        default: patch
+        options: [patch, minor, major]
 
 concurrency:
   group: plexy-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -101,7 +111,7 @@ jobs:
         run: bun run --filter @plexy/desktop typecheck && bun run test:desktop
       - name: Verify Android clients
         if: needs.plan.outputs.build_mobile == 'true'
-        run: bun run typecheck:native && bun run test:native
+        run: bun run typecheck:native && bun run --cwd apps/mobile lint:strict && bun run test:native
       - name: Save verified website
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         uses: actions/upload-artifact@v7
@@ -434,6 +444,9 @@ jobs:
         run: bun scripts/native/build-preview.ts
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN || secrets.EXPO_PUBLIC_TMDB_TOKEN || secrets.TMDB_ACCESS_TOKEN || secrets.VITE_PUBLIC_TMDB_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          PLEXY_UPDATE_TYPE: ${{ inputs.mobile_update_type }}
+          PLEXY_VERSION_BUMP: ${{ inputs.mobile_version_bump }}
           PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
           # Use the standard public Linux runner's 4 vCPUs and 16 GB RAM.
           PLEXY_GRADLE_WORKERS: "4"
@@ -443,6 +456,7 @@ jobs:
           name: plexy-android-mobile
           path: |
             .build/native/Plexy-*.apk
+            .build/native/mobile-update.json
           if-no-files-found: warn
 
   server:
@@ -563,6 +577,25 @@ jobs:
             have_asset 'plexy-server-macos-arm64.tar.gz' || warn_missing 'plexy-server-macos-arm64.tar.gz'
           fi
 
+      - name: Publish mobile version and startup update policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f release/mobile-update.json ]; then
+            version="$(node -p "JSON.parse(require('fs').readFileSync('release/mobile-update.json','utf8')).latestVersion")"
+            apk="$(node -p "JSON.parse(require('fs').readFileSync('release/mobile-update.json','utf8')).apkName")"
+            tag="mobile-v${version}"
+            # Publish the installable APK first; only then advertise the policy.
+            gh release upload "$tag" "release/$apk" release/mobile-update.json --clobber
+            gh release edit "$tag" --draft=false --latest=false --title "Plexy Mobile ${version}" --notes-file release/mobile-update.json
+            if ! gh release view mobile-latest >/dev/null 2>&1; then
+              gh release create mobile-latest --title "Plexy Mobile update policy" --notes "Stable mobile startup update policy." --latest=false
+            fi
+            gh release upload mobile-latest release/mobile-update.json --clobber
+          fi
+
       - name: Create update checksums
         shell: bash
         run: |
@@ -611,7 +644,7 @@ jobs:
 
           ${mac_paragraph}
 
-          **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. Phone APKs target ARM64. These standalone preview APKs use the template test signing identity and are not store releases.
+          **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. Phone APKs target ARM64. These standalone preview APKs use a dedicated preview signing identity (not the public Android debug key) and are not store releases.
 
           **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg, migrations, and the web folder beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. The browser UI is included: open the server address, or pass \`--no-ui\` for API-only operation.
 

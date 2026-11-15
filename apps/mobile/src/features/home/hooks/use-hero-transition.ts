@@ -32,8 +32,9 @@ export function useHeroTransition(items: ItemCard[]) {
   const opacity = useSharedValue(1);
   const reducedMotion = useReducedMotion();
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+  useLayoutEffect(() => { itemsRef.current = items; }, [items]);
   const requestedId = useRef<string | null>(visible.id);
+  const [requested, setRequested] = useState(visible.id);
   const revision = useRef(0);
   const entering = useRef<number | null>(null);
   const mounted = useRef(true);
@@ -71,6 +72,7 @@ export function useHeroTransition(items: ItemCard[]) {
         return;
       const version = ++revision.current;
       requestedId.current = target.publicId;
+      setRequested(target.publicId);
       entering.current = null;
       cancelAnimation(opacity);
       if (!animate) {
@@ -103,31 +105,31 @@ export function useHeroTransition(items: ItemCard[]) {
     [select],
   );
 
-  useEffect(() => {
-    if (!items.length) {
+  const fallbackId = items[0]?.publicId ?? null;
+  if ((visible.id !== fallbackId && !items.some(item => item.publicId === visible.id)) ||
+      (changing && !items.some(item => item.publicId === requested))) {
+    setVisible({ id: fallbackId, revision: visible.revision + 1 });
+    setRequested(fallbackId);
+    setChanging(false);
+  }
+  useLayoutEffect(() => {
+    if (!items.some(item => item.publicId === requestedId.current)) {
       revision.current++;
       entering.current = null;
-      requestedId.current = null;
+      requestedId.current = fallbackId;
       cancelAnimation(opacity);
       opacity.set(1);
-      setChanging(false);
-      return;
     }
-    const pending = items.findIndex(
-      (item) => item.publicId === requestedId.current,
-    );
-    if (pending < 0 || !items.some((item) => item.publicId === visible.id))
-      select(Math.max(0, pending), false);
-  }, [items, visible.id, opacity, select]);
-
+  }, [items, fallbackId, opacity]);
+  const invalidateTransition = useCallback(() => { revision.current++; }, []);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      revision.current++;
+      invalidateTransition();
       cancelAnimation(opacity);
     };
-  }, [opacity]);
+  }, [opacity, invalidateTransition]);
 
   const contentStyle = useAnimatedStyle(
     () => ({
@@ -148,7 +150,7 @@ export function useHeroTransition(items: ItemCard[]) {
       items.findIndex(
         (item) =>
           item.publicId ===
-          (changing ? requestedId.current : activeItem?.publicId),
+          (changing ? requested : activeItem?.publicId),
       ),
     ),
     changing,

@@ -1,16 +1,17 @@
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
 import { easings } from "@/shared/theme";
 import { createPlayerTapController } from "../lib/player-taps";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
-  PanResponder,
   type GestureResponderEvent,
 } from "react-native";
+import { createVideoGestures } from "../lib/video-gestures";
+import { useSharedValue, useAnimatedStyle, useAnimatedReaction } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import {
   clampZoom,
   DOUBLE_TAP_MS,
-  pinchZoom,
   type PlayerTap,
 } from "../lib/player-interactions";
 export type FitMode = "contain" | "cover" | "fill";
@@ -43,48 +44,43 @@ export function usePlayerGestures({
     seekSeconds,
     onVolumeChange,
   });
-  callbacks.current = {
+  useLayoutEffect(() => { callbacks.current = {
     seekBy,
     toggleControls,
     seekSeconds,
     onVolumeChange,
-  };
+  }; }, [seekBy, toggleControls, seekSeconds, onVolumeChange]);
   const [fitMode, setFitMode] = useState<FitMode>("contain");
-  const zoomRef = useRef(1);
-  const [zoomValue] = useState(() => new Animated.Value(1));
-  const [brightnessValue] = useState(() => new Animated.Value(1));
-  const [volumeValue] = useState(() => new Animated.Value(1));
+  const zoomValue = useSharedValue(1);
+  const brightnessValue = useSharedValue(1);
+  const volumeValue = useSharedValue(1);
   const gestureBlockedUntil = useRef(0);
   const viewportWidth = useRef(1);
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
+
   const [fitToast, setFitToast] = useState<string | null>(null);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastScale = useRef(new Animated.Value(0.95)).current;
-  const showFitToast = (label: string) => {
+  const [toastOpacity] = useState(() => new Animated.Value(0));
+  const [toastScale] = useState(() => new Animated.Value(0.95));
+  const showFitToast = useCallback((label: string) => {
     setFitToast(label);
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setFitToast(null), 1800);
-  };
+  }, []);
   const tapController = useRef<ReturnType<typeof createPlayerTapController> | null>(null);
-  if (!tapController.current) {
-    tapController.current = createPlayerTapController({
-      toggleControls: () => callbacks.current.toggleControls(),
-      seekBy: (seconds) => {
-        callbacks.current.seekBy(seconds);
-
-      },
-      seekSeconds: () => callbacks.current.seekSeconds,
-      schedule: (callback, delay) => setTimeout(callback, delay),
-      cancel: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-    });
-  }
-  const cancelPendingTap = () => tapController.current?.reset();
+  useEffect(() => { tapController.current = createPlayerTapController({
+    toggleControls: () => callbacks.current.toggleControls(),
+    seekBy: seconds => callbacks.current.seekBy(seconds),
+    seekSeconds: () => callbacks.current.seekSeconds,
+    schedule: (callback, delay) => setTimeout(callback, delay),
+    cancel: timer => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  });
+  return () => tapController.current?.reset();
+  }, []);
+  const cancelPendingTap = useEventCallback(() => tapController.current?.reset());
   useEffect(() => {
     if (!enabled) cancelPendingTap();
-  }, [enabled]);
-  useEffect(() => () => cancelPendingTap(), []);
+  }, [enabled, cancelPendingTap]);
+  useEffect(() => () => cancelPendingTap(), [cancelPendingTap]);
   const toastVisible = fitToast != null;
   useEffect(() => {
     if (toastVisible) {
@@ -113,12 +109,11 @@ export function usePlayerGestures({
       }).start();
     }
     return () => { toastOpacity.stopAnimation(); toastScale.stopAnimation(); };
-  }, [toastVisible, reduceMotion]);
+  }, [toastVisible, reduceMotion, toastOpacity, toastScale]);
   const applyFit = (mode: FitMode, scale: number) => {
     setFitMode(mode);
     const nextZoom = clampZoom(scale);
-    zoomRef.current = nextZoom;
-    zoomValue.setValue(nextZoom);
+    zoomValue.set(nextZoom);
     showFitToast(
       scale === 1
         ? mode === "contain"
@@ -132,140 +127,38 @@ export function usePlayerGestures({
   const [adjusting, setAdjusting] = useState<"brightness" | "volume" | null>(
     null,
   );
-  const brightnessRef = useRef(1);
-  const volumeRef = useRef(1);
-  const hasLoadedRef = useRef(hasLoaded);
-  hasLoadedRef.current = hasLoaded;
-  const screenRef = useRef({ h: height });
-  screenRef.current = { h: height };
-  const initialPinchDist = useRef<number | null>(null);
-  const initialZoom = useRef(1);
-  const gestureMode = useRef<"pinch" | "av" | null>(null);
-  const avCandidate = useRef<{ x: number; y: number } | null>(null);
-  const avStart = useRef<{
-    side: "left" | "right";
-    y: number;
-    level: number;
-  } | null>(null);
-  const finishGesture = () => {
-    if (gestureMode.current === "pinch") {
-      showFitToast(`${Math.round(zoomRef.current * 100)}% zoom`);
-    }
-    gestureMode.current = null;
-    avCandidate.current = null;
-    avStart.current = null;
-    initialPinchDist.current = null;
+  const pinchActive = useSharedValue(false);
+  const panActive = useSharedValue(false);
+  const initialZoom = useSharedValue(1);
+  const startLevel = useSharedValue(1);
+  const leftSide = useSharedValue(true);
+  const viewport = useSharedValue(1);
+  const beginGesture = useEventCallback((side: "brightness" | "volume" | null) => {
+    cancelPendingTap();
+    gestureBlockedUntil.current = Infinity;
+    setAdjusting(side);
+  });
+  const finishGesture = useCallback((scale?: number) => {
     gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
     setAdjusting(null);
+    if (scale != null) showFitToast(`${Math.round(scale * 100)}% zoom`);
+  }, [showFitToast]);
+  const commitVolume = useEventCallback((level: number) => callbacks.current.onVolumeChange?.(level));
+  // Bridge only when the integer percentage changes, rather than on every frame.
+  useAnimatedReaction(
+    () => Math.round(volumeValue.get() * 100),
+    (level, previous) => {
+      if (previous != null && level !== previous) scheduleOnRN(commitVolume, level / 100);
+    },
+  );
+  const finishNativeGesture = useEventCallback(finishGesture);
+  const videoGestures = createVideoGestures({ enabled, locked, hasLoaded, height, pinchActive, panActive, initialZoom, zoomValue, leftSide, viewport, startLevel, brightnessValue, volumeValue, beginGesture, finishGesture: finishNativeGesture });
+  const zoomStyle = useAnimatedStyle(() => ({ transform: [{ scale: zoomValue.get() }] }));
+  const brightnessStyle = useAnimatedStyle(() => ({ opacity: 0.9 * (1 - brightnessValue.get()) }));
+  const setViewportWidth = (width: number) => {
+    viewportWidth.current = width;
+    viewport.set(width);
   };
-  const videoGestures = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponderCapture: (evt) => {
-        // Every touch begins a new swipe candidate; never reuse a prior tap.
-        const touches = evt.nativeEvent.touches;
-        const touch = touches[0];
-        avCandidate.current = touch ? { x: touch.pageX, y: touch.pageY } : null;
-        return enabledRef.current && touches.length >= 2;
-      },
-      onMoveShouldSetPanResponder: (evt) => {
-        if (!enabledRef.current) return false;
-        const touches = evt.nativeEvent.touches;
-        if (touches.length >= 2) return true;
-        if (touches.length !== 1) return false;
-        if (!hasLoadedRef.current) return false;
-        const touch = touches[0]!;
-        if (!avCandidate.current) {
-          avCandidate.current = { x: touch.pageX, y: touch.pageY };
-          return false;
-        }
-        const dx = touch.pageX - avCandidate.current.x;
-        const dy = touch.pageY - avCandidate.current.y;
-        if (Math.hypot(dx, dy) < 16) return false;
-        if (Math.abs(dy) <= Math.abs(dx) * 1.2) {
-          avCandidate.current = null;
-          return false;
-        }
-        return true;
-      },
-      onPanResponderGrant: (evt) => {
-        cancelPendingTap();
-        gestureBlockedUntil.current = Date.now() + DOUBLE_TAP_MS;
-        const touches = evt.nativeEvent.touches;
-        if (touches.length >= 2) {
-          gestureMode.current = "pinch";
-          const t0 = touches[0]!;
-          const t1 = touches[1]!;
-          const dx = t0.pageX - t1.pageX;
-          const dy = t0.pageY - t1.pageY;
-          initialPinchDist.current = Math.hypot(dx, dy);
-          initialZoom.current = zoomRef.current;
-          return;
-        }
-        const touch = touches[0]!;
-        const side =
-          evt.nativeEvent.locationX < viewportWidth.current / 2
-            ? "left"
-            : "right";
-        gestureMode.current = "av";
-        avStart.current = {
-          side,
-          y: touch.pageY,
-          level: side === "left" ? brightnessRef.current : volumeRef.current,
-        };
-        setAdjusting(side === "left" ? "brightness" : "volume");
-      },
-      onPanResponderMove: (evt) => {
-        const touches = evt.nativeEvent.touches;
-        if (gestureMode.current === "pinch") {
-          if (
-            touches.length >= 2 &&
-            initialPinchDist.current &&
-            initialPinchDist.current > 0
-          ) {
-            const t0 = touches[0]!;
-            const t1 = touches[1]!;
-            const dx = t0.pageX - t1.pageX;
-            const dy = t0.pageY - t1.pageY;
-            const currentDist = Math.hypot(dx, dy);
-            const newZoom = pinchZoom(
-              initialZoom.current,
-              initialPinchDist.current,
-              currentDist,
-            );
-            zoomRef.current = newZoom;
-            zoomValue.setValue(newZoom);
-          }
-          return;
-        }
-        if (
-          gestureMode.current === "av" &&
-          avStart.current &&
-          touches.length === 1
-        ) {
-          const dy = avStart.current.y - touches[0]!.pageY;
-          const delta = dy / (screenRef.current.h * 0.55);
-          if (avStart.current.side === "left") {
-            const level = Math.min(
-              1,
-              Math.max(0.2, avStart.current.level + delta),
-            );
-            brightnessRef.current = level;
-            brightnessValue.setValue(level);
-          } else {
-            const level = Math.min(
-              1,
-              Math.max(0, avStart.current.level + delta),
-            );
-            volumeRef.current = level;
-            volumeValue.setValue(level);
-            callbacks.current.onVolumeChange?.(level);
-          }
-        }
-      },
-      onPanResponderRelease: finishGesture,
-      onPanResponderTerminate: finishGesture,
-    }),
-  ).current;
   const onTap = (event: GestureResponderEvent) => {
     const now = Date.now();
     if (now < gestureBlockedUntil.current || locked || !enabled) return;
@@ -286,13 +179,14 @@ export function usePlayerGestures({
   );
   return {
     fitMode,
-    zoomValue,
+    zoomStyle,
+    brightnessStyle,
     brightnessValue,
     volumeValue,
     applyFit,
     adjusting,
     videoGestures,
-    viewportWidth,
+    setViewportWidth,
     onTap,
     fitToast,
     toastOpacity,

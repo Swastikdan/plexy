@@ -29,21 +29,14 @@ export function LibraryReportScreen() {
   const showDialog = useAppDialog();
   const colors = useColors();
   const { api, runtime } = useClient();
-  const [revision, update] = useState(0);
+  const [, update] = useState(0);
   const [filter, setFilter] = useState<"all" | "review" | "files">("all");
   const filters = ["all", "review", "files"] as const;
   const [editing, setEditing] = useState<ItemCard | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
-  const reports = useMemo(
-    () => ({
-      all: api.report("all"),
-      review: api.report("review"),
-      files: api.report("files"),
-    }),
-    [api, revision],
-  );
+  const reports = { all: api.report("all"), review: api.report("review"), files: api.report("files") };
   const all = reports.all;
   const filesByTitle = useMemo(() => {
     const files = new Map<number, ReturnType<typeof api.titleFile>>();

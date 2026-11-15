@@ -21,6 +21,7 @@ apps/mobile/android/
 *.jks
 *.keystore
 !scripts/native/debug.keystore
+!scripts/native/preview.keystore
 plexy-exact/
 
 # Desktop packaging resources regenerated from SVG sources during build

@@ -1,6 +1,12 @@
+import { useResource } from "@/core/resources/use-resource";
+import { updateNativePlayer } from "./lib/native-player";
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
+import React, { useLayoutEffect , useCallback, useEffect, useRef, useState } from "react";
+import Reanimated from "react-native-reanimated";
+import { GestureDetector } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { ArrowLeft, Play, Pause, SlidersHorizontal, PictureInPicture, Maximize, Crop, MoveHorizontal } from "@/shared/ui/icons";
+import { ArrowLeft, Play, Pause, SlidersHorizontal, PictureInPicture, Maximize, Crop, MoveHorizontal , Lock, Unlock } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
 import {
   isPictureInPictureSupported,
@@ -8,7 +14,6 @@ import {
   VideoView,
   type VideoPlayer,
 } from "expo-video";
-import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   AppState,
@@ -27,14 +32,11 @@ import { useClient } from "@/core/client/client-provider";
 import type {
   ItemCard,
   Playability,
-  SkipSegments,
 } from "@/core/library/catalog-api";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { cn } from "@/shared/lib/cn";
 import { timeLabel } from "@/shared/theme";
-import { Lock, Unlock } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
-import { Label } from "@/shared/ui/text";
 import { LocalThumbnail } from "./components/local-thumbnail";
 import { AudioPanel } from "./components/audio-panel";
 import { BottomToolbar } from "./components/bottom-toolbar";
@@ -115,10 +117,15 @@ export function PlaybackScreen({
   initial,
   back,
   next,
+  onlineNext,
+  onNextOnline,
 }: {
   initial: Playability;
   back: () => void;
   next: (id: number) => void;
+  /** A missing next episode that should continue on the online source. */
+  onlineNext?: { season: number; episode: number; title: string } | null;
+  onNextOnline?: () => void;
 }) {
   useKeepAwake();
   const { api, runtime, preferences, updatePreferences, progress } =
@@ -154,14 +161,11 @@ export function PlaybackScreen({
     const t = setTimeout(() => setMessage(""), 4000);
     return () => clearTimeout(t);
   }, [message]);
-  const resumeBackdropOpacity = useRef(new Animated.Value(0)).current;
-  const resumeCardOpacity = useRef(new Animated.Value(0)).current;
-  const resumeCardScale = useRef(new Animated.Value(0.94)).current;
-  const [skips, setSkips] = useState<SkipSegments>({
-    intro: null,
-    recap: null,
-    outro: null,
-  });
+  const [resumeBackdropOpacity] = React.useState(() => new Animated.Value(0));
+  const [resumeCardOpacity] = React.useState(() => new Animated.Value(0));
+  const [resumeCardScale] = React.useState(() => new Animated.Value(0.94));
+  const skipResource = useResource(() => api.skips(manifest.fileId), [api, manifest.fileId]);
+  const skips = skipResource.value;
   const [scrub, setScrub] = useState<number | null>(null);
   const {
     visible,
@@ -181,17 +185,19 @@ export function PlaybackScreen({
     showUnlockHint,
     lastInteraction,
     toggleControls,
+    touchControls,
   } = usePlayerControls({ playing, status, scrub });
   const playerRef = useRef<VideoPlayer | null>(null);
   const {
     fitMode,
-    zoomValue,
+    zoomStyle,
+    brightnessStyle,
     brightnessValue,
     volumeValue,
     applyFit,
     adjusting,
     videoGestures,
-    viewportWidth,
+    setViewportWidth,
     onTap,
     fitToast,
     toastOpacity,
@@ -222,7 +228,6 @@ export function PlaybackScreen({
   );
   useEffect(() => {
     if (manifest.episodes?.length) {
-      setEpisodesList(manifest.episodes);
       return;
     }
     const parentId = manifest.parentPublicId || manifest.parentItemId;
@@ -242,12 +247,12 @@ export function PlaybackScreen({
     }
   }, [api, manifest.episodes, manifest.parentPublicId, manifest.parentItemId]);
   const sortedEpisodes = React.useMemo(() => {
-    return [...episodesList].sort((a, b) => {
+    return [...(manifest.episodes?.length ? manifest.episodes : episodesList)].sort((a, b) => {
       const sDiff = (a.seasonNumber ?? 1) - (b.seasonNumber ?? 1);
       if (sDiff !== 0) return sDiff;
       return (a.episodeNumber ?? 1) - (b.episodeNumber ?? 1);
     });
-  }, [episodesList]);
+  }, [episodesList, manifest.episodes]);
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [autoNextCancelled, setAutoNextCancelled] = useState(false);
@@ -261,18 +266,18 @@ export function PlaybackScreen({
   const currentPosition = useRef(0);
   const pendingSeek = useRef<{ target: number; until: number } | null>(null);
   const scrubRef = useRef(scrub);
-  scrubRef.current = scrub;
+  useLayoutEffect(() => { scrubRef.current = scrub; }, [scrub]);
   const durationRef = useRef(duration);
-  durationRef.current = duration;
+  useLayoutEffect(() => { durationRef.current = duration; }, [duration]);
   const autoSkipEnd = useRef(-1);
   const mounted = useRef(true);
   const pip = useRef(false);
   const preferencesRef = useRef(preferences);
-  preferencesRef.current = preferences;
+  useLayoutEffect(() => { preferencesRef.current = preferences; }, [preferences]);
   const lastSaved = useRef(0);
   const chosenStart = useRef(0);
   const initialized = useRef(false);
-  const chromeIn = useRef(new Animated.Value(1)).current;
+  const [chromeIn] = React.useState(() => new Animated.Value(1));
   const player = useVideoPlayer(null, (instance) => {
     instance.bufferOptions = bufferOptionsForDuration(initial.duration || 0);
     instance.timeUpdateEventInterval = 0.5;
@@ -298,7 +303,7 @@ export function PlaybackScreen({
     playerRef.current = player;
   }, [player]);
   useEffect(() => {
-    player.bufferOptions = bufferOptionsForDuration(duration);
+    updateNativePlayer(player, "bufferOptions", bufferOptionsForDuration(duration));
   }, [player, duration]);
   const save = useCallback(
     (completed = false) => {
@@ -320,18 +325,7 @@ export function PlaybackScreen({
     [api, manifest.itemId, progress],
   );
   const seekBurst = useRef({ seconds: 0, at: 0 });
-  const seekWithFeedback = (seconds: number) => {
-    const now = Date.now();
-    const previous = seekBurst.current;
-    const repeated = now - previous.at < 600 && Math.sign(previous.seconds) === Math.sign(seconds);
-    const total = repeated ? previous.seconds + seconds : seconds;
-    seekBurst.current = { seconds: total, at: now };
-    seek(currentPosition.current + seconds);
-    if (repeated) {
-      showFitToast(`${total > 0 ? "Forward" : "Back"} ${Math.abs(total)} seconds`);
-    }
-  };
-  const seek = (seconds: number) => {
+  const seek = useEventCallback((seconds: number) => {
     const target = Math.max(
       0,
       Math.min(duration || Number.MAX_SAFE_INTEGER, seconds),
@@ -342,10 +336,22 @@ export function PlaybackScreen({
     setAutoNextCancelled(false);
     reveal();
     pendingSeek.current = { target, until: Date.now() + 2500 };
-    player.currentTime = target;
+    updateNativePlayer(player, "currentTime", target);
     currentPosition.current = target;
     setPosition(target);
-  };
+  });
+  const seekWithFeedback = useEventCallback((seconds: number) => {
+    const now = Date.now();
+    const previous = seekBurst.current;
+    const repeated = now - previous.at < 600 && Math.sign(previous.seconds) === Math.sign(seconds);
+    const total = repeated ? previous.seconds + seconds : seconds;
+    seekBurst.current = { seconds: total, at: now };
+    seek(currentPosition.current + seconds);
+    if (repeated) {
+      showFitToast(`${total > 0 ? "Forward" : "Back"} ${Math.abs(total)} seconds`);
+    }
+  });
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -376,7 +382,7 @@ export function PlaybackScreen({
       player.addListener("statusChange", (e) => {
         setStatus(e.status);
         if (e.status === "loading" && initialized.current) {
-          lastInteraction.current = Date.now();
+          touchControls();
           setVisible(true);
         }
         if (e.status === "error") {
@@ -397,13 +403,13 @@ export function PlaybackScreen({
         setNativeAudio(e.availableAudioTracks);
         loadSubtitleTracks(e.availableSubtitleTracks);
         const value = Math.max(0, chosenStart.current - offset.current);
-        player.currentTime = value;
+        updateNativePlayer(player, "currentTime", value);
         currentPosition.current = chosenStart.current;
         setPosition(chosenStart.current);
         if (!durationRef.current && e.duration > 0) setDuration(e.duration);
         initialized.current = true;
         setEnded(false);
-        player.playbackRate = preferencesRef.current.playbackRate;
+        updateNativePlayer(player, "playbackRate", preferencesRef.current.playbackRate);
         player.play();
       }),
       player.addListener("playToEnd", () => {
@@ -417,14 +423,18 @@ export function PlaybackScreen({
       save();
       subs.forEach((s) => s.remove());
     };
-  }, [player, save]);
-  useEffect(() => {
-    if (!started || choice.path === "unsupported") return;
-    let live = true;
+  }, [player, save, lastInteraction, loadSubtitleTracks, setVisible, touchControls]);
+  const [previousChoice, setPreviousChoice] = useState(choice);
+  if (previousChoice !== choice) {
+    setPreviousChoice(choice);
     setError("");
     setStatus("loading");
     setHasLoaded(false);
     setBufferedPosition(0);
+  }
+  useEffect(() => {
+    if (!started || choice.path === "unsupported") return;
+    let live = true;
     initialized.current = false;
     offset.current = 0;
     chosenStart.current = choice.start;
@@ -448,22 +458,9 @@ export function PlaybackScreen({
     return () => {
       live = false;
     };
-  }, [api, choice, manifest.fileId, player, started]);
-  useEffect(() => {
-    let live = true;
-    setSkips({ intro: null, recap: null, outro: null });
-    autoSkipEnd.current = -1;
-    void api
-      .skips(manifest.fileId)
-      .then((value) => {
-        if (live) setSkips(value);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [api, manifest.fileId]);
-  const validatedSkips = localSegments(skips, duration || null);
+  }, [api, choice, manifest.fileId, manifest.title, manifest.subtitle, player, started]);
+  useEffect(() => { autoSkipEnd.current = -1; }, [manifest.fileId]);
+  const validatedSkips = React.useMemo(() => localSegments(skips ?? { intro: null, recap: null, outro: null }, duration || null), [skips, duration]);
   useEffect(() => {
     const active = Object.values(validatedSkips).find(
       (segment) =>
@@ -480,12 +477,22 @@ export function PlaybackScreen({
       autoSkipEnd.current = active.end;
       seek(active.end);
     }
-  }, [position, preferences.autoSkip, skips, duration, scrub, status, resume]);
+  }, [position, preferences.autoSkip, validatedSkips, scrub, status, resume, seek]);
   const activeSkip = Object.entries(validatedSkips).find(
     ([, segment]) =>
       segment && position >= segment.start && position < segment.end,
   );
   const skipLabel = activeSkip?.[0] === "outro" ? "credits" : activeSkip?.[0];
+  const hasNextEpisode = Boolean(manifest.nextFileId || onlineNext);
+  const playNextEpisode = useEventCallback(() => {
+    save();
+    // Prefer the online episode when the local next file skips a gap.
+    if (onlineNext) {
+      onNextOnline?.();
+      return;
+    }
+    if (manifest.nextFileId) next(manifest.nextFileId);
+  });
   // While the credits roll the next-episode countdown already runs, Netflix
   // style; "Watch credits" cancels it and keeps playing.
   const creditsPhase =
@@ -496,21 +503,23 @@ export function PlaybackScreen({
   const creditsPills =
     creditsPhase &&
     preferences.autoNext &&
-    !!manifest.nextFileId &&
+    hasNextEpisode &&
     !autoNextCancelled;
-  useEffect(() => {
+  const [previousCreditsPhase, setPreviousCreditsPhase] = useState(creditsPhase);
+  if (previousCreditsPhase !== creditsPhase) {
+    setPreviousCreditsPhase(creditsPhase);
     if (creditsPhase) setCountdown(10);
-  }, [creditsPhase]);
+  }
   useEffect(() => {
     if (
       (!ended && !creditsPhase) ||
       !preferences.autoNext ||
       autoNextCancelled ||
-      !manifest.nextFileId
+      !hasNextEpisode
     )
       return;
     const timer = setTimeout(() => {
-      if (countdown <= 1) next(manifest.nextFileId!);
+      if (countdown <= 1) playNextEpisode();
       else setCountdown((n) => n - 1);
     }, 1000);
     return () => clearTimeout(timer);
@@ -519,9 +528,9 @@ export function PlaybackScreen({
     creditsPhase,
     preferences.autoNext,
     autoNextCancelled,
-    manifest.nextFileId,
-    next,
+    hasNextEpisode,
     countdown,
+    playNextEpisode,
   ]);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
@@ -531,12 +540,12 @@ export function PlaybackScreen({
       } else reveal();
     });
     return () => sub.remove();
-  }, [player, save]);
-  const exit = () => {
+  }, [player, save, reveal]);
+  const exit = useEventCallback(() => {
     save();
     player.pause();
     back();
-  };
+  });
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (lockedRef.current) {
@@ -559,11 +568,12 @@ export function PlaybackScreen({
       return true;
     });
     return () => sub.remove();
-  }, [menu, speedPanel, audioPanel, back, save, player]);
+  }, [menu, speedPanel, audioPanel, exit, lockedRef, unlockScreen, setAudioPanel, setSpeedPanel, setMenu]);
   const togglePlay = () => {
     reveal();
     if (ended) seek(0);
-    player.playing ? player.pause() : player.play();
+    if (player.playing) player.pause();
+    else player.play();
   };
   const previewTime = scrub ?? position;
 
@@ -576,7 +586,6 @@ export function PlaybackScreen({
   );
   // Track geometry of TimelineBar (row inset 24 + 52px labels + 12px gaps) so
   // the scrub preview can track the thumb position.
-  const trackLeft = 24 + 52 + 12;
   const trackWidth = Math.max(60, win.width - 176);
   const scrubRatio = duration
     ? Math.min(1, Math.max(0, (scrub ?? 0) / duration))
@@ -627,7 +636,7 @@ export function PlaybackScreen({
         ]),
       ]).start();
     }
-  }, [resume, reduceMotion]);
+  }, [resume, reduceMotion, resumeBackdropOpacity, resumeCardOpacity, resumeCardScale]);
   useEffect(() => {
     if (hasLoaded) {
       chromeIn.setValue(0);
@@ -638,7 +647,7 @@ export function PlaybackScreen({
         useNativeDriver: true,
       }).start();
     }
-  }, [hasLoaded, reduceMotion]);
+  }, [hasLoaded, reduceMotion, chromeIn]);
   const videoViewProps = {
     ref: video,
     player,
@@ -659,31 +668,21 @@ export function PlaybackScreen({
   return (
     <View className="flex-1 bg-black">
       <StatusBar hidden barStyle="light-content" />
-      <View
-        className="absolute inset-0"
-        {...(!locked ? videoGestures.panHandlers : {})}
-      >
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            { transform: [{ scale: zoomValue }] },
-          ]}
+      <GestureDetector gesture={videoGestures}>
+      <View collapsable={false} className="absolute inset-0">
+        <Reanimated.View
+          style={[StyleSheet.absoluteFill, zoomStyle]}
         >
           <VideoView
             {...videoViewProps}
             nativeControls={false}
             style={StyleSheet.absoluteFill}
           />
-        </Animated.View>
-        <Animated.View
+        </Reanimated.View>
+        <Reanimated.View
           pointerEvents="none"
           className="absolute inset-0 bg-black"
-          style={{
-            opacity: brightnessValue.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.9, 0],
-            }),
-          }}
+          style={brightnessStyle}
         />
 
         {openingVideo && !resume && <PlayerLoading />}
@@ -718,7 +717,7 @@ export function PlaybackScreen({
             accessible={false}
             focusable={false}
             onLayout={(event) => {
-              viewportWidth.current = event.nativeEvent.layout.width;
+              setViewportWidth(event.nativeEvent.layout.width);
             }}
             onPress={onTap}
             className="absolute inset-0"
@@ -785,13 +784,14 @@ export function PlaybackScreen({
           </View>
         )}
       </View>
+      </GestureDetector>
       {show && !locked && (
         <Animated.View
           className="absolute inset-0"
           pointerEvents="box-none"
           style={{ opacity: chromeIn }}
-          onTouchStart={() => { lastInteraction.current = Date.now(); }}
-          onTouchEnd={() => { lastInteraction.current = Date.now(); }}
+          onTouchStart={() => { touchControls(); }}
+          onTouchEnd={() => { touchControls(); }}
         >
           <LinearGradient pointerEvents="none" colors={["transparent", "rgba(0,0,0,0.88)"]} style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 170 }} />
           {!openingVideo && !ended && !creditsPills && (
@@ -849,10 +849,8 @@ export function PlaybackScreen({
               showEpisodes={isTvShow && sortedEpisodes.length > 0}
               onEpisodes={() => setMenu("episodes")}
               onAudioSubtitles={() => setAudioPanel(true)}
-              showNext={!!manifest.nextFileId}
-              onNext={() => {
-                if (manifest.nextFileId) next(manifest.nextFileId);
-              }}
+              showNext={hasNextEpisode}
+              onNext={playNextEpisode}
             />
           )}
           {!openingVideo && !ended && (
@@ -1025,7 +1023,7 @@ export function PlaybackScreen({
               onPress={() => setAutoNextCancelled(true)}
             />
           )}
-          {!!manifest.nextFileId && (
+          {hasNextEpisode && (
             <EndPill
               label="Next Episode"
               variant="light"
@@ -1034,13 +1032,13 @@ export function PlaybackScreen({
                   ? 1 - countdown / 10
                   : undefined
               }
-              onPress={() => next(manifest.nextFileId!)}
+              onPress={playNextEpisode}
             />
           )}
           {ended &&
             preferences.autoNext &&
             !autoNextCancelled &&
-            !!manifest.nextFileId && (
+            hasNextEpisode && (
               <EndPill
                 label="Cancel"
                 variant="ghost"
@@ -1161,7 +1159,7 @@ export function PlaybackScreen({
         }}
         subtitles={{ position: subVertical, setPosition: setSubVertical }}
         setPlaybackRate={(rate) => {
-          player.playbackRate = rate;
+          updateNativePlayer(player, "playbackRate", rate);
           updatePreferences({ playbackRate: rate });
         }}
       />
@@ -1170,7 +1168,7 @@ export function PlaybackScreen({
         rate={preferences.playbackRate}
         onClose={() => setSpeedPanel(false)}
         onSelect={(rate) => {
-          player.playbackRate = rate;
+          updateNativePlayer(player, "playbackRate", rate);
           updatePreferences({ playbackRate: rate });
           setSpeedPanel(false);
           showFitToast(`${rate}× speed`);
@@ -1186,7 +1184,7 @@ export function PlaybackScreen({
         nativeSubtitles={nativeSubtitles}
         canAddSubtitleFile={Boolean(runtime.pickSubtitle)}
         onPickAudio={(track) => {
-          player.audioTrack = track;
+          updateNativePlayer(player, "audioTrack", track);
           setAudioPanel(false);
         }}
         onPickSubtitle={(value) => {

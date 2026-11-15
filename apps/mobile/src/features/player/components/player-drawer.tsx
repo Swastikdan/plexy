@@ -1,7 +1,7 @@
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { useColors } from "@/shared/theme";
-import { X, Check } from "@/shared/ui/icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useColors , timeLabel, easings } from "@/shared/theme";
+import { X, Check , Film, Minus, Plus } from "@/shared/ui/icons";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Animated,
   FlatList,
@@ -18,8 +18,6 @@ import type { PlayerMenu } from "../hooks/use-player-controls";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard, Playability } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
-import { timeLabel, easings } from "@/shared/theme";
-import { Film, Minus, Plus } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { SheetChips, SheetSection } from "./player-sheet";
 
@@ -66,11 +64,15 @@ export function PlayerDrawer({
   const { position: subVertical, setPosition: setSubVertical } = subtitles;
   const reduceMotion = useReducedMotion();
   const [renderedMenu, setRenderedMenu] = useState(menu);
-  const drawerAnim = useRef(new Animated.Value(560)).current;
+  const [previousMenu, setPreviousMenu] = useState(menu);
+  if (menu !== previousMenu) {
+    setPreviousMenu(menu);
+    if (menu != null) setRenderedMenu(menu);
+  }
+  const [drawerAnim] = React.useState(() => new Animated.Value(560));
   useEffect(() => {
     drawerAnim.stopAnimation();
     if (menu != null) {
-      setRenderedMenu(menu);
       if (reduceMotion) {
         Animated.timing(drawerAnim, {
           toValue: 0,
@@ -95,7 +97,7 @@ export function PlayerDrawer({
       }).start(({ finished }) => { if (finished) setRenderedMenu(null); });
     }
     return () => drawerAnim.stopAnimation();
-  }, [menu, reduceMotion]);
+  }, [menu, reduceMotion, drawerAnim]);
   const isCurrentEpisode = (ep: ItemCard) =>
     ep.fileId === manifest.fileId ||
     ep.id === manifest.itemId ||

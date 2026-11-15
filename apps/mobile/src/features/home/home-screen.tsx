@@ -21,10 +21,20 @@ export function HomeScreen({
   open,
   play,
   active,
+  online,
 }: {
   open: OpenTitle;
   play?: (fileId: number) => void;
   active: boolean;
+  /** Extra rows from the online catalog when the hybrid mode is on. */
+  online?: {
+    rows: { key: string; title: string; items: ItemCard[] }[];
+    carouselItems: ItemCard[];
+    open: OpenTitle;
+    play: (item: ItemCard) => void;
+    loading: boolean;
+    refresh: () => void;
+  };
 }) {
   const colors = useColors();
   const { push } = useRouter();
@@ -40,7 +50,7 @@ export function HomeScreen({
         .catch(() => {})
         .finally(data.retry);
     previousActive.current = active;
-  }, [active, api, progress]);
+  }, [active, api, progress, data.retry]);
   // Handler for instant playback
   const handlePlay = React.useCallback(
     (item: ItemCard) => {
@@ -153,6 +163,15 @@ export function HomeScreen({
       })
       .filter((r) => r.items.length > 0);
   }, [data.value, toFullSeriesOrMovie]);
+  const heroItems = carouselItems.length
+    ? carouselItems
+    : (online?.carouselItems ?? []);
+  const heroPlay =
+    carouselItems.length || !online ? handlePlay : online.play;
+  const heroOpen = carouselItems.length || !online ? open : online.open;
+  const onlineRows = online?.rows ?? [];
+  const hasAnyRows =
+    continueItems.length > 0 || otherRows.length > 0 || onlineRows.length > 0;
   if (data.loading) return <Loading />;
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
   return (
@@ -189,7 +208,7 @@ export function HomeScreen({
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[
           { paddingBottom: 28 },
-          !carouselItems.length && { paddingTop: insets.top + 90 },
+          !heroItems.length && { paddingTop: insets.top + 90 },
         ]}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
@@ -200,19 +219,22 @@ export function HomeScreen({
         }}
         refreshControl={
           <RefreshControl
-            refreshing={data.loading}
-            onRefresh={data.retry}
+            refreshing={data.loading || Boolean(online?.loading)}
+            onRefresh={() => {
+              data.retry();
+              online?.refresh();
+            }}
             tintColor={colors.ink}
           />
         }
       >
         {/* Hero Carousel */}
-        {carouselItems.length > 0 && (
+        {heroItems.length > 0 && (
           <View>
             <HeroCarousel
-              items={carouselItems}
-              onPlay={handlePlay}
-              open={open}
+              items={heroItems}
+              onPlay={heroPlay}
+              open={heroOpen}
               active={active && !scrolled}
               onHeroFocus={() => {
                 scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -252,7 +274,26 @@ export function HomeScreen({
           </View>
         ))}
 
-        {!data.loading && !data.error && !data.value?.rows.length && (
+        {/* Online rows keep the local library visible and add the catalog. */}
+        {onlineRows.length > 0 && (
+          <Text className="mb-1.5 px-5 font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">
+            Online
+          </Text>
+        )}
+        {onlineRows.map((row) => (
+          <View key={`online-${row.key}`}>
+            <CatalogRow
+              key={`online-${row.key}`}
+              title={row.title}
+              items={row.items}
+              open={online?.open ?? open}
+              onPlay={online?.play ?? handlePlay}
+              allowTitleActions={false}
+            />
+          </View>
+        ))}
+
+        {!data.loading && !data.error && !hasAnyRows && (
           <View className="min-h-[320px] justify-center gap-5 px-7 py-12">
             <Film size={36} color={colors.brandLight} />
             <Text className="font-archivo-bold text-[30px] leading-[36px] text-foreground">

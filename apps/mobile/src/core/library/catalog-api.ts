@@ -35,6 +35,8 @@ export abstract class LocalCatalog {
     abstract stream(fileId: number): string;
     abstract subtitle(fileId: number, uri: string, signal?: AbortSignal): Promise<string>;
     abstract titlesByPerson(): Map<string, ItemCard[]>;
+    /** Local titles keyed by `tv:123` / `movie:123` for hybrid matching. */
+    abstract titlesByTmdb(): Map<string, ItemCard>;
     abstract collections(): {
         id: number;
         name: string;

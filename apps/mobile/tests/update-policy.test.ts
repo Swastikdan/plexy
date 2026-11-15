@@ -131,6 +131,18 @@ test("installed Android versions retain current and legacy update comparisons", 
   expect(selectUpdate([release("build.2032")], "mobile", decodeVersionCode(52032))).toBeNull();
 });
 
+test("semver-dominant codes outrank older versions from any build source", async () => {
+  const { encodeVersionCode, decodeVersionCode } = await import("@/shared/lib/build-version");
+  // 1.0.8 local build 2054, above every legacy 1.0.7 code (52xxx).
+  expect(encodeVersionCode(2054, "1.0.8")).toBe(100_080_054);
+  expect(encodeVersionCode(2054, "1.0.8")).toBeGreaterThan(encodeVersionCode(9999, "1.0.7"));
+  expect(encodeVersionCode(9999, "1.0.7")).toBeGreaterThan(encodeVersionCode(2300, "1.0.7"));
+  // Round-trip keeps the build number for update checks.
+  expect(decodeVersionCode(encodeVersionCode(2054, "1.0.8"))).toBe(2054);
+  // A higher patch always wins, even with the lowest build number.
+  expect(encodeVersionCode(2000, "1.0.9")).toBeGreaterThan(encodeVersionCode(11999, "1.0.8"));
+});
+
 const mobileRelease = (version: string, build: number): GitHubRelease => ({
   ...release(`build.${build}`, `Plexy-mobile-v${version}-Android.apk`),
   tag_name: `v${version}-build.${build}`,

@@ -1,5 +1,6 @@
-import React, { useEffect,useRef } from "react";
+import React, { useEffect } from "react";
 import { Animated,View } from "react-native";
+import Reanimated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { Sun,Volume2 } from "@/shared/ui/icons";
 
 function EdgeIndicator({
@@ -8,12 +9,12 @@ function EdgeIndicator({
   icon,
   side,
 }: {
-  level: Animated.Value;
+  level: SharedValue<number>;
   active: boolean;
   icon: React.ReactNode;
   side: "left" | "right";
 }) {
-  const opacity = useRef(new Animated.Value(0)).current;
+  const [opacity] = React.useState(() => new Animated.Value(0));
   useEffect(() => {
     Animated.timing(opacity, {
       toValue: active ? 1 : 0,
@@ -21,6 +22,7 @@ function EdgeIndicator({
       useNativeDriver: true,
     }).start();
   }, [active, opacity]);
+  const fillStyle = useAnimatedStyle(() => ({ height: 180, transform: [{ translateY: 180 * (1 - level.get()) }] }));
   return (
     <Animated.View
       pointerEvents="none"
@@ -36,19 +38,9 @@ function EdgeIndicator({
       {icon}
       {/* Vertical fill bar: 0 at the bottom, fills upward with the level. */}
       <View className="h-[180px] w-[5px] overflow-hidden rounded-full bg-white/25">
-        <Animated.View
+        <Reanimated.View
           className="absolute bottom-0 left-0 right-0 rounded-full bg-white"
-          style={{
-            height: 180,
-            transform: [
-              {
-                translateY: level.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [180, 0],
-                }),
-              },
-            ],
-          }}
+          style={fillStyle}
         />
       </View>
     </Animated.View>
@@ -66,8 +58,8 @@ export function PlayerGestureHud({
   volume,
   adjusting,
 }: {
-  brightness: Animated.Value;
-  volume: Animated.Value;
+  brightness: SharedValue<number>;
+  volume: SharedValue<number>;
   adjusting: "brightness" | "volume" | null;
 }) {
   return (

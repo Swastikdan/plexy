@@ -35,10 +35,18 @@ export function selectUpdate(
   current: number,
   currentVersion?: string,
 ): UpdateInfo | null {
-  const candidates = releases.flatMap((release) => {
+  const candidates = releases.flatMap<UpdateInfo>((release) => {
     const asset = release.assets?.find((a) =>
       matchesTargetAsset(a.name, target),
     );
+    const mobileVersion = release.tag_name.match(/^mobile-v(\d+\.\d+\.\d+)$/)?.[1];
+    if (mobileVersion && currentVersion && !release.draft && !release.prerelease && asset && asset.size > 0) {
+      if (compareSemver(mobileVersion, currentVersion) <= 0) return [];
+      return [{ tagName: release.tag_name, releaseName: release.name || release.tag_name,
+        releaseNotes: release.body || "", publishedAt: release.published_at,
+        apkUrl: asset.browser_download_url, apkName: asset.name, apkSize: asset.size,
+        version: mobileVersion, updateType: "optional" as const }];
+    }
     const build = Number(
       release.tag_name.match(/build\.(\d+)(?:$|[^\d])/i)?.[1],
     );
@@ -70,7 +78,7 @@ export function selectUpdate(
     ];
   });
   return (
-    candidates.sort((a, b) => compareSemver(b.tagName, a.tagName) || (b.buildNumber ?? 0) - (a.buildNumber ?? 0))[0] ||
+    candidates.sort((a, b) => compareSemver(b.version || b.tagName, a.version || a.tagName) || (b.buildNumber ?? 0) - (a.buildNumber ?? 0))[0] ||
     null
   );
 }

@@ -69,8 +69,13 @@ export function SettingsScreen({
       return () => listener.remove();
     }, [expandedFolder, folderFiles]),
   );
-  useEffect(() => {
+  const folderKey = `${expandedFolder}:${folderFiles}`;
+  const [previousFolderKey, setPreviousFolderKey] = useState(folderKey);
+  if (previousFolderKey !== folderKey) {
+    setPreviousFolderKey(folderKey);
     setFolderLimit(50);
+  }
+  useEffect(() => {
     folderScroll.current?.scrollTo({ y: 0, animated: false });
   }, [expandedFolder, folderFiles]);
   const [message, setMessage] = useState("");
@@ -282,6 +287,24 @@ export function SettingsScreen({
               onChange={(theme) => updatePreferences({ theme })}
             />
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Online
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Online catalog"
+                subtitle="Browse TMDB and play with Vidy"
+              >
+                <ToggleSwitch
+                  value={preferences.source === "remote"}
+                  accessibilityLabel="Online catalog"
+                  onValueChange={(enabled) => {
+                    updatePreferences({ source: enabled ? "remote" : "local" });
+                  }}
+                />
+              </SettingsRow>
+
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Library
             </Text>
             <View className="overflow-hidden rounded-[18px] bg-surface">
@@ -396,7 +419,7 @@ export function SettingsScreen({
                         : `Downloading update… ${updateProgress}%`
                       : updateStatusText ||
                         (appInfo
-                          ? `Version ${appInfo.versionName} (build ${appInfo.buildNumber})`
+                          ? `Version ${appInfo.versionName}`
                           : "Version checking…")}
                   </Text>
                 </View>

@@ -1,3 +1,4 @@
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { useEffect, useMemo, useState } from "react";
 import { AppState, Pressable, useWindowDimensions, View } from "react-native";
@@ -28,12 +29,14 @@ export function HeroCarousel({
   open,
   onHeroFocus,
   active = true,
+  playLabel,
 }: {
   items: ItemCard[];
   onPlay: (item: ItemCard) => void;
   open: OpenTitle;
   onHeroFocus?: () => void;
   active?: boolean;
+  playLabel?: string;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const { width } = useWindowDimensions();
@@ -58,6 +61,7 @@ export function HeroCarousel({
     const timer = setTimeout(() => select((activeIndex + 1) % items.length), delay + ADVANCE_MS);
     return () => { clearTimeout(timer); cancelAnimation(progress); };
   }, [active, appActive, touching, changing, activeIndex, itemKeys, items.length, pausedUntil, reduceMotion, select, progress]);
+  const pauseRotation = useEventCallback(() => setPausedUntil(Date.now() + 8000));
   const swipe = useMemo(
     () =>
       Gesture.Pan()
@@ -65,9 +69,7 @@ export function HeroCarousel({
         .activeOffsetX([-20, 20])
         .failOffsetY([-16, 16])
         .runOnJS(true)
-        .onBegin(() => {
-          setPausedUntil(Date.now() + 8000);
-        })
+        .onBegin(pauseRotation)
         .onEnd((event) => {
           if (
             Math.abs(event.translationX) < Math.max(48, width * 0.14) &&
@@ -79,7 +81,7 @@ export function HeroCarousel({
             return;
           step(event.translationX < 0 ? 1 : -1);
         }),
-    [items.length, step, width],
+    [items.length, step, width, pauseRotation],
   );
   if (!activeItem) return null;
 
@@ -105,6 +107,7 @@ export function HeroCarousel({
       <View className="absolute left-5 right-5 bottom-[28px]">
         <HeroActions
           item={activeItem}
+          actionLabel={playLabel}
           busy={changing}
           onOpen={() => onPlay(activeItem)}
           onDetails={() => open(activeItem.publicId)}

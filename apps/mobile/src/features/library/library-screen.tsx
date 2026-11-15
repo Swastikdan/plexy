@@ -17,8 +17,7 @@ import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
-import { Film } from "@/shared/ui/icons";
-import {
+import { Film ,
   ArrowUpDown,
   Check,
   ChevronDown,
@@ -34,6 +33,9 @@ import { TitleBrowser } from "@/features/catalog/components/title-browser";
 import { usePlayTitle } from "@/features/catalog/hooks/use-play-title";
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
+import { useRemote } from "@/features/remote/remote-provider";
+import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
+import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
 
 export function LibraryScreen({
   kind,
@@ -49,7 +51,10 @@ export function LibraryScreen({
   const tabBoundary = usePagerGestureBoundary();
   const colors = useColors();
   const reduceMotion = useReducedMotion();
-  const { api, runtime } = useClient();
+  const { api, runtime, preferences } = useClient();
+  const { saved } = useRemote();
+  const remoteNavigation = useRemoteNavigation();
+  const online = preferences.source === "remote";
   type LibraryTab = "all" | "movie" | "series" | "anime" | "collection";
   const [activeTab, setActiveTab] = useState<LibraryTab>(
     defaultSubTab || "all",
@@ -61,32 +66,66 @@ export function LibraryScreen({
     id: number;
     name: string;
   } | null>(null);
-  const [collectionsTick, updateCollections] = useState(0);
+  const [, updateCollections] = useState(0);
   useEffect(
     () => runtime.subscribe(() => updateCollections((n) => n + 1)),
     [runtime],
   );
-  const collections = React.useMemo(
-    () => api.collections(),
-    [api, collectionsTick],
-  );
+  const collections = api.collections();
   // One scan for tab availability instead of three paginated queries that each
   // sort the whole library.
-  const counts = React.useMemo(
-    () => api.counts(),
-    [api, collectionsTick],
-  );
+  const counts = api.counts();
+  const localByTmdb = api.titlesByTmdb();
+  // Saved online titles join the local grids; a downloaded copy wins and the
+  // online duplicate is not shown twice.
+  const savedOnline = React.useMemo(() => {
+    if (!online) return [];
+    return saved
+      .filter(
+        (entry) =>
+          !localByTmdb.has(
+            `${entry.title.mediaType}:${entry.title.tmdbId}`,
+          ),
+      )
+      .map((entry) => toItemCard(entry.title));
+  }, [localByTmdb, online, saved]);
+  const savedOnlineFor = (tab: LibraryTab) => {
+    if (tab === "all") return savedOnline;
+    if (tab === "movie") {
+      return savedOnline.filter((item) => item.kind !== "series");
+    }
+    if (tab === "series") {
+      return savedOnline.filter((item) => item.kind === "series");
+    }
+    return [];
+  };
+  const openAny: OpenTitle = (id) => {
+    const publicId = String(id);
+    const entry = saved.find(
+      (candidate) =>
+        remotePublicId(
+          candidate.title.mediaType,
+          candidate.title.tmdbId,
+        ) === publicId,
+    );
+    if (entry) {
+      remoteNavigation.open(entry.title);
+      return;
+    }
+    if (publicId.startsWith("remote:")) return;
+    open(publicId);
+  };
   const libraryTabs = React.useMemo(() => {
     const base: LibraryTab[] = ["all"];
-    if (counts.movie) base.push("movie");
-    if (counts.series) base.push("series");
+    const hasOnlineMovie = savedOnline.some((item) => item.kind !== "series");
+    const hasOnlineSeries = savedOnline.some((item) => item.kind === "series");
+    if (counts.movie || hasOnlineMovie) base.push("movie");
+    if (counts.series || hasOnlineSeries) base.push("series");
     if (counts.anime) base.push("anime");
     if (collections.length) base.push("collection");
     return base;
-  }, [collections, counts]);
-  useEffect(() => {
-    if (!libraryTabs.includes(activeTab)) setActiveTab("all");
-  }, [libraryTabs, activeTab]);
+  }, [collections, counts, savedOnline]);
+  if (!libraryTabs.includes(activeTab)) setActiveTab("all");
   const tabScroll = useRef<ScrollView>(null);
   const tabLayouts = useRef<Record<string, { x: number; width: number }>>({});
   const [tabViewport, setTabViewport] = useState(0);
@@ -280,8 +319,9 @@ export function LibraryScreen({
               tab={libraryTabs[index] as "all" | "movie" | "series" | "anime"}
               sort={sort}
               unwatched={unwatched}
-              open={open}
+              open={openAny}
               play={play}
+              onlineItems={savedOnlineFor(libraryTabs[index]!)}
             />
           )
         }
@@ -391,12 +431,14 @@ function LibraryTitles({
   unwatched,
   open,
   play,
+  onlineItems = [],
 }: {
   tab: "all" | "movie" | "series" | "anime";
   sort: string;
   unwatched: boolean;
   open: OpenTitle;
   play?: (fileId: number) => void;
+  onlineItems?: ItemCard[];
 }) {
   const { api } = useClient();
   const titleActions = useTitleActions();
@@ -410,7 +452,8 @@ function LibraryTitles({
     (signal) => api.items(tab, 0, sort, signal, unwatched),
     [api, tab, sort, unwatched],
   );
-  const items = [...(data.value?.items || []), ...extra];
+  const localItems = [...(data.value?.items || []), ...extra];
+  const items = [...localItems, ...onlineItems];
   const available = width - 0 - 40;
   const columns = Math.max(2, Math.floor(available / 150));
   const cardWidth = Math.floor(available / columns) - 10;
@@ -428,14 +471,14 @@ function LibraryTitles({
     try {
       const result = await api.items(
         tab,
-        items.length,
+        localItems.length,
         sort,
         undefined,
         unwatched,
       );
       setExtra((prev) => [
         ...prev,
-        ...result.items.filter((item) => !items.some((i) => i.id === item.id)),
+        ...result.items.filter((item) => !localItems.some((i) => i.id === item.id)),
       ]);
       setEnd(result.items.length < 60);
     } catch (e) {
@@ -455,7 +498,7 @@ function LibraryTitles({
       key={`${columns}-${tab}`}
       data={items}
       numColumns={columns}
-      keyExtractor={(item) => String(item.id)}
+      keyExtractor={(item) => item.publicId}
       columnWrapperStyle={{ gap: 12 }}
       contentContainerStyle={{
         gap: 12,
@@ -463,22 +506,29 @@ function LibraryTitles({
         paddingBottom: 24,
         paddingTop: 4,
       }}
-      renderItem={({ item, index }) => (
-        <Card
-          width={cardWidth}
-          item={item}
-          api={api}
-          onPress={() => {
-            open(item.publicId);
-          }}
-          onLongPress={() =>
-            titleActions(item, {
-              play: () => playTitle(item),
-              onChanged: data.retry,
-            })
-          }
-        />
-      )}
+      renderItem={({ item }) => {
+        const isOnline = item.publicId.startsWith("remote:");
+        return (
+          <Card
+            width={cardWidth}
+            item={item}
+            api={api}
+            badge={isOnline ? "Online" : null}
+            onPress={() => {
+              open(item.publicId);
+            }}
+            onLongPress={
+              isOnline
+                ? undefined
+                : () =>
+                    titleActions(item, {
+                      play: () => playTitle(item),
+                      onChanged: data.retry,
+                    })
+            }
+          />
+        );
+      }}
       onScrollToIndexFailed={() => {}}
       ListEmptyComponent={<Notice message={"No titles match this filter."} />}
       ListFooterComponent={

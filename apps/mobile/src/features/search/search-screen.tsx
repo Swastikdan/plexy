@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   Text,
@@ -20,6 +21,11 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
+import { useRemoteHome } from "@/features/remote/lib/use-remote-home";
+import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
+import { useRemoteSearch } from "@/features/remote/lib/use-remote-search";
+import { toItemCard } from "@/features/remote/lib/view";
+import type { RemoteTitle } from "@/features/remote/lib/tmdb";
 
 type ResultRow =
   | { kind: "header"; key: string; title: string }
@@ -44,6 +50,14 @@ function buildResultRows(titles: ItemCard[], episodes: ItemCard[]): ResultRow[] 
   return rows;
 }
 
+function cardRows(items: ItemCard[]): ItemCard[][] {
+  const rows: ItemCard[][] = [];
+  for (let index = 0; index < items.length; index += 2) {
+    rows.push(items.slice(index, index + 2));
+  }
+  return rows;
+}
+
 export function SearchScreen({
   open,
   play,
@@ -52,12 +66,16 @@ export function SearchScreen({
   play: (fileId: number) => void;
 }) {
   const colors = useColors();
-  const { api } = useClient();
+  const { api, preferences } = useClient();
   const titleActions = useTitleActions();
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [inputFocus, setInputFocus] = useState(false);
+  const onlineMode = preferences.source === "remote";
+  const remoteNavigation = useRemoteNavigation();
+  const onlineHome = useRemoteHome(onlineMode);
+  const onlineResult = useRemoteSearch(debounced, onlineMode);
   React.useEffect(() => {
     const timer = setTimeout(() => setDebounced(query.trim()), 300);
     return () => clearTimeout(timer);
@@ -116,6 +134,31 @@ export function SearchScreen({
     () => buildResultRows(data.value?.titles ?? [], data.value?.episodes ?? []),
     [data.value],
   );
+  const localByTmdb = api.titlesByTmdb();
+  const onlineCards = React.useMemo(
+    () =>
+      (onlineResult.value ?? [])
+        .filter(
+          (title) =>
+            !localByTmdb.has(`${title.mediaType}:${title.tmdbId}`),
+        )
+        .map((title) => ({
+          title,
+          item: toItemCard(title),
+        })),
+    [localByTmdb, onlineResult.value],
+  );
+  const onlineByPublicId = React.useMemo(
+    () =>
+      new Map<string, RemoteTitle>(
+        onlineCards.map((entry) => [entry.item.publicId, entry.title]),
+      ),
+    [onlineCards],
+  );
+  const onlineResultRows = React.useMemo(
+    () => cardRows(onlineCards.map((entry) => entry.item)),
+    [onlineCards],
+  );
   const openItem = React.useCallback(
     (item: ItemCard) => {
       if (item.kind === "episode" && item.fileId != null) play(item.fileId);
@@ -123,6 +166,52 @@ export function SearchScreen({
     },
     [play, open],
   );
+  const onlineFooter = onlineMode && onlineResultRows.length > 0 ? (
+    <View className="gap-3 pt-1">
+      <Text className="px-5 font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">
+        Online
+      </Text>
+      {onlineResultRows.map((row) => (
+        <View
+          key={row.map((item) => item.publicId).join("-")}
+          className="flex-row gap-3 px-5"
+        >
+          {row.map((item) => {
+            const title = onlineByPublicId.get(item.publicId);
+            return (
+              <Card
+                key={item.publicId}
+                width={cardWidth}
+                item={item}
+                api={api}
+                onPress={() => {
+                  if (title) remoteNavigation.open(title);
+                }}
+              />
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  ) : null;
+  const onlineHomeFooter =
+    onlineMode && onlineHome.rows.length > 0 ? (
+      <View className="pt-1">
+        <Text className="px-5 pb-2 font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">
+          Online
+        </Text>
+        {onlineHome.rows.map((row) => (
+          <CatalogRow
+            key={`online-${row.key}`}
+            title={row.title}
+            items={row.items}
+            open={onlineHome.open}
+            onPlay={onlineHome.play}
+            allowTitleActions={false}
+          />
+        ))}
+      </View>
+    ) : null;
   return (
     <View className="flex-1 gap-3.5">
       <PageHeader title="Search" />
@@ -143,7 +232,11 @@ export function SearchScreen({
           className="flex-1 font-archivo-regular text-[15px] text-foreground py-2.5"
           value={query}
           onChangeText={setQuery}
-          placeholder="Movies, shows and episodes"
+          placeholder={
+            onlineMode
+              ? "Your library or the online catalog"
+              : "Movies, shows and episodes"
+          }
           placeholderTextColor={colors.muted}
           returnKeyType="search"
           autoCorrect={false}
@@ -166,16 +259,29 @@ export function SearchScreen({
         )}
       </View>
 
-      {debounced && data.loading ? (
+      {debounced &&
+      (data.loading || onlineResult.loading) &&
+      !resultRows.length &&
+      !onlineResultRows.length ? (
         <Loading />
-      ) : debounced && data.error ? (
+      ) : debounced && data.error && !onlineResultRows.length ? (
         <Notice message={data.error} retry={data.retry} />
       ) : !debounced ? (
-        homeData.loading ? (
+        (homeRows.length === 0 &&
+          onlineHome.rows.length === 0 &&
+          (homeData.loading || onlineHome.data.loading)) ? (
           <Loading />
-        ) : homeData.error ? (
-          <Notice message={homeData.error} retry={homeData.retry} />
-        ) : homeRows.length ? (
+        ) : (homeRows.length === 0 &&
+          onlineHome.rows.length === 0 &&
+          (homeData.error || onlineHome.data.error)) ? (
+          <Notice
+            message={homeData.error || onlineHome.data.error || "Could not load this screen."}
+            retry={() => {
+              homeData.retry();
+              onlineHome.data.retry();
+            }}
+          />
+        ) : homeRows.length || onlineHome.rows.length ? (
           <FlatList
             className="flex-1"
             data={homeRows}
@@ -190,6 +296,7 @@ export function SearchScreen({
                 onChanged={homeData.retry}
               />
             )}
+            ListFooterComponent={onlineHomeFooter}
             contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -197,10 +304,11 @@ export function SearchScreen({
           />
         ) : (
           <Text className="font-archivo-regular text-[14px] text-muted px-5">
-            Find a title or an episode in your library.
+            Find a title or an episode in your library
+            {onlineMode ? " or online" : ""}.
           </Text>
         )
-      ) : !resultRows.length ? (
+      ) : !resultRows.length && !onlineResultRows.length ? (
         <View className="flex-1 items-center justify-center px-6">
           <View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5">
             <Text className="text-center text-[14px] font-archivo-medium text-muted">
@@ -237,6 +345,26 @@ export function SearchScreen({
                 ))}
               </View>
             )
+          }
+          ListFooterComponent={
+            <View className="gap-3">
+              {onlineMode &&
+                onlineResult.error &&
+                !onlineResultRows.length && (
+                  <View className="px-5">
+                    <Notice
+                      message={onlineResult.error}
+                      retry={onlineResult.retry}
+                    />
+                  </View>
+                )}
+              {onlineFooter}
+              {onlineMode && onlineResult.loading && (
+                <View className="items-center py-3">
+                  <ActivityIndicator color={colors.muted} />
+                </View>
+              )}
+            </View>
           }
           contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
           keyboardShouldPersistTaps="handled"

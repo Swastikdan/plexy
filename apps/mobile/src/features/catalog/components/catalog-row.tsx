@@ -15,6 +15,8 @@ export function CatalogRow({
   isContinueWatching = false,
   onRowFocus,
   onChanged,
+  onLongPressItem,
+  allowTitleActions = true,
 }: {
   title: string;
   items: ItemCard[];
@@ -23,12 +25,29 @@ export function CatalogRow({
   isContinueWatching?: boolean;
   onRowFocus?: () => void;
   onChanged?: () => void;
+  /** Override the local title action sheet, e.g. for a remote catalog. */
+  onLongPressItem?: (item: ItemCard) => void;
+  /** Turn off local-only actions (watched, delete from device). */
+  allowTitleActions?: boolean;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const { api } = useClient();
   const titleActions = useTitleActions();
   const cardWidth = isContinueWatching ? 220 : 150;
   const itemWidth = isContinueWatching ? 168 : cardWidth;
+  const longPress = (item: ItemCard) => {
+    if (onLongPressItem) {
+      onLongPressItem(item);
+      return;
+    }
+    if (!allowTitleActions) return;
+    titleActions(item, {
+      play: () => (onPlay ? onPlay(item) : open(item.publicId)),
+      continueWatching: isContinueWatching,
+      onChanged,
+    });
+  };
+  const canLongPress = Boolean(onLongPressItem) || allowTitleActions;
   return (
     <View className="mb-5 gap-1.5">
       {/* Section header */}
@@ -52,13 +71,7 @@ export function CatalogRow({
             <ContinueWatchingCard
               item={item}
               api={api}
-              onLongPress={() =>
-                titleActions(item, {
-                  play: () => (onPlay ? onPlay(item) : open(item.publicId)),
-                  continueWatching: isContinueWatching,
-                  onChanged,
-                })
-              }
+              onLongPress={canLongPress ? () => longPress(item) : undefined}
               onFocus={() => {
                 onRowFocus?.();
               }}
@@ -75,13 +88,7 @@ export function CatalogRow({
               width={cardWidth}
               item={item}
               api={api}
-              onLongPress={() =>
-                titleActions(item, {
-                  play: () => (onPlay ? onPlay(item) : open(item.publicId)),
-                  continueWatching: isContinueWatching,
-                  onChanged,
-                })
-              }
+              onLongPress={canLongPress ? () => longPress(item) : undefined}
               onFocus={() => {
                 onRowFocus?.();
               }}

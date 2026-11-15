@@ -1,3 +1,4 @@
+import { serializeRecords } from "./serialize-records";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SQLite from "expo-sqlite";
 import type { LocalState } from "@plexy/local-library/library";
@@ -13,43 +14,31 @@ const database = SQLite.openDatabaseAsync("plexy-library.db").then(
 let savedHeaderJson: string | null = null;
 let savedRecords = new Map<number, string>();
 
-function rememberSaved(state: LocalState, headerJson: string) {
-  savedHeaderJson = headerJson;
-  savedRecords = new Map(state.records.map((r) => [r.id, JSON.stringify(r)]));
+// Serialize saves so an older transaction cannot overwrite newer state.
+let pendingSave: Promise<void> = Promise.resolve();
+export function saveLibrary(state: LocalState): Promise<void> {
+  const operation = pendingSave.then(() => persistLibrary(state));
+  pendingSave = operation.catch(() => {});
+  return operation;
 }
 
-export async function saveLibrary(state: LocalState) {
+async function persistLibrary(state: LocalState) {
   const db = await database;
   const { records, ...header } = state;
-  // Media rows are written incrementally: only records whose content changed
-  // since the last save are serialized and rewritten. A scan touching a few
-  // records must not serialize and rewrite the whole library each time.
   const headerJson = JSON.stringify(header);
-  const live = new Set(records.map((r) => r.id));
-  const updates: [number, string][] = [];
-  for (const record of records) {
-    const json = JSON.stringify(record);
-    if (savedRecords.get(record.id) !== json) updates.push([record.id, json]);
-  }
-  const deletions = [...savedRecords.keys()].filter((id) => !live.has(id));
+  const nextRecords = await serializeRecords(records);
+  const updates = [...nextRecords].filter(([id, json]) => savedRecords.get(id) !== json);
+  const deletions = [...savedRecords.keys()].filter(id => !nextRecords.has(id));
   if (headerJson !== savedHeaderJson || updates.length || deletions.length) {
-    await db.withExclusiveTransactionAsync(async (tx) => {
-      if (headerJson !== savedHeaderJson) {
-        await tx.runAsync(
-          "INSERT OR REPLACE INTO library_state (id, value) VALUES (1, ?)",
-          headerJson,
-        );
-      }
-      for (const id of deletions)
-        await tx.runAsync("DELETE FROM media WHERE id = ?", id);
+    await db.withExclusiveTransactionAsync(async tx => {
+      if (headerJson !== savedHeaderJson)
+        await tx.runAsync("INSERT OR REPLACE INTO library_state (id, value) VALUES (1, ?)", headerJson);
+      for (const id of deletions) await tx.runAsync("DELETE FROM media WHERE id = ?", id);
       for (const [id, json] of updates)
-        await tx.runAsync(
-          "INSERT OR REPLACE INTO media (id, value) VALUES (?, ?)",
-          id,
-          json,
-        );
+        await tx.runAsync("INSERT OR REPLACE INTO media (id, value) VALUES (?, ?)", id, json);
     });
-    rememberSaved(state, headerJson);
+    savedHeaderJson = headerJson;
+    savedRecords = nextRecords;
   }
 }
 export async function loadLibrary(): Promise<LocalState | null> {

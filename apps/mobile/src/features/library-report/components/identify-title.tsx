@@ -1,3 +1,4 @@
+import type { TitleSearchResult } from "@/core/client/client-provider";
 import { useClient } from "@/core/client/client-provider";
 import { Image } from "expo-image";
 import { useEffect,useState } from "react";
@@ -36,19 +37,23 @@ export function IdentifyTitle({
   const [episode, setEpisode] = useState(
     String(record.episodeNumber ?? 1),
   );
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<TitleSearchResult[]>([]);
+  const [loading, setLoading] = useState(Boolean(online && query.trim()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    let live = true;
+  const queryKey = `${kind}:${online}:${query}`;
+  const [previousQueryKey, setPreviousQueryKey] = useState(queryKey);
+  if (previousQueryKey !== queryKey) {
+    setPreviousQueryKey(queryKey);
     setResults([]);
     setError("");
+    setLoading(Boolean(online && query.trim()));
+  }
+  useEffect(() => {
+    let live = true;
     if (!online || !query.trim()) {
-      setLoading(false);
       return;
     }
-    setLoading(true);
     const timer = setTimeout(
       () =>
         void runtime.searchTitles(query.trim(), kind)
@@ -68,7 +73,7 @@ export function IdentifyTitle({
       clearTimeout(timer);
     };
   }, [runtime, query, kind, online]);
-  async function choose(result?: any) {
+  async function choose(result?: TitleSearchResult) {
     if (result && !online) return;
     setBusy(true);
     setError("");

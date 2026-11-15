@@ -3,8 +3,7 @@ import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { useColors } from "@/shared/theme";
-import { Film, Tv } from "./icons";
-import { Check } from "./icons";
+import { Film, Tv , Check } from "./icons";
 import { PosterImage } from "./poster-image";
 import { Label } from "./text";
 
@@ -16,6 +15,7 @@ export function Card({
   preferred,
   onFocus,
   width,
+  badge,
 }: {
   item: ItemCard;
   api: LocalCatalog;
@@ -24,6 +24,7 @@ export function Card({
   preferred?: boolean;
   onFocus?: () => void;
   width?: number;
+  badge?: string | null;
 }) {
   const colors = useColors();
   const [focus, setFocus] = useState(false);
@@ -69,6 +70,13 @@ export function Card({
           style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "55%" }}
           pointerEvents="none"
         />
+        {badge && (
+          <View className="absolute left-2 top-2 z-[3] rounded-md bg-accent px-1.5 py-0.5">
+            <Text className="text-white text-[9px] font-archivo-bold">
+              {badge}
+            </Text>
+          </View>
+        )}
         {isEpisode && (
           <View className="absolute top-2 left-2 flex-row gap-[5px] z-[2]">
             {item.episodeNumber != null && (

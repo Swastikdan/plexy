@@ -11,6 +11,8 @@ export const writeJson = (key: string, value: unknown) =>
   AsyncStorage.setItem(key, JSON.stringify(value));
 export interface Preferences {
   theme: "light" | "dark" | "system";
+  /** Which catalog the app browses. Local is the on-device library. */
+  source: "local" | "remote";
   autoSubtitles: boolean;
   subtitleLanguage: string;
   subtitleOffset: number;
@@ -23,6 +25,7 @@ export interface Preferences {
 }
 export const defaultPreferences: Preferences = {
   theme: "system",
+  source: "local",
   autoSubtitles: true,
   subtitleLanguage: "en",
   subtitleOffset: 0,

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
+import { useLayoutEffect , useEffect, useRef, useState } from "react";
 export type PlayerMenu = "settings" | "quality" | "episodes" | null;
 export function usePlayerControls({
   playing,
@@ -16,14 +17,14 @@ export function usePlayerControls({
   const [locked, setLocked] = useState(false);
   const [unlockHint, setUnlockHint] = useState(false);
   const lockedRef = useRef(false);
-  lockedRef.current = locked;
+  useLayoutEffect(() => { lockedRef.current = locked; }, [locked]);
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastInteraction = useRef(Date.now());
-  const reveal = () => {
+  const lastInteraction = useRef(0);
+  const reveal = useEventCallback(() => {
     if (lockedRef.current) return;
     lastInteraction.current = Date.now();
     setVisible(true);
-  };
+  });
   const lockScreen = () => {
     setMenu(null);
     setSpeedPanel(false);
@@ -32,12 +33,12 @@ export function usePlayerControls({
     setUnlockHint(false);
     setLocked(true);
   };
-  const unlockScreen = () => {
+  const unlockScreen = useEventCallback(() => {
     setLocked(false);
     setUnlockHint(false);
     lastInteraction.current = Date.now();
     setVisible(true);
-  };
+  });
   const showUnlockHint = () => {
     if (unlockTimer.current) clearTimeout(unlockTimer.current);
     setUnlockHint(true);
@@ -59,10 +60,10 @@ export function usePlayerControls({
     return () => clearInterval(timer);
   }, [playing, menu, speedPanel, audioPanel, scrub, status]);
 
-  const toggleControls = () => {
+  const toggleControls = useEventCallback(() => {
     lastInteraction.current = Date.now();
     setVisible((current) => !current);
-  };
+  });
   useEffect(
     () => () => {
       if (unlockTimer.current) clearTimeout(unlockTimer.current);
@@ -70,6 +71,7 @@ export function usePlayerControls({
     [],
   );
   return {
+    touchControls: useEventCallback(() => { lastInteraction.current = Date.now(); }),
     visible,
     setVisible,
     menu,

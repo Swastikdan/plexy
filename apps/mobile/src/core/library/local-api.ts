@@ -35,6 +35,8 @@ export class LocalApi extends LocalCatalog {
             itemId: r.id,
             parentItemId: r.card.parentId,
             parentPublicId: r.card.parentPublicId,
+            tmdbId: r.tmdbId ?? r.card.tmdbId ?? null,
+            mediaType: r.card.kind === "episode" ? "tv" : "movie",
             title: r.card.parentTitle || r.card.name,
             subtitle: r.card.kind === "episode" ? r.card.name : null,
             seasonNumber: r.card.seasonNumber,
@@ -138,6 +140,15 @@ export class LocalApi extends LocalCatalog {
             }
         }
         return new Map([...groups].map(([name, titles]) => [name, [...titles.values()]]));
+    }
+    override titlesByTmdb() {
+        const map = new Map<string, import("./catalog-api").ItemCard>();
+        for (const card of this.library.cards()) {
+            if (card.tmdbId == null)
+                continue;
+            map.set(`${card.kind === "series" ? "tv" : "movie"}:${card.tmdbId}`, card);
+        }
+        return map;
     }
     override counts() {
         let movie = 0;

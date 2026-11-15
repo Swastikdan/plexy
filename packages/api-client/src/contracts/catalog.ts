@@ -26,6 +26,8 @@ export interface ItemCard {
   rating: number | null;
   runtime: number | null;
   genres: string[];
+  /** TMDB id when the local title has been matched. */
+  tmdbId?: number | null;
   matchStatus: string;
   watch: Watch | null;
   /**

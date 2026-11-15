@@ -1,5 +1,5 @@
+import React, { useEffect } from "react";
 import { useColors } from "@/shared/theme";
-import { useEffect,useRef } from "react";
 import {
 ActivityIndicator,
 Animated,
@@ -17,7 +17,7 @@ export function Loading({
   const colors = useColors();
   const reduceMotion = useReducedMotion();
   const shouldShowLogo = showLogo !== undefined ? showLogo : true;
-  const slide = useRef(new Animated.Value(0)).current;
+  const [slide] = React.useState(() => new Animated.Value(0));
   useEffect(() => {
     if (!shouldShowLogo || reduceMotion) {
       slide.setValue(0.5);

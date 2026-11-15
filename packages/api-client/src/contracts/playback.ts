@@ -91,6 +91,9 @@ export interface Playability {
   /** Item to open back from the player: the series for episodes, self for movies. */
   parentItemId?: number | null;
   parentPublicId?: string | null;
+  /** TMDB identity of the local title, used for online handoff. */
+  tmdbId?: number | null;
+  mediaType?: "movie" | "tv" | null;
   audioTracks?: PlayerAudioTrack[];
   selectedAudioIndex?: number;
   versions?: Array<{

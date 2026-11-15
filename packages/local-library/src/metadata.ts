@@ -61,7 +61,7 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
   const certification = tv ? data.content_ratings?.results?.find((r: any) => r.iso_3166_1 === settings.region)?.rating
     : data.release_dates?.results?.find((r: any) => r.iso_3166_1 === settings.region)?.release_dates?.find((r: any) => r.certification)?.certification;
   return { card: { ...record.card, ...seriesMetadata,
-    name: episode?.name || seriesMetadata.name!, parentTitle: tv ? data.name : null,
+    tmdbId: id!, name: episode?.name || seriesMetadata.name!, parentTitle: tv ? data.name : null,
     overview: episode?.overview || data.overview || null, rating: episode?.vote_average ?? data.vote_average ?? null,
     runtime: episode?.runtime ?? data.runtime ?? null, poster: still || poster, backdrop: still || backdrop, matchStatus: "matched" },
     collection: data.belongs_to_collection ? { id: data.belongs_to_collection.id, name: data.belongs_to_collection.name } : null,

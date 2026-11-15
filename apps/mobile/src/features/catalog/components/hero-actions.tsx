@@ -41,15 +41,24 @@ export function HeroActions({
   const { api } = useClient();
   // Scanning every record for a series is too expensive to repeat on each
   // focus change; the item and local catalog are stable.
+  // A caller that supplies a label already resolved the action; don't scan
+  // the local catalog (an online card can reuse the same id space).
   const action = useMemo(
     () =>
-      playbackAction(
-        item,
-        item.kind === "series" ? api.episodes(item.id) : [],
-      ),
-    [api, item],
+      actionLabel
+        ? {
+            label: actionLabel,
+            context: null,
+            accessibilityLabel: actionLabel,
+            fileId: null,
+          }
+        : playbackAction(
+            item,
+            item.kind === "series" ? api.episodes(item.id) : [],
+          ),
+    [actionLabel, api, item],
   );
-  const playLabel = actionLabel ?? action.label;
+  const playLabel = action.label;
   return (
     <View
       className="mt-1.5 flex-row items-center gap-3"

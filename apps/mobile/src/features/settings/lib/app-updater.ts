@@ -1,3 +1,6 @@
+import { File } from "expo-file-system";
+import * as Crypto from "expo-crypto";
+import type { UpdateType } from "./mobile-update-manifest";
 import { fetchUpdateReleases } from "./update-releases";
 import * as Application from "expo-application";
 import * as FileSystem from "expo-file-system/legacy";
@@ -22,6 +25,10 @@ export interface GitHubRelease {
   assets: GitHubAsset[];
 }
 export interface UpdateInfo {
+  version?: string;
+  updateType?: UpdateType;
+  minimumSupportedVersion?: string;
+  sha256?: string;
   tagName: string;
   releaseName: string;
   releaseNotes: string;
@@ -36,7 +43,6 @@ export interface AppInfo {
   versionCode: number;
   buildNumber: number;
 }
-const GITHUB_REPO = "Swastikdan/plexy";
 export async function getInstalledAppInfo(): Promise<AppInfo> {
   const versionName = Application.nativeApplicationVersion;
   const versionCode = Number(Application.nativeBuildVersion);
@@ -52,10 +58,11 @@ export async function getInstalledAppInfo(): Promise<AppInfo> {
 }
 export async function checkForUpdate(
   current?: AppInfo | number,
+  signal?: AbortSignal,
 ): Promise<UpdateInfo | null> {
   const installed = typeof current === "object" ? current : await getInstalledAppInfo();
   const appInfo = typeof current === "number" ? { ...installed, buildNumber: current } : installed;
-  const releases = await fetchUpdateReleases();
+  const releases = await fetchUpdateReleases(fetch, signal);
   return selectUpdate(releases, "mobile", appInfo.buildNumber, appInfo.versionName);
 }
 export async function openUnknownAppsSettings(): Promise<void> {
@@ -111,6 +118,14 @@ export async function downloadAndInstallUpdate(
     } catch (error) {
       await FileSystem.deleteAsync(temporaryUri, { idempotent: true }).catch(() => {});
       throw error;
+    }
+  }
+  if (update.sha256) {
+    const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, await new File(localUri).bytes());
+    const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+    if (actual.toLowerCase() !== update.sha256.toLowerCase()) {
+      await FileSystem.deleteAsync(localUri, { idempotent: true });
+      throw Error("Update verification failed. Please download the update again.");
     }
   }
   onProgress?.(100);

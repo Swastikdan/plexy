@@ -1,0 +1,6 @@
+{
+  "updateType": "optional",
+  "message": "A newer version of Plexy is ready to install.",
+  "releaseNotes": "",
+  "minimumSupportedVersion": "1.0.0"
+}

@@ -63,7 +63,7 @@ export function SwipePager({
   const [width, setWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [heights, setHeights] = useState<Record<string, number>>({});
-  const lastHeight = useRef<number | undefined>(undefined);
+  const [lastHeight, setLastHeight] = useState<number | undefined>(undefined);
   const reduceMotion = useReducedMotion();
   const previousWidth = useRef(0);
   const translation = useSharedValue(0);
@@ -80,17 +80,8 @@ export function SwipePager({
         pageKeys.slice(Math.max(0, boundedIndex - 1), boundedIndex + 2),
       ),
   );
-  useEffect(() => {
-    const current = pageKeys.slice(
-      Math.max(0, boundedIndex - 1),
-      boundedIndex + 2,
-    );
-    setVisited((previous) =>
-      current.every((key) => previous.has(key))
-        ? previous
-        : new Set([...previous, ...current]),
-    );
-  }, [keys, boundedIndex]);
+  const current = pageKeys.slice(Math.max(0, boundedIndex - 1), boundedIndex + 2);
+  if (!current.every(key => visited.has(key))) setVisited(new Set([...visited, ...current]));
   useEffect(() => {
     if (!width) return;
     if (previousWidth.current !== width || reduceMotion) {
@@ -141,16 +132,14 @@ export function SwipePager({
   // Lazy pages have no measured height until they mount. Keep the previous
   // height during that frame instead of collapsing the pager to zero.
   const activeHeight = autoHeight ? heights[pageKeys[boundedIndex]!] : undefined;
-  useEffect(() => {
-    if (activeHeight != null) lastHeight.current = activeHeight;
-  }, [activeHeight]);
+  if (activeHeight != null && activeHeight !== lastHeight) setLastHeight(activeHeight);
   return (
     <PagerLock.Provider value={setChildInteracting}>
       <View
         {...boundary}
         style={
           autoHeight
-            ? { height: activeHeight ?? lastHeight.current, overflow: "hidden" }
+            ? { height: activeHeight ?? lastHeight, overflow: "hidden" }
             : { flex: 1, overflow: "hidden" }
         }
         onLayout={(event) => {

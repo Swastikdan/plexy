@@ -1,7 +1,8 @@
-import { useEffect,useId,useRef,useState } from "react";
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
+import { useCallback,useEffect,useId,useState } from "react";
 import { resourceKey } from "./resource-key";
 
-const resourceCache = new Map<string, any>();
+const resourceCache = new Map<string, unknown>();
 
 const invalidations = new Set<() => void>();
 
@@ -22,26 +23,29 @@ export function useResource<T>(
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(cached === undefined);
   const [revision, setRevision] = useState(0);
-  const previousKey = useRef(cacheKey);
+  const [previousKey, setPreviousKey] = useState(cacheKey);
+  const loadLatest = useEventCallback(load);
+  if (previousKey !== cacheKey) {
+    setPreviousKey(cacheKey);
+    setLoading(!resourceCache.has(cacheKey));
+    setValue(cached ?? null);
+    setError(null);
+  }
+  const retry = useCallback(() => {
+    setError(null);
+    setRevision(n => n + 1);
+  }, []);
   useEffect(() => {
-    const invalidate = () => setRevision((n) => n + 1);
+    const invalidate = retry;
     invalidations.add(invalidate);
     return () => {
       invalidations.delete(invalidate);
     };
-  }, []);
+  }, [retry]);
   useEffect(() => {
     const controller = new AbortController();
     let live = true;
-    // Keep mounted consumers (especially playback) alive during invalidation.
-    // A changed query may show a loader; a refreshed query retains its last value.
-    if (previousKey.current !== cacheKey) {
-      setLoading(!resourceCache.has(cacheKey));
-      setValue((resourceCache.get(cacheKey) as T | undefined) ?? null);
-      previousKey.current = cacheKey;
-    }
-    setError(null);
-    void load(controller.signal)
+    void loadLatest(controller.signal)
       .then((v) => {
         if (live) {
           resourceCache.set(cacheKey, v);
@@ -64,6 +68,6 @@ export function useResource<T>(
       live = false;
       controller.abort();
     };
-  }, [...keys, revision, cacheKey]);
-  return { value, error, loading, retry: () => setRevision((n) => n + 1) };
+  }, [revision, cacheKey, loadLatest]);
+  return { value, error, loading, retry };
 }

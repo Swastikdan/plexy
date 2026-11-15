@@ -1,7 +1,10 @@
 const path = require('node:path');
 const { withProjectBuildGradle, withAppBuildGradle } = require(require.resolve('expo/config-plugins', { paths: [path.join(__dirname, '../../apps/mobile')] }));
 const plugin = "classpath('com.google.android.gms:oss-licenses-plugin:0.13.0')";
-const dependency = "implementation('com.google.android.gms:play-services-oss-licenses:17.5.3')";
+// 17.5.3 pulls androidx.compose.material3.adaptive 1.3.0, which requires
+// compileSdk 37 and AGP 9.1. Expo 57 pins compileSdk 36 and AGP 8.12, so hold
+// this at the last release on compose adaptive 1.2.0 until the toolchain moves.
+const dependency = "implementation('com.google.android.gms:play-services-oss-licenses:17.5.2')";
 const apply = 'apply plugin: "com.google.android.gms.oss-licenses-plugin"';
 function addProject(contents) {
   if (contents.includes(plugin)) return contents;

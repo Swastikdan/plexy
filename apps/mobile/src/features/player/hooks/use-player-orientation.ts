@@ -1,38 +1,72 @@
+import { useLayoutEffect, useEffect, useRef } from "react";
 import * as NavigationBar from "expo-navigation-bar";
 import * as Orientation from "expo-screen-orientation";
-import { useEffect,useRef } from "react";
 
-// The player is landscape-only: the device never rotates to portrait while
-// playback is open. The app shell outside the player is portrait and is
-// restored on exit. Serialize native calls so rapid changes cannot leave a
-// stale lock behind.
+// Both the native player and the online iframe player are landscape-only. The
+// lock is ref-counted so a handoff from one player to the other never flashes
+// portrait, and the app shell is restored only after the last player exits.
+const LANDSCAPE = Orientation.OrientationLock.LANDSCAPE;
+const PORTRAIT = Orientation.OrientationLock.PORTRAIT;
+let activePlayers = 0;
+let restoreTimer: ReturnType<typeof setTimeout> | null = null;
+let handoffUntil = 0;
+let queue: Promise<unknown> = Promise.resolve();
+
+/** Call before replacing one player with another to avoid a portrait flash. */
+export function markPlayerHandoff() {
+  handoffUntil = Date.now() + 1000;
+}
+
+function enqueue(task: () => Promise<void>, onError?: () => void) {
+  queue = queue
+    .then(async () => {
+      try {
+        await task();
+      } catch {
+        onError?.();
+      }
+    })
+    .catch(() => {});
+}
+
 export function usePlayerOrientation(onError: () => void) {
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const error = useRef(onError);
-  error.current = onError;
+  useLayoutEffect(() => {
+    error.current = onError;
+  }, [onError]);
   useEffect(() => {
-    let live = true;
-    queue.current = queue.current
-      .then(async () => {
-        if (!live) return;
-        await Orientation.lockAsync(Orientation.OrientationLock.LANDSCAPE);
-        if (live) NavigationBar.NavigationBar.setHidden(true);
-      })
-      .catch(() => {
-        if (live) error.current();
-      });
+    activePlayers += 1;
+    if (restoreTimer) {
+      clearTimeout(restoreTimer);
+      restoreTimer = null;
+    }
+    if (activePlayers === 1) {
+      enqueue(async () => {
+        await Orientation.lockAsync(LANDSCAPE);
+        try {
+          await NavigationBar.NavigationBar.setHidden(true);
+        } catch {}
+      }, () => error.current());
+    }
     return () => {
-      live = false;
-    };
-  }, []);
-  useEffect(() => {
-    return () => {
-      NavigationBar.NavigationBar.setHidden(false);
-      queue.current = queue.current
-        .then(async () => {
-          await Orientation.lockAsync(Orientation.OrientationLock.PORTRAIT);
-        })
-        .catch(() => {});
+      activePlayers = Math.max(0, activePlayers - 1);
+      if (activePlayers > 0 || restoreTimer) return;
+      const delay = Date.now() < handoffUntil ? 500 : 0;
+      const restore = () => {
+        restoreTimer = null;
+        if (activePlayers > 0) return;
+        enqueue(async () => {
+          try {
+            await NavigationBar.NavigationBar.setHidden(false);
+          } catch {}
+          await Orientation.lockAsync(PORTRAIT);
+        });
+      };
+      if (delay === 0) {
+        restore();
+        return;
+      }
+      restoreTimer = setTimeout(restore, delay);
     };
   }, []);
 }

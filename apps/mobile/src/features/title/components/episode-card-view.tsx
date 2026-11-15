@@ -1,59 +1,65 @@
-import { Image } from "expo-image";
-import { Pressable,Text,View } from "react-native";
-import type { ItemCard } from "@/core/library/catalog-api";
+import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
-import { Check,Play } from "@/shared/ui/icons";
+import { PosterImage } from "@/shared/ui/poster-image";
+import { Check, Play } from "@/shared/ui/icons";
 
-export function EpisodeCard({
-  ep,
-  api,
-  play,
-  item,
-  onToggleWatched,
-  onPress,
-  onLongPress,
+export interface EpisodeArtwork {
+  uri: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * The episode row shared by local and online title screens. Callers only
+ * supply display values; both catalogs get the same artwork, play glyph,
+ * progress line and spacing.
+ */
+export function EpisodeCardView({
+  artwork,
+  title,
+  overview,
+  episodeNumber,
+  duration,
+  progress,
+  watched = false,
   selecting = false,
   selected = false,
+  disabled = false,
+  onPress,
+  onLongPress,
+  onToggleWatched,
+  accessibilityLabel,
+  badge,
 }: {
-  ep: any;
-  api: any;
-  play: (fileId: number) => void;
-  item: ItemCard;
-  onToggleWatched?: (ep: any) => void;
-  onPress?: () => void;
-  onLongPress?: () => void;
+  artwork?: EpisodeArtwork;
+  title: string;
+  overview?: string | null;
+  episodeNumber?: number | null;
+  duration?: string | null;
+  progress?: number | null;
+  watched?: boolean;
   selecting?: boolean;
   selected?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  onToggleWatched?: () => void;
+  accessibilityLabel?: string;
+  badge?: string | null;
 }) {
   const colors = useColors();
-  const watched = Boolean(ep.watch?.played);
-  const hasProgress = Boolean(ep.watch?.position && !watched);
-  const duration = ep.runtime ? `${ep.runtime}:00` : null;
-  const progress =
-    hasProgress && ep.watch?.duration
-      ? Math.min(1, ep.watch.position / ep.watch.duration)
-      : null;
-  const rawName = String(ep.name || "").trim();
-  const cleanedTitle = rawName
-    .replace(
-      /^(?:S\d+[\s._-]*E\d+|Season\s*\d+\s*Episode\s*\d+|Episode\s*\d+)\s*[:·._-]?\s*/i,
-      "",
-    )
-    .trim();
-  const artwork = ep.backdrop || ep.poster || item.backdrop || item.poster;
-  const epDisplayTitle =
-    cleanedTitle ||
-    (ep.episodeNumber != null ? `Episode ${ep.episodeNumber}` : rawName || "Episode");
   return (
     <Pressable
-      onPress={onPress ?? (() => ep.fileId && play(ep.fileId))}
+      onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={800}
-      disabled={!selecting && !ep.fileId}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityState={selecting ? { selected } : undefined}
-      accessibilityLabel={`${epDisplayTitle}${watched ? ", watched" : ""}${selecting ? (selected ? ", selected" : ", not selected") : ""}`}
+      accessibilityLabel={
+        accessibilityLabel ??
+        `${title}${watched ? ", watched" : ""}${selecting ? (selected ? ", selected" : ", not selected") : ""}`
+      }
       className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
     >
       <View
@@ -62,14 +68,8 @@ export function EpisodeCard({
           selected && "border-2 border-accent",
         )}
       >
-        {artwork ? (
-          <Image
-            source={api.image(artwork)}
-            style={{ width: "100%", height: "100%" }}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            recyclingKey={artwork}
-          />
+        {artwork?.uri ? (
+          <PosterImage source={artwork} />
         ) : (
           <View className="h-full w-full bg-surface-secondary" />
         )}
@@ -97,6 +97,13 @@ export function EpisodeCard({
             </Text>
           </View>
         )}
+        {badge && !selecting && (
+          <View className="absolute left-1.5 top-1.5 rounded-[5px] bg-accent px-1.5 py-0.5">
+            <Text className="font-archivo-bold text-[9px] text-white">
+              {badge}
+            </Text>
+          </View>
+        )}
         {(progress !== null || watched) && (
           <View className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/[0.18]">
             <View
@@ -107,7 +114,7 @@ export function EpisodeCard({
               style={
                 watched
                   ? undefined
-                  : { width: `${Math.round(progress! * 100)}%` }
+                  : { width: `${Math.round((progress ?? 0) * 100)}%` }
               }
             />
           </View>
@@ -119,12 +126,12 @@ export function EpisodeCard({
             className="flex-1 font-archivo-bold text-[14px] text-foreground"
             numberOfLines={1}
           >
-            {epDisplayTitle}
+            {title}
           </Text>
           <View className="flex-row items-center gap-1.5">
             {onToggleWatched && !selecting && (
               <Pressable
-                onPress={() => onToggleWatched(ep)}
+                onPress={onToggleWatched}
                 hitSlop={10}
                 className={cn(
                   "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-60",
@@ -147,12 +154,15 @@ export function EpisodeCard({
           </View>
         </View>
 
-        <Text className="font-archivo-regular text-[12px] leading-[18px] text-muted" numberOfLines={2}>
-          {ep.overview || "No description available."}
+        <Text
+          className="font-archivo-regular text-[12px] leading-[18px] text-muted"
+          numberOfLines={2}
+        >
+          {overview || "No description available."}
         </Text>
-        {ep.episodeNumber != null && (
+        {episodeNumber != null && (
           <Text className="mt-1 font-archivo-medium text-[11px] text-muted">
-            {`Episode ${ep.episodeNumber}`}
+            {`Episode ${episodeNumber}`}
           </Text>
         )}
       </View>

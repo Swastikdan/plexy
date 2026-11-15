@@ -4,12 +4,21 @@ import { AppState } from "react-native";
 import type { LocalCatalog } from "@/core/library/catalog-api";
 import { defaultPreferences, PREFERENCE_KEY, readJson, writeJson, type Preferences, } from "./preferences";
 import { ProgressQueue, type Progress } from "./progress-queue";
+export interface TitleSearchResult {
+    id: number;
+    title?: string;
+    name?: string;
+    poster_path?: string | null;
+    release_date?: string;
+    first_air_date?: string;
+    overview?: string;
+}
 export interface MobileRuntimeBindings {
     api: LocalCatalog;
     restore(): Promise<void>;
     refresh(): Promise<void>;
     needsSetup(): boolean;
-    searchTitles(query: string, kind: "movies" | "tv"): Promise<any[]>;
+    searchTitles(query: string, kind: "movies" | "tv"): Promise<TitleSearchResult[]>;
     pickSubtitle?(fileId: number): Promise<import("@plexy/api-client/types").SubtitleTrack | null>;
     getAttentionCount(): number;
     getAttentionFingerprint(): string;
@@ -45,6 +54,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
                 ...(await readJson<Partial<Preferences>>(PREFERENCE_KEY, {})),
             };
             saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
+            if (saved.source !== "remote") saved.source = "local";
             if (![5, 10, 15, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
             Uniwind.setTheme(saved.theme);
             preferencesRef.current = saved;

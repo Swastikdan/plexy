@@ -1,6 +1,6 @@
+import type { LocalCatalog , ItemCard } from "@/core/library/catalog-api";
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
-import type { ItemCard } from "@/core/library/catalog-api";
 import { Play } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
 
@@ -13,7 +13,7 @@ export function ContinueWatchingCard({
   onFocus,
 }: {
   item: ItemCard;
-  api: any;
+  api: LocalCatalog;
   preferred?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
@@ -27,7 +27,7 @@ export function ContinueWatchingCard({
   const isSeries = item.kind === "series";
   const epNumber = isSeries
     ? null
-    : ((item as any).episodeNumber ?? item.episodeNumber);
+    : item.episodeNumber;
   const epLabel = epNumber != null ? `E${epNumber}` : null;
   const rawName = String(item.name || "").trim();
   const cleanedName = rawName

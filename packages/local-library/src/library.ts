@@ -377,6 +377,7 @@ export class LocalLibrary {
   cards(): ItemCard[] {
     const movies = this.state.records.filter(r => r.card.kind === "movie").map(r => ({
       ...r.card,
+      tmdbId: r.tmdbId ?? r.card.tmdbId ?? null,
       logo: r.logo || r.card.logo || null,
       isAnime: r.isAnime || r.card.isAnime,
     }));
@@ -398,6 +399,7 @@ export class LocalLibrary {
       parentTitle: null,
       seasonNumber: null,
       episodeNumber: null,
+      tmdbId: records.find(r => r.tmdbId != null)?.tmdbId ?? records[0]?.card.tmdbId ?? null,
       logo: records[0]!.logo || records[0]!.card.logo || null,
       isAnime: records.some(r => r.isAnime || r.card.isAnime),
       watch: records.every(r => r.card.watch?.played)
@@ -417,7 +419,7 @@ export class LocalLibrary {
     const series = record.card.parentId === id;
     const episodes = series ? this.state.records.filter(r => r.card.parentId === id).map(r => r.card)
       .sort((a,b) => (a.seasonNumber! - b.seasonNumber!) || (a.episodeNumber! - b.episodeNumber!)) : null;
-    const card = series ? this.cards().find(c => c.id === id)! : record.card;
+    const card = series ? this.cards().find(c => c.id === id)! : { ...record.card, tmdbId: record.tmdbId ?? record.card.tmdbId ?? null };
     return { item: card, logo: record.logo || null, metadata: { overview: card.overview, tagline: record.tagline || null,
       runtime: card.runtime, rating: card.rating, certification: record.certification || null, genres: card.genres },
       cast: record.cast, trailer: record.trailer || null,

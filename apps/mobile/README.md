@@ -73,3 +73,45 @@ Mobile styling uses Tailwind CSS v4 through Uniwind. Keep `global.css` at the ap
 Set `TMDB_TOKEN` or `EXPO_PUBLIC_TMDB_TOKEN` in the build environment. Preview APK builds and EAS builds fail when it is missing. GitHub Android builds read the repository secret of the same name (with `TMDB_ACCESS_TOKEN` and `VITE_PUBLIC_TMDB_ACCESS_TOKEN` supported as aliases). Credentials are embedded in Expo config; they are readable from the distributed app, so use a TMDB client credential.
 
 Collections and credits are cached with metadata and backfilled on the next online scan. Collection and person views show only local titles. Skip Intro appears during a valid saved intro window when automatic skipping is off; titles without community markers do not show a skip button. Cached markers and local playback remain available offline.
+
+## Versions and startup updates
+
+`bun run build:mobile` allocates the next mobile patch version before creating
+an APK (`1.0.8` → `1.0.9`). It reads published mobile versions, CI draft
+reservations, and `.build/native/mobile-version`; it needs an authenticated
+GitHub CLI with repository release access (or `GH_TOKEN`) and network access to
+avoid silently reusing a release version. Development starts and bundle checks
+do not increment versions. Failed new builds can leave gaps. Use
+`PLEXY_VERSION_BUMP=minor` or `major`, or an explicit newer
+`PLEXY_MOBILE_VERSION`, when needed. Android's internal versionCode is derived
+from that semantic version. Patch/minor components are limited to 99; bump the
+next component instead of overflowing. Existing Android codes remain ordered
+below the next semantic version.
+
+Configure `mobile-release.json` before pushing:
+
+- `optional`: dismissible update notice.
+- `feature`: dismissible notice highlighting the release notes.
+- `necessary`: the new version becomes the minimum supported version. Users on
+  an older version cannot enter the app until they update. A cached requirement
+  remains enforced offline, after installer cancellation, and after restart.
+
+Set `message` and `releaseNotes` for user-facing copy. Optional/feature releases
+inherit the previously published minimum; lowering the configured minimum does
+not remove a known requirement. A new installation with no cached requirement
+continues offline when the update service cannot be reached. Notices wait until
+playback exits. Settings shares the same updater and provides manual retry.
+
+The GitHub workflow offers update-type and patch/minor/major inputs for manual
+runs. Push builds use the config file. Local builds and CI reserve `mobile-vX.Y.Z` as a draft
+before building; retries of that run reuse the version, while a published
+version cannot be rebuilt in place. Once the APK exists, the release job
+publishes it and its SHA-256 manifest, then updates the `mobile-latest` policy
+asset. Keep the preview signing key stable for in-place installation. Direct
+EAS production builds remain a separate signing/distribution path; publish
+startup-update APKs through the repository's mobile build workflow.
+
+The first release containing this coordinator enables startup enforcement;
+older installed APKs cannot be forced to adopt behavior they do not contain.
+Verify optional dismissal, required-update Back behavior, offline restart,
+unknown-app permission denial, cancellation, and successful upgrade on a device.
