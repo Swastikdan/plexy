@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 export function useMediaNavigation() {
-  const { push, canGoBack, back, replace } = useRouter();
+  const { push, canGoBack, back, navigate } = useRouter();
   return {
     open: (id: string | number) =>
       push({ pathname: "/item/[id]", params: { id: String(id) } }),
@@ -9,6 +9,6 @@ export function useMediaNavigation() {
         pathname: "/player/[file-id]",
         params: { "file-id": String(fileId) },
       }),
-    back: () => (canGoBack() ? back() : replace("/")),
+    back: () => (canGoBack() ? back() : navigate("/")),
   };
 }

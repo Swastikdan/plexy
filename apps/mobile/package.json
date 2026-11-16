@@ -8,6 +8,7 @@
     "android": "expo run:android",
     "prebuild": "bun ../../scripts/native/generate-licenses.ts && expo prebuild --platform android",
     "bundle": "bun ../../scripts/native/generate-licenses.ts && expo export --platform android",
+    "build:check": "bun run typecheck && bun run lint && bun test tests ../../packages/local-library/tests && bun run bundle",
     "typecheck": "tsc --noEmit",
     "eas-build-post-install": "bun ../../scripts/native/generate-licenses.ts",
     "lint": "eslint src",

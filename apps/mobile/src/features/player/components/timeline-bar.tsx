@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, Text, View } from "react-native";
+import type { Chapter } from "@plexy/api-client/types";
 import { easings, useColors, timeLabel } from "@/shared/theme";
+import { triggerHaptic } from "@/shared/lib/haptics";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+
+const CANCEL_SEEK_SECONDS = 1.5;
+const EMPTY_CHAPTERS: Chapter[] = [];
 
 interface TimelineBarProps {
   duration: number;
@@ -9,11 +14,22 @@ interface TimelineBarProps {
   value: number;
   buffered: number;
   scrubbing: boolean;
-  onScrub: (time: number) => void;
+  chapters?: Chapter[];
+  onScrub: (time: number, cancelling: boolean) => void;
   onCommit: (time: number) => void;
+  onCancel: () => void;
   seekStep: number;
   /** Distance from the bottom edge of the screen. */
   bottom: number;
+}
+
+function chapterIndex(time: number, chapters: Chapter[]) {
+  let index = -1;
+  for (let i = 0; i < chapters.length; i += 1) {
+    if (chapters[i]!.start <= time) index = i;
+    else break;
+  }
+  return index;
 }
 
 /**
@@ -27,14 +43,21 @@ export function TimelineBar({
   value,
   buffered,
   scrubbing,
+  chapters,
   onScrub,
   onCommit,
+  onCancel,
   seekStep,
   bottom,
 }: TimelineBarProps) {
   const colors = useColors();
   const reduceMotion = useReducedMotion();
   const [emphasis] = React.useState(() => new Animated.Value(scrubbing ? 1 : 0));
+  const chapterList = chapters ?? EMPTY_CHAPTERS;
+  const lastChapter = useRef<number | null>(null);
+  const startValue = useRef(0);
+  const cancelEligible = useRef(false);
+  const cancelling = useRef(false);
   useEffect(() => {
     const animation = Animated.timing(emphasis, {
       toValue: scrubbing ? 1 : 0,
@@ -45,6 +68,21 @@ export function TimelineBar({
     animation.start();
     return () => animation.stop();
   }, [scrubbing, reduceMotion, emphasis]);
+  useEffect(() => {
+    if (!scrubbing || chapterList.length < 2) {
+      lastChapter.current = null;
+      return;
+    }
+    const index = chapterIndex(value, chapterList);
+    if (lastChapter.current == null) {
+      lastChapter.current = index;
+      return;
+    }
+    if (index !== lastChapter.current) {
+      lastChapter.current = index;
+      triggerHaptic("selection");
+    }
+  }, [value, scrubbing, chapterList]);
   const trackScale = emphasis.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 1.5],
@@ -73,6 +111,23 @@ export function TimelineBar({
         (x / width.current) * duration,
       ),
     );
+  const inCancelZone = (time: number) =>
+    cancelEligible.current &&
+    Math.abs(time - startValue.current) <= CANCEL_SEEK_SECONDS;
+  const scrubTo = (x: number) => {
+    const time = atPosition(x);
+    if (
+      !cancelEligible.current &&
+      Math.abs(time - startValue.current) > CANCEL_SEEK_SECONDS
+    )
+      cancelEligible.current = true;
+    const cancel = inCancelZone(time);
+    if (cancel !== cancelling.current) {
+      cancelling.current = cancel;
+      if (cancel) triggerHaptic("selection");
+    }
+    onScrub(time, cancel);
+  };
   return (
     <View
       className="absolute left-6 right-6 flex-row items-center gap-3"
@@ -106,9 +161,20 @@ export function TimelineBar({
         onMoveShouldSetResponder={() => true}
         onResponderTerminationRequest={() => false}
         onResponderTerminate={() => onCommit(target.current)}
-        onResponderGrant={(e) => onScrub(atPosition(e.nativeEvent.locationX))}
-        onResponderMove={(e) => onScrub(atPosition(e.nativeEvent.locationX))}
-        onResponderRelease={(e) => onCommit(atPosition(e.nativeEvent.locationX))}
+        onResponderGrant={(e) => {
+          startValue.current = value;
+          cancelEligible.current = false;
+          cancelling.current = false;
+          scrubTo(e.nativeEvent.locationX);
+        }}
+        onResponderMove={(e) => scrubTo(e.nativeEvent.locationX)}
+        onResponderRelease={() => {
+          const cancel = inCancelZone(target.current);
+          if (cancel) onCancel();
+          else onCommit(target.current);
+          cancelEligible.current = false;
+          cancelling.current = false;
+        }}
         onLayout={(e) => {
           width.current = Math.max(1, e.nativeEvent.layout.width);
         }}
@@ -135,6 +201,22 @@ export function TimelineBar({
               backgroundColor: colors.brand,
             }}
           />
+          {/* Chapter boundaries */}
+          {duration > 0 &&
+            chapterList
+              .filter(
+                (chapter) => chapter.start > 0 && chapter.start < duration,
+              )
+              .map((chapter) => (
+                <View
+                  key={`chapter-${chapter.start}`}
+                  pointerEvents="none"
+                  className="absolute top-[-3px] bottom-[-3px] w-px bg-white/55"
+                  style={{
+                    left: `${Math.min(1, chapter.start / duration) * 100}%`,
+                  }}
+                />
+              ))}
         </Animated.View>
         {/* Keep the thumb outside the vertically scaled track so it stays round. */}
         <Animated.View

@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { AppState } from "react-native";
+import { flushRemoteProgress, loadRemoteProgress } from "./lib/remote-progress";
 import { libraryStore, loadLibrary, toggleSaved, type SavedTitle } from "./lib/remote-state";
 import type { RemoteTitle } from "./lib/tmdb";
 
@@ -14,8 +16,21 @@ export function RemoteProvider({ children }: React.PropsWithChildren) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let live = true;
-    void loadLibrary().finally(() => { if (live) setReady(true); }).catch(() => {});
-    return () => { live = false; };
+    void Promise.all([loadLibrary(), loadRemoteProgress()])
+      .finally(() => {
+        if (live) setReady(true);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+      void flushRemoteProgress().catch(() => {});
+    };
+  }, []);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") void flushRemoteProgress().catch(() => {});
+    });
+    return () => subscription.remove();
   }, []);
   const save = useCallback((title: RemoteTitle) => toggleSaved(title), []);
   const value = useMemo<RemoteContext>(() => ({

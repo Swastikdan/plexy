@@ -1,0 +1,20 @@
+appId: app.plexy.mobile
+name: Settings reaches the library screens and returns
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "tab-settings"
+- assertVisible: "Settings"
+
+- tapOn: "Media folders"
+- assertVisible: "Media folders"
+- assertVisible:
+    id: "add-media-folder"
+
+# Android hardware back must unwind the nested settings stack rather than
+# leaving the app, so this also covers the BackHandler wiring.
+- back
+- assertVisible: "Scan library"

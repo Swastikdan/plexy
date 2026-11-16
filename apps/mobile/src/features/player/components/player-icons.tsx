@@ -29,12 +29,55 @@ const backwardIcons = {
   30: GoBackward30SecIcon,
   60: GoBackward60SecIcon,
 };
+const forwardCircle =
+  "M12 5L13.1039 3.45459C13.5149 2.87911 13.7205 2.59137 13.5907 2.32411C13.4609 2.05684 13.1311 2.04153 12.4714 2.01092C12.3152 2.00367 12.158 2 12 2C6.4772 2 2 6.47715 2 12C2 17.5228 6.4772 22 12 22C17.5229 22 22 17.5228 22 12C22 8.72836 20.4289 5.82368 18 3.99927";
+const backwardCircle =
+  "M12 5L10.8961 3.45459C10.4851 2.87911 10.2795 2.59137 10.4093 2.32411C10.5391 2.05684 10.8689 2.04153 11.5286 2.01092C11.6848 2.00367 11.842 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 8.72836 3.57111 5.82368 6 3.99927";
+const digitTwo =
+  "M7.5 11.1C8.1 9.9 9.9 9.9 10.5 11.1C11.1 12.3 10.1 13.3 9.2 14.1L7.5 16H10.6";
+const digitZero =
+  "M16.0022 12.6C16.0022 11.22 16.0682 10.848 15.8042 10.404C15.5402 9.96001 14.8802 9.99841 14.2202 9.99841C13.5602 9.99841 13.0802 9.96001 12.7622 10.32C12.3722 10.74 12.5402 11.52 12.4922 12.6C12.6002 14.04 12.3062 15.18 12.7562 15.66C13.0802 16.056 13.6553 15.996 14.3402 16.008C15.0201 15.9997 15.4322 16.032 15.7682 15.648C16.1402 15.312 15.9602 13.98 16.0022 12.6Z";
+function TwentySecondIcon({
+  backward,
+  size,
+  color,
+}: {
+  backward: boolean;
+  size: number;
+  color: string;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d={backward ? backwardCircle : forwardCircle}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d={digitTwo}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+      <Path
+        d={digitZero}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
 type SeekIconProps = { size?: number; color?: string; seconds?: number };
 export function IconSeekBack({
   size = 30,
   color = "#fff",
   seconds = SEEK_SECONDS,
 }: SeekIconProps) {
+  if (seconds === 20)
+    return <TwentySecondIcon backward size={size} color={color} />;
   return (
     <HugeiconsIcon
       icon={
@@ -51,6 +94,8 @@ export function IconSeekForward({
   color = "#fff",
   seconds = SEEK_SECONDS,
 }: SeekIconProps) {
+  if (seconds === 20)
+    return <TwentySecondIcon backward={false} size={size} color={color} />;
   return (
     <HugeiconsIcon
       icon={

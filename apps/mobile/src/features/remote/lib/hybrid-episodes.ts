@@ -35,23 +35,22 @@ export function mergeSeasons(
   remote: RemoteSeason[],
 ): HybridSeason[] {
   const byNumber = new Map<number, HybridSeason>();
+  // TMDB sometimes gives seasons custom names ("Cyberpunk: Edgerunners 2"),
+  // which read as separate shows beside the title. A season is always
+  // "Season N" here; season zero stays "Specials".
+  const label = (number: number) =>
+    number === 0 ? "Specials" : `Season ${number}`;
   for (const season of local) {
     byNumber.set(season.number, {
       number: season.number,
-      label:
-        season.number === 0
-          ? "Specials"
-          : season.name || `Season ${season.number}`,
+      label: label(season.number),
     });
   }
   for (const season of remote) {
     if (byNumber.has(season.number)) continue;
     byNumber.set(season.number, {
       number: season.number,
-      label:
-        season.number === 0
-          ? "Specials"
-          : season.name || `Season ${season.number}`,
+      label: label(season.number),
     });
   }
   return [...byNumber.values()].sort((a, b) => a.number - b.number);

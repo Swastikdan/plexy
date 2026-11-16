@@ -2,7 +2,7 @@ import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
 import { PosterImage } from "@/shared/ui/poster-image";
-import { Check, Play } from "@/shared/ui/icons";
+import { Check, Globe, Play } from "@/shared/ui/icons";
 
 export interface EpisodeArtwork {
   uri: string;
@@ -29,7 +29,7 @@ export function EpisodeCardView({
   onLongPress,
   onToggleWatched,
   accessibilityLabel,
-  badge,
+  online = false,
 }: {
   artwork?: EpisodeArtwork;
   title: string;
@@ -45,7 +45,7 @@ export function EpisodeCardView({
   onLongPress?: () => void;
   onToggleWatched?: () => void;
   accessibilityLabel?: string;
-  badge?: string | null;
+  online?: boolean;
 }) {
   const colors = useColors();
   return (
@@ -97,11 +97,12 @@ export function EpisodeCardView({
             </Text>
           </View>
         )}
-        {badge && !selecting && (
-          <View className="absolute left-1.5 top-1.5 rounded-[5px] bg-accent px-1.5 py-0.5">
-            <Text className="font-archivo-bold text-[9px] text-white">
-              {badge}
-            </Text>
+        {online && !selecting && (
+          <View
+            accessibilityLabel="Online episode"
+            className="absolute left-1.5 top-1.5 h-[22px] w-[22px] items-center justify-center rounded-full bg-accent"
+          >
+            <Globe size={13} color="#fff" strokeWidth={2.1} />
           </View>
         )}
         {(progress !== null || watched) && (

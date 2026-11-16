@@ -14,7 +14,6 @@ View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ItemCard } from "@plexy/api-client/types";
-import type { LocalRoot } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
 import { useColors } from "@/shared/theme";
@@ -43,11 +42,11 @@ export function LibraryReportScreen() {
     for (const item of all) files.set(item.id, api.titleFile(item.id));
     return files;
   }, [api, all]);
-  async function add(kind: LocalRoot["kind"]) {
+  async function add() {
     setBusy(true);
     setMessage("");
     try {
-      await addLocalFiles(kind);
+      await addLocalFiles();
     } catch (e) {
       if (!/cancel/i.test(String(e))) setMessage(String(e));
     } finally {
@@ -69,17 +68,7 @@ export function LibraryReportScreen() {
               <ReportAction
                 label={busy ? "Adding…" : "+ Add"}
                 disabled={busy}
-                onPress={() =>
-                  showDialog(
-                    "Add local videos",
-                    "Choose the type of title to add.",
-                    [
-                      { text: "Movies", onPress: () => void add("movies") },
-                      { text: "TV shows", onPress: () => void add("tv") },
-                      { text: "Anime", onPress: () => void add("anime") },
-                    ],
-                  )
-                }
+                onPress={() => void add()}
               />
             </View>
             <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">

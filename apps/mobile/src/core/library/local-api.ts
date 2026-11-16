@@ -1,8 +1,9 @@
+import type { Chapter } from "@plexy/api-client/types";
 import { LocalLibrary } from "@plexy/local-library/library";
 import { LocalCatalog, type Playability, type TitleIdentity } from "./catalog-api";
 /** Implements the existing UI contract in process, without a network listener. */
 export class LocalApi extends LocalCatalog {
-    constructor(private readonly library: LocalLibrary, private readSubtitle: (uri: string) => Promise<string>, private subtitles: (fileId: number) => Promise<NonNullable<Playability["tracks"]>>) {
+    constructor(private readonly library: LocalLibrary, private readSubtitle: (uri: string) => Promise<string>, private subtitles: (fileId: number) => Promise<NonNullable<Playability["tracks"]>>, private chapters: (fileId: number) => Promise<Chapter[]> = async () => []) {
         super();
     }
     override stream(fileId: number) {
@@ -28,6 +29,10 @@ export class LocalApi extends LocalCatalog {
         const next = siblings.length
             ? siblings[siblings.findIndex((s) => s.id === fileId) + 1]
             : null;
+        const [tracks, chapters] = await Promise.all([
+            this.subtitles(fileId),
+            this.chapters(fileId),
+        ]);
         return {
             path: "direct",
             reason: "Original file · on this device",
@@ -44,7 +49,8 @@ export class LocalApi extends LocalCatalog {
             duration: r.card.watch?.duration,
             watch: r.card.watch,
             audioTracks: [],
-            tracks: await this.subtitles(fileId),
+            tracks,
+            chapters,
             episodes: siblings.map((s) => s.card),
             nextFileId: next?.id ?? null,
             next: next
@@ -75,16 +81,14 @@ export class LocalApi extends LocalCatalog {
         return {
             featured: all.find((c) => c.backdrop) || all[0] || null,
             rows: [
-                { key: "continue", title: "Continue watching", items: continuing },
-                { key: "movies", title: "Movies", items: all.filter((c) => c.kind === "movie" && !c.isAnime) },
-                { key: "series", title: "Series", items: all.filter((c) => c.kind === "series" && !c.isAnime) },
-                { key: "anime", title: "Anime", items: all.filter((c) => c.isAnime) },
+                { key: "continue", title: "Continue Watching", items: continuing },
+                { key: "titles", title: "Movies & Shows", items: all },
             ].filter((r) => r.items.length),
         };
     }
-    override async items(kind: "all" | "movie" | "series" | "anime", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
+    override async items(kind: "all" | "movie" | "series", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
         this.checkSignal(signal);
-        let items = this.library.cards().filter((c) => kind === "all" ? true : kind === "anime" ? c.isAnime : c.kind === kind && !c.isAnime);
+        let items = this.library.cards().filter((c) => kind === "all" ? true : c.kind === kind);
         if (unwatched)
             items = items.filter((c) => !c.watch?.played);
         items.sort((a, b) => sort === "year" ? (b.year || 0) - (a.year || 0)
@@ -153,16 +157,13 @@ export class LocalApi extends LocalCatalog {
     override counts() {
         let movie = 0;
         let series = 0;
-        let anime = 0;
         for (const card of this.library.cards()) {
-            if (card.isAnime)
-                anime++;
-            else if (card.kind === "movie")
+            if (card.kind === "movie")
                 movie++;
             else if (card.kind === "series")
                 series++;
         }
-        return { movie, series, anime };
+        return { movie, series };
     }
     override collections() {
         const groups = new Map<number, {

@@ -40,6 +40,8 @@ The arrow points one way. Concretely:
 | `bun run test:packages` | Run shared-package tests |
 | `bun run test:native` | Run mobile and local-library tests |
 | `bun run build:web` | Build the shared browser frontend |
+| `bun run build:check` | Preflight every app: all typechecks, server/desktop/mobile tests, web build, desktop main/preload build, server bundle and mobile Expo bundle |
+| `bun run build:check:mobile` | Preflight only the mobile app |
 | `bun run build` | Build desktop, server, and mobile deliverables |
 
 The build system stays on Bun workspaces and the scripts in `scripts/`; CI calls those same commands. There is no Turborepo/Nx layer to keep in sync.

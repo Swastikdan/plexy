@@ -1,0 +1,13 @@
+appId: app.plexy.mobile
+name: First run lands on media folder setup
+tags:
+  - smoke
+---
+# A fresh install has no library, so the Home tab redirects to folder setup.
+# This is the cheapest assertion that the app boots, mounts its providers and
+# renders a real screen instead of a redbox or a blank surface.
+- launchApp:
+    clearState: true
+- assertVisible: "Media folders"
+- assertVisible:
+    id: "add-media-folder"

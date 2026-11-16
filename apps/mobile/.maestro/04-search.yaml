@@ -1,0 +1,20 @@
+appId: app.plexy.mobile
+name: Search accepts a query and reports no matches
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "tab-search"
+- assertVisible:
+    id: "search-input"
+
+- tapOn:
+    id: "search-input"
+- inputText: "arrival"
+
+# Covers the debounce and the empty-result branch: typing must not crash the
+# screen before a library exists.
+- assertVisible:
+    text: "No results for.*"

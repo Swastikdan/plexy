@@ -4,7 +4,7 @@ import { selectUpdate } from "@/features/settings/lib/update-policy";
 
 test("finds Android updates on later pages after releases containing only other platforms", async () => {
   const requests: string[] = [];
-  const request = (async (url, options) => {
+  const request = (async (url: string | URL | Request, options?: RequestInit) => {
     requests.push(String(url));
     expect(new Headers(options?.headers).get("Cache-Control")).toBe("no-cache");
     if (requests.length === 1) return new Response(JSON.stringify([{
@@ -13,7 +13,7 @@ test("finds Android updates on later pages after releases containing only other 
     return new Response(JSON.stringify([{
       tag_name: "v1.0.7-build.2046", assets: [{ name: "Plexy-mobile-v1.0.7-Android.apk", size: 100, browser_download_url: "https://example.com/app.apk" }],
     }]));
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   const releases = await fetchUpdateReleases(request);
   expect(requests).toHaveLength(2);
   expect(requests[1]).toContain("page=2");
@@ -21,8 +21,8 @@ test("finds Android updates on later pages after releases containing only other 
 });
 
 test("failed or malformed update responses produce errors instead of claiming up to date", async () => {
-  const denied = (async () => new Response("rate limited", { status: 403 })) as typeof fetch;
+  const denied = (async () => new Response("rate limited", { status: 403 })) as unknown as typeof fetch;
   await expect(fetchUpdateReleases(denied)).rejects.toThrow("HTTP 403");
-  const malformed = (async () => new Response(JSON.stringify({ message: "unexpected" }))) as typeof fetch;
+  const malformed = (async () => new Response(JSON.stringify({ message: "unexpected" }))) as unknown as typeof fetch;
   await expect(fetchUpdateReleases(malformed)).rejects.toThrow("invalid release list");
 });

@@ -11,7 +11,11 @@ export default function DetailRoute() {
   if (!id || Array.isArray(id)) return <Notice message="Invalid title." />;
   return (
     <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1 }}>
-      <TitleScreen id={id} {...navigation} />
+      <TitleScreen
+        input={{ source: "local", id }}
+        back={navigation.back}
+        play={navigation.play}
+      />
     </SafeAreaView>
   );
 }

@@ -13,7 +13,6 @@ import {
   Text,
   View,
 } from "react-native";
-import type { LocalRoot } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import {
   bundledMetadata,
@@ -106,22 +105,22 @@ export function SettingsScreen({
       setActiveAction("");
     }
   };
-  const pickFolder = async (kind: LocalRoot["kind"]) => {
+  const pickFolder = async () => {
     const folder = await Directory.pickDirectoryAsync();
     await localLibrary.addRoot({
       uri: folder.uri,
       name: displayName(folder.uri),
-      kind,
+      kind: "auto",
     });
   };
-  const addFolder = (kind: LocalRoot["kind"]) => {
+  const addFolder = () => {
     showDialog(
       "Add media folder",
       "Choose a folder in Android’s file picker, then allow Plexy to access its videos.",
       [
         {
           text: "Choose folder",
-          onPress: () => void action(() => pickFolder(kind)),
+          onPress: () => void action(() => pickFolder()),
         },
       ],
     );
@@ -355,7 +354,7 @@ export function SettingsScreen({
                     "Seek duration",
                     "Choose the interval for both directions and double taps.",
                     [
-                      ...([5, 10, 15, 30, 60] as const).map((value) => ({
+                      ...([5, 10, 15, 20, 30, 60] as const).map((value) => ({
                         text: `${preferences.seekSeconds === value ? "✓ " : ""}${value} seconds`,
                         onPress: () =>
                           updatePreferences({ seekSeconds: value }),
@@ -390,6 +389,30 @@ export function SettingsScreen({
                 <ToggleSwitch
                   value={preferences.autoNext}
                   onValueChange={(v) => updatePreferences({ autoNext: v })}
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="Autoplay online"
+                subtitle="Start the Vidy player automatically"
+              >
+                <ToggleSwitch
+                  value={preferences.onlineAutoplay}
+                  onValueChange={(v) =>
+                    updatePreferences({ onlineAutoplay: v })
+                  }
+                  accessibilityLabel="Autoplay online"
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="Online episode picker"
+                subtitle="Show the provider season and episode menu"
+              >
+                <ToggleSwitch
+                  value={preferences.onlineEpisodeSelector}
+                  onValueChange={(v) =>
+                    updatePreferences({ onlineEpisodeSelector: v })
+                  }
+                  accessibilityLabel="Online episode picker"
                 />
               </SettingsRow>
             </View>
@@ -493,18 +516,9 @@ export function SettingsScreen({
               <>
                 <Button
                   label="Add media folder"
+                  testID="add-media-folder"
                   disabled={busy}
-                  onPress={() =>
-                    showDialog(
-                      "Add media folder",
-                      "Choose the type of videos in this folder.",
-                      [
-                        { text: "Movies", onPress: () => addFolder("movies") },
-                        { text: "TV shows", onPress: () => addFolder("tv") },
-                        { text: "Anime", onPress: () => addFolder("anime") },
-                      ],
-                    )
-                  }
+                  onPress={() => addFolder()}
                 />
                 <View className="overflow-hidden rounded-[18px] bg-surface">
                   {localLibrary.state.roots
@@ -576,13 +590,7 @@ export function SettingsScreen({
                     <Button
                       label="Add media folder"
                       disabled={busy}
-                      onPress={() =>
-                        addFolder(
-                          localLibrary.state.roots.find(
-                            (r) => r.uri === expandedFolder,
-                          )?.kind || "movies",
-                        )
-                      }
+                      onPress={() => addFolder()}
                     />
                     <Button
                       label="Remove from the library"

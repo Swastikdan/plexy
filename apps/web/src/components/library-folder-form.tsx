@@ -53,13 +53,6 @@ const MEDIA_TYPES: Array<{
     detail: "Season grouping and next-episode tracking",
     icon: Tv,
   },
-  {
-    value: "anime",
-    title: "Anime",
-    description: "Anime series and films, including specials.",
-    detail: "Season ordering that matches release arcs",
-    icon: Sparkles,
-  },
 ];
 
 const DEFAULT_NAMES: Record<MediaType, string> = {

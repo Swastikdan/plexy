@@ -1,4 +1,4 @@
-import type { ItemCard } from "@/core/library/catalog-api";
+import type { ItemCard, Watch } from "@/core/library/catalog-api";
 import type { RemoteMediaType, RemoteTitle } from "./tmdb";
 
 /**
@@ -23,6 +23,7 @@ export function parseRemotePublicId(
 export function toItemCard(
   title: RemoteTitle,
   runtime?: number | null,
+  watch?: Watch | null,
 ): ItemCard {
   return {
     // TMDB ids are shared across movies and series; the mapping keeps a
@@ -44,8 +45,9 @@ export function toItemCard(
     rating: title.rating,
     runtime: runtime ?? null,
     genres: title.genres,
+    tmdbId: title.tmdbId,
     matchStatus: "matched",
-    watch: null,
+    watch: watch ?? null,
   };
 }
 

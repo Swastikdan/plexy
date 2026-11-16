@@ -20,7 +20,11 @@ export interface Preferences {
   subtitleSize: number;
   autoSkip: boolean;
   autoNext: boolean;
-  seekSeconds: 5 | 10 | 15 | 30 | 60;
+  /** Start the Vidy embed automatically. */
+  onlineAutoplay: boolean;
+  /** Show Vidy's season/episode picker. */
+  onlineEpisodeSelector: boolean;
+  seekSeconds: 5 | 10 | 15 | 20 | 30 | 60;
   playbackRate: number;
 }
 export const defaultPreferences: Preferences = {
@@ -33,6 +37,8 @@ export const defaultPreferences: Preferences = {
   subtitleSize: 22,
   autoSkip: false,
   autoNext: true,
+  onlineAutoplay: true,
+  onlineEpisodeSelector: true,
   seekSeconds: 10,
   playbackRate: 1,
 };

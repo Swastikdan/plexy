@@ -1,20 +1,23 @@
 import { useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
 import React, { useRef } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { RefreshControl, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useColors } from "@/shared/theme";
-import { Film } from "@/shared/ui/icons";
-import { Loading } from "@/shared/ui/loading";
+import { Film, Search } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
+import { HomeSkeleton } from "@/shared/ui/skeleton";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { LibraryAttention } from "@/features/catalog/components/library-attention";
 import { TopFade } from "@/features/catalog/components/top-fade";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
+import { useRemoteTitleActions } from "@/features/remote/hooks/use-remote-title-actions";
+import { parseRemotePublicId } from "@/features/remote/lib/view";
 import { HeroCarousel } from "./components/hero-carousel";
 
 export function HomeScreen({
@@ -33,12 +36,15 @@ export function HomeScreen({
     open: OpenTitle;
     play: (item: ItemCard) => void;
     loading: boolean;
+    error?: string | null;
     refresh: () => void;
   };
 }) {
   const colors = useColors();
-  const { push } = useRouter();
-  const { api, progress } = useClient();
+  const { push, navigate } = useRouter();
+  const { api, progress, preferences } = useClient();
+  const remoteActions = useRemoteTitleActions();
+  const titleActions = useTitleActions();
   const insets = useSafeAreaInsets();
   const [scrolled, setScrolled] = React.useState(false);
   const data = useResource((signal) => api.home(signal), [api]);
@@ -163,16 +169,91 @@ export function HomeScreen({
       })
       .filter((r) => r.items.length > 0);
   }, [data.value, toFullSeriesOrMovie]);
-  const heroItems = carouselItems.length
-    ? carouselItems
-    : (online?.carouselItems ?? []);
-  const heroPlay =
-    carouselItems.length || !online ? handlePlay : online.play;
-  const heroOpen = carouselItems.length || !online ? open : online.open;
-  const onlineRows = online?.rows ?? [];
+  // Keep the local shelf whole, then follow it with the online category rows.
+  // Movies and shows share a row; each card carries its own kind tag.
+  const shelfRows = React.useMemo(
+    () => [
+      ...otherRows.map((row) => ({ ...row, online: false })),
+      ...(online?.rows ?? []).map((row) => ({
+        ...row,
+        key: `online-${row.key}`,
+        online: true,
+      })),
+    ],
+    [online?.rows, otherRows],
+  );
+  const heroItems = React.useMemo(() => {
+    const localItems = carouselItems;
+    const onlineItems = online?.carouselItems ?? [];
+    if (!localItems.length) return onlineItems;
+    if (!onlineItems.length) return localItems;
+    const localTmdb = new Set(api.titlesByTmdb().keys());
+    const seen = new Set<string>();
+    const remoteItems = onlineItems.filter((entry) => {
+      if (seen.has(entry.publicId)) return false;
+      seen.add(entry.publicId);
+      const parsed = parseRemotePublicId(entry.publicId);
+      return parsed
+        ? !localTmdb.has(`${parsed.mediaType}:${parsed.tmdbId}`)
+        : true;
+    });
+    // Alternate the two catalogs so an existing local library never hides the
+    // online featured titles entirely.
+    const merged: ItemCard[] = [];
+    let localIndex = 0;
+    let remoteIndex = 0;
+    while (
+      merged.length < 5 &&
+      (localIndex < localItems.length || remoteIndex < remoteItems.length)
+    ) {
+      if (localIndex < localItems.length) merged.push(localItems[localIndex++]!);
+      if (merged.length >= 5) break;
+      if (remoteIndex < remoteItems.length)
+        merged.push(remoteItems[remoteIndex++]!);
+    }
+    return merged;
+  }, [api, carouselItems, online?.carouselItems]);
+  const heroPlay = React.useCallback(
+    (item: ItemCard) => {
+      if (item.publicId.startsWith("remote:")) {
+        online?.play(item);
+        return;
+      }
+      handlePlay(item);
+    },
+    [handlePlay, online],
+  );
+  const heroOpen = React.useCallback(
+    (id: string | number) => {
+      const publicId = String(id);
+      if (publicId.startsWith("remote:")) {
+        online?.open(publicId);
+        return;
+      }
+      open(publicId);
+    },
+    [online, open],
+  );
+  const heroLongPress = React.useCallback(
+    (item: ItemCard) => {
+      if (item.publicId.startsWith("remote:")) {
+        remoteActions(item, { play: () => online?.play(item) });
+        return;
+      }
+      titleActions(item, {
+        play: () => handlePlay(item),
+        onChanged: data.retry,
+      });
+    },
+    [data.retry, handlePlay, online, remoteActions, titleActions],
+  );
   const hasAnyRows =
-    continueItems.length > 0 || otherRows.length > 0 || onlineRows.length > 0;
-  if (data.loading) return <Loading />;
+    continueItems.length > 0 || shelfRows.length > 0;
+  if (
+    data.loading ||
+    (online?.loading && !continueItems.length && !shelfRows.length)
+  )
+    return <HomeSkeleton />;
   if (data.error) return <Notice message={data.error} retry={data.retry} />;
   return (
     <View className="flex-1 bg-background">
@@ -190,6 +271,17 @@ export function HomeScreen({
       )}
       <PageHeader
         logo
+        right={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Search"
+            onPress={() => navigate("/search")}
+            hitSlop={8}
+            className="h-10 w-10 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
+          >
+            <Search size={20} color={colors.ink} strokeWidth={2} />
+          </Pressable>
+        }
         style={[
           {
             position: "absolute",
@@ -235,6 +327,7 @@ export function HomeScreen({
               items={heroItems}
               onPlay={heroPlay}
               open={heroOpen}
+              onLongPress={heroLongPress}
               active={active && !scrolled}
               onHeroFocus={() => {
                 scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -243,7 +336,7 @@ export function HomeScreen({
           </View>
         )}
 
-        <LibraryAttention />
+        {preferences.source !== "remote" && <LibraryAttention />}
 
         {/* Continue watching row with full series or movie cards */}
         {continueItems.length > 0 && (
@@ -260,38 +353,37 @@ export function HomeScreen({
           </View>
         )}
 
-        {/* Rest of the rows (full movies and series only) */}
-        {otherRows.map((row) => (
+        {/* The local Movies & Shows shelf, then the online categories. */}
+        {shelfRows.map((row) => (
           <View key={row.key}>
             <CatalogRow
               key={row.key}
               title={row.title}
               items={row.items}
-              open={open}
+              open={heroOpen}
               onPlay={handlePlay}
-              onChanged={data.retry}
+              onlineFor={(item) => item.publicId.startsWith("remote:")}
+              onLongPressItem={(item) => {
+                if (item.publicId.startsWith("remote:")) {
+                  remoteActions(item, {
+                    play: () => online?.play(item),
+                    onChanged: online?.refresh,
+                  });
+                  return;
+                }
+                titleActions(item, {
+                  play: () => handlePlay(item),
+                  onChanged: data.retry,
+                });
+              }}
             />
           </View>
         ))}
-
-        {/* Online rows keep the local library visible and add the catalog. */}
-        {onlineRows.length > 0 && (
-          <Text className="mb-1.5 px-5 font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">
-            Online
-          </Text>
+        {!!online?.error && shelfRows.length === 0 && !online.loading && (
+          <View className="px-5 py-6">
+            <Notice message={online.error} retry={online.refresh} />
+          </View>
         )}
-        {onlineRows.map((row) => (
-          <View key={`online-${row.key}`}>
-            <CatalogRow
-              key={`online-${row.key}`}
-              title={row.title}
-              items={row.items}
-              open={online?.open ?? open}
-              onPlay={online?.play ?? handlePlay}
-              allowTitleActions={false}
-            />
-          </View>
-        ))}
 
         {!data.loading && !data.error && !hasAnyRows && (
           <View className="min-h-[320px] justify-center gap-5 px-7 py-12">

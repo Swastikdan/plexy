@@ -1,6 +1,6 @@
 import React, { useState } from "react";
+import { useIsFocused } from "expo-router";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   Text,
@@ -15,23 +15,41 @@ import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import { Search as SearchIcon, X } from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
-import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
+import {
+  SearchHomeSkeleton,
+  SearchResultRowsSkeleton,
+  SearchResultsSkeleton,
+} from "@/shared/ui/skeleton";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
 import { useRemoteHome } from "@/features/remote/lib/use-remote-home";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { useRemoteSearch } from "@/features/remote/lib/use-remote-search";
+import { prefetchImages } from "@/features/remote/lib/prefetch";
+import {
+  remoteWatch,
+  useRemoteProgress,
+} from "@/features/remote/lib/remote-progress";
+import {
+  remoteTitleFromCard,
+  useRemoteTitleActions,
+} from "@/features/remote/hooks/use-remote-title-actions";
 import { toItemCard } from "@/features/remote/lib/view";
 import type { RemoteTitle } from "@/features/remote/lib/tmdb";
 
 type ResultRow =
   | { kind: "header"; key: string; title: string }
-  | { kind: "cards"; key: string; items: ItemCard[] };
+  | { kind: "cards"; key: string; items: ItemCard[] }
+  | { kind: "pending"; key: string };
 
-function buildResultRows(titles: ItemCard[], episodes: ItemCard[]): ResultRow[] {
+function buildResultRows(
+  titles: ItemCard[],
+  episodes: ItemCard[],
+  pending: boolean,
+): ResultRow[] {
   const rows: ResultRow[] = [];
   const append = (title: string, items: ItemCard[]) => {
     if (!items.length) return;
@@ -40,21 +58,16 @@ function buildResultRows(titles: ItemCard[], episodes: ItemCard[]): ResultRow[] 
       const slice = items.slice(index, index + 2);
       rows.push({
         kind: "cards",
-        key: `cards-${title}-${slice.map((item) => item.id).join("-")}`,
+        key: `cards-${title}-${slice.map((item) => item.publicId).join("-")}`,
         items: slice,
       });
     }
   };
   append("Movies & Shows", titles);
+  // Online results merge into the title section, so their skeleton belongs
+  // there too — above episodes, exactly where the cards will appear.
+  if (pending) rows.push({ kind: "pending", key: "pending" });
   append("Episodes", episodes);
-  return rows;
-}
-
-function cardRows(items: ItemCard[]): ItemCard[][] {
-  const rows: ItemCard[][] = [];
-  for (let index = 0; index < items.length; index += 2) {
-    rows.push(items.slice(index, index + 2));
-  }
   return rows;
 }
 
@@ -74,6 +87,9 @@ export function SearchScreen({
   const [inputFocus, setInputFocus] = useState(false);
   const onlineMode = preferences.source === "remote";
   const remoteNavigation = useRemoteNavigation();
+  const remoteActions = useRemoteTitleActions();
+  const focused = useIsFocused();
+  const remoteProgress = useRemoteProgress(focused);
   const onlineHome = useRemoteHome(onlineMode);
   const onlineResult = useRemoteSearch(debounced, onlineMode);
   React.useEffect(() => {
@@ -130,23 +146,25 @@ export function SearchScreen({
         .filter((row) => row.items.length > 0),
     [homeData.value],
   );
-  const resultRows = React.useMemo(
-    () => buildResultRows(data.value?.titles ?? [], data.value?.episodes ?? []),
-    [data.value],
-  );
   const localByTmdb = api.titlesByTmdb();
   const onlineCards = React.useMemo(
-    () =>
-      (onlineResult.value ?? [])
+    () => {
+      void remoteProgress;
+      return (onlineResult.value ?? [])
         .filter(
           (title) =>
             !localByTmdb.has(`${title.mediaType}:${title.tmdbId}`),
         )
         .map((title) => ({
           title,
-          item: toItemCard(title),
-        })),
-    [localByTmdb, onlineResult.value],
+          item: toItemCard(
+            title,
+            undefined,
+            remoteWatch(title.mediaType, title.tmdbId),
+          ),
+        }));
+    },
+    [localByTmdb, onlineResult.value, remoteProgress],
   );
   const onlineByPublicId = React.useMemo(
     () =>
@@ -155,9 +173,31 @@ export function SearchScreen({
       ),
     [onlineCards],
   );
-  const onlineResultRows = React.useMemo(
-    () => cardRows(onlineCards.map((entry) => entry.item)),
+  React.useEffect(() => {
+    prefetchImages(
+      onlineCards.flatMap((entry) => [
+        entry.item.poster,
+        entry.item.backdrop,
+      ]),
+      24,
+    );
+  }, [onlineCards]);
+  const onlineItems = React.useMemo(
+    () => onlineCards.map((entry) => entry.item),
     [onlineCards],
+  );
+  const searching = Boolean(debounced);
+  const localPending = searching && data.loading;
+  const onlinePending = searching && onlineMode && onlineResult.loading;
+  const pending = localPending || onlinePending;
+  const resultRows = React.useMemo(
+    () =>
+      buildResultRows(
+        [...(data.value?.titles ?? []), ...onlineItems],
+        data.value?.episodes ?? [],
+        pending,
+      ),
+    [data.value, onlineItems, pending],
   );
   const openItem = React.useCallback(
     (item: ItemCard) => {
@@ -166,52 +206,194 @@ export function SearchScreen({
     },
     [play, open],
   );
-  const onlineFooter = onlineMode && onlineResultRows.length > 0 ? (
-    <View className="gap-3 pt-1">
-      <Text className="px-5 font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">
-        Online
-      </Text>
-      {onlineResultRows.map((row) => (
-        <View
-          key={row.map((item) => item.publicId).join("-")}
-          className="flex-row gap-3 px-5"
-        >
-          {row.map((item) => {
-            const title = onlineByPublicId.get(item.publicId);
-            return (
-              <Card
-                key={item.publicId}
-                width={cardWidth}
-                item={item}
-                api={api}
-                onPress={() => {
-                  if (title) remoteNavigation.open(title);
-                }}
-              />
-            );
-          })}
-        </View>
-      ))}
-    </View>
-  ) : null;
   const onlineHomeFooter =
     onlineMode && onlineHome.rows.length > 0 ? (
       <View className="pt-1">
-        <Text className="px-5 pb-2 font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">
-          Online
-        </Text>
-        {onlineHome.rows.map((row) => (
-          <CatalogRow
-            key={`online-${row.key}`}
-            title={row.title}
-            items={row.items}
-            open={onlineHome.open}
-            onPlay={onlineHome.play}
-            allowTitleActions={false}
-          />
-        ))}
+        {onlineHome.rows
+          .filter((row) => row.key === "trending-day")
+          .map((row) => (
+            <CatalogRow
+              key={`online-${row.key}`}
+              title="Trending today"
+              items={row.items}
+              open={onlineHome.open}
+              onPlay={onlineHome.play}
+              allowTitleActions={false}
+              onlineFor={() => true}
+              onLongPressItem={(item) =>
+                remoteActions(item, {
+                  play: () => onlineHome.play(item),
+                })
+              }
+            />
+          ))}
       </View>
     ) : null;
+
+  // Search states are tracked per source. The local catalog usually answers
+  // first; the online catalog then streams in behind it. Neither source may
+  // take over the screen while the other is still resolving, and a failure in
+  // one source must not hide results from the other.
+  const localError = searching ? data.error : null;
+  const onlineError = searching && onlineMode ? onlineResult.error : null;
+  const hasResults = resultRows.some((row) => row.kind !== "pending");
+  const homeLoading = homeData.loading || onlineHome.data.loading;
+  const homeError = homeData.error || onlineHome.data.error;
+
+  let content: React.ReactNode;
+  if (!searching) {
+    if (!homeRows.length && !onlineHome.rows.length && homeLoading) {
+      content = <SearchHomeSkeleton />;
+    } else if (!homeRows.length && !onlineHome.rows.length && homeError) {
+      content = (
+        <Notice
+          message={homeError || "Could not load this screen."}
+          retry={() => {
+            homeData.retry();
+            onlineHome.data.retry();
+          }}
+        />
+      );
+    } else if (homeRows.length || onlineHome.rows.length) {
+      content = (
+        <FlatList
+          className="flex-1"
+          data={homeRows}
+          keyExtractor={(row) => row.key}
+          renderItem={({ item: row }) => (
+            <CatalogRow
+              title={row.title}
+              items={row.items}
+              open={open}
+              onPlay={handlePlay}
+              isContinueWatching={row.key === "continue"}
+              onChanged={homeData.retry}
+            />
+          )}
+          ListFooterComponent={onlineHomeFooter}
+          contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        />
+      );
+    } else {
+      content = (
+        <Text className="font-archivo-regular text-[14px] text-muted px-5">
+          Find a title or an episode in your library
+          {onlineMode ? " or online" : ""}.
+        </Text>
+      );
+    }
+  } else if (hasResults) {
+    // Keep the results that are ready and show skeleton rows for the source
+    // that is still loading. No spinners: the placeholders match the grid.
+    const footer =
+      localError || onlineError ? (
+        <View className="gap-3">
+          {localError && (
+            <View className="px-5">
+              <Notice message={localError} retry={data.retry} />
+            </View>
+          )}
+          {onlineError && (
+            <View className="px-5">
+              <Notice message={onlineError} retry={onlineResult.retry} />
+            </View>
+          )}
+        </View>
+      ) : null;
+    content = (
+      <FlatList
+        className="flex-1"
+        data={resultRows}
+        keyExtractor={(row) => row.key}
+        renderItem={({ item: row }) => {
+          if (row.kind === "header") {
+            return (
+              <Text className="px-5 font-archivo-bold text-[16px] text-foreground tracking-[-0.3px]">
+                {row.title}
+              </Text>
+            );
+          }
+          if (row.kind === "pending") {
+            return <SearchResultRowsSkeleton rows={2} />;
+          }
+          return (
+            <View className="flex-row gap-3 px-5">
+              {row.items.map((item) => {
+                const remote = item.publicId.startsWith("remote:");
+                const remoteTitle = onlineByPublicId.get(item.publicId);
+                return (
+                  <Card
+                    key={item.publicId}
+                    width={cardWidth}
+                    item={item}
+                    api={api}
+                    online={remote}
+                    onPress={() =>
+                      remote
+                        ? remoteTitle && remoteNavigation.open(remoteTitle)
+                        : openItem(item)
+                    }
+                    onLongPress={() =>
+                      remote
+                        ? remoteActions(item, {
+                            play: () => {
+                              const title =
+                                remoteTitle ?? remoteTitleFromCard(item);
+                              if (title) remoteNavigation.play(title);
+                            },
+                            onChanged: onlineResult.retry,
+                          })
+                        : titleActions(item, {
+                            play: () => handlePlay(item),
+                            onChanged: data.retry,
+                          })
+                    }
+                  />
+                );
+              })}
+            </View>
+          );
+        }}
+        ListFooterComponent={footer}
+        contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      />
+    );
+  } else if (pending) {
+    // An empty local match (or an empty online match) is not "no results"
+    // until the other source has answered too.
+    content = <SearchResultsSkeleton />;
+  } else if (localError || onlineError) {
+    content = (
+      <View className="gap-2">
+        {localError && (
+          <View className="px-5">
+            <Notice message={localError} retry={data.retry} />
+          </View>
+        )}
+        {onlineError && (
+          <View className="px-5">
+            <Notice message={onlineError} retry={onlineResult.retry} />
+          </View>
+        )}
+      </View>
+    );
+  } else {
+    content = (
+      <View className="flex-1 items-center justify-center px-6">
+        <View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5">
+          <Text className="text-center text-[14px] font-archivo-medium text-muted">
+            No results for “{debounced}”. Try another one.
+          </Text>
+        </View>
+      </View>
+    );
+  }
   return (
     <View className="flex-1 gap-3.5">
       <PageHeader title="Search" />
@@ -229,6 +411,7 @@ export function SearchScreen({
           strokeWidth={2.1}
         />
         <TextInput
+          testID="search-input"
           className="flex-1 font-archivo-regular text-[15px] text-foreground py-2.5"
           value={query}
           onChangeText={setQuery}
@@ -259,119 +442,7 @@ export function SearchScreen({
         )}
       </View>
 
-      {debounced &&
-      (data.loading || onlineResult.loading) &&
-      !resultRows.length &&
-      !onlineResultRows.length ? (
-        <Loading />
-      ) : debounced && data.error && !onlineResultRows.length ? (
-        <Notice message={data.error} retry={data.retry} />
-      ) : !debounced ? (
-        (homeRows.length === 0 &&
-          onlineHome.rows.length === 0 &&
-          (homeData.loading || onlineHome.data.loading)) ? (
-          <Loading />
-        ) : (homeRows.length === 0 &&
-          onlineHome.rows.length === 0 &&
-          (homeData.error || onlineHome.data.error)) ? (
-          <Notice
-            message={homeData.error || onlineHome.data.error || "Could not load this screen."}
-            retry={() => {
-              homeData.retry();
-              onlineHome.data.retry();
-            }}
-          />
-        ) : homeRows.length || onlineHome.rows.length ? (
-          <FlatList
-            className="flex-1"
-            data={homeRows}
-            keyExtractor={(row) => row.key}
-            renderItem={({ item: row }) => (
-              <CatalogRow
-                title={row.title}
-                items={row.items}
-                open={open}
-                onPlay={handlePlay}
-                isContinueWatching={row.key === "continue"}
-                onChanged={homeData.retry}
-              />
-            )}
-            ListFooterComponent={onlineHomeFooter}
-            contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            showsVerticalScrollIndicator={false}
-          />
-        ) : (
-          <Text className="font-archivo-regular text-[14px] text-muted px-5">
-            Find a title or an episode in your library
-            {onlineMode ? " or online" : ""}.
-          </Text>
-        )
-      ) : !resultRows.length && !onlineResultRows.length ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5">
-            <Text className="text-center text-[14px] font-archivo-medium text-muted">
-              No results. Try another one.
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <FlatList
-          className="flex-1"
-          data={resultRows}
-          keyExtractor={(row) => row.key}
-          renderItem={({ item: row }) =>
-            row.kind === "header" ? (
-              <Text className="px-5 font-archivo-bold text-[16px] text-foreground tracking-[-0.3px]">
-                {row.title}
-              </Text>
-            ) : (
-              <View className="flex-row gap-3 px-5">
-                {row.items.map((item) => (
-                  <Card
-                    key={item.id}
-                    width={cardWidth}
-                    item={item}
-                    api={api}
-                    onPress={() => openItem(item)}
-                    onLongPress={() =>
-                      titleActions(item, {
-                        play: () => handlePlay(item),
-                        onChanged: data.retry,
-                      })
-                    }
-                  />
-                ))}
-              </View>
-            )
-          }
-          ListFooterComponent={
-            <View className="gap-3">
-              {onlineMode &&
-                onlineResult.error &&
-                !onlineResultRows.length && (
-                  <View className="px-5">
-                    <Notice
-                      message={onlineResult.error}
-                      retry={onlineResult.retry}
-                    />
-                  </View>
-                )}
-              {onlineFooter}
-              {onlineMode && onlineResult.loading && (
-                <View className="items-center py-3">
-                  <ActivityIndicator color={colors.muted} />
-                </View>
-              )}
-            </View>
-          }
-          contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      {content}
     </View>
   );
 }

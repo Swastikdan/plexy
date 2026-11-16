@@ -56,10 +56,19 @@ independent of zoom. Swipe up or down on the left half of the video to adjust
 brightness (in-app dimming) and on the right half to adjust volume; each
 indicator is a vertical bar hugging its screen edge and is only visible while
 the gesture is in progress. Double-tap the left or right side to seek backward
-or forward 10 seconds. Scrubbing previews the selected timestamp with a
-trick-play thumbnail and commits a single seek on release; controls stay
-available while buffering. During the credits the next-episode countdown runs
-behind "Watch credits" / "Next Episode" pills in the bottom-right.
+or forward; the double tap skips one interval (10 seconds by default), and every
+further same-side tap within about a second adds another interval, so repeated
+taps accumulate a larger skip. Seek feedback appears on the tapped side with
+the running total. Hold anywhere on the video to play at 2×; releasing restores
+the previous speed. A single tap still toggles the controls. Scrubbing previews
+the selected timestamp with a trick-play thumbnail and commits a single seek on
+release; dragging back near the starting position shows "Release to cancel"
+and releasing keeps the original position. Embedded MP4 `chpl` and
+Matroska/WebM chapter markers appear on the timeline with their title while
+scrubbing, and crossing a chapter boundary while scrubbing gives a haptic tick.
+Controls
+stay available while buffering. During the credits the next-episode countdown
+runs behind "Watch credits" / "Next Episode" pills in the bottom-right.
 
 Local-file read-ahead targets 30% of the duration, bounded to 30–120 seconds and
 64 MB. Playback can resume once one second is buffered. The native decoder may

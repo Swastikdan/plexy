@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { useColors } from "@/shared/theme";
-import { Film, Tv , Check } from "./icons";
+import { Film, Tv , Check, Globe } from "./icons";
 import { PosterImage } from "./poster-image";
 import { Label } from "./text";
 
@@ -15,7 +15,7 @@ export function Card({
   preferred,
   onFocus,
   width,
-  badge,
+  online = false,
 }: {
   item: ItemCard;
   api: LocalCatalog;
@@ -24,7 +24,8 @@ export function Card({
   preferred?: boolean;
   onFocus?: () => void;
   width?: number;
-  badge?: string | null;
+  /** Online catalog item: shown with the globe badge on the poster. */
+  online?: boolean;
 }) {
   const colors = useColors();
   const [focus, setFocus] = useState(false);
@@ -36,7 +37,7 @@ export function Card({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${item.parentTitle ? item.parentTitle + ", " : ""}${item.name}${isWatched ? ", watched" : ""}`}
+      accessibilityLabel={`${item.parentTitle ? item.parentTitle + ", " : ""}${item.name}${online ? ", online" : ""}${isWatched ? ", watched" : ""}`}
       onFocus={() => {
         setFocus(true);
         onFocus?.();
@@ -70,11 +71,12 @@ export function Card({
           style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "55%" }}
           pointerEvents="none"
         />
-        {badge && (
-          <View className="absolute left-2 top-2 z-[3] rounded-md bg-accent px-1.5 py-0.5">
-            <Text className="text-white text-[9px] font-archivo-bold">
-              {badge}
-            </Text>
+        {online && (
+          <View
+            accessibilityLabel="Online title"
+            className="absolute left-2 top-2 z-[3] h-[22px] w-[22px] items-center justify-center rounded-full bg-accent"
+          >
+            <Globe size={13} color="#fff" strokeWidth={2.1} />
           </View>
         )}
         {isEpisode && (
@@ -118,15 +120,24 @@ export function Card({
           </View>
         )}
       </View>
-      <Label
-        muted
-        numberOfLines={1}
-        className="text-[11px] font-archivo-medium"
-      >
-        {isEpisode
-          ? `Episode ${item.episodeNumber || 1}`
-          : item.year || (item.kind === "series" ? "Series" : "Movie")}
-      </Label>
+      <View className="flex-row items-center gap-1.5">
+        {!isEpisode && (
+          <View className="rounded-[3px] border border-border px-1 py-px">
+            <Text className="font-archivo-bold text-[9px] tracking-[0.2px] text-muted">
+              {item.kind === "series" ? "TV SHOW" : "MOVIE"}
+            </Text>
+          </View>
+        )}
+        <Label
+          muted
+          numberOfLines={1}
+          className="text-[11px] font-archivo-medium"
+        >
+          {isEpisode
+            ? `Episode ${item.episodeNumber || 1}`
+            : (item.year ?? "")}
+        </Label>
+      </View>
     </Pressable>
   );
 }

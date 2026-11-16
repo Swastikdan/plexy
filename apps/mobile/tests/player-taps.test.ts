@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createPlayerTapController } from "@/features/player/lib/player-taps";
+import { SEEK_BURST_MS } from "@/features/player/lib/player-interactions";
 
 function player(visible = true, seekSeconds = () => 10) {
   let now = 1000;
@@ -45,7 +46,7 @@ test("a tap reveals hidden controls immediately, then a later tap reliably hides
   expect(p.visible).toBe(true);
 });
 
-test("double taps seek without a delayed controls toggle, whether initially shown or hidden", () => {
+test("a double tap skips one interval without a delayed controls toggle", () => {
   for (const visible of [true, false]) {
     const p = player(visible);
     p.tap("right");
@@ -89,13 +90,45 @@ test("each additional tap in a seek burst advances again without toggling contro
   for (let i = 0; i < 5; i++) { p.advance(100); p.tap("right"); }
   expect(p.seeks).toEqual([10, 10, 10, 10, 10]);
   expect(p.toggles).toBe(0);
-  p.advance(350);
+  p.advance(SEEK_BURST_MS);
   p.tap("left");
   p.advance(100);
   p.tap("left");
   expect(p.seeks.at(-1)).toBe(-10);
 });
 
+test("taps spread across the burst accumulate, then a later tap is a click again", () => {
+  const p = player();
+  p.tap("right"); p.advance(100); p.tap("right"); // 10 seconds
+  p.advance(900); p.tap("right"); // 20 seconds
+  p.advance(900); p.tap("right"); // 30 seconds
+  expect(p.seeks).toEqual([10, 10, 10]);
+  expect(p.toggles).toBe(0);
+
+  p.advance(SEEK_BURST_MS);
+  p.tap("right");
+  p.advance(400);
+  expect(p.seeks).toEqual([10, 10, 10]);
+  expect(p.toggles).toBe(1);
+  expect(p.visible).toBe(false);
+});
+
+test("a new double tap after the burst expires skips one interval again", () => {
+  const p = player();
+  p.tap("right"); p.advance(100); p.tap("right");
+  p.advance(SEEK_BURST_MS);
+  p.tap("right"); p.advance(100); p.tap("right");
+  expect(p.seeks).toEqual([10, 10]);
+  expect(p.toggles).toBe(0);
+});
+
+test("a left-side burst accumulates backward skips", () => {
+  const p = player();
+  p.tap("left"); p.advance(100); p.tap("left");
+  p.advance(900); p.tap("left");
+  expect(p.seeks).toEqual([-10, -10]);
+  expect(p.toggles).toBe(0);
+});
 
 test("the configured interval is read for each tap, including changes during a seek burst", () => {
   let interval = 5;
@@ -103,7 +136,7 @@ test("the configured interval is read for each tap, including changes during a s
   p.tap("right"); p.advance(100); p.tap("right");
   interval = 60;
   p.advance(100); p.tap("right");
-  p.advance(350); p.tap("left"); p.advance(100); p.tap("left");
+  p.advance(SEEK_BURST_MS); p.tap("left"); p.advance(100); p.tap("left");
   expect(p.seeks).toEqual([5, 60, -60]);
   expect(p.toggles).toBe(0);
 });

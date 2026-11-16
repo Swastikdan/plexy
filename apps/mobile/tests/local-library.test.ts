@@ -99,7 +99,7 @@ describe("device library", () => {
   });
   test("local API lists, searches, resumes and directly plays content URIs without networking", async () => {
     const f = fixture(); await f.library.addRoot(root);
-    const api = new LocalApi(f.library, async () => "", async () => []);
+    const api = new LocalApi(f.library, async () => "", async () => [], async () => []);
     expect((await api.home()).rows[0]!.items[0]!.name).toBe("Arrival");
     expect((await api.search("arrival")).titles).toHaveLength(1);
     const id = f.library.state.records[0]!.id;
@@ -107,6 +107,15 @@ describe("device library", () => {
     expect((await api.play(id)).watch?.position).toBe(90);
     expect(api.stream(id)).toBe(file().uri);
     expect((await api.play(id)).path).toBe("direct");
+    expect((await api.play(id)).chapters).toEqual([]);
+    const withoutChapterReader = new LocalApi(f.library, async () => "", async () => []);
+    expect((await withoutChapterReader.play(id)).chapters).toEqual([]);
+    const chapters = [{ start: 0, end: 600, label: "Feature" }];
+    const chapterApi = new LocalApi(f.library, async () => "", async () => [], async (fileId) => {
+      expect(fileId).toBe(id);
+      return chapters;
+    });
+    expect((await chapterApi.play(id)).chapters).toEqual(chapters);
     expect((await api.detail(`local-${id}`)).file?.size).toBe(100);
     await api.clearWatch(id); expect((await api.play(id)).watch).toBeNull();
   });
@@ -234,7 +243,7 @@ test("local playback API fetches missing markers without requiring a scan", asyn
   const f = fixture(); await f.library.addRoot(root);
   const r = f.library.state.records[0]!; r.tmdbId = 1;
   f.io.markers = async () => ({intro:{start:5,end:35},recap:null,outro:null});
-  const api = new LocalApi(f.library, async () => "", async () => []);
+  const api = new LocalApi(f.library, async () => "", async () => [], async () => []);
   expect((await api.skips(r.id)).intro?.end).toBe(35);
 });
 
@@ -244,13 +253,13 @@ test("catalog discovery groups cast and collections, filters attention and unwat
   await f.library.addRoot(root);
   const [a, b] = f.library.state.records;
   for (const record of [a!, b!]) {
-    record.cast = [{ name: "Shared actor", character: "Lead", photo: null }];
+    record.cast = [{ id: 1, name: "Shared actor", character: "Lead", photo: null }];
     record.collection = { id: 9, name: "Movie collection" };
     record.card.matchStatus = "matched";
   }
   a!.card.poster = "file:///poster.jpg";
   b!.metadataError = "Artwork unavailable";
-  const api = new LocalApi(f.library, async () => "", async () => []);
+  const api = new LocalApi(f.library, async () => "", async () => [], async () => []);
   expect(api.titlesByPerson().get("Shared actor")?.map((card) => card.id)).toEqual([a!.id, b!.id]);
   expect(api.collections()).toEqual([{ id: 9, name: "Movie collection", count: 2, poster: "file:///poster.jpg" }]);
   expect(api.collectionItems(9).map((card) => card.id)).toEqual([a!.id, b!.id]);
@@ -271,7 +280,7 @@ test("catalog subtitle reads only a file's own tracks and respects cancellation"
   const id = f.library.cards()[0]!.id;
   const uri = "content://videos/subtitle%with space.srt";
   let reads = 0;
-  const api = new LocalApi(f.library, async (path) => { reads++; return path; }, async () => [{ track: uri, kind: "sidecar", title: "English", language: "en" }]);
+  const api = new LocalApi(f.library, async (path) => { reads++; return path; }, async () => [{ track: uri, kind: "sidecar", title: "English", language: "en" }], async () => []);
   expect(await api.subtitle(id, uri)).toBe(uri);
   await expect(api.subtitle(id, "content://other.srt")).rejects.toThrow("Subtitle not found");
   const controller = new AbortController();
@@ -302,20 +311,20 @@ test("selected-folder scans preserve other folders and report discoveries", asyn
   expect(f.library.state.records.map(r => r.id)).toEqual([otherId]);
 });
 
-test("All library view combines movie, television and anime with shared pagination", async () => {
+test("All library view combines movies and television with shared pagination", async () => {
   const f = fixture();
   f.library.state.roots = [root];
-  f.files([file("Arrival.2016.mp4"), file("Show.S01E01.mkv"), file("Anime.S01E01.mkv")]);
+  f.files([file("Arrival.2016.mp4"), file("Show.S01E01.mkv")]);
   await f.library.scan();
-  const anime = f.library.state.records.find(r => r.card.name === "Anime")!;
-  anime.isAnime = true;
-  const api = new LocalApi(f.library, async () => "", async () => []);
+  const api = new LocalApi(f.library, async () => "", async () => [], async () => []);
   const all = (await api.items("all", 0, "name")).items;
-  expect(all.map(c => c.name)).toEqual(["Anime", "Arrival", "Show"]);
+  expect(all.map(c => c.name)).toEqual(["Arrival", "Show"]);
   expect((await api.items("movie")).items.map(c => c.name)).toEqual(["Arrival"]);
   expect((await api.items("series")).items.map(c => c.name)).toEqual(["Show"]);
-  expect((await api.items("anime")).items.map(c => c.name)).toEqual(["Anime"]);
-  expect((await api.items("all", 1, "name")).items.map(c => c.name)).toEqual(["Arrival", "Show"]);
+  expect((await api.items("all", 1, "name")).items.map(c => c.name)).toEqual(["Show"]);
+  const home = await api.home();
+  expect(home.rows.some(row => row.key === "titles")).toBe(true);
+  expect(home.rows.some(row => row.key === "anime")).toBe(false);
 });
 
 
@@ -323,7 +332,7 @@ test("series menu actions clear pending playback, mark every episode finished an
   const f = fixture();
   f.files([file("Show.S01E01.mkv"), file("Show.S01E02.mkv")]);
   await f.library.addRoot({ ...root, kind: "tv" });
-  const api = new LocalApi(f.library, async () => "", async () => []);
+  const api = new LocalApi(f.library, async () => "", async () => [], async () => []);
   const series = f.library.cards()[0]!;
   const episodes = api.episodes(series.id);
   const queue = new ProgressQueue({ load: async () => [], save: async () => {} });
@@ -355,7 +364,7 @@ test("episode actions finish, delete one, and delete a selected set without touc
     file("Show.S01E03.mkv"),
   ]);
   await f.library.addRoot({ ...root, kind: "tv" });
-  const api = new LocalApi(f.library, async () => "", async () => []);
+  const api = new LocalApi(f.library, async () => "", async () => [], async () => []);
   const series = f.library.cards()[0]!;
   const episodes = api.episodes(series.id);
   expect(episodes).toHaveLength(3);
@@ -379,4 +388,40 @@ test("episode actions finish, delete one, and delete a selected set without touc
   await applyEpisodeAction(api, queue, [first!.id, third!.id], "delete");
   expect(deleted.sort()).toEqual([firstUri, secondUri, thirdUri].sort());
   expect(f.library.state.records).toHaveLength(0);
+});
+
+describe("auto folder detection", () => {
+  test("keeps a numbered movie title out of the episode parser", () => {
+    const parsed = parseLocalName("The 100/The.100.2014.mkv", "auto");
+    expect(parsed.title).toBe("The 100");
+    expect(parsed.season).toBeNull();
+    expect(parsed.episode).toBeNull();
+  });
+  test("reads a season folder and episode marker as a series", () => {
+    const parsed = parseLocalName(
+      "Breaking Bad/Season 01/Breaking.Bad.S01E03.mkv",
+      "auto",
+    );
+    expect(parsed.title).toBe("Breaking Bad");
+    expect(parsed.season).toBe(1);
+    expect(parsed.episode).toBe(3);
+  });
+  test("reads absolute episode numbers under a series folder", () => {
+    const parsed = parseLocalName("Cyberpunk Edgerunners/01.mkv", "auto");
+    expect(parsed.title).toBe("Cyberpunk Edgerunners");
+    expect(parsed.season).toBe(1);
+    expect(parsed.episode).toBe(1);
+  });
+  test("an auto root indexes movies and series side by side", async () => {
+    const f = fixture();
+    f.files([
+      file("Arrival.2016.mp4"),
+      file("Show/Season 1/Show.S01E01.mkv"),
+    ]);
+    await f.library.addRoot({ ...root, kind: "auto" });
+    expect(f.library.cards().map(card => card.name).sort()).toEqual([
+      "Arrival",
+      "Show",
+    ]);
+  });
 });

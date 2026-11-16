@@ -25,11 +25,20 @@ test("downloaded episodes win and missing episodes come from TMDB", () => {
     local: [
       {
         id: 10,
-        episodeNumber: 1,
+        publicId: "local-10",
+        kind: "episode",
         name: "S01E01 Local",
-        overview: "Local copy",
-        runtime: 45,
+        year: null,
+        seasonNumber: 1,
+        episodeNumber: 1,
+        poster: null,
         backdrop: "file://local/e1.jpg",
+        overview: "Local copy",
+        rating: null,
+        runtime: 45,
+        genres: [],
+        matchStatus: "matched",
+        watch: null,
       },
     ],
     remote: [

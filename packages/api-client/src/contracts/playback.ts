@@ -112,6 +112,7 @@ export interface Playability {
   nextFileId?: number | null;
   next?: NextEpisode | null;
   tracks?: SubtitleTrack[];
+  chapters?: Chapter[];
   episodes?: ItemCard[];
   trickplay?: Trickplay;
   optimization?: OptimizationState;
@@ -130,6 +131,13 @@ export interface SubtitleTrack {
   language: string | null;
   title: string;
   isDefault?: boolean;
+}
+
+/** A chapter marker read from the media file itself. */
+export interface Chapter {
+  start: number;
+  end: number;
+  label: string;
 }
 
 export interface BrowserCaps {

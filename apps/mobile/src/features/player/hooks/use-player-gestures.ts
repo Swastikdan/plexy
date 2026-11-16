@@ -26,6 +26,8 @@ export function usePlayerGestures({
   controlsVisible,
   enabled,
   onVolumeChange,
+  onHoldStart,
+  onHoldEnd,
 }: {
   hasLoaded: boolean;
   height: number;
@@ -37,19 +39,25 @@ export function usePlayerGestures({
   controlsVisible: boolean;
   enabled: boolean;
   onVolumeChange?: (level: number) => void;
+  onHoldStart?: () => void;
+  onHoldEnd?: () => void;
 }) {
   const callbacks = useRef({
     seekBy,
     toggleControls,
     seekSeconds,
     onVolumeChange,
+    onHoldStart,
+    onHoldEnd,
   });
   useLayoutEffect(() => { callbacks.current = {
     seekBy,
     toggleControls,
     seekSeconds,
     onVolumeChange,
-  }; }, [seekBy, toggleControls, seekSeconds, onVolumeChange]);
+    onHoldStart,
+    onHoldEnd,
+  }; }, [seekBy, toggleControls, seekSeconds, onVolumeChange, onHoldStart, onHoldEnd]);
   const [fitMode, setFitMode] = useState<FitMode>("contain");
   const zoomValue = useSharedValue(1);
   const brightnessValue = useSharedValue(1);
@@ -77,10 +85,31 @@ export function usePlayerGestures({
   return () => tapController.current?.reset();
   }, []);
   const cancelPendingTap = useEventCallback(() => tapController.current?.reset());
+  const holdActive = useRef(false);
+  const startHold = useEventCallback(() => {
+    if (!enabled || locked) return;
+    holdActive.current = true;
+    cancelPendingTap();
+    callbacks.current.onHoldStart?.();
+  });
+  const endHold = useEventCallback(() => {
+    if (!holdActive.current) return;
+    holdActive.current = false;
+    callbacks.current.onHoldEnd?.();
+  });
   useEffect(() => {
-    if (!enabled) cancelPendingTap();
-  }, [enabled, cancelPendingTap]);
-  useEffect(() => () => cancelPendingTap(), [cancelPendingTap]);
+    if (!enabled) {
+      cancelPendingTap();
+      endHold();
+    }
+  }, [enabled, cancelPendingTap, endHold]);
+  useEffect(
+    () => () => {
+      endHold();
+      cancelPendingTap();
+    },
+    [endHold, cancelPendingTap],
+  );
   const toastVisible = fitToast != null;
   useEffect(() => {
     if (toastVisible) {
@@ -134,6 +163,7 @@ export function usePlayerGestures({
   const leftSide = useSharedValue(true);
   const viewport = useSharedValue(1);
   const beginGesture = useEventCallback((side: "brightness" | "volume" | null) => {
+    endHold();
     cancelPendingTap();
     gestureBlockedUntil.current = Infinity;
     setAdjusting(side);
@@ -188,6 +218,8 @@ export function usePlayerGestures({
     videoGestures,
     setViewportWidth,
     onTap,
+    onHoldStart: startHold,
+    onHoldEnd: endHold,
     fitToast,
     toastOpacity,
     toastScale,

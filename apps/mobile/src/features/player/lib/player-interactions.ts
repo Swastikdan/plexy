@@ -2,10 +2,19 @@ export const SEEK_SECONDS = 10;
 export const MIN_ZOOM = 0.75;
 export const MAX_ZOOM = 3;
 export const DOUBLE_TAP_MS = 300;
+/**
+ * How long a seek burst stays open after the last skip. While it is open a
+ * single tap on the same side skips again instead of toggling the controls,
+ * so users do not need to double tap for every additional step.
+ */
+export const SEEK_BURST_MS = 1200;
+/** How long a touch must stay down before temporary 2x playback starts. */
+export const HOLD_TO_BOOST_MS = 250;
 export interface PlayerTap {
   time: number;
   side: "left" | "right";
 }
+/** Resolves the seek direction and step for a recognized double tap. */
 export function doubleTapSeek(
   previous: PlayerTap | null,
   current: PlayerTap,

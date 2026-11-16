@@ -1,79 +1,18 @@
-import React, { useEffect } from "react";
-import { useColors } from "@/shared/theme";
-import {
-ActivityIndicator,
-Animated,
-Easing,
-View,
-} from "react-native";
-import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
-import { PlexyLogo } from "./brand-logo";
+import React from "react";
+import { View } from "react-native";
+import { Spinner, type SpinnerSize } from "./spinner";
 
+/** Page-level loading state. Feature content uses skeletons instead. */
 export function Loading({
-  showLogo,
+  size = "md",
+  label = "Loading",
 }: {
-  showLogo?: boolean;
+  size?: SpinnerSize;
+  label?: string;
 } = {}) {
-  const colors = useColors();
-  const reduceMotion = useReducedMotion();
-  const shouldShowLogo = showLogo !== undefined ? showLogo : true;
-  const [slide] = React.useState(() => new Animated.Value(0));
-  useEffect(() => {
-    if (!shouldShowLogo || reduceMotion) {
-      slide.setValue(0.5);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(slide, {
-          toValue: 1,
-          duration: reduceMotion ? 0 : 1150,
-          easing: Easing.inOut(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(slide, {
-          toValue: 0,
-          duration: reduceMotion ? 0 : 800,
-          easing: Easing.bezier(0.77, 0, 0.175, 1),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [shouldShowLogo, slide, reduceMotion]);
-  if (!shouldShowLogo) {
-    return (
-      <View className="flex-1 bg-background p-12 items-center justify-center">
-        <ActivityIndicator
-          size="small"
-          color={colors.ink}
-          accessibilityLabel="Loading"
-        />
-      </View>
-    );
-  }
   return (
-    <View className="flex-1 bg-background p-12 items-center justify-center gap-[26px]">
-      <PlexyLogo size={34} showText={true} />
-      <View
-        className="w-[140px] h-[3px] rounded-[2px] bg-foreground/[0.14] overflow-hidden"
-        accessibilityLabel="Loading"
-      >
-        <Animated.View
-          className="w-12 h-[3px] rounded-[2px] bg-foreground"
-          style={{
-            transform: [
-              {
-                translateX: slide.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 92],
-                }),
-              },
-            ],
-          }}
-        />
-      </View>
+    <View className="flex-1 items-center justify-center bg-background p-12">
+      <Spinner size={size} accessibilityLabel={label} />
     </View>
   );
 }

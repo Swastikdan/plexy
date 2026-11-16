@@ -1,0 +1,27 @@
+appId: app.plexy.mobile
+name: Tabs switch between the four sections
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+
+- tapOn:
+    id: "tab-libraries"
+- assertVisible: "Libraries"
+
+- tapOn:
+    id: "tab-search"
+- assertVisible: "Search"
+- assertVisible: "Movies, shows and episodes"
+
+- tapOn:
+    id: "tab-settings"
+- assertVisible: "Settings"
+
+# Home still redirects to setup while no folder is connected. This guards the
+# first-run gate itself: if it silently started showing an empty home instead,
+# a new install would have no way to reach folder setup.
+- tapOn:
+    id: "tab-home"
+- assertVisible: "Media folders"

@@ -1,16 +1,18 @@
 import { Tabs } from "expo-router";
-import React,{ useEffect,useRef,useState } from "react";
-import { Animated,Pressable,View } from "react-native";
-import {
-SafeAreaView,
-useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
-import { LibraryAttention } from "@/features/catalog/components/library-attention";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
-import { Home, Library, Search, Settings, type NativeIcon } from "@/shared/ui/icons";
+import {
+  Home,
+  Library,
+  Search,
+  Settings,
+  type NativeIcon,
+} from "@/shared/ui/icons";
 const tabs: {
   name: string;
   title: string;
@@ -108,6 +110,7 @@ function MobileTabBar({
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
             accessibilityLabel={tab.title}
+            testID={`tab-${tab.name === "index" ? "home" : tab.name}`}
           >
             <View className="w-12 h-12 items-center justify-center">
               <TabIcon
@@ -126,8 +129,7 @@ function MobileTabBar({
   );
 }
 export default function TabLayout() {
-  const colors = useColors();
-  const { runtime, preferences } = useClient();
+  const { runtime } = useClient();
   const [attention, setAttention] = useState(0);
   useEffect(() => {
     const update = () => setAttention(runtime.getAttentionCount());
@@ -135,33 +137,32 @@ export default function TabLayout() {
     return runtime.subscribe(update);
   }, [runtime]);
   return (
-    <SafeAreaView
-      edges={["left", "right"]}
-      style={{ flex: 1, backgroundColor: colors.canvas }}
+    <Tabs
+      // Android back follows the tab visit history, so Library → Settings →
+      // back returns to Library instead of resetting to Home.
+      backBehavior="history"
+      tabBar={(props) => (
+        <MobileTabBar
+          state={props.state}
+          navigation={props.navigation}
+          attention={attention}
+        />
+      )}
+      screenOptions={{
+        headerShown: false,
+        sceneStyle: { backgroundColor: "transparent" },
+        // Keep visited tabs mounted; their lists, scroll positions and network
+        // state must survive a tab switch and an Android back press.
+        freezeOnBlur: false,
+      }}
     >
-      <Tabs
-        backBehavior="initialRoute"
-        layout={({ state, navigation, descriptors }) => <View style={{ flex: 1 }}>
-          <SafeAreaView edges={state.routes[state.index]!.name === "index" ? [] : ["top"]} style={{ flex: 1, backgroundColor: colors.canvas }}>
-            {state.routes[state.index]!.name !== "index" && preferences.source !== "remote" && <LibraryAttention />}
-            {descriptors[state.routes[state.index]!.key]!.render()}
-          </SafeAreaView>
-          <MobileTabBar state={state} navigation={navigation} attention={attention} />
-        </View>}
-        screenOptions={{
-          headerShown: false,
-          sceneStyle: { backgroundColor: colors.canvas },
-        }}
-      >
-        {tabs.map((tab) => (
-          <Tabs.Screen
-            key={tab.name}
-            name={tab.name}
-            options={{ title: tab.title }}
-          />
-        ))}
-      </Tabs>
-    </SafeAreaView>
+      {tabs.map((tab) => (
+        <Tabs.Screen
+          key={tab.name}
+          name={tab.name}
+          options={{ title: tab.title }}
+        />
+      ))}
+    </Tabs>
   );
 }
-

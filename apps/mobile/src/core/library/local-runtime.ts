@@ -12,6 +12,7 @@ type LocalRoot,
 import { fetchMetadata } from "@plexy/local-library/metadata";
 import { invalidateLocalResources } from "@/core/resources/use-resource";
 import { connectivity } from "@/shared/lib/connectivity";
+import { readChapters } from "./chapters";
 import { loadLibrary,saveLibrary } from "./library-database";
 import { LocalApi } from "./local-api";
 const tokenKey = "plexy.local.tmdb-token";
@@ -331,10 +332,15 @@ async function subtitleTracks(fileId: number): Promise<SubtitleTrack[]> {
       })),
   ];
 }
+async function chapterTracks(fileId: number) {
+  const record = localLibrary.record(fileId);
+  return readChapters(record.file, record.card.watch?.duration ?? null);
+}
 export const localApi = new LocalApi(
   localLibrary,
   (uri) => new File(uri).text(),
   subtitleTracks,
+  chapterTracks,
 );
 // A scan announces progress many times per second's work (one `changed()` per
 // hydrated record). Invalidate at most once per window, on the trailing edge,

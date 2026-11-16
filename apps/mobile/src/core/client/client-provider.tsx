@@ -55,7 +55,9 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             };
             saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
             if (saved.source !== "remote") saved.source = "local";
-            if (![5, 10, 15, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
+            if (![5, 10, 15, 20, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
+            if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
+            if (typeof saved.onlineEpisodeSelector !== "boolean") saved.onlineEpisodeSelector = true;
             Uniwind.setTheme(saved.theme);
             preferencesRef.current = saved;
             if (live)
@@ -74,6 +76,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
         return () => {
             live = false;
             state.remove();
+            void progress.flushLocal().catch(() => { });
             void progress.flush(api).catch(() => { });
         };
     }, [api, progress]);

@@ -111,7 +111,29 @@ jobs:
         run: bun run --filter @plexy/desktop typecheck && bun run test:desktop
       - name: Verify Android clients
         if: needs.plan.outputs.build_mobile == 'true'
-        run: bun run typecheck:native && bun run --cwd apps/mobile lint:strict && bun run test:native
+        run: |
+          bun run typecheck:native
+          bun run --cwd apps/mobile lint:strict
+          # The app typecheck excludes tests so they can use bun:test. Without
+          # this second pass a test can drift from a changed signature and only
+          # fail when the path happens to run.
+          bun run typecheck:tests
+          bun run test:native
+      - name: Verify the Android bundle is buildable
+        if: needs.plan.outputs.build_mobile == 'true'
+        # Metro export catches broken routes, assets and native module config
+        # without paying for a full Gradle build on every pull request.
+        run: bun run --filter @plexy/mobile bundle
+      - name: Enforce mobile coverage floor
+        if: needs.plan.outputs.build_mobile == 'true'
+        run: bun run test:native:coverage
+      - name: Save mobile coverage
+        if: needs.plan.outputs.build_mobile == 'true' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-coverage
+          path: .build/coverage/native/lcov.info
+          if-no-files-found: warn
       - name: Save verified website
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         uses: actions/upload-artifact@v7

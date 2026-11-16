@@ -23,6 +23,7 @@ export function RemoteHomeScreen() {
         open,
         play,
         loading: data.loading,
+        error: data.error,
         refresh: () => {
           clearCatalogCache();
           data.retry();

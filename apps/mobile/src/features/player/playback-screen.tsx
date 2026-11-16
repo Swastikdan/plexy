@@ -45,12 +45,15 @@ import { PlayerDrawer } from "./components/player-drawer";
 import { PlayerGestureHud } from "./components/player-gesture-hud";
 import { IconSeekBack, IconSeekForward } from "./components/player-icons";
 import { PlayerLoading } from "./components/player-loading";
+import { SeekSideOverlay } from "./components/seek-side-overlay";
 import { SpeedPanel } from "./components/speed-panel";
 import { TimelineBar } from "./components/timeline-bar";
 import { usePlayerControls } from "./hooks/use-player-controls";
 import { usePlayerGestures } from "./hooks/use-player-gestures";
 import { bufferOptionsForDuration } from "./lib/player-buffer";
 import {
+  HOLD_TO_BOOST_MS,
+  SEEK_BURST_MS,
   shouldShowPlayerLoading,
 } from "./lib/player-interactions";
 import { usePlayerSubtitles } from "./hooks/use-player-subtitles";
@@ -167,6 +170,20 @@ export function PlaybackScreen({
   const skipResource = useResource(() => api.skips(manifest.fileId), [api, manifest.fileId]);
   const skips = skipResource.value;
   const [scrub, setScrub] = useState<number | null>(null);
+  const [scrubCancelling, setScrubCancelling] = useState(false);
+  const [seekNotice, setSeekNotice] = useState<{
+    seconds: number;
+    id: number;
+  } | null>(null);
+  const seekNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [boosting, setBoosting] = useState(false);
+  const boostRef = useRef(false);
+  const boostHold = useRef<{ start: () => void; end: () => void }>({
+    start: () => {},
+    end: () => {},
+  });
+  const onHoldStart = useEventCallback(() => boostHold.current.start());
+  const onHoldEnd = useEventCallback(() => boostHold.current.end());
   const {
     visible,
     setVisible,
@@ -199,6 +216,8 @@ export function PlaybackScreen({
     videoGestures,
     setViewportWidth,
     onTap,
+    onHoldStart: beginHold,
+    onHoldEnd: finishHold,
     fitToast,
     toastOpacity,
     toastScale,
@@ -216,6 +235,8 @@ export function PlaybackScreen({
     onVolumeChange: (level) => {
       if (playerRef.current) playerRef.current.volume = level;
     },
+    onHoldStart,
+    onHoldEnd,
   });
   const isTvShow = Boolean(
     manifest.parentItemId ||
@@ -305,8 +326,41 @@ export function PlaybackScreen({
   useEffect(() => {
     updateNativePlayer(player, "bufferOptions", bufferOptionsForDuration(duration));
   }, [player, duration]);
+  const startBoost = useEventCallback(() => {
+    if (boostRef.current || !player.playing || ended) return;
+    boostRef.current = true;
+    try {
+      updateNativePlayer(player, "playbackRate", 2);
+    } catch {
+      boostRef.current = false;
+      return;
+    }
+    setBoosting(true);
+    triggerHaptic("light");
+  });
+  const endBoost = useEventCallback(() => {
+    if (!boostRef.current) return;
+    boostRef.current = false;
+    try {
+      updateNativePlayer(
+        player,
+        "playbackRate",
+        preferencesRef.current.playbackRate,
+      );
+    } catch {
+      /* The player was released while the hold was active. */
+    }
+    setBoosting(false);
+  });
+  useLayoutEffect(() => {
+    boostHold.current = { start: startBoost, end: endBoost };
+  }, [startBoost, endBoost]);
+  useEffect(() => {
+    if (ended) endBoost();
+  }, [ended, endBoost]);
+  useEffect(() => () => endBoost(), [endBoost]);
   const save = useCallback(
-    (completed = false) => {
+    (completed = false, sync = false) => {
       if (!manifest.itemId || !initialized.current) return;
       const length = durationRef.current;
       void progress
@@ -319,7 +373,7 @@ export function PlaybackScreen({
             (length > 0 && currentPosition.current >= length * 0.95),
           updatedAt: Date.now(),
         })
-        .then(() => progress.flush(api))
+        .then(() => (sync ? progress.flush(api) : undefined))
         .catch(() => {});
     },
     [api, manifest.itemId, progress],
@@ -331,6 +385,7 @@ export function PlaybackScreen({
       Math.min(duration || Number.MAX_SAFE_INTEGER, seconds),
     );
     setScrub(null);
+    setScrubCancelling(false);
     setEnded(false);
     setCountdown(10);
     setAutoNextCancelled(false);
@@ -343,14 +398,26 @@ export function PlaybackScreen({
   const seekWithFeedback = useEventCallback((seconds: number) => {
     const now = Date.now();
     const previous = seekBurst.current;
-    const repeated = now - previous.at < 600 && Math.sign(previous.seconds) === Math.sign(seconds);
+    const repeated =
+      now - previous.at < SEEK_BURST_MS &&
+      Math.sign(previous.seconds) === Math.sign(seconds);
     const total = repeated ? previous.seconds + seconds : seconds;
     seekBurst.current = { seconds: total, at: now };
     seek(currentPosition.current + seconds);
-    if (repeated) {
-      showFitToast(`${total > 0 ? "Forward" : "Back"} ${Math.abs(total)} seconds`);
-    }
+    triggerHaptic("light");
+    setSeekNotice({ seconds: total, id: now });
+    if (seekNoticeTimer.current) clearTimeout(seekNoticeTimer.current);
+    seekNoticeTimer.current = setTimeout(
+      () => setSeekNotice(null),
+      SEEK_BURST_MS,
+    );
   });
+  useEffect(
+    () => () => {
+      if (seekNoticeTimer.current) clearTimeout(seekNoticeTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -370,17 +437,21 @@ export function PlaybackScreen({
         pendingSeek.current = null;
         currentPosition.current = value;
         setPosition(value);
-        if (Date.now() - lastSaved.current > 10000) {
+        if (Date.now() - lastSaved.current > 5000) {
           lastSaved.current = Date.now();
           save();
         }
       }),
       player.addListener("playingChange", (e) => {
         setPlaying(e.isPlaying);
-        if (!e.isPlaying) save();
+        if (!e.isPlaying) {
+          endBoost();
+          save(false, true);
+        }
       }),
       player.addListener("statusChange", (e) => {
         setStatus(e.status);
+        if (e.status === "loading" || e.status === "error") endBoost();
         if (e.status === "loading" && initialized.current) {
           touchControls();
           setVisible(true);
@@ -414,16 +485,16 @@ export function PlaybackScreen({
       }),
       player.addListener("playToEnd", () => {
         if (!initialized.current || currentPosition.current <= 10) return;
-        save(true);
+        save(true, true);
         setEnded(true);
         setVisible(true);
       }),
     ];
     return () => {
-      save();
+      save(false, true);
       subs.forEach((s) => s.remove());
     };
-  }, [player, save, lastInteraction, loadSubtitleTracks, setVisible, touchControls]);
+  }, [player, save, lastInteraction, loadSubtitleTracks, setVisible, touchControls, endBoost]);
   const [previousChoice, setPreviousChoice] = useState(choice);
   if (previousChoice !== choice) {
     setPreviousChoice(choice);
@@ -485,7 +556,7 @@ export function PlaybackScreen({
   const skipLabel = activeSkip?.[0] === "outro" ? "credits" : activeSkip?.[0];
   const hasNextEpisode = Boolean(manifest.nextFileId || onlineNext);
   const playNextEpisode = useEventCallback(() => {
-    save();
+    save(false, true);
     // Prefer the online episode when the local next file skips a gap.
     if (onlineNext) {
       onNextOnline?.();
@@ -535,14 +606,15 @@ export function PlaybackScreen({
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
-        save();
+        endBoost();
+        save(false, true);
         if (!pip.current) player.pause();
       } else reveal();
     });
     return () => sub.remove();
-  }, [player, save, reveal]);
+  }, [player, save, reveal, endBoost]);
   const exit = useEventCallback(() => {
-    save();
+    save(false, true);
     player.pause();
     back();
   });
@@ -576,6 +648,19 @@ export function PlaybackScreen({
     else player.play();
   };
   const previewTime = scrub ?? position;
+  const chapters = React.useMemo(
+    () => [...(manifest.chapters ?? [])].sort((a, b) => a.start - b.start),
+    [manifest.chapters],
+  );
+  const scrubChapter = React.useMemo(() => {
+    if (scrub == null || chapters.length === 0) return null;
+    let current = null;
+    for (const chapter of chapters) {
+      if (chapter.start <= scrub) current = chapter;
+      else break;
+    }
+    return current;
+  }, [scrub, chapters]);
 
   const show =
     !resume && (visible || !!menu || speedPanel || audioPanel || ended || !!error);
@@ -720,9 +805,26 @@ export function PlaybackScreen({
               setViewportWidth(event.nativeEvent.layout.width);
             }}
             onPress={onTap}
+            onLongPress={beginHold}
+            delayLongPress={HOLD_TO_BOOST_MS}
+            onPressOut={finishHold}
             className="absolute inset-0"
           />
         </View>
+        {seekNotice && !locked && (
+          <SeekSideOverlay
+            key={seekNotice.id}
+            seconds={seekNotice.seconds}
+          />
+        )}
+        {boosting && (
+          <View
+            pointerEvents="none"
+            className="absolute top-24 self-center rounded-full border border-white/20 bg-black/70 px-4 py-2"
+          >
+            <Text className="font-archivo-bold text-white">2× speed</Text>
+          </View>
+        )}
         {locked && (
           <>
             <Pressable
@@ -800,13 +902,23 @@ export function PlaybackScreen({
               value={previewTime}
               buffered={bufferedPosition}
               scrubbing={scrub != null}
+              chapters={chapters}
               seekStep={preferences.seekSeconds}
               bottom={Math.max(insets.bottom, 8) + 52}
-              onScrub={(target) => {
+              onScrub={(target, cancelling) => {
                 reveal();
                 setScrub(target);
+                setScrubCancelling(cancelling);
               }}
-              onCommit={(target) => seek(target)}
+              onCommit={(target) => {
+                setScrubCancelling(false);
+                seek(target);
+              }}
+              onCancel={() => {
+                setScrub(null);
+                setScrubCancelling(false);
+                reveal();
+              }}
             />
           )}
           {!openingVideo && scrub != null && !ended && !creditsPills && (
@@ -833,9 +945,14 @@ export function PlaybackScreen({
                 width={200}
                 height={113}
               />
-              <View className="rounded-[6px] border border-white/20 bg-black/85 px-2 py-[3px]">
-                <Text className="text-[11px] font-archivo-bold text-white">
-                  {timeLabel(scrub)}
+              <View className="max-w-[260px] rounded-[6px] border border-white/20 bg-black/85 px-2 py-[3px]">
+                <Text
+                  numberOfLines={1}
+                  className="text-[11px] font-archivo-bold text-white"
+                >
+                  {scrubCancelling
+                    ? "Release to cancel"
+                    : `${timeLabel(scrub)}${scrubChapter?.label ? ` · ${scrubChapter.label}` : ""}`}
                 </Text>
               </View>
             </View>

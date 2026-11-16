@@ -28,6 +28,7 @@ export function HeroCarousel({
   onPlay,
   open,
   onHeroFocus,
+  onLongPress,
   active = true,
   playLabel,
 }: {
@@ -35,6 +36,7 @@ export function HeroCarousel({
   onPlay: (item: ItemCard) => void;
   open: OpenTitle;
   onHeroFocus?: () => void;
+  onLongPress?: (item: ItemCard) => void;
   active?: boolean;
   playLabel?: string;
 }) {
@@ -84,6 +86,14 @@ export function HeroCarousel({
     [items.length, step, width, pauseRotation],
   );
   if (!activeItem) return null;
+  const remoteSlide = activeItem.publicId.startsWith("remote:");
+  const slidePlayLabel = remoteSlide
+    ? activeItem.watch?.played
+      ? "Watch again"
+      : (activeItem.watch?.position ?? 0) > 0
+        ? "Continue watching"
+        : "Start watching"
+    : playLabel;
 
   return (
     <View {...pagerBoundary} onTouchStart={() => { pagerBoundary.onTouchStart(); setTouching(true); }}
@@ -91,12 +101,13 @@ export function HeroCarousel({
       onTouchCancel={() => { pagerBoundary.onTouchCancel(); setTouching(false); setPausedUntil(Date.now() + 8000); }}
       className="relative w-full">
       <GestureDetector gesture={swipe}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => open(activeItem.publicId)} className="overflow-hidden">
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => open(activeItem.publicId)} onLongPress={onLongPress ? () => onLongPress(activeItem) : undefined} delayLongPress={800} className="overflow-hidden">
           <Animated.View style={contentStyle} pointerEvents="none">
             <Hero
               key={activeItem.publicId}
               item={activeItem}
               logo={activeItem.logo}
+              online={activeItem.publicId.startsWith("remote:")}
               hideActions
               contentBottom={ACTION_BOTTOM + control.height + 16}
               onOpen={() => {}}
@@ -107,7 +118,7 @@ export function HeroCarousel({
       <View className="absolute left-5 right-5 bottom-[28px]">
         <HeroActions
           item={activeItem}
-          actionLabel={playLabel}
+          actionLabel={slidePlayLabel}
           busy={changing}
           onOpen={() => onPlay(activeItem)}
           onDetails={() => open(activeItem.publicId)}

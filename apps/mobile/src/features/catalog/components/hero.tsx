@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useColors, withAlpha } from "@/shared/theme";
+import { Globe } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { HeroActions } from "./hero-actions";
 
@@ -26,6 +27,7 @@ export function Hero({
   hideActions = false,
   showOverview = true,
   contentBottom,
+  online = false,
 }: {
   hideActions?: boolean;
   showOverview?: boolean;
@@ -43,6 +45,7 @@ export function Hero({
   width?: number;
   preferred?: boolean;
   onHeroFocus?: () => void;
+  online?: boolean;
 }) {
   const { api } = useClient();
   const colors = useColors();
@@ -72,6 +75,18 @@ export function Hero({
   }
   if (item.genres?.length > 0) {
     metaParts.push(item.genres.slice(0, 3).join(", "));
+  }
+  if (online) {
+    metaParts.push(
+      <View
+        key="online"
+        accessible
+        accessibilityLabel="Online title"
+        className="items-center justify-center"
+      >
+        <Globe size={12} color={colors.brand} strokeWidth={2.1} />
+      </View>,
+    );
   }
   return (
     <View
@@ -161,19 +176,21 @@ export function Hero({
         </View>
 
         {/* CTA row: Big Play button (primary) + Action icon buttons */}
-        <HeroActions
-          item={item}
-          onOpen={onOpen}
-          actionLabel={actionLabel}
-          disabled={disabled}
-          onDetails={onDetails}
-          onTrailer={onTrailer}
-          onToggleWatched={onToggleWatched}
-          isWatched={isWatched}
-          onDelete={onDelete}
-          onHeroFocus={onHeroFocus}
-          hideActions={hideActions}
-        />
+        {!hideActions && (
+          <HeroActions
+            item={item}
+            onOpen={onOpen}
+            actionLabel={actionLabel}
+            disabled={disabled}
+            onDetails={onDetails}
+            onTrailer={onTrailer}
+            onToggleWatched={onToggleWatched}
+            isWatched={isWatched}
+            onDelete={onDelete}
+            onHeroFocus={onHeroFocus}
+            hideActions={hideActions}
+          />
+        )}
       </View>
     </View>
   );

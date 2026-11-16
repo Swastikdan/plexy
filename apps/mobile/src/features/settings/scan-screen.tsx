@@ -31,7 +31,7 @@ export function ScanScreen() {
     <PageHeader title="Scan library" style={{ paddingHorizontal: 0 }} />
     <Text className="text-muted text-[14px]">Rescan a folder, or scan all folders below.</Text>
     <View className="rounded-[18px] overflow-hidden bg-surface">
-      {roots.map(root => <SettingsRow key={root.uri} title={root.name} subtitle={root.kind === "tv" ? "TV shows" : root.kind === "anime" ? "Anime" : "Movies"}>
+      {roots.map(root => <SettingsRow key={root.uri} title={root.name} subtitle={root.kind === "tv" ? "TV shows" : root.kind === "auto" ? "Movies & shows" : "Movies"}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Rescan ${root.name}`}

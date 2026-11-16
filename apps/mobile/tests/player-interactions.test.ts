@@ -6,7 +6,7 @@ import {
   SEEK_SECONDS,
 } from "@/features/player/lib/player-interactions";
 
-test("double taps seek 10 seconds on their own side of the video", () => {
+test("double taps resolve one seek step on their own side of the video", () => {
   expect(SEEK_SECONDS).toBe(10);
   expect(
     doubleTapSeek({ side: "left", time: 1000 }, { side: "left", time: 1200 }),

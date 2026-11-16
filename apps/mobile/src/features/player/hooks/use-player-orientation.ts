@@ -29,6 +29,16 @@ function enqueue(task: () => Promise<void>, onError?: () => void) {
     .catch(() => {});
 }
 
+/** Re-assert landscape for the custom fullscreen control. */
+export function lockPlayerLandscape() {
+  enqueue(async () => {
+    await Orientation.lockAsync(LANDSCAPE);
+    try {
+      await NavigationBar.NavigationBar.setHidden(true);
+    } catch {}
+  });
+}
+
 export function usePlayerOrientation(onError: () => void) {
   const error = useRef(onError);
   useLayoutEffect(() => {

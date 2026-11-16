@@ -17,6 +17,8 @@ export function CatalogRow({
   onChanged,
   onLongPressItem,
   allowTitleActions = true,
+  cardWidth: cardWidthOverride,
+  onlineFor,
 }: {
   title: string;
   items: ItemCard[];
@@ -29,11 +31,15 @@ export function CatalogRow({
   onLongPressItem?: (item: ItemCard) => void;
   /** Turn off local-only actions (watched, delete from device). */
   allowTitleActions?: boolean;
+  /** Catalog rows can be denser than the library's main cards. */
+  cardWidth?: number;
+  /** Mark individual cards as online in a mixed local/online row. */
+  onlineFor?: (item: ItemCard) => boolean;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const { api } = useClient();
   const titleActions = useTitleActions();
-  const cardWidth = isContinueWatching ? 220 : 150;
+  const cardWidth = isContinueWatching ? 220 : (cardWidthOverride ?? 150);
   const itemWidth = isContinueWatching ? 168 : cardWidth;
   const longPress = (item: ItemCard) => {
     if (onLongPressItem) {
@@ -63,7 +69,7 @@ export function CatalogRow({
           offset: 20 + (itemWidth + 10) * index,
           index,
         })}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item) => item.publicId}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
         renderItem={({ item, index }) =>
@@ -88,6 +94,7 @@ export function CatalogRow({
               width={cardWidth}
               item={item}
               api={api}
+              online={onlineFor?.(item) ?? false}
               onLongPress={canLongPress ? () => longPress(item) : undefined}
               onFocus={() => {
                 onRowFocus?.();

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
+  BackHandler,
   StatusBar,
   StyleSheet,
   Text,
@@ -10,14 +11,26 @@ import { WebView } from "react-native-webview";
 import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
+import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
-import { ArrowLeft } from "@/shared/ui/icons";
+import { ArrowLeft, Maximize, Minimize } from "@/shared/ui/icons";
 import { PlayerControl } from "@/features/player/components/player-control";
 import { PlayerLoading } from "@/features/player/components/player-loading";
-import { usePlayerOrientation } from "@/features/player/hooks/use-player-orientation";
+import { lockPlayerLandscape, usePlayerOrientation } from "@/features/player/hooks/use-player-orientation";
 import { useRemoteNavigation } from "./lib/use-remote-navigation";
-import { vidyEmbedHtml, vidyEmbedUrl } from "./lib/vidy";
+import {
+  flushRemoteProgress,
+  getRemoteProgress,
+  getRemoteTitleProgress,
+  recordRemotePlayback,
+} from "./lib/remote-progress";
+import {
+  parseVidyBridgeMessage,
+  vidyColor,
+  vidyEmbedHtml,
+  vidyEmbedUrl,
+} from "./lib/vidy";
 import type { RemoteMediaType } from "./lib/tmdb";
 
 export interface RemotePlayerInput {
@@ -34,21 +47,152 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
   usePlayerOrientation(() => {});
   const navigation = useRemoteNavigation();
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { preferences } = useClient();
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [active, setActive] = useState(AppState.currentState === "active");
-  const url = vidyEmbedUrl(input, preferences.autoNext);
+  const [immersive, setImmersive] = useState(false);
+  const lastRecorded = useRef(0);
+  const lastPosition = useRef<{
+    currentTime: number;
+    duration: number;
+    season: number | null;
+    episode: number | null;
+  } | null>(null);
+
+  // Read the resume point once. A live progress tick must never rebuild the
+  // iframe URL (that would reload the player).
+  const [initialResume] = useState(() => {
+    const episodeProgress = getRemoteProgress(
+      input.mediaType,
+      input.tmdbId,
+      input.season,
+      input.episode,
+    );
+    const titleProgress = getRemoteTitleProgress(
+      input.mediaType,
+      input.tmdbId,
+    );
+    const sameTarget =
+      input.mediaType === "movie" ||
+      (titleProgress?.season === input.season &&
+        titleProgress?.episode === input.episode);
+    const saved =
+      episodeProgress ?? (sameTarget ? titleProgress : undefined);
+    return saved && !saved.played && saved.position >= 15
+      ? Math.max(0, Math.floor(saved.position))
+      : 0;
+  });
+
+  const url = useMemo(
+    () =>
+      vidyEmbedUrl(input, {
+        autoplay: preferences.onlineAutoplay,
+        autoNext: preferences.autoNext,
+        episodeSelector: preferences.onlineEpisodeSelector,
+        progress: initialResume,
+        color: vidyColor(colors.brand),
+      }),
+    [
+      colors.brand,
+      initialResume,
+      input,
+      preferences.autoNext,
+      preferences.onlineAutoplay,
+      preferences.onlineEpisodeSelector,
+    ],
+  );
   const source = useMemo(
     () => ({ html: vidyEmbedHtml(url), baseUrl: "https://www.vidy.st" }),
     [url],
   );
+
+  const persistLast = useCallback(() => {
+    const last = lastPosition.current;
+    if (!last) return;
+    const duration = last.duration > 0 ? last.duration : null;
+    const played =
+      Boolean(duration) && last.currentTime >= (duration ?? 0) * 0.95;
+    recordRemotePlayback({
+      mediaType: input.mediaType,
+      tmdbId: input.tmdbId,
+      season: last.season,
+      episode: last.episode,
+      position: last.currentTime,
+      duration,
+      played,
+      updatedAt: Date.now(),
+    });
+  }, [input.mediaType, input.tmdbId]);
+
+  const close = useCallback(() => {
+    persistLast();
+    void flushRemoteProgress().catch(() => {});
+    navigation.back();
+  }, [navigation, persistLast]);
+
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) =>
-      setActive(state === "active"),
+    const subscription = AppState.addEventListener("change", (state) => {
+      setActive(state === "active");
+      if (state !== "active") {
+        persistLast();
+        void flushRemoteProgress().catch(() => {});
+      }
+    });
+    return () => subscription.remove();
+  }, [persistLast]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        close();
+        return true;
+      },
     );
     return () => subscription.remove();
-  }, []);
+  }, [close]);
+
+  const recordTick = useCallback(
+    (event: NonNullable<ReturnType<typeof parseVidyBridgeMessage>>) => {
+      if (event.type !== "PLAYER_EVENT") return;
+      if (event.mediaType !== input.mediaType || event.tmdbId !== input.tmdbId) {
+        return;
+      }
+      const season =
+        event.mediaType === "tv" ? (event.season ?? input.season) : null;
+      const episode =
+        event.mediaType === "tv" ? (event.episode ?? input.episode) : null;
+      lastPosition.current = {
+        currentTime: event.currentTime,
+        duration: event.duration,
+        season,
+        episode,
+      };
+      // Vidy ticks every second. Keep the in-app store and every subscribed
+      // list calm by folding those ticks into one update every two seconds.
+      const now = Date.now();
+      if (event.event === "timeupdate" && now - lastRecorded.current < 2000) {
+        return;
+      }
+      lastRecorded.current = now;
+      const duration = event.duration > 0 ? event.duration : null;
+      const played =
+        Boolean(duration) && event.currentTime >= (duration ?? 0) * 0.95;
+      recordRemotePlayback({
+        mediaType: event.mediaType,
+        tmdbId: event.tmdbId,
+        season,
+        episode,
+        position: event.currentTime,
+        duration,
+        played,
+        updatedAt: Date.now(),
+      });
+    },
+    [input.episode, input.mediaType, input.season, input.tmdbId],
+  );
 
   return (
     <View style={styles.root}>
@@ -63,7 +207,7 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
               setRevision((value) => value + 1);
             }}
           />
-          <Button label="Back" onPress={navigation.back} />
+          <Button label="Back" onPress={close} />
         </View>
       ) : (
         <>
@@ -74,7 +218,7 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
             originWhitelist={["*"]}
             javaScriptEnabled
             domStorageEnabled
-            allowsFullscreenVideo
+            allowsFullscreenVideo={false}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
             setSupportMultipleWindows
@@ -82,6 +226,15 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
             scrollEnabled={false}
             bounces={false}
             overScrollMode="never"
+            onMessage={(event) => {
+              const parsed = parseVidyBridgeMessage(event.nativeEvent.data);
+              if (!parsed) return;
+              if (parsed.type === "FULLSCREEN") {
+                lockPlayerLandscape();
+                return;
+              }
+              recordTick(parsed);
+            }}
             onOpenWindow={() => {
               /* Keep popup tabs outside the playback flow. */
             }}
@@ -92,7 +245,11 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
               request.url.startsWith("https://vidy.st/")
             }
             startInLoadingState
-            renderLoading={() => <PlayerLoading />}
+            renderLoading={() => (
+              <View style={styles.loading}>
+                <PlayerLoading />
+              </View>
+            )}
             onError={() =>
               setError("Vidy could not load. Check your connection and retry.")
             }
@@ -107,6 +264,7 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
 
           {!active && <View style={styles.paused} pointerEvents="auto" />}
 
+          {/* Full-bleed playback: close and our own fullscreen control. */}
           <View
             pointerEvents="box-none"
             style={[
@@ -118,20 +276,40 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
               },
             ]}
           >
-            <PlayerControl
-              accessibilityLabel="Close player"
-              onPress={navigation.back}
-              size={48}
-              bg="rgba(0,0,0,0.4)"
-            >
-              <ArrowLeft size={20} color="#ffffff" strokeWidth={2.2} />
-            </PlayerControl>
-            <View style={styles.titleWrap} pointerEvents="none">
+            {!immersive && (
+              <PlayerControl
+                accessibilityLabel="Close player"
+                onPress={close}
+                size={48}
+                bg="rgba(0,0,0,0.4)"
+              >
+                <ArrowLeft size={20} color="#ffffff" strokeWidth={2.2} />
+              </PlayerControl>
+            )}
+            {immersive ? (
+              <View style={{ flex: 1 }} />
+            ) : (
               <Text numberOfLines={1} style={styles.title}>
                 {input.display}
               </Text>
-            </View>
-            <View style={styles.controlSpacer} />
+            )}
+            <PlayerControl
+              accessibilityLabel={
+                immersive ? "Exit fullscreen" : "Fullscreen landscape"
+              }
+              onPress={() => {
+                lockPlayerLandscape();
+                setImmersive((value) => !value);
+              }}
+              size={48}
+              bg="rgba(0,0,0,0.4)"
+            >
+              {immersive ? (
+                <Minimize size={20} color="#ffffff" strokeWidth={2.2} />
+              ) : (
+                <Maximize size={20} color="#ffffff" strokeWidth={2.2} />
+              )}
+            </PlayerControl>
           </View>
         </>
       )}
@@ -142,6 +320,14 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   webview: { flex: 1, backgroundColor: "#000" },
+  loading: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "#000",
+  },
   paused: {
     position: "absolute",
     top: 0,
@@ -154,17 +340,15 @@ const styles = StyleSheet.create({
     position: "absolute",
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
   },
-  titleWrap: { flex: 1, alignItems: "center" },
   title: {
-    maxWidth: "78%",
+    flex: 1,
+    paddingHorizontal: 12,
     color: "rgba(255,255,255,0.95)",
     fontSize: 14,
     fontWeight: "700",
     textAlign: "center",
   },
-  controlSpacer: { width: 48, height: 48 },
   error: {
     flex: 1,
     justifyContent: "center",

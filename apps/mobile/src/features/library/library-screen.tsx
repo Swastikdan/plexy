@@ -1,5 +1,6 @@
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { SwipePager, usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
+import { useIsFocused } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   FlatList,
@@ -24,43 +25,43 @@ import { Film ,
   ChevronRight,
   X,
 } from "@/shared/ui/icons";
-import { Loading } from "@/shared/ui/loading";
-import { Card } from "@/shared/ui/media-card";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
+import { LibraryGridSkeleton } from "@/shared/ui/skeleton";
+import { Card } from "@/shared/ui/media-card";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
 import { usePlayTitle } from "@/features/catalog/hooks/use-play-title";
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
 import { useRemote } from "@/features/remote/remote-provider";
+import { useRemoteTitleActions, remoteTitleFromCard } from "@/features/remote/hooks/use-remote-title-actions";
+import { useRemoteProgress, remoteWatch } from "@/features/remote/lib/remote-progress";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
+import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
 
 export function LibraryScreen({
-  kind,
   open,
   play,
-  defaultSubTab,
 }: {
-  kind: "movie" | "series" | "anime";
   open: OpenTitle;
   play?: (fileId: number) => void;
-  defaultSubTab?: "movie" | "series" | "anime";
 }) {
   const tabBoundary = usePagerGestureBoundary();
   const colors = useColors();
   const reduceMotion = useReducedMotion();
   const { api, runtime, preferences } = useClient();
   const { saved } = useRemote();
+  const focused = useIsFocused();
+  const remoteProgress = useRemoteProgress(focused);
   const remoteNavigation = useRemoteNavigation();
   const online = preferences.source === "remote";
-  type LibraryTab = "all" | "movie" | "series" | "anime" | "collection";
-  const [activeTab, setActiveTab] = useState<LibraryTab>(
-    defaultSubTab || "all",
-  );
+  type LibraryTab = "all" | "movie" | "series" | "collection";
+  const [activeTab, setActiveTab] = useState<LibraryTab>("all");
   const [sort, setSort] = useState("added");
   const [unwatched, setUnwatched] = useState(false);
+  const [offlineOnly, setOfflineOnly] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [collection, setCollection] = useState<{
     id: number;
@@ -79,6 +80,7 @@ export function LibraryScreen({
   // Saved online titles join the local grids; a downloaded copy wins and the
   // online duplicate is not shown twice.
   const savedOnline = React.useMemo(() => {
+    void remoteProgress;
     if (!online) return [];
     return saved
       .filter(
@@ -87,15 +89,31 @@ export function LibraryScreen({
             `${entry.title.mediaType}:${entry.title.tmdbId}`,
           ),
       )
-      .map((entry) => toItemCard(entry.title));
-  }, [localByTmdb, online, saved]);
+      .map((entry) =>
+        toItemCard(
+          entry.title,
+          undefined,
+          remoteWatch(entry.title.mediaType, entry.title.tmdbId),
+        ),
+      );
+  }, [localByTmdb, online, remoteProgress, saved]);
+  React.useEffect(() => {
+    prefetchImages(
+      savedOnline.flatMap((item) => [item.poster, item.backdrop]),
+      18,
+    );
+  }, [savedOnline]);
+  const visibleOnline = React.useMemo(
+    () => offlineOnly ? [] : savedOnline,
+    [offlineOnly, savedOnline],
+  );
   const savedOnlineFor = (tab: LibraryTab) => {
-    if (tab === "all") return savedOnline;
+    if (tab === "all") return visibleOnline;
     if (tab === "movie") {
-      return savedOnline.filter((item) => item.kind !== "series");
+      return visibleOnline.filter((item) => item.kind !== "series");
     }
     if (tab === "series") {
-      return savedOnline.filter((item) => item.kind === "series");
+      return visibleOnline.filter((item) => item.kind === "series");
     }
     return [];
   };
@@ -117,14 +135,13 @@ export function LibraryScreen({
   };
   const libraryTabs = React.useMemo(() => {
     const base: LibraryTab[] = ["all"];
-    const hasOnlineMovie = savedOnline.some((item) => item.kind !== "series");
-    const hasOnlineSeries = savedOnline.some((item) => item.kind === "series");
+    const hasOnlineMovie = visibleOnline.some((item) => item.kind !== "series");
+    const hasOnlineSeries = visibleOnline.some((item) => item.kind === "series");
     if (counts.movie || hasOnlineMovie) base.push("movie");
     if (counts.series || hasOnlineSeries) base.push("series");
-    if (counts.anime) base.push("anime");
     if (collections.length) base.push("collection");
     return base;
-  }, [collections, counts, savedOnline]);
+  }, [collections, counts, visibleOnline]);
   if (!libraryTabs.includes(activeTab)) setActiveTab("all");
   const tabScroll = useRef<ScrollView>(null);
   const tabLayouts = useRef<Record<string, { x: number; width: number }>>({});
@@ -162,7 +179,7 @@ export function LibraryScreen({
           activeTab === "collection" ? undefined : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}`}
+              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}${offlineOnly ? ", offline only" : ""}`}
               onPress={() => {
                 triggerHaptic("light");
                 setSortOpen(true);
@@ -214,9 +231,7 @@ export function LibraryScreen({
                     ? "Movies"
                     : tab === "series"
                       ? "TV Shows"
-                      : tab === "anime"
-                        ? "Anime"
-                        : "Collections";
+                      : "Collections";
               return (
                 <Pressable
                   key={tab}
@@ -316,7 +331,7 @@ export function LibraryScreen({
           ) : (
             <LibraryTitles
               key={`${libraryTabs[index]}-${sort}-${unwatched}`}
-              tab={libraryTabs[index] as "all" | "movie" | "series" | "anime"}
+              tab={libraryTabs[index] as "all" | "movie" | "series"}
               sort={sort}
               unwatched={unwatched}
               open={openAny}
@@ -417,6 +432,33 @@ export function LibraryScreen({
                 <Check size={18} color={colors.canvas} strokeWidth={2.6} />
               )}
             </Pressable>
+            {online && savedOnline.length > 0 && (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: offlineOnly }}
+                onPress={() => {
+                  triggerHaptic("selection");
+                  setOfflineOnly((value) => !value);
+                }}
+                className={cn(
+                  "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
+                  offlineOnly && "bg-foreground",
+                  "active:opacity-[0.75]",
+                )}
+              >
+                <Text
+                  className={cn(
+                    "font-archivo-medium text-[15px] text-foreground",
+                    offlineOnly && "font-archivo-bold text-background",
+                  )}
+                >
+                  Offline only
+                </Text>
+                {offlineOnly && (
+                  <Check size={18} color={colors.canvas} strokeWidth={2.6} />
+                )}
+              </Pressable>
+            )}
             <View className="h-4" />
           </Pressable>
         </Pressable>
@@ -433,7 +475,7 @@ function LibraryTitles({
   play,
   onlineItems = [],
 }: {
-  tab: "all" | "movie" | "series" | "anime";
+  tab: "all" | "movie" | "series";
   sort: string;
   unwatched: boolean;
   open: OpenTitle;
@@ -442,6 +484,8 @@ function LibraryTitles({
 }) {
   const { api } = useClient();
   const titleActions = useTitleActions();
+  const remoteActions = useRemoteTitleActions();
+  const remoteNavigation = useRemoteNavigation();
   const playTitle = usePlayTitle(play, (item) => open(item.publicId));
   const { width } = useWindowDimensions();
   const [extra, setExtra] = useState<ItemCard[]>([]);
@@ -452,8 +496,25 @@ function LibraryTitles({
     (signal) => api.items(tab, 0, sort, signal, unwatched),
     [api, tab, sort, unwatched],
   );
-  const localItems = [...(data.value?.items || []), ...extra];
-  const items = [...localItems, ...onlineItems];
+  const localItems = React.useMemo(
+    () => [...(data.value?.items ?? []), ...extra],
+    [data.value?.items, extra],
+  );
+  const items = React.useMemo(() => {
+    if (!onlineItems.length) return localItems;
+    if (!localItems.length) return onlineItems;
+    const merged: ItemCard[] = [];
+    let localIndex = 0;
+    let onlineIndex = 0;
+    while (localIndex < localItems.length || onlineIndex < onlineItems.length) {
+      for (let step = 0; step < 3 && localIndex < localItems.length; step += 1) {
+        merged.push(localItems[localIndex++]!);
+      }
+      if (onlineIndex < onlineItems.length)
+        merged.push(onlineItems[onlineIndex++]!);
+    }
+    return merged;
+  }, [localItems, onlineItems]);
   const available = width - 0 - 40;
   const columns = Math.max(2, Math.floor(available / 150));
   const cardWidth = Math.floor(available / columns) - 10;
@@ -490,7 +551,7 @@ function LibraryTitles({
     }
   }
   return data.loading ? (
-    <Loading />
+    <LibraryGridSkeleton />
   ) : data.error ? (
     <Notice message={data.error} retry={data.retry} />
   ) : (
@@ -513,18 +574,23 @@ function LibraryTitles({
             width={cardWidth}
             item={item}
             api={api}
-            badge={isOnline ? "Online" : null}
+            online={isOnline}
             onPress={() => {
               open(item.publicId);
             }}
-            onLongPress={
+            onLongPress={() =>
               isOnline
-                ? undefined
-                : () =>
-                    titleActions(item, {
-                      play: () => playTitle(item),
-                      onChanged: data.retry,
-                    })
+                ? remoteActions(item, {
+                    play: () => {
+                      const title = remoteTitleFromCard(item);
+                      if (title) remoteNavigation.play(title);
+                    },
+                    onChanged: data.retry,
+                  })
+                : titleActions(item, {
+                    play: () => playTitle(item),
+                    onChanged: data.retry,
+                  })
             }
           />
         );

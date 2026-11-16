@@ -8,7 +8,7 @@ export interface LocalFile {
   size: number;
   modified: number;
 }
-export interface LocalRoot { uri: string; name: string; kind: "movies" | "tv" | "anime"; singleFile?: boolean }
+export interface LocalRoot { uri: string; name: string; kind: "movies" | "tv" | "anime" | "auto"; singleFile?: boolean }
 export interface LocalRecord {
   id: number;
   root: string;
@@ -73,13 +73,34 @@ export function parseLocalName(path: string, kind: LocalRoot["kind"]) {
   const standardEpisode = cleanStem.match(/(?:^|[ ._-])s(\d{1,2})[ ._-]*e(\d{1,3})/i)
     || cleanStem.match(/(?:^|[ ._-])(\d{1,2})x(\d{1,3})/i);
   const animeEpisode = !standardEpisode ? cleanStem.match(/(?:^|[ ._-])(?:e|ep|episode|\s-\s|[-_ ])(\d{1,3})(?:v\d+)?(?:\b|[ ._(\[])/i) : null;
+  // Auto roots only accept an unambiguous episode marker: "E05", " - 05",
+  // "_05" or "[05]". A plain space before a number is a movie title, not an
+  // episode, so "The 100" stays a movie.
+  const autoEpisode = !standardEpisode && kind === "auto"
+    ? cleanStem.match(/(?:^|[ ._-])(?:e|ep|episode)[ ._-]?(\d{1,3})(?:v\d+)?(?:\b|[ ._(\[])/i)
+      || cleanStem.match(/(?:\s-\s|_)(\d{1,3})(?:v\d+)?(?:\b|[ ._(\[])/)
+      || cleanStem.match(/[\[(](\d{1,3})[\])]/)
+    : null;
   const seasonFolderMatch = parts.length > 1 ? parts.find(p => /^(?:season[ ._-]*|s)(\d{1,2})$/i.test(p))?.match(/^(?:season[ ._-]*|s)(\d{1,2})$/i) : null;
   const rawNumberEpisode = (!standardEpisode && !animeEpisode && seasonFolderMatch) ? cleanStem.match(/^(\d{1,3})$/) : null;
-  const episode = standardEpisode || (kind === "anime" ? animeEpisode : null) || rawNumberEpisode;
+  const autoNumberEpisode = kind === "auto" && !standardEpisode && !autoEpisode && parts.length > 1 ? cleanStem.match(/^(\d{1,3})$/) : null;
+  const episode = standardEpisode || (kind === "anime" ? animeEpisode : null) || autoEpisode || rawNumberEpisode || autoNumberEpisode;
+  // An auto root is a series when the file or its folder structure says so;
+  // everything else is treated as a movie.
+  const autoShow = kind === "auto" && (episode != null || seasonFolderMatch != null);
+  const showKind = kind === "tv" || kind === "anime" || autoShow;
 
-  const seriesFolder = parts.length > 1 && !/^(season[ ._-]*\d+|s\d+|specials)$/i.test(parts[0]!) ? parts[0]! : null;
-  const rawTarget = episode && !rawNumberEpisode ? cleanStem.slice(0, episode.index ?? cleanStem.length) : cleanStem;
-  const raw = kind === "tv" || kind === "anime" ? seriesFolder || rawTarget : parts.length > 1 && !/^(season[ ._-]*\d+|s\d+|specials)$/i.test(parts.at(-2)!) ? parts.at(-2)! : rawTarget;
+  const parentFolder = parts.length > 1 ? parts.at(-2)! : null;
+  const isSeasonFolder = (folder: string | null) =>
+    !!folder && /^(?:season[ ._-]*\d+|s\d+|specials)$/i.test(folder);
+  // The series name is the folder above the season folder when one exists.
+  const seriesFolder = parentFolder && !isSeasonFolder(parentFolder)
+    ? parentFolder
+    : parts.length > 2
+      ? parts.at(-3)!
+      : null;
+  const rawTarget = episode && !rawNumberEpisode && !autoNumberEpisode ? cleanStem.slice(0, episode.index ?? cleanStem.length) : cleanStem;
+  const raw = showKind ? seriesFolder || rawTarget : parts.length > 1 && !isSeasonFolder(parts.at(-2)!) ? parts.at(-2)! : rawTarget;
 
   const explicitId = Number(path.match(/[[{]tmdb(?:id)?[=: -]*(\d+)[\]}]/i)?.[1])
     || Number(cleanStem.match(/[[{]tmdb(?:id)?[=: -]*(\d+)[\]}]/i)?.[1]) || null;
@@ -110,17 +131,23 @@ export function parseLocalName(path: string, kind: LocalRoot["kind"]) {
     ? Number(standardEpisode[1])
     : seasonFolderMatch
       ? Number(seasonFolderMatch[1])
-      : episode
+      : showKind
         ? 1
-        : (kind === "tv" || kind === "anime" ? 1 : null);
+        : null;
 
   const epNumber = standardEpisode
     ? Number(standardEpisode[2])
     : animeEpisode
       ? Number(animeEpisode[1])
-      : rawNumberEpisode
-        ? Number(rawNumberEpisode[1])
-        : (kind === "tv" ? 1 : null);
+      : autoEpisode
+        ? Number(autoEpisode[1])
+        : rawNumberEpisode
+          ? Number(rawNumberEpisode[1])
+          : autoNumberEpisode
+            ? Number(autoNumberEpisode[1])
+            : (kind === "tv" || autoShow)
+              ? 1
+              : null;
 
   return {
     title,

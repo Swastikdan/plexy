@@ -38,7 +38,7 @@ export function HybridEpisodeCard({
       duration={episode.runtime ? `${episode.runtime}:00` : null}
       progress={progress}
       watched={watched}
-      badge={episode.remote ? "Online" : null}
+      online={Boolean(episode.remote)}
       selecting={selecting}
       selected={selected}
       disabled={disabled}

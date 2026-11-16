@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useIsFocused } from "expo-router";
+import { useEffect, useMemo } from "react";
 import type { ItemCard, LocalCatalog } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
+import { remoteWatch, useRemoteProgress } from "./remote-progress";
+import { prefetchImages } from "./prefetch";
 import {
   fetchRecommendations,
   type RemoteMediaType,
@@ -32,23 +35,42 @@ export function useRecommendations({
     [mediaType, tmdbId],
     "recommendations",
   );
+  const focused = useIsFocused();
+  const remoteProgress = useRemoteProgress(focused);
 
   const localByTmdb = api.titlesByTmdb();
+  useEffect(() => {
+    const urls = (source.value ?? []).flatMap((title) => [
+      title.poster,
+      title.backdrop,
+    ]);
+    prefetchImages(urls, 24);
+  }, [source.value]);
 
   return useMemo(() => {
+    void remoteProgress;
     const items: ItemCard[] = [];
     const remoteByPublicId = new Map<string, RemoteTitle>();
+    const seen = new Set<string>();
     for (const title of source.value ?? []) {
       if (title.tmdbId === tmdbId && title.mediaType === mediaType) continue;
       const local = localByTmdb.get(`${title.mediaType}:${title.tmdbId}`);
       if (local) {
+        if (seen.has(local.publicId)) continue;
+        seen.add(local.publicId);
         items.push(local);
       } else if (online) {
-        items.push(toItemCard(title));
-        remoteByPublicId.set(
-          remotePublicId(title.mediaType, title.tmdbId),
-          title,
+        const id = remotePublicId(title.mediaType, title.tmdbId);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        items.push(
+          toItemCard(
+            title,
+            undefined,
+            remoteWatch(title.mediaType, title.tmdbId),
+          ),
         );
+        remoteByPublicId.set(id, title);
       }
     }
     return {
@@ -62,6 +84,7 @@ export function useRecommendations({
     localByTmdb,
     mediaType,
     online,
+    remoteProgress,
     source.error,
     source.loading,
     source.retry,

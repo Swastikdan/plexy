@@ -48,6 +48,8 @@ export interface RemoteDetail extends RemoteTitle {
   tagline: string | null;
   runtime: number | null;
   status: string | null;
+  logo: string | null;
+  trailer: { provider: string; key: string; name: string } | null;
   seasons: RemoteSeason[];
   cast: { name: string; character: string | null; photo: string | null }[];
 }
@@ -175,13 +177,31 @@ function toTitle(media: TmdbMedia, fallbackType: RemoteMediaType): RemoteTitle {
 // --- rows --------------------------------------------------------------------
 
 export const HOME_ROWS = [
-  { key: "trending-day", title: "Trending today", path: "/trending/all/day" },
-  { key: "movies-popular", title: "Popular movies", path: "/movie/popular" },
-  { key: "tv-popular", title: "Popular series", path: "/tv/popular" },
-  { key: "movies-top", title: "Top rated movies", path: "/movie/top_rated" },
-  { key: "tv-top", title: "Top rated series", path: "/tv/top_rated" },
-  { key: "movies-upcoming", title: "Coming soon", path: "/movie/upcoming" },
-  { key: "tv-airing", title: "Airing now", path: "/tv/on_the_air" },
+  {
+    key: "trending-day",
+    title: "Trending today",
+    paths: ["/trending/all/day"],
+  },
+  {
+    key: "popular",
+    title: "Popular",
+    paths: ["/movie/popular", "/tv/popular"],
+  },
+  {
+    key: "top-rated",
+    title: "Top rated",
+    paths: ["/movie/top_rated", "/tv/top_rated"],
+  },
+  {
+    key: "coming-soon",
+    title: "Coming soon",
+    paths: ["/movie/upcoming"],
+  },
+  {
+    key: "airing-now",
+    title: "Airing now",
+    paths: ["/tv/on_the_air"],
+  },
 ] as const;
 
 export interface RemoteHome {
@@ -189,22 +209,42 @@ export interface RemoteHome {
   rows: { key: string; title: string; items: RemoteTitle[] }[];
 }
 
+/** Mix two TMDB lists so one shelf shows movies and series evenly. */
+function interleave<T>(lists: T[][]): T[] {
+  const merged: T[] = [];
+  const longest = Math.max(0, ...lists.map((list) => list.length));
+  for (let index = 0; index < longest; index += 1) {
+    for (const list of lists) {
+      const item = list[index];
+      if (item != null) merged.push(item);
+    }
+  }
+  return merged;
+}
+
 export async function fetchHome(signal?: AbortSignal): Promise<RemoteHome> {
   const replies = await Promise.all(
     HOME_ROWS.map(async (row) => {
-      const fallbackType: RemoteMediaType = row.path.startsWith("/tv") ? "tv" : "movie";
-      try {
-        const body = await get<{ results?: TmdbMedia[] }>(row.path, signal);
-        return {
-          key: row.key,
-          title: row.title,
-          items: (body.results ?? [])
-            .filter((media) => media.media_type !== "person")
-            .map((media) => toTitle(media, fallbackType)),
-        };
-      } catch {
-        return { key: row.key, title: row.title, items: [] as RemoteTitle[] };
-      }
+      const lists = await Promise.all(
+        row.paths.map(async (path) => {
+          const fallbackType: RemoteMediaType = path.startsWith("/tv")
+            ? "tv"
+            : "movie";
+          try {
+            const body = await get<{ results?: TmdbMedia[] }>(path, signal);
+            return (body.results ?? [])
+              .filter((media) => media.media_type !== "person")
+              .map((media) => toTitle(media, fallbackType));
+          } catch {
+            return [] as RemoteTitle[];
+          }
+        }),
+      );
+      return {
+        key: row.key,
+        title: row.title,
+        items: interleave(lists),
+      };
     }),
   );
   const trending = replies.find((row) => row.key === "trending-day")?.items ?? [];
@@ -236,6 +276,59 @@ interface TmdbDetail extends TmdbMedia {
   external_ids?: { imdb_id?: string | null };
   seasons?: { season_number: number; name?: string; episode_count?: number; poster_path?: string | null }[];
   credits?: { cast?: { name: string; character?: string; profile_path?: string | null }[] };
+  videos?: {
+    results?: {
+      site?: string;
+      key?: string;
+      name?: string;
+      type?: string;
+      official?: boolean;
+      iso_639_1?: string;
+    }[];
+  };
+  images?: {
+    logos?: {
+      file_path?: string | null;
+      iso_639_1?: string | null;
+      vote_average?: number;
+    }[];
+  };
+}
+
+function pickTrailer(
+  videos: TmdbDetail["videos"],
+): RemoteDetail["trailer"] {
+  const results = (videos?.results ?? []).filter(
+    (video) => video.site === "YouTube" && video.key,
+  );
+  const ranked = [...results].sort((a, b) => {
+    const score = (video: NonNullable<typeof results>[number]) =>
+      (video.type === "Trailer" ? 4 : video.type === "Teaser" ? 2 : 0) +
+      (video.official ? 2 : 0) +
+      (video.iso_639_1 === "en" ? 1 : 0);
+    return score(b) - score(a);
+  });
+  const best = ranked[0];
+  return best?.key
+    ? {
+        provider: best.site ?? "YouTube",
+        key: best.key,
+        name: best.name || "Trailer",
+      }
+    : null;
+}
+
+function pickLogo(images: TmdbDetail["images"]): string | null {
+  const logos = (images?.logos ?? []).filter(
+    (logo) => logo.file_path && /\.(png|svg|webp)$/i.test(logo.file_path),
+  );
+  const ranked = [...logos].sort((a, b) => {
+    const score = (logo: NonNullable<typeof logos>[number]) =>
+      (logo.iso_639_1 === "en" ? 2 : logo.iso_639_1 == null ? 1 : 0) +
+      (logo.vote_average ?? 0) / 10;
+    return score(b) - score(a);
+  });
+  return posterUrl(ranked[0]?.file_path, "w500");
 }
 
 export async function fetchDetail(
@@ -244,7 +337,7 @@ export async function fetchDetail(
   signal?: AbortSignal,
 ): Promise<RemoteDetail> {
   const body = await get<TmdbDetail>(
-    `/${mediaType}/${tmdbId}?append_to_response=external_ids,credits`,
+    `/${mediaType}/${tmdbId}?append_to_response=external_ids,credits,videos,images&include_image_language=en,null`,
     signal,
   );
   const base = toTitle(body, mediaType);
@@ -254,6 +347,8 @@ export async function fetchDetail(
     tagline: body.tagline?.trim() || null,
     runtime: body.runtime ?? body.episode_run_time?.[0] ?? null,
     status: body.status ?? null,
+    logo: pickLogo(body.images),
+    trailer: pickTrailer(body.videos),
     seasons: (body.seasons ?? [])
       .filter((season) => season.season_number > 0)
       .map((season) => ({

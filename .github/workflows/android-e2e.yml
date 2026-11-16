@@ -1,0 +1,124 @@
+name: Android E2E
+
+# Native regression coverage for the Android client. The build workflow proves
+# the app typechecks and bundles; this workflow proves it actually boots and
+# navigates on a device, which is the only way to catch a broken native module,
+# a missing asset at runtime, or a screen that crashes after mount.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "packages/**"
+      - "scripts/native/**"
+      - ".github/workflows/android-e2e.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.4.4"
+  NODE_VERSION: "22"
+
+jobs:
+  maestro:
+    name: Maestro smoke flows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Advisory while the flows settle. A red run still shows on the pull
+    # request; remove this once the job has been green for a week so a
+    # regression blocks the merge instead of only warning.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+
+      - run: bun install --frozen-lockfile
+        env:
+          SKIP_FFMPEG: "true"
+
+      - name: Cache Gradle dependencies and task outputs
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Cache Android native compilation
+        uses: actions/cache@v5
+        with:
+          path: |
+            apps/mobile/android/.gradle
+            apps/mobile/android/app/.cxx
+            apps/mobile/android/app/build/intermediates/cxx
+          key: android-e2e-x86_64-${{ runner.os }}-${{ hashFiles('bun.lock', 'apps/mobile/app.config.ts', 'scripts/native/*.cjs') }}-${{ github.sha }}
+          restore-keys: android-e2e-x86_64-${{ runner.os }}-${{ hashFiles('bun.lock', 'apps/mobile/app.config.ts', 'scripts/native/*.cjs') }}-
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Prebuild the Android project
+        run: bun run --filter @plexy/mobile prebuild
+
+      - name: Build a release APK for the emulator
+        working-directory: apps/mobile/android
+        # A release build embeds the JS bundle, so the app boots without a
+        # Metro server and the E2E run exercises the same bundle users get.
+        # The Expo template signs release with the debug keystore, so no
+        # signing secret is needed here.
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PreactNativeArchitectures=x86_64 \
+            --max-workers=4 \
+            "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m --add-opens=java.base/java.lang.ref=ALL-UNNAMED" \
+            --build-cache \
+            --parallel
+
+      - name: Run Maestro flows
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb install -r apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+            maestro test apps/mobile/.maestro --include-tags=smoke
+
+      - name: Save Maestro screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-failure-screenshots
+          path: ~/.maestro/tests
+          if-no-files-found: warn
