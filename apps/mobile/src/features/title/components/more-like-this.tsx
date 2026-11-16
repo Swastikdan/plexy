@@ -1,6 +1,7 @@
 import React from "react";
 import { Text, useWindowDimensions, View } from "react-native";
 import type { ItemCard, LocalCatalog } from "@/core/library/catalog-api";
+import { prefetchTitleCards } from "@/features/catalog/hooks/use-title-prefetch";
 import { Card } from "@/shared/ui/media-card";
 import { Notice } from "@/shared/ui/notice";
 import { SkeletonBlock } from "@/shared/ui/skeleton";
@@ -37,6 +38,9 @@ export function MoreLikeThis({
       (width - PAGE_PADDING * 2 - GAP * (COLUMNS - 1)) / COLUMNS,
     ),
   );
+  React.useEffect(() => {
+    prefetchTitleCards(items.slice(0, COLUMNS * 3), api);
+  }, [api, items]);
 
   if (loading) {
     return (

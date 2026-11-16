@@ -170,6 +170,18 @@ export class LocalLibrary {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingSave: Promise<void> = Promise.resolve();
   private currentDurable: Promise<void> = Promise.resolve();
+  /**
+   * Details, grids and person lookups all walk the same records. Rebuilding the
+   * card clones on every screen render pins the JS thread on a large library,
+   * so one snapshot is shared until a mutation invalidates it.
+   */
+  private revision = 0;
+  private snapshot: {
+    cards?: ItemCard[];
+    byId?: Map<number, LocalRecord>;
+    children?: Map<number, LocalRecord[]>;
+    series?: Map<number, ItemCard>;
+  } = {};
   constructor(private io: LocalIO) {}
   async restore() {
     const saved = await this.io.load();
@@ -177,10 +189,21 @@ export class LocalLibrary {
       if (saved.version !== 1 || !Array.isArray(saved.records) || !Array.isArray(saved.roots))
         throw new Error("The local library database could not be read.");
       this.state = saved;
+      this.revision += 1;
+      this.snapshot = {};
     }
   }
   subscribe(fn: () => void) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
-  private changed() { for (const fn of this.listeners) fn(); }
+  /** Monotonic token for consumers that cache derived catalog views. */
+  get version() { return this.revision; }
+  private invalidate() {
+    this.revision += 1;
+    this.snapshot = {};
+  }
+  private changed() {
+    this.invalidate();
+    for (const fn of this.listeners) fn();
+  }
   private persist(): Promise<void> {
     // Coalesce bursts of writes. A scan hydrates records one after another,
     // each calling persist; serializing and rewriting the whole database for
@@ -402,59 +425,100 @@ export class LocalLibrary {
       }
     } finally { this.scanning = false; this.scanProgress.phase = "Finished"; this.scanProgress.current = ""; this.changed(); }
   }
-  cards(): ItemCard[] {
-    const movies = this.state.records.filter(r => r.card.kind === "movie").map(r => ({
-      ...r.card,
-      tmdbId: r.tmdbId ?? r.card.tmdbId ?? null,
-      logo: r.logo || r.card.logo || null,
-      isAnime: r.isAnime || r.card.isAnime,
-      watchlist: Boolean(r.watchlist),
-    }));
-    const groups = new Map<number, LocalRecord[]>();
-    for (const r of this.state.records.filter(r => r.card.parentId)) {
-      const id = r.card.parentId!;
-      groups.set(id, [...(groups.get(id) || []), r]);
+  private indices() {
+    let cards = this.snapshot.cards;
+    if (cards) {
+      return {
+        cards,
+        byId: this.snapshot.byId!,
+        children: this.snapshot.children!,
+        series: this.snapshot.series!,
+      };
     }
-    const series = [...groups].map(([id, records]) => ({
-      ...records[0]!.card,
-      ...records[0]!.seriesMetadata,
-      id,
-      publicId: `local-${id}`,
-      kind: "series" as const,
-      name: records[0]!.seriesMetadata?.name || records[0]!.card.parentTitle!,
-      fileId: null,
-      parentId: null,
-      parentPublicId: null,
-      parentTitle: null,
-      seasonNumber: null,
-      episodeNumber: null,
-      tmdbId: records.find(r => r.tmdbId != null)?.tmdbId ?? records[0]?.card.tmdbId ?? null,
-      logo: records[0]!.logo || records[0]!.card.logo || null,
-      isAnime: records.some(r => r.isAnime || r.card.isAnime),
-      watchlist: records.some(r => Boolean(r.watchlist)),
-      watch: records.every(r => r.card.watch?.played)
-        ? { position: 0, duration: null, played: true, percent: 100 }
-        : null,
-    }));
-    return [...movies, ...series];
+    const movies: ItemCard[] = [];
+    const byId = new Map<number, LocalRecord>();
+    const children = new Map<number, LocalRecord[]>();
+    for (const record of this.state.records) {
+      byId.set(record.id, record);
+      if (record.card.kind === "movie") {
+        movies.push({
+          ...record.card,
+          tmdbId: record.tmdbId ?? record.card.tmdbId ?? null,
+          logo: record.logo || record.card.logo || null,
+          isAnime: record.isAnime || record.card.isAnime,
+          watchlist: Boolean(record.watchlist),
+        });
+      } else if (record.card.parentId != null) {
+        const group = children.get(record.card.parentId);
+        if (group) group.push(record);
+        else children.set(record.card.parentId, [record]);
+      }
+    }
+    const series: ItemCard[] = [];
+    const seriesById = new Map<number, ItemCard>();
+    for (const [id, records] of children) {
+      const first = records[0]!;
+      const card: ItemCard = {
+        ...first.card,
+        ...first.seriesMetadata,
+        id,
+        publicId: `local-${id}`,
+        kind: "series",
+        name: first.seriesMetadata?.name || first.card.parentTitle!,
+        fileId: null,
+        parentId: null,
+        parentPublicId: null,
+        parentTitle: null,
+        seasonNumber: null,
+        episodeNumber: null,
+        tmdbId: records.find((record) => record.tmdbId != null)?.tmdbId ?? first.card.tmdbId ?? null,
+        logo: first.logo || first.card.logo || null,
+        isAnime: records.some((record) => record.isAnime || record.card.isAnime),
+        watchlist: records.some((record) => Boolean(record.watchlist)),
+        watch: records.every((record) => record.card.watch?.played)
+          ? { position: 0, duration: null, played: true, percent: 100 }
+          : null,
+      };
+      series.push(card);
+      seriesById.set(id, card);
+    }
+    cards = [...movies, ...series];
+    this.snapshot = { cards, byId, children, series: seriesById };
+    return { cards, byId, children, series: seriesById };
+  }
+
+  cards(): ItemCard[] {
+    return this.indices().cards;
   }
   record(id: number) {
-    const record = this.state.records.find(r => r.id === id);
+    const record = this.indices().byId.get(id);
     if (!record) throw new Error("This local file is no longer in your library.");
     return record;
   }
+  /** Every record that belongs to a title id: the title itself or its episodes. */
+  private recordsFor(id: number) {
+    const { byId, children } = this.indices();
+    const record = byId.get(id);
+    if (record) return [record];
+    return children.get(id) ?? [];
+  }
   detail(id: number): TitleDetail {
-    const record = this.state.records.find(r => r.id === id || r.card.parentId === id);
+    const { byId, children, series } = this.indices();
+    const record = byId.get(id) ?? children.get(id)?.[0];
     if (!record) throw new Error("This title is no longer in your library.");
-    const series = record.card.parentId === id;
-    const episodes = series ? this.state.records.filter(r => r.card.parentId === id).map(r => r.card)
-      .sort((a,b) => (a.seasonNumber! - b.seasonNumber!) || (a.episodeNumber! - b.episodeNumber!)) : null;
-    const card = series ? this.cards().find(c => c.id === id)! : { ...record.card, tmdbId: record.tmdbId ?? record.card.tmdbId ?? null, watchlist: Boolean(record.watchlist) };
+    const isSeries = record.card.parentId === id;
+    const episodeRecords = isSeries ? children.get(id) ?? [] : null;
+    const episodes = episodeRecords
+      ?.map((episode) => episode.card)
+      .sort((a, b) => (a.seasonNumber! - b.seasonNumber!) || (a.episodeNumber! - b.episodeNumber!)) ?? null;
+    const card = isSeries
+      ? series.get(id)!
+      : { ...record.card, tmdbId: record.tmdbId ?? record.card.tmdbId ?? null, watchlist: Boolean(record.watchlist) };
     return { item: card, logo: record.logo || null, metadata: { overview: card.overview, tagline: record.tagline || null,
       runtime: card.runtime, rating: card.rating, certification: record.certification || null, genres: card.genres },
       cast: record.cast, trailer: record.trailer || null,
-      seasons: episodes ? [...new Set(episodes.map(e => e.seasonNumber ?? 1))].sort((a,b) => a-b).map(n => record.seasons?.find(s => s.number === n) || this.state.records.find(r => r.card.parentId === id && r.card.seasonNumber === n)?.seasons?.find(s => s.number === n) || { id: n, number: n, name: n === 0 ? "Specials" : `Season ${n}` }) : null,
-      episodes, file: series ? null : { fileId: record.id, itemId: record.id, size: record.file.size,
+      seasons: episodes ? [...new Set(episodes.map(e => e.seasonNumber ?? 1))].sort((a,b) => a-b).map(n => record.seasons?.find(s => s.number === n) || episodeRecords!.find(r => r.card.seasonNumber === n)?.seasons?.find(s => s.number === n) || { id: n, number: n, name: n === 0 ? "Specials" : `Season ${n}` }) : null,
+      episodes, file: isSeries ? null : { fileId: record.id, itemId: record.id, size: record.file.size,
         container: record.file.name.split(".").at(-1)!, duration: card.watch?.duration || null,
         width: null, height: /(?:2160p|4k|uhd)/i.test(record.file.name) ? 2160 : /1080p/i.test(record.file.name) ? 1080 : /720p/i.test(record.file.name) ? 720 : null, videoCodec: null, videoProfile: null, fps: null, hdr: null,
         audio: [], subtitleCount: 0, analysisStatus: "local", analysisError: null,
@@ -465,24 +529,27 @@ export class LocalLibrary {
     if (!played && position === 0) {
       return this.clearWatch(id);
     }
-    for (const r of this.state.records.filter(r => r.id === id || r.card.parentId === id)) {
+    for (const r of this.recordsFor(id)) {
       const total = duration || r.card.watch?.duration || null;
       const watch: Watch = { position, duration: total, played: played || !!(total && position / total >= .95),
         percent: total ? Math.min(100, 100 * position / total) : 0 };
       r.card.watch = watch;
     }
+    this.invalidate();
     await this.persist();
     this.changed();
   }
   async clearWatch(id: number) {
-    for (const r of this.state.records.filter(r => r.id === id || r.card.parentId === id)) r.card.watch = null;
+    for (const r of this.recordsFor(id)) r.card.watch = null;
+    this.invalidate();
     await this.persist();
     this.changed();
   }
   async setWatchlist(id: number, watchlisted: boolean) {
-    const records = this.state.records.filter(r => r.id === id || r.card.parentId === id);
+    const records = this.recordsFor(id);
     if (!records.length) throw new Error("This title is no longer in your library.");
     for (const record of records) record.watchlist = watchlisted;
+    this.invalidate();
     await this.persist();
     this.changed();
   }

@@ -10,11 +10,14 @@ export function CastRow({
   api,
   canOpen,
   onSelect,
+  loadImages = true,
 }: {
   people: TitleDetail["cast"];
   api: Pick<LocalCatalog, "image">;
   canOpen: (name: string) => boolean;
   onSelect: (name: string) => void;
+  /** Off-screen pages keep the same layout without decoding cast photos. */
+  loadImages?: boolean;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   if (!people.length) return null;
@@ -34,7 +37,7 @@ export function CastRow({
             onPress={() => onSelect(person.name)}
             className="w-24 gap-1.5"
           >
-            {person.photo ? (
+            {person.photo && loadImages ? (
               <View className="aspect-[2/3] w-full overflow-hidden rounded-lg bg-surface">
                 <PosterImage source={api.image(person.photo)} />
               </View>

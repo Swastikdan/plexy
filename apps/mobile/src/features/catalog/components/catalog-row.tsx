@@ -8,6 +8,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { Card } from "@/shared/ui/media-card";
 import { OpenTitle } from "@/features/catalog/types";
 import { ContinueWatchingCard } from "./continue-watching-card";
+import { useTitlePrefetch } from "../hooks/use-title-prefetch";
 
 export function CatalogRow({
   title,
@@ -39,6 +40,7 @@ export function CatalogRow({
   onlineFor?: (item: ItemCard) => boolean;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
+  const prefetch = useTitlePrefetch();
   const { api } = useClient();
   const titleActions = useTitleActions();
   useEffect(() => {
@@ -70,6 +72,7 @@ export function CatalogRow({
       </View>
 
       <FlatList {...pagerBoundary}
+        {...prefetch}
         horizontal
         initialNumToRender={4}
         maxToRenderPerBatch={4}

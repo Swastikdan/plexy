@@ -21,18 +21,21 @@ export function useRecommendations({
   mediaType,
   tmdbId,
   online,
+  enabled = true,
 }: {
   api: LocalCatalog;
   mediaType: RemoteMediaType | null;
   tmdbId: number | null;
   online: boolean;
+  /** Defer the network request until the recommendations tab is visible. */
+  enabled?: boolean;
 }) {
   const source = useResource(
     (signal) =>
-      mediaType && tmdbId
+      enabled && mediaType && tmdbId
         ? fetchRecommendations(mediaType, tmdbId, signal)
         : Promise.resolve([]),
-    [mediaType, tmdbId],
+    [enabled, mediaType, tmdbId],
     "recommendations",
   );
   const focused = useIsFocused();
@@ -40,12 +43,13 @@ export function useRecommendations({
 
   const localByTmdb = api.titlesByTmdb();
   useEffect(() => {
+    if (!enabled) return;
     const urls = (source.value ?? []).flatMap((title) => [
       title.poster,
       title.backdrop,
     ]);
     prefetchImages(urls, 24);
-  }, [source.value]);
+  }, [enabled, source.value]);
 
   return useMemo(() => {
     void remoteProgress;
@@ -76,11 +80,12 @@ export function useRecommendations({
     return {
       items,
       remoteByPublicId,
-      loading: source.loading && !items.length,
+      loading: enabled && source.loading && !items.length,
       error: source.error,
       retry: source.retry,
     };
   }, [
+    enabled,
     localByTmdb,
     mediaType,
     online,

@@ -13,6 +13,8 @@ import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { useColors } from "@/shared/theme";
 import { ChevronLeft } from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
+import { Notice } from "@/shared/ui/notice";
+import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
 import { usePlayTitle } from "../hooks/use-play-title";
 import { useTitleActions } from "../hooks/use-title-actions";
 
@@ -33,6 +35,7 @@ export function TitleBrowser({
 }) {
   const colors = useColors();
   const { api } = useClient();
+  const prefetch = useTitlePrefetch();
   const titleActions = useTitleActions();
   const playTitle = usePlayTitle(play, (item) => {
     close();
@@ -78,12 +81,20 @@ export function TitleBrowser({
           data={items}
           numColumns={columns}
           keyExtractor={(item) => String(item.id)}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={40}
+          windowSize={5}
+          {...prefetch}
           columnWrapperStyle={{ gap: 12 }}
           contentContainerStyle={{
             padding: 20,
             paddingBottom: insets.bottom + 24,
             gap: 20,
           }}
+          ListEmptyComponent={
+            <Notice message="No titles to show here." />
+          }
           renderItem={({ item }) => (
             <Card
               width={cardWidth}

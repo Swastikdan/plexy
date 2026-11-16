@@ -26,6 +26,23 @@ export interface RemoteProgress {
 
 export const remoteProgressStore = createStore<RemoteProgress[]>([]);
 
+/**
+ * `getRemoteProgress` is called for every episode and card render. A linear
+ * scan of the whole progress list made title pages O(episodes × progress)
+ * expensive; keep a map for the current store snapshot instead.
+ */
+let indexedSource: RemoteProgress[] | null = null;
+let indexed = new Map<string, RemoteProgress>();
+
+function progressIndex() {
+  const entries = remoteProgressStore.get();
+  if (entries !== indexedSource) {
+    indexedSource = entries;
+    indexed = new Map(entries.map((entry) => [entry.key, entry]));
+  }
+  return indexed;
+}
+
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
 let writes: Promise<void> = Promise.resolve();
 
@@ -125,15 +142,14 @@ export async function loadRemoteProgress(): Promise<RemoteProgress[]> {
 export function recordRemoteProgress(entry: RemoteProgress) {
   const next = normalize(entry);
   const current = remoteProgressStore.get();
-  const index = current.findIndex((value) => value.key === next.key);
-  const values =
-    index === -1
-      ? [...current, next]
-      : current.map((value) =>
-          value.key === next.key
-            ? { ...next, played: value.played || next.played }
-            : value,
-        );
+  const existing = progressIndex().get(next.key);
+  const values = !existing
+    ? [...current, next]
+    : current.map((value) =>
+        value.key === next.key
+          ? { ...next, played: value.played || next.played }
+          : value,
+      );
   remoteProgressStore.set(values);
   scheduleWrite();
 }
@@ -175,12 +191,9 @@ export function getRemoteProgress(
   season?: number | null,
   episode?: number | null,
 ) {
-  return remoteProgressStore
-    .get()
-    .find(
-      (entry) =>
-        entry.key === remoteProgressKey(mediaType, tmdbId, season, episode),
-    );
+  return progressIndex().get(
+    remoteProgressKey(mediaType, tmdbId, season, episode),
+  );
 }
 
 export function getRemoteTitleProgress(
@@ -253,11 +266,12 @@ export async function markRemotePlayed(
   seasons?: { season: number; episodes: number[] }[],
 ) {
   const current = remoteProgressStore.get();
+  const index = progressIndex();
   const now = Date.now();
   const entries: RemoteProgress[] = [];
   const titleKey = remoteTitleKey(mediaType, tmdbId);
   const title =
-    current.find((entry) => entry.key === titleKey) ??
+    index.get(titleKey) ??
     ({
       key: titleKey,
       mediaType,
@@ -279,7 +293,7 @@ export async function markRemotePlayed(
     for (const group of seasons) {
       for (const episode of group.episodes) {
         const key = remoteEpisodeKey(mediaType, tmdbId, group.season, episode);
-        const existing = current.find((entry) => entry.key === key);
+        const existing = index.get(key);
         entries.push({
           key,
           mediaType,
@@ -312,7 +326,7 @@ export async function markRemoteEpisodePlayed(
 ) {
   const current = remoteProgressStore.get();
   const key = remoteEpisodeKey(mediaType, tmdbId, season, episode);
-  const existing = current.find((entry) => entry.key === key);
+  const existing = progressIndex().get(key);
   const entry: RemoteProgress = {
     key,
     mediaType,

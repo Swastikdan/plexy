@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
+import { rememberTitlePreview } from "@/core/library/title-prefetch";
 import { useColors } from "@/shared/theme";
 import { Film, Tv , Check, Globe } from "./icons";
 import { PosterImage } from "./poster-image";
@@ -53,7 +54,10 @@ export function Card({
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       pressRetentionOffset={16}
-      onPress={onPress}
+      onPress={() => {
+        rememberTitlePreview(item);
+        onPress();
+      }}
       onLongPress={onLongPress}
       delayLongPress={1000}
       style={{

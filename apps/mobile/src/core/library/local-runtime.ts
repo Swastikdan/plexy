@@ -11,6 +11,7 @@ type LocalRoot,
 } from "@plexy/local-library/library";
 import { fetchMetadata } from "@plexy/local-library/metadata";
 import { invalidateLocalResources } from "@/core/resources/use-resource";
+import { clearLocalDetailCache } from "@/core/library/title-prefetch";
 import { connectivity } from "@/shared/lib/connectivity";
 import { readChapters } from "./chapters";
 import { loadLibrary,saveLibrary } from "./library-database";
@@ -350,10 +351,48 @@ localLibrary.subscribe(() => {
   if (invalidationTimer != null) return;
   invalidationTimer = setTimeout(() => {
     invalidationTimer = null;
+    clearLocalDetailCache();
     invalidateLocalResources();
   }, 800);
 });
+// Runtime subscribers (attention badge, settings, library tabs) do not need
+// every record-level notification either. Coalesce them so scanning cannot
+// re-render every mounted screen once per file.
+const runtimeListeners = new Set<() => void>();
+let runtimeTimer: ReturnType<typeof setTimeout> | null = null;
+function notifyRuntime() {
+  if (runtimeTimer != null) return;
+  runtimeTimer = setTimeout(() => {
+    runtimeTimer = null;
+    for (const fn of runtimeListeners) fn();
+  }, 250);
+}
+localLibrary.subscribe(notifyRuntime);
 let restoration: Promise<void> | undefined;
+let attentionCache: {
+  version: number;
+  count: number;
+  fingerprint: string;
+} | null = null;
+function attentionSnapshot() {
+  const version = localLibrary.version;
+  if (attentionCache?.version === version) return attentionCache;
+  let count = 0;
+  const ids: number[] = [];
+  for (const record of localLibrary.state.records) {
+    if (record.card.matchStatus !== "matched" || record.metadataError) {
+      count += 1;
+      ids.push(record.id);
+    }
+  }
+  const snapshot = {
+    version,
+    count: count + localLibrary.issues.length,
+    fingerprint: `${localLibrary.issues.join("|")}::${ids.sort((a, b) => a - b).join(",")}`,
+  };
+  attentionCache = snapshot;
+  return snapshot;
+}
 export const localRuntime = {
   api: localApi,
   searchTitles,
@@ -417,15 +456,12 @@ export const localRuntime = {
     await localLibrary.addSubtitle(fileId, track);
     return track;
   },
-  getAttentionCount: () =>
-    localLibrary.state.records.filter(
-      (r) => r.card.matchStatus !== "matched" || !!r.metadataError,
-    ).length + localLibrary.issues.length,
-  getAttentionFingerprint: () =>
-    `${localLibrary.issues.join("|")}::${localLibrary.state.records
-      .filter((r) => r.card.matchStatus !== "matched" || !!r.metadataError)
-      .map((r) => r.id)
-      .sort()
-      .join(",")}`,
-  subscribe: (fn: () => void) => localLibrary.subscribe(fn),
+  getAttentionCount: () => attentionSnapshot().count,
+  getAttentionFingerprint: () => attentionSnapshot().fingerprint,
+  subscribe: (fn: () => void) => {
+    runtimeListeners.add(fn);
+    return () => {
+      runtimeListeners.delete(fn);
+    };
+  },
 };

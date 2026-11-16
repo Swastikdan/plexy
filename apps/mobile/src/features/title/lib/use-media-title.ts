@@ -4,9 +4,14 @@ import type {
   LocalCatalog,
   TitleDetail,
 } from "@/core/library/catalog-api";
+import {
+  peekLocalDetail,
+  peekTitlePreview,
+  rememberLocalDetail,
+} from "@/core/library/title-prefetch";
 import { useResource } from "@/core/resources/use-resource";
-import { fetchDetail, type RemoteDetail, type RemoteMediaType } from "@/features/remote/lib/tmdb";
-import { toItemCard } from "@/features/remote/lib/view";
+import { fetchDetail, peekDetail, type RemoteDetail, type RemoteMediaType } from "@/features/remote/lib/tmdb";
+import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
 
 export type MediaTitleInput =
   | { source: "local"; id: string | number }
@@ -22,6 +27,8 @@ export interface MediaTitle {
   detail: TitleDetail | null;
   remoteDetail: RemoteDetail | null;
   item: ItemCard | null;
+  /** The card the user tapped, so the loading shell can paint instantly. */
+  preview: ItemCard | null;
   mediaType: RemoteMediaType | null;
   tmdbId: number | null;
   isOffline: boolean;
@@ -102,18 +109,27 @@ export function useMediaTitle(
   const direct = useResource(
     (signal) =>
       localId != null
-        ? api.detail(localId, signal)
+        ? api.detail(localId, signal).then((detail) => {
+            rememberLocalDetail(localId, detail);
+            return detail;
+          })
         : Promise.resolve(null),
     [api, localId],
     "media-title-direct",
+    () => (localId != null ? peekLocalDetail(localId) : null),
   );
+  const matchedId = localMatch?.publicId;
   const matched = useResource(
     (signal) =>
-      localId == null && localMatch
-        ? api.detail(localMatch.publicId, signal)
+      localId == null && matchedId
+        ? api.detail(matchedId, signal).then((detail) => {
+            rememberLocalDetail(matchedId, detail);
+            return detail;
+          })
         : Promise.resolve(null),
-    [api, localMatch?.publicId],
+    [api, matchedId],
     "media-title-match",
+    () => (matchedId ? peekLocalDetail(matchedId) : null),
   );
 
   const localDetail = direct.value ?? matched.value ?? null;
@@ -139,6 +155,10 @@ export function useMediaTitle(
         : Promise.resolve(null),
     [remoteEnabled, mediaType, tmdbId],
     "media-title-remote",
+    () =>
+      remoteEnabled && tmdbId != null && mediaType != null
+        ? peekDetail(mediaType, tmdbId)
+        : null,
   );
 
   const localPending =
@@ -165,10 +185,17 @@ export function useMediaTitle(
       : null;
   }, [fallbackName, localDetail, remote.value]);
 
+  const preview = useMemo(() => {
+    if (input.source === "local") return peekTitlePreview(input.id);
+    if (input.mediaType == null || input.tmdbId == null) return null;
+    return peekTitlePreview(remotePublicId(input.mediaType, input.tmdbId));
+  }, [input]);
+
   return {
     detail,
     remoteDetail: remote.value,
     item: detail?.item ?? null,
+    preview,
     mediaType,
     tmdbId,
     isOffline: Boolean(localDetail),

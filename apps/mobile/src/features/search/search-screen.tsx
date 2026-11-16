@@ -12,6 +12,7 @@ import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
 import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -36,6 +37,7 @@ import { useRemoteHome } from "@/features/remote/lib/use-remote-home";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { useRemoteSearch } from "@/features/remote/lib/use-remote-search";
 import { prefetchDetails, prefetchImages } from "@/features/remote/lib/prefetch";
+import { prefetchTitleCards } from "@/features/catalog/hooks/use-title-prefetch";
 import {
   remoteWatch,
   useRemoteProgress,
@@ -227,6 +229,19 @@ export function SearchScreen({
     },
     [play, open],
   );
+  const prefetchRows = useEventCallback(
+    ({ viewableItems }: { viewableItems: { item?: ResultRow | null }[] }) => {
+      const items: ItemCard[] = [];
+      for (const token of viewableItems) {
+        if (token.item?.kind === "cards") items.push(...token.item.items);
+      }
+      if (items.length) prefetchTitleCards(items, api);
+    },
+  );
+  const resultViewability = React.useMemo(
+    () => ({ itemVisiblePercentThreshold: 40 }),
+    [],
+  );
   const onlineHomeFooter =
     onlineMode && onlineHome.rows.length > 0 ? (
       <View className="pt-1">
@@ -335,6 +350,12 @@ export function SearchScreen({
         className="flex-1"
         data={resultRows}
         keyExtractor={(row) => row.key}
+        onViewableItemsChanged={prefetchRows}
+        viewabilityConfig={resultViewability}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={40}
+        windowSize={5}
         renderItem={({ item: row }) => {
           if (row.kind === "header") {
             return (

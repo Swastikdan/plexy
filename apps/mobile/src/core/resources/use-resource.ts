@@ -15,20 +15,26 @@ export function useResource<T>(
   load: (signal: AbortSignal) => Promise<T>,
   keys: React.DependencyList,
   namespace?: string,
+  /** Synchronous value from a background prefetch, used on the first frame. */
+  peek?: () => T | null | undefined,
 ) {
   const instance = useId();
   const cacheKey = resourceKey(namespace || instance, keys);
   const cached = resourceCache.get(cacheKey) as T | undefined;
-  const [value, setValue] = useState<T | null>(cached ?? null);
+  const peeked = cached === undefined ? peek?.() ?? undefined : undefined;
+  const first = cached ?? peeked;
+  const [value, setValue] = useState<T | null>(first ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(cached === undefined);
+  const [loading, setLoading] = useState(first === undefined);
   const [revision, setRevision] = useState(0);
   const [previousKey, setPreviousKey] = useState(cacheKey);
   const loadLatest = useEventCallback(load);
   if (previousKey !== cacheKey) {
+    const nextCached = resourceCache.get(cacheKey) as T | undefined;
+    const nextPeeked = nextCached === undefined ? peek?.() ?? undefined : undefined;
     setPreviousKey(cacheKey);
-    setLoading(!resourceCache.has(cacheKey));
-    setValue(cached ?? null);
+    setLoading(nextCached === undefined && nextPeeked === undefined);
+    setValue(nextCached ?? nextPeeked ?? null);
     setError(null);
   }
   const retry = useCallback(() => {

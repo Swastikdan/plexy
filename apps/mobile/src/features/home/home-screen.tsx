@@ -21,6 +21,7 @@ import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { OpenTitle } from "@/features/catalog/types";
 import { useRemoteTitleActions } from "@/features/remote/hooks/use-remote-title-actions";
 import { parseRemotePublicId } from "@/features/remote/lib/view";
+import { prefetchTitleCards } from "@/features/catalog/hooks/use-title-prefetch";
 import { HeroCarousel } from "./components/hero-carousel";
 
 export function HomeScreen({
@@ -56,12 +57,9 @@ export function HomeScreen({
   const previousActive = useRef(active);
   React.useEffect(() => {
     if (active && !previousActive.current)
-      void progress
-        .flush(api)
-        .catch(() => {})
-        .finally(data.retry);
+      void progress.flush(api).catch(() => {});
     previousActive.current = active;
-  }, [active, api, progress, data.retry]);
+  }, [active, api, progress]);
   // Handler for instant playback
   const handlePlay = React.useCallback(
     (item: ItemCard) => {
@@ -226,7 +224,8 @@ export function HomeScreen({
       ]),
       24,
     );
-  }, [heroItems, continueItems]);
+    prefetchTitleCards(heroItems, api);
+  }, [api, heroItems, continueItems]);
   const heroPlay = React.useCallback(
     (item: ItemCard) => {
       if (item.publicId.startsWith("remote:")) {

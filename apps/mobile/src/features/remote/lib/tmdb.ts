@@ -77,6 +77,37 @@ async function token(): Promise<string> {
 }
 
 const cache = new Map<string, { at: number; value: unknown }>();
+const detailCache = new Map<string, RemoteDetail>();
+const seasonCache = new Map<string, RemoteEpisode[]>();
+const detailRequests = new Map<string, Promise<RemoteDetail>>();
+const seasonRequests = new Map<string, Promise<RemoteEpisode[]>>();
+const DETAIL_LIMIT = 48;
+const SEASON_LIMIT = 32;
+
+/** A prefetched detail already mapped to the UI shape, for a synchronous first frame. */
+export function peekDetail(mediaType: RemoteMediaType, tmdbId: number) {
+  return detailCache.get(`${mediaType}:${tmdbId}`) ?? null;
+}
+
+export function peekSeason(tmdbId: number, season: number) {
+  return seasonCache.get(`${tmdbId}:${season}`) ?? null;
+}
+
+function rememberDetail(mediaType: RemoteMediaType, tmdbId: number, detail: RemoteDetail) {
+  const key = `${mediaType}:${tmdbId}`;
+  detailCache.delete(key);
+  detailCache.set(key, detail);
+  if (detailCache.size > DETAIL_LIMIT)
+    detailCache.delete(detailCache.keys().next().value!);
+}
+
+function rememberSeason(tmdbId: number, season: number, episodes: RemoteEpisode[]) {
+  const key = `${tmdbId}:${season}`;
+  seasonCache.delete(key);
+  seasonCache.set(key, episodes);
+  if (seasonCache.size > SEASON_LIMIT)
+    seasonCache.delete(seasonCache.keys().next().value!);
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -123,6 +154,8 @@ async function get<T>(path: string, signal?: AbortSignal, attempts = 2): Promise
 
 export function clearCatalogCache() {
   cache.clear();
+  detailCache.clear();
+  seasonCache.clear();
 }
 
 // --- mapping -----------------------------------------------------------------
@@ -349,33 +382,47 @@ export async function fetchDetail(
   tmdbId: number,
   signal?: AbortSignal,
 ): Promise<RemoteDetail> {
-  const body = await get<TmdbDetail>(
-    `/${mediaType}/${tmdbId}?append_to_response=external_ids,credits,videos,images&include_image_language=en,null`,
-    signal,
-  );
-  const base = toTitle(body, mediaType);
-  return {
-    ...base,
-    imdbId: body.external_ids?.imdb_id ?? null,
-    tagline: body.tagline?.trim() || null,
-    runtime: body.runtime ?? body.episode_run_time?.[0] ?? null,
-    status: body.status ?? null,
-    logo: pickLogo(body.images),
-    trailer: pickTrailer(body.videos),
-    seasons: (body.seasons ?? [])
-      .filter((season) => season.season_number > 0)
-      .map((season) => ({
-        number: season.season_number,
-        name: season.name ?? `Season ${season.season_number}`,
-        episodes: season.episode_count ?? 0,
-        poster: posterUrl(season.poster_path),
+  // A card prefetch can overlap the tap that opens its page. Share the request
+  // so the page waits on one round trip instead of starting a second one.
+  const requestKey = `${mediaType}:${tmdbId}`;
+  const pending = detailRequests.get(requestKey);
+  if (pending) return pending;
+  const request = (async () => {
+    const body = await get<TmdbDetail>(
+      `/${mediaType}/${tmdbId}?append_to_response=external_ids,credits,videos,images&include_image_language=en,null`,
+      signal,
+    );
+    const base = toTitle(body, mediaType);
+    const detail: RemoteDetail = {
+      ...base,
+      imdbId: body.external_ids?.imdb_id ?? null,
+      tagline: body.tagline?.trim() || null,
+      runtime: body.runtime ?? body.episode_run_time?.[0] ?? null,
+      status: body.status ?? null,
+      logo: pickLogo(body.images),
+      trailer: pickTrailer(body.videos),
+      seasons: (body.seasons ?? [])
+        .filter((season) => season.season_number > 0)
+        .map((season) => ({
+          number: season.season_number,
+          name: season.name ?? `Season ${season.season_number}`,
+          episodes: season.episode_count ?? 0,
+          poster: posterUrl(season.poster_path),
+        })),
+      cast: (body.credits?.cast ?? []).slice(0, 12).map((member) => ({
+        name: member.name,
+        character: member.character ?? null,
+        photo: posterUrl(member.profile_path, "w185"),
       })),
-    cast: (body.credits?.cast ?? []).slice(0, 12).map((member) => ({
-      name: member.name,
-      character: member.character ?? null,
-      photo: posterUrl(member.profile_path, "w185"),
-    })),
-  };
+    };
+    rememberDetail(mediaType, tmdbId, detail);
+    return detail;
+  })();
+  detailRequests.set(requestKey, request);
+  request
+    .catch(() => {})
+    .finally(() => detailRequests.delete(requestKey));
+  return request;
 }
 
 export async function fetchSeason(
@@ -383,26 +430,40 @@ export async function fetchSeason(
   season: number,
   signal?: AbortSignal,
 ): Promise<RemoteEpisode[]> {
-  const body = await get<{
-    episodes?: {
-      episode_number: number;
-      season_number: number;
-      name?: string;
-      overview?: string;
-      still_path?: string | null;
-      runtime?: number | null;
-      air_date?: string | null;
-    }[];
-  }>(`/tv/${tmdbId}/season/${season}`, signal);
-  return (body.episodes ?? []).map((episode) => ({
-    number: episode.episode_number,
-    season: episode.season_number,
-    title: episode.name ?? `Episode ${episode.episode_number}`,
-    overview: episode.overview ?? "",
-    still: posterUrl(episode.still_path, "w300"),
-    runtime: episode.runtime ?? null,
-    airDate: episode.air_date ?? null,
-  }));
+  // The title header and the season page both ask for the same season in the
+  // same commit. Share that request instead of spending two network round trips.
+  const requestKey = `${tmdbId}:${season}`;
+  const pending = seasonRequests.get(requestKey);
+  if (pending) return pending;
+  const request = (async () => {
+    const body = await get<{
+      episodes?: {
+        episode_number: number;
+        season_number: number;
+        name?: string;
+        overview?: string;
+        still_path?: string | null;
+        runtime?: number | null;
+        air_date?: string | null;
+      }[];
+    }>(`/tv/${tmdbId}/season/${season}`, signal);
+    const episodes = (body.episodes ?? []).map((episode) => ({
+      number: episode.episode_number,
+      season: episode.season_number,
+      title: episode.name ?? `Episode ${episode.episode_number}`,
+      overview: episode.overview ?? "",
+      still: posterUrl(episode.still_path, "w300"),
+      runtime: episode.runtime ?? null,
+      airDate: episode.air_date ?? null,
+    }));
+    rememberSeason(tmdbId, season, episodes);
+    return episodes;
+  })();
+  seasonRequests.set(requestKey, request);
+  request
+    .catch(() => {})
+    .finally(() => seasonRequests.delete(requestKey));
+  return request;
 }
 
 export async function fetchRecommendations(

@@ -44,6 +44,7 @@ import { useRemoteProgress, remoteWatch } from "@/features/remote/lib/remote-pro
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
+import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
 
 export function LibraryScreen({
   open,
@@ -481,6 +482,7 @@ function LibraryTitles({
   onlineItems?: ItemCard[];
 }) {
   const { api } = useClient();
+  const prefetch = useTitlePrefetch();
   const titleActions = useTitleActions();
   const remoteActions = useRemoteTitleActions();
   const remoteNavigation = useRemoteNavigation();
@@ -563,6 +565,11 @@ function LibraryTitles({
       data={items}
       numColumns={columns}
       keyExtractor={(item) => item.publicId}
+      initialNumToRender={6}
+      maxToRenderPerBatch={6}
+      updateCellsBatchingPeriod={40}
+      windowSize={5}
+      {...prefetch}
       columnWrapperStyle={{ gap: 12 }}
       contentContainerStyle={{
         gap: 12,

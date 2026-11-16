@@ -39,6 +39,7 @@ import {
   CastRowSkeleton,
   EpisodeListSkeleton,
   SeasonPickerSkeleton,
+  SkeletonBlock,
   TitleDetailSkeleton,
 } from "@/shared/ui/skeleton";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
@@ -60,7 +61,7 @@ import { useRecommendations } from "@/features/remote/lib/use-recommendations";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { lockPlayerLandscape } from "@/features/player/hooks/use-player-orientation";
-import { fetchSeason, type RemoteEpisode, type RemoteMediaType } from "@/features/remote/lib/tmdb";
+import { fetchSeason, peekSeason, type RemoteEpisode, type RemoteMediaType } from "@/features/remote/lib/tmdb";
 import {
   mergeEpisodes,
   mergeSeasons,
@@ -99,6 +100,41 @@ function TitleBackButton({ onPress }: { onPress: () => void }) {
     >
       <ArrowLeft size={22} color={colors.ink} strokeWidth={2} />
     </Pressable>
+  );
+}
+
+/** Instant first paint for a card the user just tapped. */
+function TitleLoadingShell({
+  preview,
+  back,
+}: {
+  preview: ItemCard;
+  back: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View className="flex-1 bg-background">
+      <TopFade />
+      <ScrollView
+        contentInsetAdjustmentBehavior="never"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
+      >
+        <TitleHero item={preview} logo={preview.logo} />
+        <View className="gap-[18px] px-5 pt-5">
+          <SkeletonBlock
+            style={{ width: 150, height: 14, alignSelf: "center" }}
+          />
+          <SkeletonBlock
+            style={{ width: 210, height: 21, alignSelf: "center" }}
+          />
+          <SkeletonBlock style={{ width: "100%", height: 14 }} />
+          <SkeletonBlock style={{ width: "92%", height: 14 }} />
+          <SkeletonBlock style={{ width: "60%", height: 14 }} />
+        </View>
+      </ScrollView>
+      <TitleBackButton onPress={back} />
+    </View>
   );
 }
 
@@ -187,25 +223,33 @@ export function TitleScreen({
       (remoteMediaType && tmdbId
         ? isRemotePlayed(remoteMediaType, tmdbId)
         : false);
+    // Episode number -> card, once per season. The old nested find made this
+    // O(seasons × episodes²) on a large series and ran before first paint.
+    const localBySeason = new Map<number, Map<number, ItemCard>>();
+    for (const episode of detail?.episodes ?? []) {
+      const seasonNumber = episode.seasonNumber ?? 1;
+      let episodes = localBySeason.get(seasonNumber);
+      if (!episodes) {
+        episodes = new Map();
+        localBySeason.set(seasonNumber, episodes);
+      }
+      episodes.set(episode.episodeNumber ?? 1, episode);
+    }
+    const remoteCounts = new Map<number, number>();
+    for (const remoteSeason of remoteDetail?.seasons ?? []) {
+      remoteCounts.set(remoteSeason.number, remoteSeason.episodes);
+    }
     return defaultSeasonNumber(
       seasonOptions.map((option) => {
-        const localEpisodes =
-          detail?.episodes?.filter(
-            (episode) => episode.seasonNumber === option.number,
-          ) ?? [];
-        const remoteSeason = remoteDetail?.seasons.find(
-          (season) => season.number === option.number,
-        );
+        const localEpisodes = localBySeason.get(option.number);
         return {
           number: option.number,
           totalEpisodes: Math.max(
-            localEpisodes.length,
-            remoteSeason?.episodes ?? 0,
+            localEpisodes?.size ?? 0,
+            remoteCounts.get(option.number) ?? 0,
           ),
           isEpisodeWatched: (number: number) => {
-            const localEpisode = localEpisodes.find(
-              (episode) => episode.episodeNumber === number,
-            );
+            const localEpisode = localEpisodes?.get(number);
             if (localEpisode) {
               return Boolean(
                 episodesWatchedOverride[localEpisode.id] ??
@@ -236,13 +280,19 @@ export function TitleScreen({
     season ?? defaultSeason ?? detail?.seasons?.[0]?.number ?? null;
   const selectedSeasonRemote = useResource(
     (signal) =>
-      remoteMediaType === "tv" &&
+      onlineEnabled && remoteMediaType === "tv" &&
       tmdbId != null &&
       selectedSeason != null
         ? fetchSeason(tmdbId, selectedSeason, signal)
         : Promise.resolve([]),
-    [remoteMediaType, selectedSeason, tmdbId],
+    [onlineEnabled, remoteMediaType, selectedSeason, tmdbId],
     "media-season",
+    () =>
+      onlineEnabled && remoteMediaType === "tv" &&
+      tmdbId != null &&
+      selectedSeason != null
+        ? peekSeason(tmdbId, selectedSeason)
+        : null,
   );
   const localSeasonEpisodes = useMemo(
     () =>
@@ -283,11 +333,28 @@ export function TitleScreen({
       10,
     );
   }, [selectedSeasonRemote.value]);
+  const canRecommend =
+    onlineEnabled && online && tmdbId != null && remoteMediaType != null;
+  const hasEpisodesEarly = Boolean(
+    item?.kind === "series" ||
+      detail?.episodes?.length ||
+      seasonOptions.length,
+  );
+  // Series start on Episodes; only request recommendations when that page is
+  // actually shown. Movies default to the recommendations page, so they keep
+  // the eager fetch that makes the first tab feel complete.
+  const recommendationsEnabled =
+    canRecommend && (detailTab === "more" || !hasEpisodesEarly);
+  // Cast photos are below the fold on a series page; decode them only when
+  // Details is the visible page (or it is the only page).
+  const detailsVisible =
+    detailTab === "details" || (!hasEpisodesEarly && !canRecommend);
   const recommendations = useRecommendations({
     api,
     mediaType: remoteMediaType,
     tmdbId,
     online: onlineEnabled,
+    enabled: recommendationsEnabled,
   });
   const remoteSeriesWatched = useMemo(() => {
     void remoteProgress;
@@ -326,13 +393,36 @@ export function TitleScreen({
     : nextHybridEpisode?.remote
       ? { kind: "remote" as const, remote: nextHybridEpisode.remote }
       : null;
-  // The person index scans the library; unrelated page updates must not rebuild it.
+  // The person index scans the library. Build it after the page has settled,
+  // not during the navigation render, so opening a title stays immediate.
   const cast = detail?.cast;
-  const titlesByPerson = useMemo(
-    () => cast?.length ? api.titlesByPerson() : new Map<string, ItemCard[]>(),
-    [api, cast],
-  );
-  const personTitles = (name: string) => titlesByPerson.get(name) ?? [];
+  const personIndex = useRef<{
+    api: LocalCatalog;
+    cast: NonNullable<TitleDetail["cast"]>;
+    map: Map<string, ItemCard[]>;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!cast?.length) return;
+    const timer = setTimeout(() => {
+      if (
+        personIndex.current?.api === api &&
+        personIndex.current.cast === cast
+      )
+        return;
+      personIndex.current = { api, cast, map: api.titlesByPerson() };
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [api, cast]);
+  const personTitles = (name: string) => {
+    if (!cast?.length) return [];
+    if (
+      personIndex.current?.api !== api ||
+      personIndex.current.cast !== cast
+    ) {
+      personIndex.current = { api, cast, map: api.titlesByPerson() };
+    }
+    return personIndex.current.map.get(name) ?? [];
+  };
   const localSeriesWatched = Boolean(item?.watch?.played);
   const isSeriesWatched =
     overrideWatched ??
@@ -777,17 +867,10 @@ export function TitleScreen({
   };
 
   if (media.loading && !detail) {
-    // Local detail is read from the device and resolves almost immediately,
-    // so a skeleton there only flashes. Paint the themed canvas and let the
-    // page appear. Online titles wait on TMDB and get a layout-matched
-    // skeleton for their type (series vs movie).
-    if (media.hasLocalCopy) {
-      return (
-        <View className="flex-1 bg-background">
-          <TitleBackButton onPress={back} />
-        </View>
-      );
-    }
+    // Cards warm their detail as they enter the viewport. If the tap wins the
+    // race, paint the hero from the tapped card instead of an empty canvas.
+    if (media.preview)
+      return <TitleLoadingShell preview={media.preview} back={back} />;
     return (
       <View className="flex-1 bg-background">
         <TopFade />
@@ -907,15 +990,14 @@ export function TitleScreen({
         <CastRow
           people={detail.cast ?? []}
           api={api}
-          canOpen={(name) => personTitles(name).length > 0}
+          canOpen={() => true}
+          loadImages={detailsVisible}
           onSelect={setPersonName}
         />
       )}
     </View>
   );
 
-  const canRecommend =
-    onlineEnabled && online && tmdbId != null && remoteMediaType != null;
   const tabOptions: { key: DetailTab; label: string }[] = [
     ...(hasEpisodes
       ? [{ key: "episodes" as const, label: "Episodes" }]
@@ -1042,7 +1124,7 @@ export function TitleScreen({
     <MoreLikeThis
       items={recommendations.items}
       api={api}
-      loading={recommendations.loading}
+      loading={recommendations.loading || !recommendationsEnabled}
       error={recommendations.error}
       retry={recommendations.retry}
       onSelect={openRecommendation}
@@ -1440,6 +1522,10 @@ function SeasonPage({
         : Promise.resolve<RemoteEpisode[]>([]),
     [remoteMediaType, tmdbId, season],
     "media-season",
+    () =>
+      remoteMediaType != null && tmdbId != null
+        ? peekSeason(tmdbId, season)
+        : null,
   );
   const localEpisodes =
     detail.episodes?.filter(

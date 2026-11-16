@@ -6,6 +6,7 @@ import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming, type SharedValue } from "react-native-reanimated";
 import type { ItemCard } from "@/core/library/catalog-api";
+import { rememberTitlePreview } from "@/core/library/title-prefetch";
 import { cn } from "@/shared/lib/cn";
 import { control } from "@/shared/theme";
 import { Hero } from "@/features/catalog/components/hero";
@@ -101,7 +102,7 @@ export function HeroCarousel({
       onTouchCancel={() => { pagerBoundary.onTouchCancel(); setTouching(false); setPausedUntil(Date.now() + 8000); }}
       className="relative w-full">
       <GestureDetector gesture={swipe}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => open(activeItem.publicId)} onLongPress={onLongPress ? () => onLongPress(activeItem) : undefined} delayLongPress={800} className="overflow-hidden">
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => { rememberTitlePreview(activeItem); open(activeItem.publicId); }} onLongPress={onLongPress ? () => onLongPress(activeItem) : undefined} delayLongPress={800} className="overflow-hidden">
           <Animated.View style={contentStyle} pointerEvents="none">
             <Hero
               key={activeItem.publicId}
@@ -121,7 +122,10 @@ export function HeroCarousel({
           actionLabel={slidePlayLabel}
           busy={changing}
           onOpen={() => onPlay(activeItem)}
-          onDetails={() => open(activeItem.publicId)}
+          onDetails={() => {
+            rememberTitlePreview(activeItem);
+            open(activeItem.publicId);
+          }}
           onHeroFocus={onHeroFocus}
         />
       </View>

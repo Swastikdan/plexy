@@ -157,9 +157,7 @@ export function useRemoteHome(enabled = true) {
       const publicId = String(id);
       const title = lookup.get(publicId);
       if (title) {
-        const local = api
-          .titlesByTmdb()
-          .get(`${title.mediaType}:${title.tmdbId}`);
+        const local = localByTmdb.get(`${title.mediaType}:${title.tmdbId}`);
         if (local) {
           router.push({
             pathname: "/item/[id]",
@@ -185,7 +183,7 @@ export function useRemoteHome(enabled = true) {
         });
       }
     },
-    [api, lookup, navigation, router],
+    [localByTmdb, lookup, navigation, router],
   );
 
   const play = useCallback(

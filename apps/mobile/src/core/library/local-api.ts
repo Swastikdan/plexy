@@ -3,8 +3,71 @@ import { LocalLibrary } from "@plexy/local-library/library";
 import { LocalCatalog, type Playability, type TitleIdentity } from "./catalog-api";
 /** Implements the existing UI contract in process, without a network listener. */
 export class LocalApi extends LocalCatalog {
+    /** Derived catalog views shared by Home, Library, Search and title pages. */
+    private cardsRef: import("./catalog-api").ItemCard[] | null = null;
+    private byTmdb = new Map<string, import("./catalog-api").ItemCard>();
+    private people = new Map<string, import("./catalog-api").ItemCard[]>();
+    private peopleSource: import("./catalog-api").ItemCard[] | null = null;
+    private countsCache = { movie: 0, series: 0 };
+    private collectionsCache: ReturnType<LocalApi["buildCollections"]> = [];
+    private itemsCache = new Map<string, import("./catalog-api").ItemCard[]>();
     constructor(private readonly library: LocalLibrary, private readSubtitle: (uri: string) => Promise<string>, private subtitles: (fileId: number) => Promise<NonNullable<Playability["tracks"]>>, private chapters: (fileId: number) => Promise<Chapter[]> = async () => []) {
         super();
+    }
+    /** Rebuild only when the library snapshot changed; `cards()` is stable. */
+    private ensureCatalog() {
+        const cards = this.library.cards();
+        if (cards === this.cardsRef) return cards;
+        this.cardsRef = cards;
+        this.byTmdb.clear();
+        this.people.clear();
+        this.peopleSource = null;
+        this.countsCache = { movie: 0, series: 0 };
+        this.itemsCache.clear();
+        for (const card of cards) {
+            if (card.kind === "movie") this.countsCache.movie++;
+            else if (card.kind === "series") this.countsCache.series++;
+            if (card.tmdbId != null) {
+                this.byTmdb.set(`${card.kind === "series" ? "tv" : "movie"}:${card.tmdbId}`, card);
+            }
+        }
+        this.collectionsCache = this.buildCollections();
+        return cards;
+    }
+    private ensurePeople() {
+        const cards = this.ensureCatalog();
+        if (this.peopleSource === cards) return;
+        this.peopleSource = cards;
+        this.people.clear();
+        const byId = new Map(cards.map((card) => [card.id, card]));
+        const groups = new Map<string, Map<number, import("./catalog-api").ItemCard>>();
+        for (const record of this.library.state.records) {
+            const card = byId.get(record.card.parentId ?? record.id);
+            if (!card) continue;
+            for (const person of record.cast) {
+                const titles = groups.get(person.name) ?? new Map();
+                titles.set(card.id, card);
+                groups.set(person.name, titles);
+            }
+        }
+        for (const [name, titles] of groups) this.people.set(name, [...titles.values()]);
+    }
+    private buildCollections() {
+        const groups = new Map<number, {
+            id: number;
+            name: string;
+            count: number;
+            poster: string | null;
+        }>();
+        for (const record of this.library.state.records) {
+            if (record.card.kind !== "movie" || !record.collection)
+                continue;
+            const entry = groups.get(record.collection.id) ?? { ...record.collection, count: 0, poster: null };
+            entry.count++;
+            entry.poster ||= record.card.poster || null;
+            groups.set(record.collection.id, entry);
+        }
+        return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
     }
     override stream(fileId: number) {
         return this.library.record(fileId).file.uri;
@@ -75,7 +138,7 @@ export class LocalApi extends LocalCatalog {
     }
     override async home(signal?: AbortSignal) {
         this.checkSignal(signal);
-        const all = this.library.cards();
+        const all = this.ensureCatalog();
         const continuing = this.library.state.records.map((r) => r.card)
             .filter((c) => c.watch && !c.watch.played && c.watch.position > 0);
         return {
@@ -88,19 +151,25 @@ export class LocalApi extends LocalCatalog {
     }
     override async items(kind: "all" | "movie" | "series", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
         this.checkSignal(signal);
-        let items = this.library.cards().filter((c) => kind === "all" ? true : c.kind === kind);
-        if (unwatched)
-            items = items.filter((c) => !c.watch?.played);
-        items.sort((a, b) => sort === "year" ? (b.year || 0) - (a.year || 0)
-            : sort === "rating" ? (b.rating || 0) - (a.rating || 0)
-                : sort === "added" || sort === "recent" ? b.id - a.id : a.name.localeCompare(b.name));
+        const cards = this.ensureCatalog();
+        const key = `${kind}|${sort}|${unwatched}`;
+        let items = this.itemsCache.get(key);
+        if (!items) {
+            items = cards.filter((c) => kind === "all" ? true : c.kind === kind);
+            if (unwatched)
+                items = items.filter((c) => !c.watch?.played);
+            items = [...items].sort((a, b) => sort === "year" ? (b.year || 0) - (a.year || 0)
+                : sort === "rating" ? (b.rating || 0) - (a.rating || 0)
+                    : sort === "added" || sort === "recent" ? b.id - a.id : a.name.localeCompare(b.name));
+            this.itemsCache.set(key, items);
+        }
         return { items: items.slice(offset, offset + 60) };
     }
     override async search(query: string, signal?: AbortSignal) {
         this.checkSignal(signal);
         const q = query.toLowerCase();
         return {
-            titles: this.library.cards().filter((c) => c.name.toLowerCase().includes(q)),
+            titles: this.ensureCatalog().filter((c) => c.name.toLowerCase().includes(q)),
             episodes: this.library.state.records.filter((r) => r.card.kind === "episode" && r.card.name.toLowerCase().includes(q)).map((r) => r.card),
         };
     }
@@ -135,56 +204,20 @@ export class LocalApi extends LocalCatalog {
         return this.library.getMarkers(fileId);
     }
     override titlesByPerson() {
-        const cards = new Map(this.library.cards().map((card) => [card.id, card]));
-        const groups = new Map<string, Map<number, import("./catalog-api").ItemCard>>();
-        for (const record of this.library.state.records) {
-            const card = cards.get(record.card.parentId ?? record.id);
-            if (!card)
-                continue;
-            for (const person of record.cast) {
-                const titles = groups.get(person.name) ?? new Map();
-                titles.set(card.id, card);
-                groups.set(person.name, titles);
-            }
-        }
-        return new Map([...groups].map(([name, titles]) => [name, [...titles.values()]]));
+        this.ensurePeople();
+        return this.people;
     }
     override titlesByTmdb() {
-        const map = new Map<string, import("./catalog-api").ItemCard>();
-        for (const card of this.library.cards()) {
-            if (card.tmdbId == null)
-                continue;
-            map.set(`${card.kind === "series" ? "tv" : "movie"}:${card.tmdbId}`, card);
-        }
-        return map;
+        this.ensureCatalog();
+        return this.byTmdb;
     }
     override counts() {
-        let movie = 0;
-        let series = 0;
-        for (const card of this.library.cards()) {
-            if (card.kind === "movie")
-                movie++;
-            else if (card.kind === "series")
-                series++;
-        }
-        return { movie, series };
+        this.ensureCatalog();
+        return this.countsCache;
     }
     override collections() {
-        const groups = new Map<number, {
-            id: number;
-            name: string;
-            count: number;
-            poster: string | null;
-        }>();
-        for (const record of this.library.state.records) {
-            if (record.card.kind !== "movie" || !record.collection)
-                continue;
-            const entry = groups.get(record.collection.id) ?? { ...record.collection, count: 0, poster: null };
-            entry.count++;
-            entry.poster ||= record.card.poster || null;
-            groups.set(record.collection.id, entry);
-        }
-        return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+        this.ensureCatalog();
+        return this.collectionsCache;
     }
     override collectionItems(id: number) {
         return this.library.state.records.filter((r) => r.card.kind === "movie" && r.collection?.id === id).map((r) => r.card);
