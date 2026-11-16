@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated, { Easing, FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SwipePager } from "@/shared/ui/swipe-pager";
 import type { ProgressQueue } from "@/core/client/progress-queue";
@@ -20,18 +21,20 @@ import { triggerHaptic } from "@/shared/lib/haptics";
 import { cn } from "@/shared/lib/cn";
 import { useColors, control } from "@/shared/theme";
 import {
+  AlertCircle,
   ArrowLeft,
   Check,
   Film,
   Info,
   MoreHorizontal,
-  Play,
   Plus,
   Trash2,
+  WifiOff,
   X,
 } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
+import { PageState } from "@/shared/ui/page-state";
 import {
   CastRowSkeleton,
   EpisodeListSkeleton,
@@ -71,12 +74,13 @@ import { TitleActionBar } from "./components/title-action-bar";
 import { TitleFactLine, TitleRating } from "./components/title-facts";
 import { TitleHero } from "./components/title-hero";
 import { TitleMenuAction } from "./components/title-menu-action";
-import {
-  TitleQuickActions,
-  type QuickAction,
-} from "./components/title-quick-actions";
 import { TitleTabs } from "./components/title-tabs";
+import { defaultSeasonNumber } from "./lib/default-season";
 import { useMediaTitle, type MediaTitleInput } from "./lib/use-media-title";
+
+const CONTENT_ENTER = FadeIn.duration(120)
+  .easing(Easing.bezier(0.23, 1, 0.32, 1))
+  .reduceMotion(ReduceMotion.System);
 
 type DetailTab = "episodes" | "more" | "details";
 
@@ -145,18 +149,25 @@ export function TitleScreen({
   const [descriptionOverflows, setDescriptionOverflows] = useState(false);
   const [actionError, setActionError] = useState("");
   const [savedBusy, setSavedBusy] = useState(false);
+  const [localWatchlistBusy, setLocalWatchlistBusy] = useState(false);
+  const [watchlistOverride, setWatchlistOverride] = useState<boolean | null>(
+    null,
+  );
+  const watchlistKey = `${item?.id ?? "none"}:${media.isOffline ? "offline" : "online"}`;
+  const [previousWatchlistKey, setPreviousWatchlistKey] =
+    useState(watchlistKey);
+  if (previousWatchlistKey !== watchlistKey) {
+    setPreviousWatchlistKey(watchlistKey);
+    setWatchlistOverride(null);
+  }
   const [overrideWatched, setOverrideWatched] = useState<boolean | null>(null);
   const [episodesWatchedOverride, setEpisodesWatchedOverride] = useState<
     Record<number, boolean>
   >({});
 
   const seasonOptions = useMemo(
-    () =>
-      mergeSeasons(
-        detail?.seasons ?? [],
-        onlineEnabled ? (remoteDetail?.seasons ?? []) : [],
-      ),
-    [detail?.seasons, onlineEnabled, remoteDetail],
+    () => mergeSeasons(detail?.seasons ?? [], remoteDetail?.seasons ?? []),
+    [detail?.seasons, remoteDetail?.seasons],
   );
   const [previousSeasons, setPreviousSeasons] = useState(seasonOptions);
   if (previousSeasons !== seasonOptions) {
@@ -168,20 +179,69 @@ export function TitleScreen({
     )
       setSeason(null);
   }
+  const defaultSeason = React.useMemo(() => {
+    void remoteProgress;
+    if (!seasonOptions.length) return null;
+    const wholeSeriesWatched =
+      overrideWatched ??
+      (remoteMediaType && tmdbId
+        ? isRemotePlayed(remoteMediaType, tmdbId)
+        : false);
+    return defaultSeasonNumber(
+      seasonOptions.map((option) => {
+        const localEpisodes =
+          detail?.episodes?.filter(
+            (episode) => episode.seasonNumber === option.number,
+          ) ?? [];
+        const remoteSeason = remoteDetail?.seasons.find(
+          (season) => season.number === option.number,
+        );
+        return {
+          number: option.number,
+          totalEpisodes: Math.max(
+            localEpisodes.length,
+            remoteSeason?.episodes ?? 0,
+          ),
+          isEpisodeWatched: (number: number) => {
+            const localEpisode = localEpisodes.find(
+              (episode) => episode.episodeNumber === number,
+            );
+            if (localEpisode) {
+              return Boolean(
+                episodesWatchedOverride[localEpisode.id] ??
+                  (progress.latest(localEpisode.id)?.played ||
+                    localEpisode.watch?.played),
+              );
+            }
+            return remoteMediaType && tmdbId
+              ? isRemotePlayed(remoteMediaType, tmdbId, option.number, number)
+              : false;
+          },
+        };
+      }),
+      wholeSeriesWatched,
+    );
+  }, [
+    detail?.episodes,
+    episodesWatchedOverride,
+    overrideWatched,
+    progress,
+    remoteDetail?.seasons,
+    remoteMediaType,
+    remoteProgress,
+    seasonOptions,
+    tmdbId,
+  ]);
   const selectedSeason =
-    season ??
-    seasonOptions[0]?.number ??
-    detail?.seasons?.[0]?.number ??
-    null;
+    season ?? defaultSeason ?? detail?.seasons?.[0]?.number ?? null;
   const selectedSeasonRemote = useResource(
     (signal) =>
-      onlineEnabled &&
       remoteMediaType === "tv" &&
       tmdbId != null &&
       selectedSeason != null
         ? fetchSeason(tmdbId, selectedSeason, signal)
         : Promise.resolve([]),
-    [onlineEnabled, remoteMediaType, selectedSeason, tmdbId],
+    [remoteMediaType, selectedSeason, tmdbId],
     "media-season",
   );
   const localSeasonEpisodes = useMemo(
@@ -196,7 +256,7 @@ export function TitleScreen({
     () =>
       mergeEpisodes({
         local: localSeasonEpisodes,
-        remote: onlineEnabled ? (selectedSeasonRemote.value ?? []) : [],
+        remote: selectedSeasonRemote.value ?? [],
         season: selectedSeason ?? 1,
         fallbackArtwork: item?.backdrop || item?.poster || null,
       }),
@@ -204,7 +264,6 @@ export function TitleScreen({
       item?.backdrop,
       item?.poster,
       localSeasonEpisodes,
-      onlineEnabled,
       selectedSeasonRemote.value,
       selectedSeason,
     ],
@@ -232,19 +291,19 @@ export function TitleScreen({
   });
   const remoteSeriesWatched = useMemo(() => {
     void remoteProgress;
-    return onlineEnabled && remoteMediaType && tmdbId
+    return remoteMediaType && tmdbId
       ? isRemotePlayed(remoteMediaType, tmdbId)
       : false;
-  }, [onlineEnabled, remoteProgress, remoteMediaType, tmdbId]);
+  }, [remoteProgress, remoteMediaType, tmdbId]);
   const remoteTitleWatch =
-    onlineEnabled && remoteMediaType && tmdbId
+    remoteMediaType && tmdbId
       ? getRemoteTitleProgress(remoteMediaType, tmdbId)
       : null;
   const episodeWatched = (episode: ItemCard) =>
     episodesWatchedOverride[episode.id] ??
     (progress.latest(episode.id)?.played || Boolean(episode.watch?.played));
   const remoteEpisodeWatched = (seasonNumber: number, episodeNumber: number) =>
-    onlineEnabled && remoteMediaType && tmdbId
+    remoteMediaType && tmdbId
       ? isRemotePlayed(
           remoteMediaType,
           tmdbId,
@@ -267,7 +326,12 @@ export function TitleScreen({
     : nextHybridEpisode?.remote
       ? { kind: "remote" as const, remote: nextHybridEpisode.remote }
       : null;
-  const titlesByPerson = api.titlesByPerson();
+  // The person index scans the library; unrelated page updates must not rebuild it.
+  const cast = detail?.cast;
+  const titlesByPerson = useMemo(
+    () => cast?.length ? api.titlesByPerson() : new Map<string, ItemCard[]>(),
+    [api, cast],
+  );
   const personTitles = (name: string) => titlesByPerson.get(name) ?? [];
   const localSeriesWatched = Boolean(item?.watch?.played);
   const isSeriesWatched =
@@ -276,6 +340,10 @@ export function TitleScreen({
       ? localSeriesWatched || remoteSeriesWatched
       : remoteSeriesWatched);
   const remoteSaved = remoteDetail ? isSaved(remoteDetail) : false;
+  const watchlisted =
+    watchlistOverride ??
+    (media.isOffline ? Boolean(item?.watchlist) : remoteSaved);
+  const watchlistBusy = media.isOffline ? localWatchlistBusy : savedBusy;
   const chosenEpisode =
     selectedSeasonRemote.value?.[0]?.number ??
     mergedSeasonEpisodes[0]?.number ??
@@ -327,7 +395,7 @@ export function TitleScreen({
         }
         if (nextPlayed) await api.watched(item.id, true);
       }
-      if (onlineEnabled && remoteMediaType && tmdbId) {
+      if (remoteMediaType && tmdbId) {
         await markRemotePlayed(
           remoteMediaType,
           tmdbId,
@@ -379,7 +447,7 @@ export function TitleScreen({
     episodeNumber: number,
     watchedState: boolean,
   ) {
-    if (!onlineEnabled || !remoteMediaType || !tmdbId) return;
+    if (!remoteMediaType || !tmdbId) return;
     try {
       await markRemoteEpisodePlayed(
         remoteMediaType,
@@ -684,6 +752,29 @@ export function TitleScreen({
       .catch(() => setActionError("Could not update your library."))
       .finally(() => setSavedBusy(false));
   };
+  const toggleWatchlist = async () => {
+    if (media.isOffline) {
+      if (!item || localWatchlistBusy) return;
+      const next = !watchlisted;
+      setWatchlistOverride(next);
+      setLocalWatchlistBusy(true);
+      setActionError("");
+      try {
+        await api.setWatchlist(item.id, next);
+      } catch (e) {
+        setWatchlistOverride(null);
+        setActionError(
+          e instanceof Error
+            ? e.message
+            : "Could not update your watch list.",
+        );
+      } finally {
+        setLocalWatchlistBusy(false);
+      }
+      return;
+    }
+    if (remoteDetail) toggleSaved();
+  };
 
   if (media.loading && !detail) {
     // Local detail is read from the device and resolves almost immediately,
@@ -691,7 +782,11 @@ export function TitleScreen({
     // page appear. Online titles wait on TMDB and get a layout-matched
     // skeleton for their type (series vs movie).
     if (media.hasLocalCopy) {
-      return <View className="flex-1 bg-background" />;
+      return (
+        <View className="flex-1 bg-background">
+          <TitleBackButton onPress={back} />
+        </View>
+      );
     }
     return (
       <View className="flex-1 bg-background">
@@ -702,19 +797,20 @@ export function TitleScreen({
     );
   }
   if (!detail || !item) {
+    const offline = !online && input.source === "remote";
     return (
       <View className="flex-1 bg-background">
         <TitleBackButton onPress={back} />
-        <View
-          className="px-5"
-          style={{ paddingTop: insets.top + 72 }}
-        >
-          <Notice
-            kind="error"
-            message={media.error || "This title could not be loaded."}
-            retry={media.retry}
-          />
-        </View>
+        <PageState
+          icon={offline ? WifiOff : AlertCircle}
+          title={offline ? "You're offline" : "Couldn't load this title"}
+          message={
+            offline
+              ? "Connect to the internet to load this title. Downloaded titles still play offline."
+              : media.error || "This title could not be loaded."
+          }
+          onAction={media.retry}
+        />
       </View>
     );
   }
@@ -736,7 +832,6 @@ export function TitleScreen({
     ),
   );
   const detailRows = [
-    item.year ? { label: "Year", value: String(item.year) } : null,
     runtime
       ? {
           label: "Runtime",
@@ -842,36 +937,6 @@ export function TitleScreen({
     setDetailTab(next);
   }
 
-  const quickActions: QuickAction[] = [];
-  if (remoteDetail && !media.isOffline) {
-    quickActions.push({
-      key: "list",
-      icon: remoteSaved ? Check : Plus,
-      label: "My List",
-      accessibilityLabel: remoteSaved
-        ? "Remove from My List"
-        : "Add to My List",
-      onPress: () => {
-        triggerHaptic("light");
-        toggleSaved();
-      },
-      disabled: savedBusy,
-    });
-  } else {
-    quickActions.push({
-      key: "watched",
-      icon: Check,
-      label: "Watched",
-      accessibilityLabel: isSeriesWatched
-        ? "Mark as unwatched"
-        : "Mark as watched",
-      onPress: () => {
-        triggerHaptic("light");
-        void watched();
-      },
-    });
-  }
-
   const openRecommendation = (recommended: ItemCard) => {
     const remoteTitle = recommendations.remoteByPublicId.get(
       recommended.publicId,
@@ -905,13 +970,6 @@ export function TitleScreen({
       onChanged: recommendations.retry,
     });
   };
-  const watchShortLabel = hybridBaseLabel
-    .toLowerCase()
-    .startsWith("continue")
-    ? "Continue"
-    : hybridBaseLabel.toLowerCase().startsWith("watch again")
-      ? "Watch again"
-      : "Watch";
   const tabIndex = Math.max(
     0,
     tabOptions.findIndex((tab) => tab.key === activeTab),
@@ -954,7 +1012,6 @@ export function TitleScreen({
         api={api}
         detail={detail}
         season={selectedSeason ?? 1}
-        onlineEnabled={onlineEnabled}
         remoteMediaType={remoteMediaType}
         tmdbId={tmdbId}
         play={play}
@@ -1000,7 +1057,7 @@ export function TitleScreen({
   const singlePage = tabOptions.length <= 1;
 
   return (
-    <View className="flex-1 bg-background">
+    <Animated.View entering={CONTENT_ENTER} className="flex-1 bg-background">
       <TopFade />
       <TitleBackButton onPress={back} />
 
@@ -1025,26 +1082,35 @@ export function TitleScreen({
             <TitleRating rating={rating} />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={hybridLabel}
-              accessibilityState={{ disabled: hybridDisabled }}
-              disabled={hybridDisabled}
+              accessibilityLabel={
+                watchlisted
+                  ? "Remove from Watch List"
+                  : "Add to Watch List"
+              }
+              accessibilityState={{
+                disabled: watchlistBusy,
+                selected: watchlisted,
+              }}
+              disabled={watchlistBusy}
               onPress={() => {
                 triggerHaptic("light");
-                playHybrid();
+                void toggleWatchlist();
               }}
               className={cn(
-                "h-[38px] flex-row items-center gap-1.5 rounded-full bg-accent px-4 active:opacity-80",
-                hybridDisabled && "opacity-40",
+                "h-[38px] w-[38px] items-center justify-center rounded-full border active:opacity-80",
+                watchlisted
+                  ? "border-accent bg-accent"
+                  : "border-border bg-surface",
+                watchlistBusy && "opacity-40",
               )}
             >
-              <Play size={15} color="#fff" fill="#fff" />
-              <Text className="font-archivo-bold text-[13px] text-white">
-                {watchShortLabel}
-              </Text>
+              {watchlisted ? (
+                <Check size={17} color="#fff" strokeWidth={2.4} />
+              ) : (
+                <Plus size={17} color={colors.ink} strokeWidth={2.4} />
+              )}
             </Pressable>
           </View>
-
-          <TitleQuickActions actions={quickActions} />
 
           <View className="gap-2">
             <View>
@@ -1320,7 +1386,7 @@ export function TitleScreen({
           }
         />
       )}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -1328,7 +1394,6 @@ function SeasonPage({
   api,
   detail,
   season,
-  onlineEnabled,
   remoteMediaType,
   tmdbId,
   play,
@@ -1346,7 +1411,6 @@ function SeasonPage({
   api: LocalCatalog;
   detail: TitleDetail;
   season: number;
-  onlineEnabled: boolean;
   remoteMediaType: RemoteMediaType | null;
   tmdbId: number | null;
   play: (fileId: number) => void;
@@ -1371,10 +1435,10 @@ function SeasonPage({
 }) {
   const remoteSeason = useResource(
     (signal) =>
-      onlineEnabled && tmdbId != null
+      remoteMediaType != null && tmdbId != null
         ? fetchSeason(tmdbId, season, signal)
         : Promise.resolve<RemoteEpisode[]>([]),
-    [onlineEnabled, tmdbId, season],
+    [remoteMediaType, tmdbId, season],
     "media-season",
   );
   const localEpisodes =
@@ -1384,12 +1448,13 @@ function SeasonPage({
     ) ?? [];
   const episodes = mergeEpisodes({
     local: localEpisodes,
-    remote: onlineEnabled ? (remoteSeason.value ?? []) : [],
+    remote: remoteSeason.value ?? [],
     season,
     fallbackArtwork: detail.item.backdrop || detail.item.poster || null,
   });
   const loading =
-    onlineEnabled &&
+    remoteMediaType != null &&
+    tmdbId != null &&
     remoteSeason.loading &&
     !remoteSeason.value &&
     episodes.length === 0;

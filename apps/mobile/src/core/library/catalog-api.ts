@@ -31,6 +31,9 @@ export abstract class LocalCatalog {
     abstract clearWatch(itemId: number): Promise<{
         ok: boolean;
     }>;
+    abstract setWatchlist(itemId: number, watchlisted: boolean): Promise<{
+        ok: boolean;
+    }>;
     abstract play(fileId: number): Promise<Playability>;
     abstract stream(fileId: number): string;
     abstract subtitle(fileId: number, uri: string, signal?: AbortSignal): Promise<string>;

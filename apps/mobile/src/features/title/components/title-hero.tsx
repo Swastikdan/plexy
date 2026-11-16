@@ -1,5 +1,4 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { Image } from "expo-image";
 import React, { useState } from "react";
 import {
   StyleSheet,
@@ -64,12 +63,10 @@ export function TitleHero({
 
       <View className="absolute inset-x-5 bottom-7 items-center">
         {logo && failedLogo !== logo ? (
-          <Image
+          <PosterImage
             source={api.image(logo)}
-            accessibilityLabel={item.name}
             style={{ width: "78%", height: 92 }}
-            contentFit="contain"
-            cachePolicy="memory-disk"
+            resizeMode="contain"
             onError={() => setFailedLogo(logo)}
           />
         ) : (

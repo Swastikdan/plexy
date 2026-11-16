@@ -1,6 +1,8 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { useTitleActions } from "../hooks/use-title-actions";
+import { useEffect } from "react";
 import { FlatList,Text,View } from "react-native";
+import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { Card } from "@/shared/ui/media-card";
@@ -39,6 +41,12 @@ export function CatalogRow({
   const pagerBoundary = usePagerGestureBoundary();
   const { api } = useClient();
   const titleActions = useTitleActions();
+  useEffect(() => {
+    prefetchImages(
+      items.slice(0, 6).map((item) => item.poster),
+      6,
+    );
+  }, [items]);
   const cardWidth = isContinueWatching ? 220 : (cardWidthOverride ?? 150);
   const itemWidth = isContinueWatching ? 168 : cardWidth;
   const longPress = (item: ItemCard) => {
@@ -63,6 +71,9 @@ export function CatalogRow({
 
       <FlatList {...pagerBoundary}
         horizontal
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={3}
         data={items}
         getItemLayout={(_, index) => ({
           length: itemWidth + 10,
@@ -72,7 +83,7 @@ export function CatalogRow({
         keyExtractor={(item) => item.publicId}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
-        renderItem={({ item, index }) =>
+        renderItem={({ item }) =>
           isContinueWatching ? (
             <ContinueWatchingCard
               item={item}

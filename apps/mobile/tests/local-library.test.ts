@@ -78,6 +78,32 @@ describe("device library", () => {
     await f.library.clearWatch(card.id);
     expect(f.library.cards()[0]!.watch).toBeNull();
   });
+  test("watch list state persists for movies and series", async () => {
+    const f = fixture();
+    f.files([
+      file("Arrival.2016.mp4"),
+      file("Show/Season 01/Show.S01E01.mkv"),
+    ]);
+    await f.library.addRoot({ ...root, kind: "auto" });
+    const movie = f.library.cards().find((card) => card.kind === "movie")!;
+    const series = f.library.cards().find((card) => card.kind === "series")!;
+    await f.library.setWatchlist(movie.id, true);
+    await f.library.setWatchlist(series.id, true);
+    expect(
+      f.library.cards().find((card) => card.id === movie.id)?.watchlist,
+    ).toBe(true);
+    expect(f.library.detail(series.id).item.watchlist).toBe(true);
+    const restored = new LocalLibrary(f.io);
+    await restored.restore();
+    expect(
+      restored.cards().find((card) => card.id === movie.id)?.watchlist,
+    ).toBe(true);
+    expect(restored.detail(series.id).item.watchlist).toBe(true);
+    await restored.setWatchlist(movie.id, false);
+    expect(
+      restored.cards().find((card) => card.id === movie.id)?.watchlist,
+    ).toBe(false);
+  });
   test("concurrent scans share one walk", async () => {
     const f = fixture(); await f.library.addRoot(root);
     let calls = 0;
@@ -104,6 +130,10 @@ describe("device library", () => {
     expect((await api.search("arrival")).titles).toHaveLength(1);
     const id = f.library.state.records[0]!.id;
     await api.progress(id, 90, 600);
+    await api.setWatchlist(id, true);
+    expect((await api.detail(`local-${id}`)).item.watchlist).toBe(true);
+    await api.setWatchlist(id, false);
+    expect((await api.detail(`local-${id}`)).item.watchlist).toBe(false);
     expect((await api.play(id)).watch?.position).toBe(90);
     expect(api.stream(id)).toBe(file().uri);
     expect((await api.play(id)).path).toBe("direct");

@@ -39,15 +39,13 @@ export function ContinueWatchingCard({
   const [focus, setFocus] = useState(false);
   const title = item.parentTitle || cleanedName || rawName;
   let subtitle = isSeries
-    ? "TV Series"
+    ? ""
     : epNumber != null
       ? `Episode ${epNumber}${cleanedName && item.parentTitle ? ` · ${cleanedName}` : ""}`
-      : item.year
-        ? `${item.year}`
-        : "Resume playing";
+      : "Resume playing";
   // Never repeat the title as its own subtitle
   if (subtitle === title) {
-    subtitle = isSeries ? "TV Series" : "";
+    subtitle = "";
   }
   return (
     <Pressable
@@ -85,6 +83,11 @@ export function ContinueWatchingCard({
             <Text className="font-archivo-bold text-[9.5px] text-white">{epLabel}</Text>
           </View>
         )}
+        <View className="absolute right-[6px] top-[6px] rounded-[4px] bg-black/72 px-[5px] py-[1.5px]">
+          <Text className="font-archivo-bold text-[9.5px] text-white">
+            {isSeries ? "TV" : "Movie"}
+          </Text>
+        </View>
 
         {/* Center play icon overlay: solid white chip, black filled icon —
          * no outline ring, the icon is the content. */}

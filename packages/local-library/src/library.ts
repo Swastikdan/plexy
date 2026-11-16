@@ -33,6 +33,7 @@ export interface LocalRecord {
   identityRevision?: number;
   externalSubtitles?: SubtitleTrack[];
   isAnime?: boolean;
+  watchlist?: boolean;
 }
 export interface MetadataSettings {
   language: string; region: string; posterSize: string; markersEnabled: boolean;
@@ -407,6 +408,7 @@ export class LocalLibrary {
       tmdbId: r.tmdbId ?? r.card.tmdbId ?? null,
       logo: r.logo || r.card.logo || null,
       isAnime: r.isAnime || r.card.isAnime,
+      watchlist: Boolean(r.watchlist),
     }));
     const groups = new Map<number, LocalRecord[]>();
     for (const r of this.state.records.filter(r => r.card.parentId)) {
@@ -429,6 +431,7 @@ export class LocalLibrary {
       tmdbId: records.find(r => r.tmdbId != null)?.tmdbId ?? records[0]?.card.tmdbId ?? null,
       logo: records[0]!.logo || records[0]!.card.logo || null,
       isAnime: records.some(r => r.isAnime || r.card.isAnime),
+      watchlist: records.some(r => Boolean(r.watchlist)),
       watch: records.every(r => r.card.watch?.played)
         ? { position: 0, duration: null, played: true, percent: 100 }
         : null,
@@ -446,7 +449,7 @@ export class LocalLibrary {
     const series = record.card.parentId === id;
     const episodes = series ? this.state.records.filter(r => r.card.parentId === id).map(r => r.card)
       .sort((a,b) => (a.seasonNumber! - b.seasonNumber!) || (a.episodeNumber! - b.episodeNumber!)) : null;
-    const card = series ? this.cards().find(c => c.id === id)! : { ...record.card, tmdbId: record.tmdbId ?? record.card.tmdbId ?? null };
+    const card = series ? this.cards().find(c => c.id === id)! : { ...record.card, tmdbId: record.tmdbId ?? record.card.tmdbId ?? null, watchlist: Boolean(record.watchlist) };
     return { item: card, logo: record.logo || null, metadata: { overview: card.overview, tagline: record.tagline || null,
       runtime: card.runtime, rating: card.rating, certification: record.certification || null, genres: card.genres },
       cast: record.cast, trailer: record.trailer || null,
@@ -473,6 +476,13 @@ export class LocalLibrary {
   }
   async clearWatch(id: number) {
     for (const r of this.state.records.filter(r => r.id === id || r.card.parentId === id)) r.card.watch = null;
+    await this.persist();
+    this.changed();
+  }
+  async setWatchlist(id: number, watchlisted: boolean) {
+    const records = this.state.records.filter(r => r.id === id || r.card.parentId === id);
+    if (!records.length) throw new Error("This title is no longer in your library.");
+    for (const record of records) record.watchlist = watchlisted;
     await this.persist();
     this.changed();
   }

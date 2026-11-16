@@ -24,6 +24,8 @@ export interface Preferences {
   onlineAutoplay: boolean;
   /** Show Vidy's season/episode picker. */
   onlineEpisodeSelector: boolean;
+  /** The user has acknowledged the online catalog disclaimer. */
+  onlineDisclaimerSeen: boolean;
   seekSeconds: 5 | 10 | 15 | 20 | 30 | 60;
   playbackRate: number;
 }
@@ -39,6 +41,7 @@ export const defaultPreferences: Preferences = {
   autoNext: true,
   onlineAutoplay: true,
   onlineEpisodeSelector: true,
+  onlineDisclaimerSeen: false,
   seekSeconds: 10,
   playbackRate: 1,
 };

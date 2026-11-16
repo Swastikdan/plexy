@@ -88,14 +88,16 @@ export function useMediaTitle(
   const localId = input.source === "local" ? input.id : null;
   const remoteInput = input.source === "remote" ? input : null;
   const fallbackName = remoteInput?.fallbackName;
+  const inputMediaType = remoteInput?.mediaType;
+  const inputTmdbId = remoteInput?.tmdbId;
   const localMatch = useMemo(() => {
-    if (!remoteInput) return null;
+    if (!inputMediaType || inputTmdbId == null) return null;
     return (
       api
         .titlesByTmdb()
-        .get(`${remoteInput.mediaType}:${remoteInput.tmdbId}`) ?? null
+        .get(`${inputMediaType}:${inputTmdbId}`) ?? null
     );
-  }, [api, remoteInput]);
+  }, [api, inputMediaType, inputTmdbId]);
 
   const direct = useResource(
     (signal) =>
@@ -122,8 +124,11 @@ export function useMediaTitle(
     : null;
   const tmdbId = localDetail?.item.tmdbId ?? remoteInput?.tmdbId ?? null;
   const mediaType = localMediaType ?? remoteInput?.mediaType ?? null;
+  // Local titles with a TMDB match still fetch remote detail so the season
+  // list and episode counts can use the full catalog instead of only what is
+  // downloaded on this device. A failure never blocks the local detail.
   const remoteEnabled =
-    (onlineEnabled || input.source === "remote") &&
+    (onlineEnabled || input.source === "local") &&
     tmdbId != null &&
     mediaType != null;
 

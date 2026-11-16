@@ -2,11 +2,14 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { View } from "react-native";
+import { useEventCallback } from "@/shared/hooks/use-event-callback";
+import { pagerTarget } from "@/shared/lib/pager-target";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
@@ -59,6 +62,7 @@ export function SwipePager({
   scrollEnabled?: boolean;
 }) {
   const boundary = usePagerGestureBoundary(scrollEnabled);
+  const notifyChange = useEventCallback(onChange);
   const [childInteracting, setChildInteracting] = useState(false);
   const [width, setWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -71,32 +75,45 @@ export function SwipePager({
   const targetIndex = useSharedValue(index);
   const keys = pageKeys.join("|");
   const boundedIndex = Math.max(0, Math.min(pageKeys.length - 1, index));
-  // Mount the current page and its neighbours, then keep every visited page
+  // Mount the active page first; warm neighbours when JS is idle. Keep visited pages
   // alive. Without this the pager (used for tabs, library kinds, seasons and
   // detail tabs) renders every page — and every list inside it — at once.
   const [visited, setVisited] = useState<ReadonlySet<string>>(
-    () =>
-      new Set(
-        pageKeys.slice(Math.max(0, boundedIndex - 1), boundedIndex + 2),
-      ),
+    () => new Set([pageKeys[boundedIndex]!]),
   );
-  const current = pageKeys.slice(Math.max(0, boundedIndex - 1), boundedIndex + 2);
-  if (!current.every(key => visited.has(key))) setVisited(new Set([...visited, ...current]));
+  const activeKey = pageKeys[boundedIndex]!;
+  if (!visited.has(activeKey)) setVisited(new Set([...visited, activeKey]));
+  const prepareNeighbours = useEventCallback(() => {
+    setVisited(previous => {
+      const neighbours = pageKeys.slice(Math.max(0, boundedIndex - 1), boundedIndex + 2);
+      return neighbours.every(key => previous.has(key))
+        ? previous : new Set([...previous, ...neighbours]);
+    });
+  });
   useEffect(() => {
+    const idle = requestIdleCallback(prepareNeighbours);
+    return () => cancelIdleCallback(idle);
+  }, [boundedIndex, keys, prepareNeighbours]);
+  useLayoutEffect(() => {
     if (!width) return;
     if (previousWidth.current !== width || reduceMotion) {
       cancelAnimation(translation);
       translation.set(-boundedIndex * width);
     } else if (targetIndex.get() !== boundedIndex) {
-      translation.set(withSpring(-boundedIndex * width, {
-        duration: 400, dampingRatio: 1, overshootClamping: true,
-      }));
+      // Taps switch peers immediately; only a finger-driven swipe springs.
+      cancelAnimation(translation);
+      translation.set(-boundedIndex * width);
     }
     targetIndex.set(boundedIndex);
     previousWidth.current = width;
   }, [boundedIndex, width, keys, reduceMotion, translation, targetIndex]);
+  // A UI-thread gesture cannot wait for JS to mount the page under the finger.
+  // Keep tap navigation available while the idle callback prepares neighbours.
+  const neighboursReady = pageKeys
+    .slice(Math.max(0, boundedIndex - 1), boundedIndex + 2)
+    .every(key => visited.has(key));
   const pan = useMemo(() => Gesture.Pan()
-    .enabled(scrollEnabled && !childInteracting && width > 0)
+    .enabled(scrollEnabled && neighboursReady && !childInteracting && width > 0)
     .activeOffsetX([-16, 16])
     .failOffsetY([-16, 16])
     .onStart(() => {
@@ -111,15 +128,14 @@ export function SwipePager({
       translation.set(edge + resistance);
     })
     .onEnd((event) => {
-      const start = Math.round(-dragStart.get() / width);
-      const direction = event.translationX < 0 ? 1 : -1;
-      const commit = Math.abs(event.translationX) > width * 0.25 || Math.abs(event.velocityX) > 350;
-      const next = Math.max(0, Math.min(pageKeys.length - 1, start + (commit ? direction : 0)));
+      const next = pagerTarget(
+        dragStart.get(), event.translationX, event.velocityX, width, pageKeys.length,
+      );
       targetIndex.set(next);
       translation.set(reduceMotion ? -next * width : withSpring(-next * width, {
         duration: 400, dampingRatio: 0.8, velocity: event.velocityX, overshootClamping: true,
       }));
-      if (next !== boundedIndex) scheduleOnRN(onChange, next);
+      if (next !== boundedIndex) scheduleOnRN(notifyChange, next);
     })
     .onFinalize((_event, success) => {
       if (!success) {
@@ -127,7 +143,7 @@ export function SwipePager({
           duration: 400, dampingRatio: 1, overshootClamping: true,
         }));
       }
-    }), [scrollEnabled, childInteracting, width, pageKeys.length, boundedIndex, onChange, reduceMotion, translation, dragStart, targetIndex]);
+    }), [scrollEnabled, neighboursReady, childInteracting, width, pageKeys.length, boundedIndex, notifyChange, reduceMotion, translation, dragStart, targetIndex]);
   const trackStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translation.get() }] }));
   // Lazy pages have no measured height until they mount. Keep the previous
   // height during that frame instead of collapsing the pager to zero.
@@ -174,7 +190,7 @@ export function SwipePager({
                       : undefined
                   }
                 >
-                  {visited.has(key) || Math.abs(page - boundedIndex) <= 1
+                  {visited.has(key) || page === boundedIndex
                     ? renderPage(page)
                     : null}
                 </View>

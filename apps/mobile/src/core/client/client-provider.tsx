@@ -58,6 +58,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             if (![5, 10, 15, 20, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
             if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
             if (typeof saved.onlineEpisodeSelector !== "boolean") saved.onlineEpisodeSelector = true;
+            if (typeof saved.onlineDisclaimerSeen !== "boolean") saved.onlineDisclaimerSeen = false;
             Uniwind.setTheme(saved.theme);
             preferencesRef.current = saved;
             if (live)

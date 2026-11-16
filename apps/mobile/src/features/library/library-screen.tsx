@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
@@ -18,7 +19,9 @@ import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
-import { Film ,
+import {
+  AlertCircle,
+  Film,
   ArrowUpDown,
   Check,
   ChevronDown,
@@ -26,6 +29,7 @@ import { Film ,
   X,
 } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
+import { PageState } from "@/shared/ui/page-state";
 import { PageHeader } from "@/shared/ui/page-header";
 import { LibraryGridSkeleton } from "@/shared/ui/skeleton";
 import { Card } from "@/shared/ui/media-card";
@@ -50,6 +54,7 @@ export function LibraryScreen({
 }) {
   const tabBoundary = usePagerGestureBoundary();
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { api, runtime, preferences } = useClient();
   const { saved } = useRemote();
@@ -355,7 +360,9 @@ export function LibraryScreen({
           accessibilityLabel="Close sort and filter"
         >
           <Pressable
+            accessibilityViewIsModal
             className="bg-overlay rounded-t-[24px] border-t-[0.33px] border-border pt-2 px-3"
+            style={{ paddingBottom: Math.max(insets.bottom, 12) }}
             onPress={() => {}}
           >
             <View className="w-[40px] h-[4px] rounded-[2px] bg-foreground/22 self-center mb-2.5" />
@@ -375,95 +382,86 @@ export function LibraryScreen({
                 <X size={22} color={colors.ink} />
               </Pressable>
             </View>
-            {FILTERS.map(([key, label]) => {
-              const active = sort === key;
-              return (
-                <Pressable
-                  key={key}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: active }}
-                  onPress={() => {
-                    triggerHaptic("selection");
-                    reset(key, unwatched);
-                    setSortOpen(false);
-                  }}
-                  className={cn(
-                    "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-                    active && "bg-foreground",
-                    "active:opacity-[0.75]",
-                  )}
-                >
-                  <Text
-                    className={cn(
-                      "font-archivo-medium text-[15px] text-foreground",
-                      active && "font-archivo-bold text-background",
-                    )}
-                  >
-                    {label}
-                  </Text>
-                  {active && (
-                    <Check size={18} color={colors.canvas} strokeWidth={2.6} />
-                  )}
-                </Pressable>
-              );
-            })}
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: unwatched }}
+            {FILTERS.map(([key, label]) => (
+              <FilterRow
+                key={key}
+                label={label}
+                role="radio"
+                active={sort === key}
+                onPress={() => {
+                  triggerHaptic("selection");
+                  reset(key, unwatched);
+                  setSortOpen(false);
+                }}
+              />
+            ))}
+            <FilterRow
+              label="Unwatched only"
+              role="checkbox"
+              active={unwatched}
               onPress={() => {
                 triggerHaptic("selection");
                 reset(sort, !unwatched);
               }}
-              className={cn(
-                "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-                unwatched && "bg-foreground",
-                "active:opacity-[0.75]",
-              )}
-            >
-              <Text
-                className={cn(
-                  "font-archivo-medium text-[15px] text-foreground",
-                  unwatched && "font-archivo-bold text-background",
-                )}
-              >
-                Unwatched only
-              </Text>
-              {unwatched && (
-                <Check size={18} color={colors.canvas} strokeWidth={2.6} />
-              )}
-            </Pressable>
+            />
             {online && savedOnline.length > 0 && (
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: offlineOnly }}
+              <FilterRow
+                label="Offline only"
+                role="checkbox"
+                active={offlineOnly}
                 onPress={() => {
                   triggerHaptic("selection");
                   setOfflineOnly((value) => !value);
                 }}
-                className={cn(
-                  "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-                  offlineOnly && "bg-foreground",
-                  "active:opacity-[0.75]",
-                )}
-              >
-                <Text
-                  className={cn(
-                    "font-archivo-medium text-[15px] text-foreground",
-                    offlineOnly && "font-archivo-bold text-background",
-                  )}
-                >
-                  Offline only
-                </Text>
-                {offlineOnly && (
-                  <Check size={18} color={colors.canvas} strokeWidth={2.6} />
-                )}
-              </Pressable>
+              />
             )}
-            <View className="h-4" />
           </Pressable>
         </Pressable>
       </Modal>
     </View>
+  );
+}
+
+/**
+ * Bottom-sheet choice row. The selected state is a subtle foreground tint
+ * rather than an inverted fill: the label keeps `text-foreground`, so it
+ * stays readable in both light and dark mode (conditional `text-background`
+ * utilities cannot override an always-present text color).
+ */
+function FilterRow({
+  label,
+  role,
+  active,
+  onPress,
+}: {
+  label: string;
+  role: "radio" | "checkbox";
+  active: boolean;
+  onPress: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <Pressable
+      accessibilityRole={role}
+      accessibilityState={{ checked: active }}
+      onPress={onPress}
+      className={cn(
+        "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
+        active ? "bg-foreground/[0.08]" : "active:bg-foreground/[0.06]",
+      )}
+    >
+      <Text
+        className={cn(
+          "font-archivo-medium text-[15px] text-foreground",
+          active && "font-archivo-bold",
+        )}
+      >
+        {label}
+      </Text>
+      {active && (
+        <Check size={19} color={colors.ink} strokeWidth={2.6} />
+      )}
+    </Pressable>
   );
 }
 
@@ -553,7 +551,12 @@ function LibraryTitles({
   return data.loading ? (
     <LibraryGridSkeleton />
   ) : data.error ? (
-    <Notice message={data.error} retry={data.retry} />
+    <PageState
+      icon={AlertCircle}
+      title="Couldn't load your library"
+      message={data.error}
+      onAction={data.retry}
+    />
   ) : (
     <FlatList
       key={`${columns}-${tab}`}

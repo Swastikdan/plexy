@@ -223,6 +223,8 @@ function interleave<T>(lists: T[][]): T[] {
 }
 
 export async function fetchHome(signal?: AbortSignal): Promise<RemoteHome> {
+  let failures = 0;
+  let lastError: unknown = null;
   const replies = await Promise.all(
     HOME_ROWS.map(async (row) => {
       const lists = await Promise.all(
@@ -235,7 +237,9 @@ export async function fetchHome(signal?: AbortSignal): Promise<RemoteHome> {
             return (body.results ?? [])
               .filter((media) => media.media_type !== "person")
               .map((media) => toTitle(media, fallbackType));
-          } catch {
+          } catch (error) {
+            failures += 1;
+            lastError = error;
             return [] as RemoteTitle[];
           }
         }),
@@ -248,9 +252,18 @@ export async function fetchHome(signal?: AbortSignal): Promise<RemoteHome> {
     }),
   );
   const trending = replies.find((row) => row.key === "trending-day")?.items ?? [];
+  const rows = replies.filter((row) => row.items.length > 0);
+  // Every request failed (offline, expired token, TMDB outage). Surface the
+  // error so Home can render a real offline/error page instead of an empty
+  // "start here" shelf.
+  if (!rows.length && failures > 0) {
+    throw lastError instanceof Error
+      ? lastError
+      : new CatalogError("Could not load online titles.");
+  }
   return {
     featured: trending.find((item) => item.backdrop) ?? null,
-    rows: replies.filter((row) => row.items.length > 0),
+    rows,
   };
 }
 

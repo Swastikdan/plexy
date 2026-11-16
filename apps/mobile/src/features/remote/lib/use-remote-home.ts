@@ -5,7 +5,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import type { OpenTitle } from "@/features/catalog/types";
 import { useRemoteProgress, remoteWatch } from "./remote-progress";
-import { prefetchImages } from "./prefetch";
+import { prefetchDetails, prefetchImages } from "./prefetch";
 import { fetchDetail, fetchHome, type RemoteTitle } from "./tmdb";
 import { useRemoteNavigation } from "./use-remote-navigation";
 import {
@@ -47,6 +47,15 @@ export function useRemoteHome(enabled = true) {
       }
     }
     prefetchImages(urls, 32);
+    prefetchDetails(
+      [
+        home.featured,
+        ...home.rows
+          .slice(0, 4)
+          .flatMap((row) => row.items.slice(0, 3)),
+      ].filter((title): title is RemoteTitle => Boolean(title)),
+      8,
+    );
   }, [enabled, home]);
   const featuredDetail = useResource(
     (signal) =>

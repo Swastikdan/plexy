@@ -51,9 +51,8 @@ export function Hero({
   const colors = useColors();
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
-  // Build metadata line: Year, runtime, rating, episode info, and genres all in the same row
+  // Build metadata line: runtime, rating, episode info and genres.
   const metaParts: React.ReactNode[] = [];
-  if (item.year) metaParts.push(String(item.year));
   if (item.runtime) metaParts.push(`${item.runtime}m`);
   if (
     (item as any).seasonNumber != null &&
@@ -140,7 +139,7 @@ export function Hero({
             </Text>
           )}
 
-          {/* Metadata row under title: Year, rating, and genres in the exact same row */}
+          {/* Metadata row under title: runtime, rating and genres. */}
           {metaParts.length > 0 && (
             <View className="flex-row flex-wrap items-center gap-[5px]">
               {metaParts.map((part, index) => (

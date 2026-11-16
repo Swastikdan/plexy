@@ -3,6 +3,7 @@ import { AppDialogProvider } from "@/shared/ui/app-dialog";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native/provider";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { useColors } from "@/shared/theme";
 import "../../global.css";
 import { MobileProvider } from "@/core/mobile-provider";
@@ -10,6 +11,7 @@ import { RemoteProvider } from "@/features/remote/remote-provider";
 export const unstable_settings = { initialRouteName: "(tabs)" };
 export default function RootLayout() {
   const colors = useColors();
+  const reducedMotion = useReducedMotion();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MobileProvider>
@@ -20,6 +22,7 @@ export default function RootLayout() {
           <Stack
             screenOptions={{
               headerShown: false,
+              animation: reducedMotion ? "fade" : "default",
               contentStyle: { backgroundColor: colors.canvas },
             }}
           >

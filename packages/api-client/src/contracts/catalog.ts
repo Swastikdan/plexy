@@ -42,6 +42,8 @@ export interface ItemCard {
   isAnime?: boolean;
   logo?: string | null;
   still?: string | null;
+  /** The title is in the user's watch list. */
+  watchlist?: boolean;
 }
 
 export interface HomeRow {

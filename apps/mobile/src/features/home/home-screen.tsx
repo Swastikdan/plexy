@@ -6,11 +6,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
+import { useOnline } from "@/shared/hooks/use-online";
 import { useColors } from "@/shared/theme";
-import { Film, Search } from "@/shared/ui/icons";
+import { AlertCircle, Film, Search, WifiOff } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageState } from "@/shared/ui/page-state";
 import { HomeSkeleton } from "@/shared/ui/skeleton";
+import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { LibraryAttention } from "@/features/catalog/components/library-attention";
 import { TopFade } from "@/features/catalog/components/top-fade";
@@ -41,12 +44,14 @@ export function HomeScreen({
   };
 }) {
   const colors = useColors();
+  const connected = useOnline();
   const { push, navigate } = useRouter();
   const { api, progress, preferences } = useClient();
   const remoteActions = useRemoteTitleActions();
   const titleActions = useTitleActions();
   const insets = useSafeAreaInsets();
   const [scrolled, setScrolled] = React.useState(false);
+  const scrolledRef = useRef(false);
   const data = useResource((signal) => api.home(signal), [api]);
   const previousActive = useRef(active);
   React.useEffect(() => {
@@ -213,6 +218,15 @@ export function HomeScreen({
     }
     return merged;
   }, [api, carouselItems, online?.carouselItems]);
+  React.useEffect(() => {
+    prefetchImages(
+      [...heroItems, ...continueItems].flatMap((item) => [
+        item.poster,
+        item.backdrop,
+      ]),
+      24,
+    );
+  }, [heroItems, continueItems]);
   const heroPlay = React.useCallback(
     (item: ItemCard) => {
       if (item.publicId.startsWith("remote:")) {
@@ -249,12 +263,58 @@ export function HomeScreen({
   );
   const hasAnyRows =
     continueItems.length > 0 || shelfRows.length > 0;
+  const searchButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Search"
+      onPress={() => navigate("/search")}
+      hitSlop={8}
+      className="h-10 w-10 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
+    >
+      <Search size={20} color={colors.ink} strokeWidth={2} />
+    </Pressable>
+  );
+  const fullPageState = (
+    icon: typeof AlertCircle,
+    title: string,
+    message: string,
+    onAction: () => void,
+  ) => (
+    <View className="flex-1 bg-background">
+      <PageHeader
+        logo
+        right={searchButton}
+        style={{ paddingTop: insets.top + 18 }}
+      />
+      <PageState
+        icon={icon}
+        title={title}
+        message={message}
+        onAction={onAction}
+      />
+    </View>
+  );
   if (
-    data.loading ||
+    (data.loading && !data.value) ||
     (online?.loading && !continueItems.length && !shelfRows.length)
   )
     return <HomeSkeleton />;
-  if (data.error) return <Notice message={data.error} retry={data.retry} />;
+  if (data.error)
+    return fullPageState(
+      AlertCircle,
+      "Couldn't load your home",
+      data.error,
+      data.retry,
+    );
+  if (!hasAnyRows && !online?.loading && online?.error)
+    return fullPageState(
+      connected ? AlertCircle : WifiOff,
+      connected ? "Couldn't load online titles" : "You're offline",
+      connected
+        ? online.error
+        : "Connect to the internet to browse online titles. Your local library is still available.",
+      online.refresh,
+    );
   return (
     <View className="flex-1 bg-background">
       <TopFade />
@@ -271,17 +331,7 @@ export function HomeScreen({
       )}
       <PageHeader
         logo
-        right={
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Search"
-            onPress={() => navigate("/search")}
-            hitSlop={8}
-            className="h-10 w-10 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
-          >
-            <Search size={20} color={colors.ink} strokeWidth={2} />
-          </Pressable>
-        }
+        right={searchButton}
         style={[
           {
             position: "absolute",
@@ -307,7 +357,10 @@ export function HomeScreen({
         scrollEventThrottle={16}
         onScroll={(event) => {
           const next = event.nativeEvent.contentOffset.y > 8;
-          setScrolled((previous) => (previous === next ? previous : next));
+          if (scrolledRef.current !== next) {
+            scrolledRef.current = next;
+            setScrolled(next);
+          }
         }}
         refreshControl={
           <RefreshControl

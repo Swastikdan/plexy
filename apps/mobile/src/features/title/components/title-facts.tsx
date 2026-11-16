@@ -13,7 +13,7 @@ export function qualityLabel(detail: TitleDetail | null): string | null {
 
 /**
  * The centered fact line under the hero: an age-rating-style badge followed by
- * year, length and genres. Mirrors the compact Crunchyroll metadata row.
+ * length and genres. Mirrors the compact Crunchyroll metadata row.
  */
 export function TitleFactLine({
   item,
@@ -35,7 +35,6 @@ export function TitleFactLine({
   const showOnline = online && !isOffline;
   const seasons = detail?.seasons?.length ?? 0;
   const facts = [
-    item.year ? String(item.year) : null,
     item.kind === "series"
       ? seasons > 0
         ? `${seasons} ${seasons === 1 ? "Season" : "Seasons"}`

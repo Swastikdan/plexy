@@ -1,9 +1,8 @@
 import { Tabs } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
-import { Animated, Pressable, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
-import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import {
@@ -26,45 +25,17 @@ const tabs: {
 type TabBarProps = Parameters<
   NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
 >[0];
-// One tab icon: presses dip it toward the finger, selection springs it back.
-// Feedback lives on the press itself and animates from the current value, so
-// rapid tab-hopping never snaps.
-function TabIcon({
-  icon: Icon,
-  focused,
-  filled,
-}: {
-  icon: NativeIcon;
-  focused: boolean;
-  filled: boolean;
+// Selection is immediate: frequent tab changes should never wait for motion.
+function TabIcon({ icon: Icon, focused, filled }: {
+  icon: NativeIcon; focused: boolean; filled: boolean;
 }) {
   const colors = useColors();
-  const reduceMotion = useReducedMotion();
-  const [scale] = React.useState(() => new Animated.Value(1));
-  const wasFocused = useRef(focused);
-  useEffect(() => {
-    if (wasFocused.current === focused) return;
-    wasFocused.current = focused;
-    if (!focused || reduceMotion) return;
-    // Start from a slight press-in so the pop reads as the icon settling up.
-    scale.setValue(0.88);
-    Animated.spring(scale, {
-      toValue: 1,
-      bounciness: 7,
-      speed: 18,
-      useNativeDriver: true, // transform only — runs off the main thread
-    }).start();
-  }, [focused, reduceMotion, scale]);
-  return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <Icon
-        size={29}
-        color={focused ? colors.ink : colors.quiet}
-        strokeWidth={focused ? 2.2 : 1.8}
-        fill={filled ? (focused ? colors.ink : colors.quiet) : "none"}
-      />
-    </Animated.View>
-  );
+  return <Icon
+    size={29}
+    color={focused ? colors.ink : colors.quiet}
+    strokeWidth={focused ? 2.2 : 1.8}
+    fill={filled ? colors.ink : "none"}
+  />;
 }
 function MobileTabBar({
   state,
@@ -104,9 +75,7 @@ function MobileTabBar({
           <Pressable
             key={route.key}
             onPress={onPress}
-            // Scale toward the finger on touch-down, not opacity — keeps
-            // the icon present while answering the touch instantly.
-            className="flex-1 min-h-[56px] items-center justify-center active:scale-[0.88] active:opacity-80"
+            className="flex-1 min-h-[56px] items-center justify-center active:opacity-80"
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
             accessibilityLabel={tab.title}
@@ -150,6 +119,7 @@ export default function TabLayout() {
       )}
       screenOptions={{
         headerShown: false,
+        animation: "none",
         sceneStyle: { backgroundColor: "transparent" },
         // Keep visited tabs mounted; their lists, scroll positions and network
         // state must survive a tab switch and an Android back press.

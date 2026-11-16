@@ -13,6 +13,7 @@ import {
   Text,
   View,
 } from "react-native";
+import type { LocalRoot } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import {
   bundledMetadata,
@@ -27,6 +28,7 @@ import { Button } from "@/shared/ui/button";
 import {
   Download,
   Film,
+  Gauge,
   Library,
   RefreshCw,
   X,
@@ -42,7 +44,7 @@ import { useAppUpdates } from "./hooks/use-app-updates";
 export function SettingsScreen({
   page = "settings",
 }: {
-  page?: "settings" | "folders" | "updates" | "metadata";
+  page?: "settings" | "folders" | "updates" | "metadata" | "playback";
 }) {
   const showDialog = useAppDialog();
   const colors = useColors();
@@ -105,22 +107,30 @@ export function SettingsScreen({
       setActiveAction("");
     }
   };
-  const pickFolder = async () => {
+  const pickFolder = async (kind: LocalRoot["kind"]) => {
     const folder = await Directory.pickDirectoryAsync();
     await localLibrary.addRoot({
       uri: folder.uri,
       name: displayName(folder.uri),
-      kind: "auto",
+      kind,
     });
   };
   const addFolder = () => {
     showDialog(
       "Add media folder",
-      "Choose a folder in Android’s file picker, then allow Plexy to access its videos.",
+      "Choose what kind of videos are in this folder, then pick it in Android’s file picker and allow Plexy to access it.",
       [
         {
-          text: "Choose folder",
-          onPress: () => void action(() => pickFolder()),
+          text: "Movies",
+          onPress: () => void action(() => pickFolder("movies")),
+        },
+        {
+          text: "TV shows",
+          onPress: () => void action(() => pickFolder("tv")),
+        },
+        {
+          text: "Anime",
+          onPress: () => void action(() => pickFolder("anime")),
         },
       ],
     );
@@ -205,7 +215,9 @@ export function SettingsScreen({
                 ? "App updates"
                 : page === "metadata"
                   ? "Metadata & markers"
-                  : "Settings"
+                  : page === "playback"
+                    ? "Playback"
+                    : "Settings"
         }
         style={{
           paddingHorizontal: 20,
@@ -297,7 +309,29 @@ export function SettingsScreen({
                   value={preferences.source === "remote"}
                   accessibilityLabel="Online catalog"
                   onValueChange={(enabled) => {
-                    updatePreferences({ source: enabled ? "remote" : "local" });
+                    if (!enabled) {
+                      updatePreferences({ source: "local" });
+                      return;
+                    }
+                    if (preferences.onlineDisclaimerSeen) {
+                      updatePreferences({ source: "remote" });
+                      return;
+                    }
+                    showDialog(
+                      "Online catalog",
+                      "Plexy does not host online titles. Metadata comes from TMDB and playback is provided by third-party sources. Some titles may be unavailable, region-locked, or change without notice.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Continue",
+                          onPress: () =>
+                            updatePreferences({
+                              source: "remote",
+                              onlineDisclaimerSeen: true,
+                            }),
+                        },
+                      ],
+                    );
                   }}
                 />
               </SettingsRow>
@@ -347,74 +381,12 @@ export function SettingsScreen({
             </Text>
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow
-                title="Skip forward & backward"
-                subtitle={`${preferences.seekSeconds} seconds`}
-                onPress={() =>
-                  showDialog(
-                    "Seek duration",
-                    "Choose the interval for both directions and double taps.",
-                    [
-                      ...([5, 10, 15, 20, 30, 60] as const).map((value) => ({
-                        text: `${preferences.seekSeconds === value ? "✓ " : ""}${value} seconds`,
-                        onPress: () =>
-                          updatePreferences({ seekSeconds: value }),
-                      })),
-                    ],
-                  )
-                }
+                navigation
+                title="Playback settings"
+                subtitle="Seeking, subtitles, autoplay and skipping"
+                icon={Gauge}
+                onPress={() => push("/settings/playback")}
               />
-              <SettingsRow
-                title="Automatic subtitles"
-                subtitle="Use preferred track"
-              >
-                <ToggleSwitch
-                  value={preferences.autoSubtitles}
-                  onValueChange={(v) => updatePreferences({ autoSubtitles: v })}
-                />
-              </SettingsRow>
-              <SettingsRow
-                title="Automatically skip marked sections"
-                subtitle="Skip intro, recap and credits"
-              >
-                <ToggleSwitch
-                  value={preferences.autoSkip}
-                  onValueChange={(v) => updatePreferences({ autoSkip: v })}
-                  accessibilityLabel="Automatically skip marked sections"
-                />
-              </SettingsRow>
-              <SettingsRow
-                title="Play next episode"
-                subtitle="Continue automatically"
-              >
-                <ToggleSwitch
-                  value={preferences.autoNext}
-                  onValueChange={(v) => updatePreferences({ autoNext: v })}
-                />
-              </SettingsRow>
-              <SettingsRow
-                title="Autoplay online"
-                subtitle="Start the Vidy player automatically"
-              >
-                <ToggleSwitch
-                  value={preferences.onlineAutoplay}
-                  onValueChange={(v) =>
-                    updatePreferences({ onlineAutoplay: v })
-                  }
-                  accessibilityLabel="Autoplay online"
-                />
-              </SettingsRow>
-              <SettingsRow
-                title="Online episode picker"
-                subtitle="Show the provider season and episode menu"
-              >
-                <ToggleSwitch
-                  value={preferences.onlineEpisodeSelector}
-                  onValueChange={(v) =>
-                    updatePreferences({ onlineEpisodeSelector: v })
-                  }
-                  accessibilityLabel="Online episode picker"
-                />
-              </SettingsRow>
             </View>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               About
@@ -508,6 +480,99 @@ export function SettingsScreen({
               This product uses the TMDB API but is not endorsed or certified by
               TMDB.
             </Text>
+          </>
+        )}
+        {page === "playback" && (
+          <>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Seeking
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Skip forward & backward"
+                subtitle={`${preferences.seekSeconds} seconds`}
+                onPress={() =>
+                  showDialog(
+                    "Seek duration",
+                    "Choose the interval for both directions and double taps.",
+                    [
+                      ...([5, 10, 15, 20, 30, 60] as const).map((value) => ({
+                        text: `${preferences.seekSeconds === value ? "✓ " : ""}${value} seconds`,
+                        onPress: () =>
+                          updatePreferences({ seekSeconds: value }),
+                      })),
+                    ],
+                  )
+                }
+              />
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Subtitles
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Automatic subtitles"
+                subtitle="Use preferred track"
+              >
+                <ToggleSwitch
+                  value={preferences.autoSubtitles}
+                  onValueChange={(v) => updatePreferences({ autoSubtitles: v })}
+                />
+              </SettingsRow>
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Playback behavior
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Automatically skip marked sections"
+                subtitle="Skip intro, recap and credits"
+              >
+                <ToggleSwitch
+                  value={preferences.autoSkip}
+                  onValueChange={(v) => updatePreferences({ autoSkip: v })}
+                  accessibilityLabel="Automatically skip marked sections"
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="Play next episode"
+                subtitle="Continue automatically"
+              >
+                <ToggleSwitch
+                  value={preferences.autoNext}
+                  onValueChange={(v) => updatePreferences({ autoNext: v })}
+                />
+              </SettingsRow>
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Online playback
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                title="Autoplay online"
+                subtitle="Start the Vidy player automatically"
+              >
+                <ToggleSwitch
+                  value={preferences.onlineAutoplay}
+                  onValueChange={(v) =>
+                    updatePreferences({ onlineAutoplay: v })
+                  }
+                  accessibilityLabel="Autoplay online"
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="Online episode picker"
+                subtitle="Show the provider season and episode menu"
+              >
+                <ToggleSwitch
+                  value={preferences.onlineEpisodeSelector}
+                  onValueChange={(v) =>
+                    updatePreferences({ onlineEpisodeSelector: v })
+                  }
+                  accessibilityLabel="Online episode picker"
+                />
+              </SettingsRow>
+            </View>
           </>
         )}
         {page === "folders" && (
@@ -763,22 +828,13 @@ export function SettingsScreen({
                         })
                 }
               />
-              <SettingsRow
-                title="Automatically skip marked sections"
-                subtitle="Turn off to show a skip button instead"
-              >
-                <ToggleSwitch
-                  accessibilityLabel="Automatically skip intro recap and credits"
-                  value={preferences.autoSkip}
-                  onValueChange={(v) => updatePreferences({ autoSkip: v })}
-                />
-              </SettingsRow>
             </View>
             <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
               When timings are available, the player offers Skip intro, Skip
               recap or Skip credits. Saved markers work offline. Missing or
               stale markers are checked during scans and playback; titles
-              without community timings play normally.
+              without community timings play normally. Automatic skipping is
+              configured under Playback settings.
             </Text>
           </>
         )}

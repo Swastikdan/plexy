@@ -11,12 +11,19 @@ import {
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
+import { useOnline } from "@/shared/hooks/use-online";
 import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
-import { Search as SearchIcon, X } from "@/shared/ui/icons";
+import {
+  AlertCircle,
+  Search as SearchIcon,
+  WifiOff,
+  X,
+} from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageState } from "@/shared/ui/page-state";
 import {
   SearchHomeSkeleton,
   SearchResultRowsSkeleton,
@@ -28,7 +35,7 @@ import { OpenTitle } from "@/features/catalog/types";
 import { useRemoteHome } from "@/features/remote/lib/use-remote-home";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { useRemoteSearch } from "@/features/remote/lib/use-remote-search";
-import { prefetchImages } from "@/features/remote/lib/prefetch";
+import { prefetchDetails, prefetchImages } from "@/features/remote/lib/prefetch";
 import {
   remoteWatch,
   useRemoteProgress,
@@ -79,6 +86,7 @@ export function SearchScreen({
   play: (fileId: number) => void;
 }) {
   const colors = useColors();
+  const connected = useOnline();
   const { api, preferences } = useClient();
   const titleActions = useTitleActions();
   const { width } = useWindowDimensions();
@@ -181,7 +189,20 @@ export function SearchScreen({
       ]),
       24,
     );
+    prefetchDetails(
+      onlineCards.map((entry) => entry.title),
+      6,
+    );
   }, [onlineCards]);
+  React.useEffect(() => {
+    prefetchImages(
+      [
+        ...(data.value?.titles ?? []),
+        ...(data.value?.episodes ?? []),
+      ].flatMap((item) => [item.poster, item.backdrop]),
+      24,
+    );
+  }, [data.value]);
   const onlineItems = React.useMemo(
     () => onlineCards.map((entry) => entry.item),
     [onlineCards],
@@ -246,9 +267,15 @@ export function SearchScreen({
       content = <SearchHomeSkeleton />;
     } else if (!homeRows.length && !onlineHome.rows.length && homeError) {
       content = (
-        <Notice
-          message={homeError || "Could not load this screen."}
-          retry={() => {
+        <PageState
+          icon={connected ? AlertCircle : WifiOff}
+          title={connected ? "Couldn't load search" : "You're offline"}
+          message={
+            connected
+              ? homeError
+              : "Connect to the internet to search online. Your local library is still available."
+          }
+          onAction={() => {
             homeData.retry();
             onlineHome.data.retry();
           }}
@@ -369,29 +396,29 @@ export function SearchScreen({
     // until the other source has answered too.
     content = <SearchResultsSkeleton />;
   } else if (localError || onlineError) {
+    const offline = !connected && onlineMode;
     content = (
-      <View className="gap-2">
-        {localError && (
-          <View className="px-5">
-            <Notice message={localError} retry={data.retry} />
-          </View>
-        )}
-        {onlineError && (
-          <View className="px-5">
-            <Notice message={onlineError} retry={onlineResult.retry} />
-          </View>
-        )}
-      </View>
+      <PageState
+        icon={offline ? WifiOff : AlertCircle}
+        title={offline ? "You're offline" : "Couldn't search"}
+        message={
+          offline
+            ? "Connect to the internet to search online. Your local library is still available."
+            : (localError ?? onlineError ?? "Could not load results.")
+        }
+        onAction={() => {
+          data.retry();
+          onlineResult.retry();
+        }}
+      />
     );
   } else {
     content = (
-      <View className="flex-1 items-center justify-center px-6">
-        <View className="self-center rounded-[18px] border border-border bg-surface px-6 py-5">
-          <Text className="text-center text-[14px] font-archivo-medium text-muted">
-            No results for “{debounced}”. Try another one.
-          </Text>
-        </View>
-      </View>
+      <PageState
+        icon={SearchIcon}
+        title="No results"
+        message={`Nothing matched “${debounced}”. Try a different title or episode.`}
+      />
     );
   }
   return (

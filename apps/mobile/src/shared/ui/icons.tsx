@@ -5,6 +5,7 @@ import ArrowLeft02Icon from "@hugeicons/core-free-icons/ArrowLeft02Icon";
 import ArrowLeftRightIcon from "@hugeicons/core-free-icons/ArrowLeftRightIcon";
 import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
 import ArrowUpDownIcon from "@hugeicons/core-free-icons/ArrowUpDownIcon";
+import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
 import AudioLinesIcon from "@hugeicons/core-free-icons/AudioLinesIcon";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import ComputerIcon from "@hugeicons/core-free-icons/ComputerIcon";
@@ -48,6 +49,7 @@ import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import Tv01Icon from "@hugeicons/core-free-icons/Tv01Icon";
 import VolumeHighIcon from "@hugeicons/core-free-icons/VolumeHighIcon";
 import VolumeOffIcon from "@hugeicons/core-free-icons/VolumeOffIcon";
+import WifiOff02Icon from "@hugeicons/core-free-icons/WifiOff02Icon";
 import ZoomInIcon from "@hugeicons/core-free-icons/ZoomInIcon";
 import {
 HugeiconsIcon,
@@ -119,6 +121,8 @@ export const System = glyph(ComputerIcon);
 export const Gauge = glyph(GaugeIcon);
 export const Globe = glyph(GlobeIcon);
 export const MoreHorizontal = glyph(MoreHorizontalIcon);
+export const AlertCircle = glyph(AlertCircleIcon);
+export const WifiOff = glyph(WifiOff02Icon);
 
 /**
  * Solid info mark — the filled "i" by itself, for use on an opaque chip

@@ -127,6 +127,10 @@ export class LocalApi extends LocalCatalog {
         await this.library.clearWatch(itemId);
         return { ok: true };
     }
+    override async setWatchlist(itemId: number, watchlisted: boolean) {
+        await this.library.setWatchlist(itemId, watchlisted);
+        return { ok: true };
+    }
     override skips(fileId: number) {
         return this.library.getMarkers(fileId);
     }
