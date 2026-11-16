@@ -1,3 +1,4 @@
+import { fetchUpdateJson, UpdateRequestError } from "@/features/settings/lib/update-request";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { usePathname } from "expo-router";
 import { createContext, useContext, useEffect, useRef, useState, type PropsWithChildren } from "react";
@@ -64,12 +65,11 @@ function useUpdateCoordinator() {
     setUpdateStatusText("Checking for updates…");
     const controller = new AbortController();
     activeRequest.current = controller;
-    const timeout = setTimeout(() => controller.abort(), 12_000);
     try {
       const installed = await getInstalledAppInfo();
       if (!alive.current) return;
       setAppInfo(installed);
-      const response = await fetch(MOBILE_POLICY_URL, { signal: controller.signal, headers: { "Cache-Control": "no-cache" } });
+      const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal: controller.signal });
       if (response.status === 404 && !policyRef.current) {
         const legacy = await checkForUpdate(installed, controller.signal);
         if (!alive.current) return;
@@ -77,8 +77,8 @@ function useUpdateCoordinator() {
         setUpdateStatusText(legacy ? "An update is available." : "Plexy is up to date.");
         return;
       }
-      if (!response.ok) throw Error(`Update check failed (HTTP ${response.status}).`);
-      const incoming = parseMobileManifest(await response.json());
+      if (response.status === 404) throw new UpdateRequestError("The update policy is temporarily unavailable (HTTP 404). Please retry.", 404);
+      const incoming = parseMobileManifest(response.data);
       const merged = mergeMobilePolicy(policyRef.current, incoming);
       if (!alive.current) return;
       policyRef.current = merged;
@@ -89,9 +89,11 @@ function useUpdateCoordinator() {
       if (!alive.current) return;
       setUpdateStatusText(manifestUpdate(merged, installed.versionName, installed.versionCode) ? `Version ${merged.latestVersion} is available.` : "Plexy is up to date.");
     } catch (error) {
-      if (alive.current) setUpdateStatusText(controller.signal.aborted ? "Update check timed out. Please retry." : error instanceof Error ? error.message : String(error));
+      // Failed checks should not suppress recovery for the full success interval.
+      lastCheck.current = Date.now() - CHECK_INTERVAL + 60_000;
+      if (alive.current && !controller.signal.aborted) setUpdateStatusText(error instanceof Error ? error.message : String(error));
     } finally {
-      clearTimeout(timeout);
+      if (activeRequest.current === controller) activeRequest.current = null;
       checking.current = false;
       if (alive.current) setUpdateChecking(false);
     }

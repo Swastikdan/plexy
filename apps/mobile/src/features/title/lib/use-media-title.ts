@@ -144,7 +144,7 @@ export function useMediaTitle(
   // list and episode counts can use the full catalog instead of only what is
   // downloaded on this device. A failure never blocks the local detail.
   const remoteEnabled =
-    (onlineEnabled || input.source === "local") &&
+    onlineEnabled &&
     tmdbId != null &&
     mediaType != null;
 

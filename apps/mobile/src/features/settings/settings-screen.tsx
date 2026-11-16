@@ -1,3 +1,4 @@
+import { modeLabels } from "@/core/client/preferences";
 import * as Linking from "expo-linking";
 import { fetchUpdateReleases } from "./lib/update-releases";
 import { selectUpdate } from "./lib/update-policy";
@@ -81,6 +82,8 @@ export function SettingsScreen({
   }, [expandedFolder, folderFiles]);
   const [message, setMessage] = useState("");
   const { api, runtime, preferences, updatePreferences } = useClient();
+  const hasLocal = preferences.mode !== "online";
+  const hasOnline = preferences.mode !== "local";
   const {
     appInfo,
     availableUpdate,
@@ -234,7 +237,7 @@ export function SettingsScreen({
         }}
       >
         {!online && (
-          <Notice message="Offline. Trailers, updates and metadata refresh are unavailable. Your saved library and markers still work." />
+          <Notice message="Offline. Online playback and updates are unavailable. Saved local videos remain available in Local only or Hybrid mode." />
         )}
         <Modal
           visible={!!picker}
@@ -297,6 +300,10 @@ export function SettingsScreen({
               value={preferences.theme}
               onChange={(theme) => updatePreferences({ theme })}
             />
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow navigation title="Watching mode" subtitle={modeLabels[preferences.mode]} onPress={() => updatePreferences({ onboardingCompleted: false })} />
+            </View>
+            {preferences.mode === "hybrid" && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Online
             </Text>
@@ -337,6 +344,8 @@ export function SettingsScreen({
               </SettingsRow>
 
             </View>
+            </>}
+            {hasLocal && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Library
             </Text>
@@ -376,6 +385,7 @@ export function SettingsScreen({
             {localLibrary.issues.map((issue) => (
               <Notice key={issue} message={issue} />
             ))}
+            </>}
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Playback
             </Text>
@@ -383,7 +393,7 @@ export function SettingsScreen({
               <SettingsRow
                 navigation
                 title="Playback settings"
-                subtitle="Seeking, subtitles, autoplay and skipping"
+                subtitle={hasLocal ? "Seeking, subtitles, autoplay and skipping" : "Online autoplay and episode picker"}
                 icon={Gauge}
                 onPress={() => push("/settings/playback")}
               />
@@ -472,10 +482,10 @@ export function SettingsScreen({
                 }
               />
             </View>
-            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
+            {hasLocal && <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
               Videos stay in their original folders. Library data, artwork and
               saved scrub previews stay on this device.
-            </Text>
+            </Text>}
             <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
               This product uses the TMDB API but is not endorsed or certified by
               TMDB.
@@ -484,6 +494,7 @@ export function SettingsScreen({
         )}
         {page === "playback" && (
           <>
+            {hasLocal && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Seeking
             </Text>
@@ -544,6 +555,8 @@ export function SettingsScreen({
                 />
               </SettingsRow>
             </View>
+            </>}
+            {hasOnline && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Online playback
             </Text>
@@ -573,9 +586,10 @@ export function SettingsScreen({
                 />
               </SettingsRow>
             </View>
+            </>}
           </>
         )}
-        {page === "folders" && (
+        {page === "folders" && hasLocal && (
           <>
             {!expandedFolder ? (
               <>
@@ -684,7 +698,7 @@ export function SettingsScreen({
             )}
           </>
         )}
-        {page === "metadata" && (
+        {page === "metadata" && hasLocal && (
           <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               TMDB metadata

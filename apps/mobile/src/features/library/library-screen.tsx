@@ -110,8 +110,8 @@ export function LibraryScreen({
     );
   }, [savedOnline]);
   const visibleOnline = React.useMemo(
-    () => offlineOnly ? [] : savedOnline,
-    [offlineOnly, savedOnline],
+    () => offlineOnly && preferences.mode === "hybrid" ? [] : savedOnline,
+    [offlineOnly, savedOnline, preferences.mode],
   );
   const savedOnlineFor = (tab: LibraryTab) => {
     if (tab === "all") return visibleOnline;
@@ -405,7 +405,7 @@ export function LibraryScreen({
                 reset(sort, !unwatched);
               }}
             />
-            {online && savedOnline.length > 0 && (
+            {preferences.mode === "hybrid" && online && savedOnline.length > 0 && (
               <FilterRow
                 label="Offline only"
                 role="checkbox"

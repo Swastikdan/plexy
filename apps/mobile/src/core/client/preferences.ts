@@ -1,3 +1,4 @@
+import type { AppMode } from "./watching-mode";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
   try {
@@ -9,7 +10,10 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
 }
 export const writeJson = (key: string, value: unknown) =>
   AsyncStorage.setItem(key, JSON.stringify(value));
+export { modeLabels, modePreferences, type AppMode } from "./watching-mode";
 export interface Preferences {
+  mode: AppMode;
+  onboardingCompleted: boolean;
   theme: "light" | "dark" | "system";
   /** Which catalog the app browses. Local is the on-device library. */
   source: "local" | "remote";
@@ -30,6 +34,8 @@ export interface Preferences {
   playbackRate: number;
 }
 export const defaultPreferences: Preferences = {
+  mode: "hybrid",
+  onboardingCompleted: false,
   theme: "system",
   source: "local",
   autoSubtitles: true,

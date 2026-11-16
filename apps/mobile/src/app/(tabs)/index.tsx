@@ -9,7 +9,7 @@ export default function HomeRoute() {
   const navigation = useMediaNavigation();
   const active = useIsFocused();
   const remote = preferences.source === "remote";
-  if (!remote && active && runtime.needsSetup())
+  if (preferences.mode === "local" && active && runtime.needsSetup())
     return <Redirect href="/settings/folders" />;
   if (remote) return <RemoteHomeScreen />;
   return <HomeScreen {...navigation} active={active} />;

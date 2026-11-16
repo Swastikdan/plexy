@@ -1,8 +1,10 @@
+import { restoredMode } from "./watching-mode";
+import { catalogForMode } from "./mode-catalog";
 import { Uniwind } from "uniwind";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { AppState } from "react-native";
 import type { LocalCatalog } from "@/core/library/catalog-api";
-import { defaultPreferences, PREFERENCE_KEY, readJson, writeJson, type Preferences, } from "./preferences";
+import { defaultPreferences, modePreferences, PREFERENCE_KEY, readJson, writeJson, type Preferences, } from "./preferences";
 import { ProgressQueue, type Progress } from "./progress-queue";
 export interface TitleSearchResult {
     id: number;
@@ -37,8 +39,8 @@ const Context = createContext<ClientContext | null>(null);
 export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
     runtime: MobileRuntimeBindings;
 }>) {
-    const api = runtime.api;
     const [preferences, setPreferences] = useState(defaultPreferences);
+    const api = useMemo(() => catalogForMode(runtime.api, preferences.mode), [runtime.api, preferences.mode]);
     const [ready, setReady] = useState(false);
     const [storageError, setStorageError] = useState<string | null>(null);
     const preferencesRef = useRef(preferences);
@@ -49,11 +51,14 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
     useEffect(() => {
         let live = true;
         void (async () => {
+            const stored = await readJson<Partial<Preferences>>(PREFERENCE_KEY, {});
             const saved = {
                 ...defaultPreferences,
-                ...(await readJson<Partial<Preferences>>(PREFERENCE_KEY, {})),
+                ...stored,
             };
             saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
+            Object.assign(saved, restoredMode(stored, !runtime.needsSetup()));
+            if (saved.mode !== "hybrid") Object.assign(saved, modePreferences(saved.mode));
             if (saved.source !== "remote") saved.source = "local";
             if (![5, 10, 15, 20, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
             if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
@@ -64,7 +69,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             if (live)
                 setPreferences(saved);
             await progress.restore();
-            await progress.flush(api);
+            await progress.flush(runtime.api);
             if (live)
                 setReady(true);
         })().catch(() => {
@@ -72,17 +77,18 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
                 setStorageError("Device storage could not be loaded. Restart the app before making changes.");
         });
         const state = AppState.addEventListener("change", () => {
-            void progress.flush(api).catch(() => { });
+            void progress.flush(runtime.api).catch(() => { });
         });
         return () => {
             live = false;
             state.remove();
             void progress.flushLocal().catch(() => { });
-            void progress.flush(api).catch(() => { });
+            void progress.flush(runtime.api).catch(() => { });
         };
-    }, [api, progress]);
+    }, [runtime, progress]);
     const updatePreferences = (patch: Partial<Preferences>) => {
         const next = { ...preferencesRef.current, ...patch };
+        if (patch.mode && patch.mode !== "hybrid") Object.assign(next, modePreferences(patch.mode));
         if (patch.theme) Uniwind.setTheme(patch.theme);
         preferencesRef.current = next;
         setPreferences(next);

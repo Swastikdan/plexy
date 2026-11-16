@@ -1,0 +1,94 @@
+import { useEffect, useState } from "react";
+import { Directory } from "expo-file-system";
+import { useRouter } from "expo-router";
+import { BackHandler, Pressable, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { canFinishOnboarding } from "@/core/client/watching-mode";
+import { useClient } from "@/core/client/client-provider";
+import { modeLabels, modePreferences, type AppMode } from "@/core/client/preferences";
+import { displayName, localLibrary } from "@/core/library/local-runtime";
+import { useAppDialog } from "@/shared/ui/app-dialog";
+import { Button } from "@/shared/ui/button";
+import { Notice } from "@/shared/ui/notice";
+
+const descriptions: Record<AppMode, string> = {
+  local: "Watch videos from your media folders. Keep online browsing and streaming out of the way.",
+  hybrid: "Your media folders and the online catalog together. Add folders now or whenever you’re ready.",
+  online: "Browse and watch online. No folders, library scans or local playback settings.",
+};
+
+export function OnboardingScreen() {
+  const { preferences, updatePreferences } = useClient();
+  const router = useRouter();
+  const dialog = useAppDialog();
+  const [mode, setMode] = useState<AppMode>(preferences.mode);
+  const [step, setStep] = useState<"mode" | "setup">("mode");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [, refresh] = useState(0);
+  useEffect(() => localLibrary.subscribe(() => refresh(n => n + 1)), []);
+  useEffect(() => {
+    if (step !== "setup") return;
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!busy) setStep("mode");
+      return true;
+    });
+    return () => listener.remove();
+  }, [step, busy]);
+  const folders = localLibrary.state.roots.filter(root => !root.singleFile);
+  const finish = () => {
+    if (!canFinishOnboarding(mode, folders.length)) return;
+    updatePreferences({ ...modePreferences(mode), onboardingCompleted: true, onlineDisclaimerSeen: mode !== "local" || preferences.onlineDisclaimerSeen });
+    router.replace("/");
+  };
+  const pick = async (kind: "movies" | "tv" | "anime") => {
+    setBusy(true);
+    setError("");
+    try {
+      const folder = await Directory.pickDirectoryAsync();
+      await localLibrary.addRoot({ uri: folder.uri, name: displayName(folder.uri), kind });
+    } catch (e) {
+      if (!/cancel/i.test(String(e))) setError(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  };
+  return (
+    <SafeAreaView className="flex-1 bg-background">
+      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40, gap: 20, flexGrow: 1 }}>
+        <Text className="font-archivo-black text-[26px] text-foreground">Plexy</Text>
+        <View className="gap-3 pt-5">
+          <Text accessibilityRole="header" className="font-archivo-bold text-[34px] leading-[40px] text-foreground">
+            {step === "mode" ? "How do you like to watch?" : mode === "online" ? "Your next watch awaits." : "Make room for your collection."}
+          </Text>
+          <Text className="font-archivo-regular text-[16px] leading-[24px] text-muted">
+            {step === "mode" ? "Choose your Plexy experience. You can change it later in Settings." : mode === "local" ? "Connect at least one media folder to get started. Your videos stay where they are." : mode === "hybrid" ? "Connect a media folder, or start online and add your collection later." : "You’re ready to browse the online catalog. No media folders needed."}
+          </Text>
+        </View>
+        {step === "mode" ? (
+          <>
+            <View className="gap-3" accessibilityRole="radiogroup">
+              {(["local", "hybrid", "online"] as const).map(value => (
+                <Pressable key={value} testID={`mode-${value}`} accessibilityRole="radio" accessibilityState={{ checked: mode === value }} onPress={() => setMode(value)} className={`rounded-[18px] border-2 p-5 gap-2 ${mode === value ? "border-accent bg-surface" : "border-border bg-background"}`}>
+                  <Text className="font-archivo-bold text-[20px] text-foreground">{modeLabels[value]}{mode === value ? " ✓" : ""}</Text>
+                  <Text className="font-archivo-regular text-[14px] leading-[21px] text-muted">{descriptions[value]}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Button primary label="Continue" onPress={() => setStep("setup")} />
+          </>
+        ) : (
+          <>
+            {mode !== "online" && <>
+              {folders.map(folder => <Text key={folder.uri} className="font-archivo-medium text-[15px] text-foreground">✓ {folder.name || displayName(folder.uri)}</Text>)}
+              <Button label={busy ? "Adding folder…" : "Add media folder"} disabled={busy} onPress={() => dialog("Add media folder", "What’s in this folder?", (["movies", "tv", "anime"] as const).map(kind => ({ text: kind === "tv" ? "TV shows" : kind === "anime" ? "Anime" : "Movies", onPress: () => void pick(kind) })))} />
+            </>}
+            {mode !== "local" && <Notice message="Plexy does not host online titles. Metadata comes from TMDB and playback uses third-party sources. Availability may vary by title and region." />}
+            {!!error && <Notice message={error} />}
+            <View className="flex-1" />
+            <Button primary testID="finish-onboarding" label={mode === "hybrid" && !folders.length ? "Start without folders" : "Start watching"} disabled={busy || !canFinishOnboarding(mode, folders.length)} onPress={finish} />
+            <Button label="Change mode" disabled={busy} onPress={() => setStep("mode")} />
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}

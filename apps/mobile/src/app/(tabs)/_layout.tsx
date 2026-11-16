@@ -1,3 +1,4 @@
+import { OnboardingScreen } from "@/features/onboarding/onboarding-screen";
 import { Tabs } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
@@ -98,13 +99,14 @@ function MobileTabBar({
   );
 }
 export default function TabLayout() {
-  const { runtime } = useClient();
+  const { runtime, preferences } = useClient();
   const [attention, setAttention] = useState(0);
   useEffect(() => {
     const update = () => setAttention(runtime.getAttentionCount());
     update();
     return runtime.subscribe(update);
   }, [runtime]);
+  if (!preferences.onboardingCompleted) return <OnboardingScreen />;
   return (
     <Tabs
       // Android back follows the tab visit history, so Library → Settings →
@@ -114,7 +116,7 @@ export default function TabLayout() {
         <MobileTabBar
           state={props.state}
           navigation={props.navigation}
-          attention={attention}
+          attention={preferences.mode === "online" ? 0 : attention}
         />
       )}
       screenOptions={{
