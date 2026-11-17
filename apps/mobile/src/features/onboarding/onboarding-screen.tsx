@@ -7,8 +7,10 @@ import { canFinishOnboarding } from "@/core/client/watching-mode";
 import { useClient } from "@/core/client/client-provider";
 import { modeLabels, modePreferences, type AppMode } from "@/core/client/preferences";
 import { displayName, localLibrary } from "@/core/library/local-runtime";
+import { useColors } from "@/shared/theme";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Button } from "@/shared/ui/button";
+import { ChevronLeft } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 
 const descriptions: Record<AppMode, string> = {
@@ -17,7 +19,16 @@ const descriptions: Record<AppMode, string> = {
   online: "Browse and watch online. No folders, library scans or local playback settings.",
 };
 
-export function OnboardingScreen() {
+export function OnboardingScreen({
+  onClose,
+  onDone,
+}: {
+  /** Set when the screen is opened from Settings, so it can return there. */
+  onClose?: () => void;
+  /** Set when finishing should close the screen instead of replacing the app root. */
+  onDone?: () => void;
+} = {}) {
+  const colors = useColors();
   const { preferences, updatePreferences } = useClient();
   const router = useRouter();
   const dialog = useAppDialog();
@@ -39,7 +50,8 @@ export function OnboardingScreen() {
   const finish = () => {
     if (!canFinishOnboarding(mode, folders.length)) return;
     updatePreferences({ ...modePreferences(mode), onboardingCompleted: true, onlineDisclaimerSeen: mode !== "local" || preferences.onlineDisclaimerSeen });
-    router.replace("/");
+    if (onDone) onDone();
+    else router.replace("/");
   };
   const pick = async (kind: "movies" | "tv" | "anime") => {
     setBusy(true);
@@ -54,7 +66,20 @@ export function OnboardingScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40, gap: 20, flexGrow: 1 }}>
-        <Text className="font-archivo-black text-[26px] text-foreground">Plexy</Text>
+        <View className="flex-row items-center gap-2">
+          {onClose && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              onPress={onClose}
+              hitSlop={8}
+              className="-ml-2 h-10 w-10 items-center justify-center rounded-full active:opacity-60"
+            >
+              <ChevronLeft size={26} color={colors.ink} />
+            </Pressable>
+          )}
+          <Text className="font-archivo-black text-[26px] text-foreground">Plexy</Text>
+        </View>
         <View className="gap-3 pt-5">
           <Text accessibilityRole="header" className="font-archivo-bold text-[34px] leading-[40px] text-foreground">
             {step === "mode" ? "How do you like to watch?" : mode === "online" ? "Your next watch awaits." : "Make room for your collection."}
@@ -68,12 +93,12 @@ export function OnboardingScreen() {
             <View className="gap-3" accessibilityRole="radiogroup">
               {(["local", "hybrid", "online"] as const).map(value => (
                 <Pressable key={value} testID={`mode-${value}`} accessibilityRole="radio" accessibilityState={{ checked: mode === value }} onPress={() => setMode(value)} className={`rounded-[18px] border-2 p-5 gap-2 ${mode === value ? "border-accent bg-surface" : "border-border bg-background"}`}>
-                  <Text className="font-archivo-bold text-[20px] text-foreground">{modeLabels[value]}{mode === value ? " ✓" : ""}</Text>
+                  <Text className={`font-archivo-bold text-[20px] ${mode === value ? "text-accent" : "text-foreground"}`}>{modeLabels[value]}</Text>
                   <Text className="font-archivo-regular text-[14px] leading-[21px] text-muted">{descriptions[value]}</Text>
                 </Pressable>
               ))}
             </View>
-            <Button primary label="Continue" onPress={() => setStep("setup")} />
+            <Button primary label={onClose ? "Configure" : "Continue"} onPress={() => setStep("setup")} />
           </>
         ) : (
           <>

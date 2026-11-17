@@ -1,7 +1,8 @@
-import Animated, { useReducedMotion } from "react-native-reanimated";
+import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
+import { useClient } from "@/core/client/client-provider";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { rememberTitlePreview } from "@/core/library/title-prefetch";
 import { useColors } from "@/shared/theme";
@@ -32,6 +33,7 @@ export function Card({
   online?: boolean;
 }) {
   const colors = useColors();
+  const { preferences } = useClient();
   const reducedMotion = useReducedMotion();
   const [pressed, setPressed] = useState(false);
   const [focus, setFocus] = useState(false);
@@ -41,11 +43,20 @@ export function Card({
   const cardWidth = width || 150;
   const hasProgress = !!item.watch && !item.watch.played;
   const isWatched = item.watch?.played;
-  const showPoster = Boolean(item.poster) && failedPoster !== item.poster;
+  // Prefer the poster, but a backdrop is still a title card: only fall back to
+  // the text treatment when neither artwork is available (or both fail).
+  const artwork =
+    item.poster && failedPoster !== item.poster
+      ? item.poster
+      : item.backdrop && failedPoster !== item.backdrop
+        ? item.backdrop
+        : null;
+  const showPoster = Boolean(artwork);
+  const showOnline = online && preferences.mode === "hybrid";
   return (
     <AnimatedPressable
       accessibilityRole="button"
-      accessibilityLabel={`${item.parentTitle ? item.parentTitle + ", " : ""}${item.name}${online ? ", online" : ""}${isWatched ? ", watched" : ""}`}
+      accessibilityLabel={`${item.parentTitle ? item.parentTitle + ", " : ""}${item.name}${showOnline ? ", online" : ""}${isWatched ? ", watched" : ""}`}
       onFocus={() => {
         setFocus(true);
         onFocus?.();
@@ -65,7 +76,7 @@ export function Card({
         transform: [{ scale: pressed && !reducedMotion ? 0.97 : 1 }],
         transitionProperty: "transform",
         transitionDuration: reducedMotion ? 0 : 120,
-        transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+        transitionTimingFunction: cubicBezier(0.23, 1, 0.32, 1),
       }}
       className="gap-2 active:opacity-90"
     >
@@ -88,8 +99,8 @@ export function Card({
               {item.kind === "series" ? <Tv size={40} color={colors.quiet} /> : <Film size={40} color={colors.quiet} />}
             </View>
             <PosterImage
-              source={api.image(item.poster)}
-              onError={() => setFailedPoster(item.poster)}
+              source={api.image(artwork!)}
+              onError={() => setFailedPoster(artwork)}
             />
           </>
         ) : (
@@ -109,7 +120,7 @@ export function Card({
           style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "55%" }}
           pointerEvents="none"
         />
-        {online && (
+        {showOnline && (
           <View
             accessibilityLabel="Online title"
             className="absolute left-2 top-2 z-[3] h-[22px] w-[22px] items-center justify-center rounded-full bg-accent"

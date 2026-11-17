@@ -301,50 +301,8 @@ export function SettingsScreen({
               onChange={(theme) => updatePreferences({ theme })}
             />
             <View className="overflow-hidden rounded-[18px] bg-surface">
-              <SettingsRow navigation title="Watching mode" subtitle={modeLabels[preferences.mode]} onPress={() => updatePreferences({ onboardingCompleted: false })} />
+              <SettingsRow navigation title="Watching mode" subtitle={modeLabels[preferences.mode]} onPress={() => push("/watching-mode")} />
             </View>
-            {preferences.mode === "hybrid" && <>
-            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-              Online
-            </Text>
-            <View className="overflow-hidden rounded-[18px] bg-surface">
-              <SettingsRow
-                title="Online catalog"
-                subtitle="Browse TMDB and play with Vidy"
-              >
-                <ToggleSwitch
-                  value={preferences.source === "remote"}
-                  accessibilityLabel="Online catalog"
-                  onValueChange={(enabled) => {
-                    if (!enabled) {
-                      updatePreferences({ source: "local" });
-                      return;
-                    }
-                    if (preferences.onlineDisclaimerSeen) {
-                      updatePreferences({ source: "remote" });
-                      return;
-                    }
-                    showDialog(
-                      "Online catalog",
-                      "Plexy does not host online titles. Metadata comes from TMDB and playback is provided by third-party sources. Some titles may be unavailable, region-locked, or change without notice.",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Continue",
-                          onPress: () =>
-                            updatePreferences({
-                              source: "remote",
-                              onlineDisclaimerSeen: true,
-                            }),
-                        },
-                      ],
-                    );
-                  }}
-                />
-              </SettingsRow>
-
-            </View>
-            </>}
             {hasLocal && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Library

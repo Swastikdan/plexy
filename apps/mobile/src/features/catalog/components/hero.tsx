@@ -47,21 +47,15 @@ export function Hero({
   onHeroFocus?: () => void;
   online?: boolean;
 }) {
-  const { api } = useClient();
+  const { api, preferences } = useClient();
   const colors = useColors();
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
-  // Build metadata line: runtime, rating, episode info and genres.
+  // Build metadata line: year, rating and genres. The online badge only
+  // distinguishes remote titles in hybrid mode; in online-only mode every
+  // title is remote, so the badge is noise.
   const metaParts: React.ReactNode[] = [];
-  if (item.runtime) metaParts.push(`${item.runtime}m`);
-  if (
-    (item as any).seasonNumber != null &&
-    (item as any).episodeNumber != null
-  ) {
-    metaParts.push(
-      `S${(item as any).seasonNumber} E${(item as any).episodeNumber}`,
-    );
-  }
+  if (item.year) metaParts.push(String(item.year));
   if (item.rating != null) {
     metaParts.push(
       <Text
@@ -75,7 +69,7 @@ export function Hero({
   if (item.genres?.length > 0) {
     metaParts.push(item.genres.slice(0, 3).join(", "));
   }
-  if (online) {
+  if (online && preferences.mode === "hybrid") {
     metaParts.push(
       <View
         key="online"
@@ -131,7 +125,8 @@ export function Hero({
             />
           ) : (
             <Text
-              className="font-archivo-black text-[36px] leading-[42px] tracking-[-0.5px] text-foreground"
+              className="font-archivo-black text-[22px] leading-[28px] tracking-[-0.2px] text-foreground"
+              style={{ maxWidth: 260 }}
               numberOfLines={2}
               selectable={false}
             >
@@ -139,7 +134,7 @@ export function Hero({
             </Text>
           )}
 
-          {/* Metadata row under title: runtime, rating and genres. */}
+          {/* Metadata row under title: year, rating, genres and the online badge. */}
           {metaParts.length > 0 && (
             <View className="flex-row flex-wrap items-center gap-[5px]">
               {metaParts.map((part, index) => (

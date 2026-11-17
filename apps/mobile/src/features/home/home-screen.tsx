@@ -1,14 +1,14 @@
 import { useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
 import React, { useRef } from "react";
-import { RefreshControl, Pressable, ScrollView, Text, View } from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
 import { useColors } from "@/shared/theme";
-import { AlertCircle, Film, Search, WifiOff } from "@/shared/ui/icons";
+import { AlertCircle, Film, WifiOff } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { PageState } from "@/shared/ui/page-state";
@@ -46,7 +46,7 @@ export function HomeScreen({
 }) {
   const colors = useColors();
   const connected = useOnline();
-  const { push, navigate } = useRouter();
+  const { push } = useRouter();
   const { api, progress, preferences } = useClient();
   const remoteActions = useRemoteTitleActions();
   const titleActions = useTitleActions();
@@ -262,17 +262,6 @@ export function HomeScreen({
   );
   const hasAnyRows =
     continueItems.length > 0 || shelfRows.length > 0;
-  const searchButton = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Search"
-      onPress={() => navigate("/search")}
-      hitSlop={8}
-      className="h-10 w-10 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
-    >
-      <Search size={20} color={colors.ink} strokeWidth={2} />
-    </Pressable>
-  );
   const fullPageState = (
     icon: typeof AlertCircle,
     title: string,
@@ -282,7 +271,6 @@ export function HomeScreen({
     <View className="flex-1 bg-background">
       <PageHeader
         logo
-        right={searchButton}
         style={{ paddingTop: insets.top + 18 }}
       />
       <PageState
@@ -330,7 +318,6 @@ export function HomeScreen({
       )}
       <PageHeader
         logo
-        right={searchButton}
         style={[
           {
             position: "absolute",

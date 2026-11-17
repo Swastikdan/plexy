@@ -1,12 +1,18 @@
 import { useRouter, useIsFocused } from "expo-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import type { OpenTitle } from "@/features/catalog/types";
 import { useRemoteProgress, remoteWatch } from "./remote-progress";
 import { prefetchDetails, prefetchImages } from "./prefetch";
-import { fetchDetail, fetchHome, type RemoteTitle } from "./tmdb";
+import {
+  fetchDetail,
+  fetchHome,
+  peekDetail,
+  type RemoteDetail,
+  type RemoteTitle,
+} from "./tmdb";
 import { useRemoteNavigation } from "./use-remote-navigation";
 import {
   parseRemotePublicId,
@@ -34,7 +40,6 @@ export function useRemoteHome(enabled = true) {
   );
 
   const home = data.value;
-  const featured = home?.featured ?? null;
   useEffect(() => {
     if (!enabled || !home) return;
     const urls: (string | null | undefined)[] = [
@@ -57,19 +62,6 @@ export function useRemoteHome(enabled = true) {
       8,
     );
   }, [enabled, home]);
-  const featuredDetail = useResource(
-    (signal) =>
-      enabled && featured
-        ? fetchDetail(featured.mediaType, featured.tmdbId, signal)
-        : Promise.resolve(null),
-    [enabled, featured?.mediaType, featured?.tmdbId],
-    "remote-featured-detail",
-  );
-  useEffect(() => {
-    const detail = featuredDetail.value;
-    if (!detail) return;
-    prefetchImages([detail.poster, detail.backdrop, detail.logo], 3);
-  }, [featuredDetail.value]);
   const localByTmdb = api.titlesByTmdb();
   const isLocalTitle = useCallback(
     (title: RemoteTitle) =>
@@ -106,29 +98,54 @@ export function useRemoteHome(enabled = true) {
     return list;
   }, [home, isLocalTitle]);
 
+  // The hero shows TMDB title art (logo) and genres, which are only present on
+  // the detail response. Warm every carousel slide and keep the resolved
+  // details in state so each slide fills in as soon as its detail arrives.
+  const [carouselDetails, setCarouselDetails] = useState(
+    () => new Map<string, RemoteDetail>(),
+  );
+  useEffect(() => {
+    if (!enabled || !carousel.length) return;
+    let live = true;
+    const controller = new AbortController();
+    for (const title of carousel) {
+      const key = `${title.mediaType}:${title.tmdbId}`;
+      void fetchDetail(title.mediaType, title.tmdbId, controller.signal)
+        .then((detail) => {
+          if (!live) return;
+          setCarouselDetails((previous) =>
+            previous.get(key) === detail
+              ? previous
+              : new Map(previous).set(key, detail),
+          );
+        })
+        .catch(() => {});
+    }
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [enabled, carousel]);
+
   const carouselItems = useMemo(
     () => {
       void remoteProgress;
-      const featuredLogo =
-        featured &&
-        featuredDetail.value?.mediaType === featured.mediaType &&
-        featuredDetail.value?.tmdbId === featured.tmdbId
-          ? featuredDetail.value.logo
-          : null;
-      return carousel.map((title, index) =>
-        {
-          const card = toItemCard(
-            title,
-            undefined,
-            remoteWatch(title.mediaType, title.tmdbId),
-          );
-          return index === 0 && featuredLogo
-            ? { ...card, logo: featuredLogo }
-            : card;
-        },
-      );
+      return carousel.map((title) => {
+        const key = `${title.mediaType}:${title.tmdbId}`;
+        const detail =
+          carouselDetails.get(key) ??
+          peekDetail(title.mediaType, title.tmdbId);
+        const card = toItemCard(
+          detail?.genres.length
+            ? { ...title, genres: detail.genres }
+            : title,
+          detail?.runtime,
+          remoteWatch(title.mediaType, title.tmdbId),
+        );
+        return detail?.logo ? { ...card, logo: detail.logo } : card;
+      });
     },
-    [carousel, featured, featuredDetail.value, remoteProgress],
+    [carousel, carouselDetails, remoteProgress],
   );
 
   const rows = useMemo(

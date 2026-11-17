@@ -1,6 +1,6 @@
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { SwipePager, usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
-import { useIsFocused } from "expo-router";
+import { useIsFocused, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   FlatList,
@@ -57,6 +57,7 @@ export function LibraryScreen({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
+  const router = useRouter();
   const { api, runtime, preferences } = useClient();
   const { saved } = useRemote();
   const focused = useIsFocused();
@@ -109,6 +110,8 @@ export function LibraryScreen({
       18,
     );
   }, [savedOnline]);
+  const libraryEmpty =
+    counts.movie + counts.series === 0 && savedOnline.length === 0;
   const visibleOnline = React.useMemo(
     () => offlineOnly && preferences.mode === "hybrid" ? [] : savedOnline,
     [offlineOnly, savedOnline, preferences.mode],
@@ -343,6 +346,8 @@ export function LibraryScreen({
               open={openAny}
               play={play}
               onlineItems={savedOnlineFor(libraryTabs[index]!)}
+              emptyLibrary={libraryEmpty}
+              onAddFolder={() => router.push("/settings/folders")}
             />
           )
         }
@@ -473,6 +478,8 @@ function LibraryTitles({
   open,
   play,
   onlineItems = [],
+  emptyLibrary,
+  onAddFolder,
 }: {
   tab: "all" | "movie" | "series";
   sort: string;
@@ -480,8 +487,11 @@ function LibraryTitles({
   open: OpenTitle;
   play?: (fileId: number) => void;
   onlineItems?: ItemCard[];
+  emptyLibrary?: boolean;
+  onAddFolder?: () => void;
 }) {
-  const { api } = useClient();
+  const colors = useColors();
+  const { api, preferences } = useClient();
   const prefetch = useTitlePrefetch();
   const titleActions = useTitleActions();
   const remoteActions = useRemoteTitleActions();
@@ -606,7 +616,44 @@ function LibraryTitles({
         );
       }}
       onScrollToIndexFailed={() => {}}
-      ListEmptyComponent={<Notice message={"No titles match this filter."} />}
+      ListEmptyComponent={
+        emptyLibrary ? (
+          preferences.mode === "online" ? (
+            <View className="items-center gap-3 px-6 py-12">
+              <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
+                <Film size={28} color={colors.brandLight} />
+              </View>
+              <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
+                No saved titles yet
+              </Text>
+              <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
+                Save a movie or show from Search and it will appear here.
+              </Text>
+            </View>
+          ) : (
+            <View className="items-center gap-3 px-6 py-12">
+              <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
+                <Film size={28} color={colors.brandLight} />
+              </View>
+              <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
+                Your library is empty
+              </Text>
+              <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
+                Add a media folder and Plexy will bring your movies and shows
+                together here.
+              </Text>
+              <Button
+                label="Add media folder"
+                primary
+                onPress={() => onAddFolder?.()}
+                style={{ marginTop: 8, minWidth: 170 }}
+              />
+            </View>
+          )
+        ) : (
+          <Notice message={"No titles match this filter."} />
+        )
+      }
       ListFooterComponent={
         <View className="gap-3 pt-2">
           {!!moreError && <Notice message={moreError} />}

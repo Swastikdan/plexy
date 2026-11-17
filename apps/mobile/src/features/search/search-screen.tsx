@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { useIsFocused } from "expo-router";
+import { useIsFocused, useRouter } from "expo-router";
 import {
   FlatList,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   useWindowDimensions,
@@ -21,12 +22,13 @@ import {
   WifiOff,
   X,
 } from "@/shared/ui/icons";
+import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/media-card";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { PageState } from "@/shared/ui/page-state";
 import {
-  SearchHomeSkeleton,
+  LibraryGridSkeleton,
   SearchResultRowsSkeleton,
   SearchResultsSkeleton,
 } from "@/shared/ui/skeleton";
@@ -90,6 +92,7 @@ export function SearchScreen({
   const colors = useColors();
   const connected = useOnline();
   const { api, preferences } = useClient();
+  const { navigate } = useRouter();
   const titleActions = useTitleActions();
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
@@ -140,9 +143,13 @@ export function SearchScreen({
     },
     [api, play, open],
   );
-  // Responsive grid config for search results.
+  // Responsive grid config for search results and the landing shelves.
   const available = width - 40;
   const cardWidth = Math.floor((available - 12) / 2);
+  const gridColumns = Math.max(2, Math.floor(available / 150));
+  const gridCardWidth = Math.floor(
+    (available - 12 * (gridColumns - 1)) / gridColumns,
+  );
   const homeRows = React.useMemo(
     () =>
       (homeData.value?.rows ?? [])
@@ -156,6 +163,12 @@ export function SearchScreen({
         .filter((row) => row.items.length > 0),
     [homeData.value],
   );
+  const continueRow = homeRows.find((row) => row.key === "continue");
+  const localTitles = homeRows.find((row) => row.key === "titles")?.items ?? [];
+  const onlineTrendingRow =
+    onlineHome.rows.find((row) => row.key === "trending-day") ??
+    onlineHome.rows[0];
+  const onlineTrending = onlineTrendingRow?.items.slice(0, 20) ?? [];
   const localByTmdb = api.titlesByTmdb();
   const onlineCards = React.useMemo(
     () => {
@@ -242,29 +255,44 @@ export function SearchScreen({
     () => ({ itemVisiblePercentThreshold: 40 }),
     [],
   );
-  const onlineHomeFooter =
-    onlineMode && onlineHome.rows.length > 0 ? (
-      <View className="pt-1">
-        {onlineHome.rows
-          .filter((row) => row.key === "trending-day")
-          .map((row) => (
-            <CatalogRow
-              key={`online-${row.key}`}
-              title="Trending today"
-              items={row.items}
-              open={onlineHome.open}
-              onPlay={onlineHome.play}
-              allowTitleActions={false}
-              onlineFor={() => true}
-              onLongPressItem={(item) =>
-                remoteActions(item, {
-                  play: () => onlineHome.play(item),
-                })
-              }
-            />
-          ))}
-      </View>
-    ) : null;
+  const renderLandingCard = (item: ItemCard) => {
+    const remote = item.publicId.startsWith("remote:");
+    return (
+      <Card
+        key={item.publicId}
+        width={gridCardWidth}
+        item={item}
+        api={api}
+        online={remote}
+        onPress={() => {
+          if (!remote) {
+            openItem(item);
+            return;
+          }
+          const remoteTitle = onlineByPublicId.get(item.publicId);
+          if (remoteTitle) remoteNavigation.open(remoteTitle);
+          else onlineHome.open(item.publicId);
+        }}
+        onLongPress={() => {
+          if (!remote) {
+            titleActions(item, {
+              play: () => handlePlay(item),
+              onChanged: homeData.retry,
+            });
+            return;
+          }
+          remoteActions(item, {
+            play: () => {
+              const remoteTitle = onlineByPublicId.get(item.publicId);
+              if (remoteTitle) remoteNavigation.play(remoteTitle);
+              else onlineHome.play(item);
+            },
+            onChanged: onlineHome.data.retry,
+          });
+        }}
+      />
+    );
+  };
 
   // Search states are tracked per source. The local catalog usually answers
   // first; the online catalog then streams in behind it. Neither source may
@@ -274,13 +302,18 @@ export function SearchScreen({
   const onlineError = searching && onlineMode ? onlineResult.error : null;
   const hasResults = resultRows.some((row) => row.kind !== "pending");
   const homeLoading = homeData.loading || onlineHome.data.loading;
-  const homeError = homeData.error || onlineHome.data.error;
+  const localHomeError = homeData.error;
+  const onlineHomeError = onlineHome.data.error;
+  const homeError = localHomeError || onlineHomeError;
 
   let content: React.ReactNode;
   if (!searching) {
-    if (!homeRows.length && !onlineHome.rows.length && homeLoading) {
-      content = <SearchHomeSkeleton />;
-    } else if (!homeRows.length && !onlineHome.rows.length && homeError) {
+    const hasHomeContent = Boolean(
+      continueRow || localTitles.length || onlineTrending.length,
+    );
+    if (!hasHomeContent && homeLoading) {
+      content = <LibraryGridSkeleton />;
+    } else if (!hasHomeContent && homeError) {
       content = (
         <PageState
           icon={connected ? AlertCircle : WifiOff}
@@ -296,35 +329,78 @@ export function SearchScreen({
           }}
         />
       );
-    } else if (homeRows.length || onlineHome.rows.length) {
+    } else {
       content = (
-        <FlatList
+        <ScrollView
           className="flex-1"
-          data={homeRows}
-          keyExtractor={(row) => row.key}
-          renderItem={({ item: row }) => (
-            <CatalogRow
-              title={row.title}
-              items={row.items}
-              open={open}
-              onPlay={handlePlay}
-              isContinueWatching={row.key === "continue"}
-              onChanged={homeData.retry}
-            />
-          )}
-          ListFooterComponent={onlineHomeFooter}
-          contentContainerStyle={{ paddingBottom: 32, gap: 14 }}
+          contentContainerStyle={{ paddingBottom: 32, gap: 22 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
-        />
-      );
-    } else {
-      content = (
-        <Text className="font-archivo-regular text-[14px] text-muted px-5">
-          Find a title or an episode in your library
-          {onlineMode ? " or online" : ""}.
-        </Text>
+        >
+          {continueRow && (
+            <CatalogRow
+              title="Continue Watching"
+              items={continueRow.items}
+              open={open}
+              onPlay={handlePlay}
+              isContinueWatching
+              onChanged={homeData.retry}
+            />
+          )}
+
+          {localTitles.length > 0 && (
+            <View className="gap-3">
+              <Text className="px-5 font-archivo-bold text-[18px] tracking-[-0.3px] text-foreground">
+                Your library
+              </Text>
+              <View className="flex-row flex-wrap gap-3 px-5">
+                {localTitles.slice(0, 20).map(renderLandingCard)}
+              </View>
+              {localTitles.length > 20 && (
+                <Button
+                  compact
+                  label="Browse all in Libraries"
+                  onPress={() => navigate("/libraries")}
+                  style={{ marginHorizontal: 20, alignSelf: "flex-start" }}
+                />
+              )}
+            </View>
+          )}
+
+          {onlineTrending.length > 0 && (
+            <View className="gap-3">
+              <Text className="px-5 font-archivo-bold text-[18px] tracking-[-0.3px] text-foreground">
+                {onlineTrendingRow?.title ?? "Trending today"}
+              </Text>
+              <View className="flex-row flex-wrap gap-3 px-5">
+                {onlineTrending.map(renderLandingCard)}
+              </View>
+            </View>
+          )}
+
+          {!!localHomeError && hasHomeContent && (
+            <View className="px-5">
+              <Notice message={localHomeError} retry={homeData.retry} />
+            </View>
+          )}
+          {!!onlineHomeError && hasHomeContent && (
+            <View className="px-5">
+              <Notice
+                message={onlineHomeError}
+                retry={onlineHome.data.retry}
+              />
+            </View>
+          )}
+          {onlineMode &&
+            !onlineTrending.length &&
+            !homeLoading &&
+            !onlineHomeError && (
+              <Text className="px-5 font-archivo-regular text-[14px] text-muted">
+                Nothing is trending right now. Try again in a moment.
+              </Text>
+            )}
+        </ScrollView>
       );
     }
   } else if (hasResults) {
