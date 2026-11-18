@@ -1,147 +1,181 @@
-import React, { useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import React, { useState } from "react";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
-import { Check, ChevronDown } from "@/shared/ui/icons";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  MoreHorizontal,
+} from "@/shared/ui/icons";
 
 /**
- * Collapsible season selector. The season list opens in a modal anchored
- * underneath the row, so it floats over the episode list instead of pushing
- * it down.
+ * Season selector row plus a full-screen season sheet. The trigger keeps the
+ * action menu on the left and the episode count beside the season name so the
+ * row stays compact; the sheet owns the whole screen with an opaque background
+ * so the episode list behind it never shows through.
  */
 export function SeasonPicker({
   seasons,
   value,
   onChange,
+  onMarkWatched,
+  busy = false,
 }: {
-  seasons: { number: number; label: string }[];
+  seasons: { number: number; label: string; count?: number }[];
   value: number | null;
   onChange: (season: number) => void;
+  onMarkWatched: () => void;
+  busy?: boolean;
 }) {
   const colors = useColors();
-  const { height: windowHeight } = useWindowDimensions();
-  const row = useRef<View>(null);
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{
-    x: number;
-    y: number;
-    width: number;
-  } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   if (!seasons.length) return null;
   const active =
     seasons.find((season) => season.number === value) ?? seasons[0]!;
-  const canSwitch = seasons.length > 1;
-
-  const openMenu = () => {
-    triggerHaptic("selection");
-    row.current?.measureInWindow((x, y, width, height) => {
-      setAnchor({ x, y: y + height + 6, width });
-      setOpen(true);
-    });
-  };
-
   return (
-    <View
-      ref={row}
-      className="w-full flex-row items-center justify-between"
-    >
+    <View className="z-10 w-full flex-row items-center gap-3">
+      <View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Season actions"
+          accessibilityState={{ expanded: menuOpen, disabled: busy }}
+          disabled={busy}
+          onPress={() => setMenuOpen(!menuOpen)}
+          hitSlop={8}
+          className="h-11 w-10 items-center justify-center rounded-full border border-border bg-surface"
+        >
+          <MoreHorizontal size={22} color={colors.ink} />
+        </Pressable>
+        {menuOpen && (
+          <View
+            className="absolute left-0 top-12 z-20 w-56 overflow-hidden rounded-2xl border border-border p-2"
+            style={{ backgroundColor: colors.surface }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setMenuOpen(false);
+                onMarkWatched();
+              }}
+              className="min-h-12 flex-row items-center gap-2 rounded-xl px-3 active:bg-surface-hover"
+            >
+              <Check size={18} color={colors.ink} />
+              <Text className="font-archivo-medium text-foreground">
+                Mark as watched
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Season selector, ${active.label}`}
         accessibilityState={{ expanded: open }}
-        disabled={!canSwitch}
         onPress={() => {
-          if (!canSwitch) return;
-          if (open) setOpen(false);
-          else openMenu();
+          triggerHaptic("selection");
+          setMenuOpen(false);
+          setOpen(true);
         }}
         hitSlop={6}
-        className="flex-row items-center gap-1.5 py-1 active:opacity-65"
+        className="min-h-11 flex-row items-center gap-2 active:opacity-65"
       >
-        <Text className="font-archivo-bold text-[17px] tracking-[-0.2px] text-foreground">
+        <Text className="font-archivo-bold text-[17px] text-foreground">
           {active.label}
         </Text>
-        {canSwitch && (
-          <View
-            style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }}
-          >
-            <ChevronDown size={20} color={colors.ink} strokeWidth={2} />
-          </View>
-        )}
+        <Text
+          accessibilityLabel={`${active.count ?? 0} episodes`}
+          className="font-archivo-medium text-[15px] text-muted"
+        >
+          {active.count ?? "—"}
+        </Text>
+        <ChevronDown size={20} color={colors.ink} />
       </Pressable>
 
       <Modal
-        visible={open && anchor != null}
+        visible={open}
         transparent
         animationType="fade"
         statusBarTranslucent
         onRequestClose={() => setOpen(false)}
       >
-        <Pressable
+        <View
+          accessibilityViewIsModal
           className="flex-1"
-          accessibilityLabel="Close season menu"
-          onPress={() => setOpen(false)}
+          style={{ backgroundColor: colors.canvas }}
         >
-          {anchor && (
-            <View
-              className="overflow-hidden rounded-2xl border border-border bg-overlay"
-              style={{
-                position: "absolute",
-                left: anchor.x,
-                top: anchor.y,
-                width: anchor.width,
-              }}
-            >
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                style={{
-                  maxHeight: anchor
-                    ? Math.max(160, windowHeight - anchor.y - 24)
-                    : 320,
-                }}
+          <View
+            className="flex-1"
+            style={{
+              paddingTop: insets.top,
+              paddingBottom: insets.bottom,
+            }}
+          >
+            <View className="min-h-16 flex-row items-center gap-3 border-b border-border/60 px-5">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back to episodes"
+                onPress={() => setOpen(false)}
+                hitSlop={12}
               >
-                {seasons.map((season, index) => {
-                  const selected = season.number === active.number;
-                  return (
-                    <Pressable
-                      key={season.number}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      onPress={() => {
-                        triggerHaptic("selection");
-                        setOpen(false);
-                        if (!selected) onChange(season.number);
-                      }}
-                      className={cn(
-                        "min-h-12 flex-row items-center justify-between gap-3 px-4 py-3 active:bg-surface-hover",
-                        index > 0 && "border-t border-border",
-                      )}
-                    >
-                      <Text
-                        className={cn(
-                          "text-[15px]",
-                          selected
-                            ? "font-archivo-bold text-foreground"
-                            : "font-archivo-medium text-muted",
-                        )}
-                      >
-                        {season.label}
-                      </Text>
-                      {selected && (
+                <ArrowLeft size={24} color={colors.ink} />
+              </Pressable>
+              <Text className="flex-1 font-archivo-bold text-xl text-foreground">
+                Seasons
+              </Text>
+              <Text className="font-archivo-medium text-sm text-muted">
+                {seasons.length} {seasons.length === 1 ? "season" : "seasons"}
+              </Text>
+            </View>
+            <ScrollView
+              className="flex-1"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
+              {seasons.map((season, index) => {
+                const selected = season.number === active.number;
+                return (
+                  <Pressable
+                    key={season.number}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${season.label}, ${season.count ?? 0} episodes`}
+                    accessibilityState={{ selected }}
+                    onPress={() => {
+                      triggerHaptic("selection");
+                      setOpen(false);
+                      if (!selected) onChange(season.number);
+                    }}
+                    className={cn(
+                      "min-h-14 flex-row items-center gap-3 px-5 py-4 active:bg-surface-hover",
+                      index > 0 && "border-t border-border/60",
+                      selected && "bg-surface",
+                    )}
+                  >
+                    <Text className="font-archivo-bold text-[16px] text-foreground">
+                      {season.label}
+                    </Text>
+                    <Text className="font-archivo-medium text-[15px] text-muted">
+                      {season.count ?? "—"}
+                    </Text>
+                    {selected && (
+                      <View className="ml-auto">
                         <Check
-                          size={18}
+                          size={19}
                           color={colors.brand}
                           strokeWidth={2.4}
                         />
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
-        </Pressable>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );

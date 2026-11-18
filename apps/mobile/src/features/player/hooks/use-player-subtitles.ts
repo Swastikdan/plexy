@@ -1,34 +1,32 @@
 import { updateNativePlayer } from "../lib/native-player";
 import { useEventCallback } from "@/shared/hooks/use-event-callback";
-import { useLayoutEffect , useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { VideoPlayer } from "expo-video";
 import { useClient } from "@/core/client/client-provider";
 import type { Playability } from "@/core/library/catalog-api";
-import { parseVtt, subtitleText, type Cue } from "../lib/subtitles";
+import {
+  parseVtt,
+  preferredSubtitleTrack,
+  subtitleText,
+  type Cue,
+} from "../lib/subtitles";
 export function usePlayerSubtitles({
-  initial,
-  fileId,
+  manifest,
   player,
   position,
   onError,
+  showLanguage,
 }: {
-  initial: Playability;
-  fileId: number;
+  manifest: Playability;
   player: VideoPlayer;
   position: number;
   onError: (message: string) => void;
+  showLanguage?: string | null;
 }) {
   const { api, preferences } = useClient();
-  const latest = useRef({ preferences, onError });
-  useLayoutEffect(() => { latest.current = { preferences, onError }; }, [preferences, onError]);
-  const [subtitle, setSubtitle] = useState<string | null>(() =>
-    preferences.autoSubtitles
-      ? initial.tracks?.find((t) => t.language === preferences.subtitleLanguage)
-          ?.track ||
-        initial.tracks?.find((t) => t.isDefault)?.track ||
-        null
-      : null,
-  );
+  const fileId = manifest.fileId;
+  const [subtitle, setSubtitle] = useState<string | null>(null);
+  const sessionChoice = useRef<string | null | undefined>(undefined);
   const cueKey = `${fileId}:${subtitle}`;
   const [loadedCues, setLoadedCues] = useState<{ key: string; cues: Cue[] } | null>(null);
   const [nativeSubtitles, setNativeSubtitles] = useState<
@@ -53,30 +51,50 @@ export function usePlayerSubtitles({
       })
       .catch(() => {
         if (!controller.signal.aborted)
-          latest.current.onError("Subtitle track could not be loaded.");
+          onError("Subtitle track could not be loaded.");
       });
     return () => controller.abort();
-  }, [api, fileId, subtitle, nativeSubtitles, player, cueKey]);
+  }, [api, fileId, subtitle, nativeSubtitles, player, cueKey, onError]);
 
-  const loadSubtitleTracks = useEventCallback((
-    tracks: VideoPlayer["availableSubtitleTracks"],
-  ) => {
+  const subtitleOptions = (tracks: VideoPlayer["availableSubtitleTracks"]) => [
+    ...(manifest.tracks ?? []).map((track) => ({ ...track, key: track.track })),
+    ...tracks.map((track) => ({
+      key: `native:${track.id}`,
+      language: track.language,
+      isDefault: track.isDefault,
+    })),
+  ];
+  const loadSubtitleTracks = useEventCallback((tracks: VideoPlayer["availableSubtitleTracks"]) => {
     updateNativePlayer(player, "subtitleTrack", null);
     setNativeSubtitles(tracks);
-    const { preferences } = latest.current;
-    if (preferences.autoSubtitles && !initial.tracks?.length) {
-      const track = tracks.find(
-        (t) => t.language === preferences.subtitleLanguage,
-      );
-      if (track) {
-        updateNativePlayer(player, "subtitleTrack", track);
-        setSubtitle(`native:${track.id}`);
-      }
+    const options = subtitleOptions(tracks);
+    const manual = sessionChoice.current;
+    if (manual === null || options.some((track) => track.key === manual)) {
+      setSubtitle(manual ?? null);
+      return;
     }
+    setSubtitle(preferredSubtitleTrack(
+      options,
+      showLanguage,
+      preferences.autoSubtitles,
+      preferences.subtitleLanguage,
+    ));
   });
   return {
     subtitle,
-    setSubtitle,
+    pickSubtitle(value: string | null) {
+      sessionChoice.current = value;
+      setSubtitle(value);
+    },
+    resetSubtitle() {
+      sessionChoice.current = undefined;
+      setSubtitle(preferredSubtitleTrack(
+        subtitleOptions(nativeSubtitles),
+        undefined,
+        preferences.autoSubtitles,
+        preferences.subtitleLanguage,
+      ));
+    },
     nativeSubtitles,
     subVertical,
     setSubVertical,

@@ -1,6 +1,7 @@
 import type { LocalCatalog , ItemCard } from "@/core/library/catalog-api";
 import { useState } from "react";
 import { Pressable,Text,View } from "react-native";
+import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { Play } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
 
@@ -51,7 +52,7 @@ export function ContinueWatchingCard({
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      delayLongPress={1000}
+      delayLongPress={LONG_PRESS_MS}
       onFocus={() => {
         setFocus(true);
         onFocus?.();

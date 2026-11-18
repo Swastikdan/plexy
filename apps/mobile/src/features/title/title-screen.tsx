@@ -14,6 +14,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SwipePager } from "@/shared/ui/swipe-pager";
 import type { ProgressQueue } from "@/core/client/progress-queue";
 import { useClient } from "@/core/client/client-provider";
+import { familyAllows } from "@/core/content/audience";
+import { hideTitle } from "@/core/content/hidden-titles";
+import { isReleased, releaseLabel } from "@/core/content/release";
 import type { ItemCard, LocalCatalog, TitleDetail } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
@@ -24,6 +27,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
+  EyeOff,
   Film,
   Info,
   MoreHorizontal,
@@ -39,7 +43,6 @@ import {
   CastRowSkeleton,
   EpisodeListSkeleton,
   SeasonPickerSkeleton,
-  SkeletonBlock,
   TitleDetailSkeleton,
 } from "@/shared/ui/skeleton";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
@@ -70,6 +73,7 @@ import {
 import { CastRow } from "./components/cast-row";
 import { HybridEpisodeCard } from "./components/hybrid-episode-card";
 import { MoreLikeThis } from "./components/more-like-this";
+import { MovieCollection } from "./components/movie-collection";
 import { SeasonPicker } from "./components/season-picker";
 import { TitleActionBar } from "./components/title-action-bar";
 import { TitleFactLine, TitleRating } from "./components/title-facts";
@@ -83,7 +87,7 @@ const CONTENT_ENTER = FadeIn.duration(120)
   .easing(Easing.bezier(0.23, 1, 0.32, 1))
   .reduceMotion(ReduceMotion.System);
 
-type DetailTab = "episodes" | "more" | "details";
+type DetailTab = "episodes" | "more" | "details" | "collection";
 
 /** Floating back control shared by the loading, error and loaded title views. */
 function TitleBackButton({ onPress }: { onPress: () => void }) {
@@ -100,41 +104,6 @@ function TitleBackButton({ onPress }: { onPress: () => void }) {
     >
       <ArrowLeft size={22} color={colors.ink} strokeWidth={2} />
     </Pressable>
-  );
-}
-
-/** Instant first paint for a card the user just tapped. */
-function TitleLoadingShell({
-  preview,
-  back,
-}: {
-  preview: ItemCard;
-  back: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  return (
-    <View className="flex-1 bg-background">
-      <TopFade />
-      <ScrollView
-        contentInsetAdjustmentBehavior="never"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
-      >
-        <TitleHero item={preview} logo={preview.logo} />
-        <View className="gap-[18px] px-5 pt-5">
-          <SkeletonBlock
-            style={{ width: 150, height: 14, alignSelf: "center" }}
-          />
-          <SkeletonBlock
-            style={{ width: 210, height: 21, alignSelf: "center" }}
-          />
-          <SkeletonBlock style={{ width: "100%", height: 14 }} />
-          <SkeletonBlock style={{ width: "92%", height: 14 }} />
-          <SkeletonBlock style={{ width: "60%", height: 14 }} />
-        </View>
-      </ScrollView>
-      <TitleBackButton onPress={back} />
-    </View>
   );
 }
 
@@ -169,6 +138,20 @@ export function TitleScreen({
   const tmdbId = media.tmdbId;
   const remoteMediaType = media.mediaType;
   const remoteDetail = media.remoteDetail;
+  // Kids & Family mode is enforced before any play route is reachable.
+  const maturityRestricted = !familyAllows(
+    detail?.metadata?.certification,
+    preferences.familyLevel,
+    preferences.familyBlockUnrated,
+  );
+  const remoteUnreleased =
+    !media.isOffline &&
+    remoteDetail != null &&
+    !isReleased(remoteDetail.releaseDate);
+  const playbackBlocked = maturityRestricted || remoteUnreleased;
+  const playbackBlockedMessage = maturityRestricted
+    ? "Kids & Family mode restricts this title. Change the mode in Settings → Kids & family."
+    : `This title is not released yet${releaseLabel(remoteDetail?.releaseDate) ? ` · ${releaseLabel(remoteDetail?.releaseDate)}` : ""}. Playback will be available after release.`;
   const focused = useIsFocused();
   const remoteProgress = useRemoteProgress(focused);
   const { push } = useRouter();
@@ -179,6 +162,9 @@ export function TitleScreen({
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(
     () => new Set(),
   );
+  const [episodeSort, setEpisodeSort] = useState<"oldest" | "newest">("oldest");
+  const [seasonBusy, setSeasonBusy] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const [season, setSeason] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("episodes");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -335,6 +321,9 @@ export function TitleScreen({
   }, [selectedSeasonRemote.value]);
   const canRecommend =
     onlineEnabled && online && tmdbId != null && remoteMediaType != null;
+  const collectionId =
+    remoteMediaType === "movie" ? (remoteDetail?.collection?.id ?? null) : null;
+  const hasCollection = collectionId != null;
   const hasEpisodesEarly = Boolean(
     item?.kind === "series" ||
       detail?.episodes?.length ||
@@ -505,6 +494,39 @@ export function TitleScreen({
       setActionError(
         e instanceof Error ? e.message : "Could not update watched state.",
       );
+    }
+  }
+  async function markSeasonWatched() {
+    if (seasonBusy || selectedSeason == null) return;
+    setSeason(selectedSeason);
+    setSeasonBusy(true);
+    try {
+      const remoteEpisodes = onlineEnabled && tmdbId && remoteMediaType === "tv"
+        ? await fetchSeason(tmdbId, selectedSeason)
+        : [];
+      for (const episode of localSeasonEpisodes) {
+        const duration = episode.runtime ? episode.runtime * 60 : 3600;
+        await progress.record({ itemId: episode.id, position: duration, duration,
+          played: true, updatedAt: Date.now() });
+        await api.watched(episode.id, true);
+        setEpisodesWatchedOverride((previous) => ({ ...previous, [episode.id]: true }));
+      }
+      if (remoteMediaType && tmdbId) {
+        const numbers = new Set([
+          ...remoteEpisodes.map((episode) => episode.number),
+          ...localSeasonEpisodes.map((episode) => episode.episodeNumber ?? 1),
+        ]);
+        for (const number of numbers) {
+          await markRemoteEpisodePlayed(remoteMediaType, tmdbId, selectedSeason, number, true);
+        }
+      }
+      await progress.flushLocal();
+      media.retry();
+      triggerHaptic("selection");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not mark season as watched.");
+    } finally {
+      setSeasonBusy(false);
     }
   }
   async function toggleEpisodeWatched(ep: ItemCard) {
@@ -704,6 +726,10 @@ export function TitleScreen({
     episodeNumber: number | null,
     display: string,
   ) {
+    if (playbackBlocked) {
+      setActionError(playbackBlockedMessage);
+      return;
+    }
     if (!tmdbId || !remoteMediaType) {
       setActionError(
         "This title is not matched to TMDB, so the online source is unavailable.",
@@ -782,6 +808,10 @@ export function TitleScreen({
     ? !hybridPlay
     : !getFirstPlayableFileId() && !remoteMoviePlayable;
   function playHybrid() {
+    if (playbackBlocked) {
+      setActionError(playbackBlockedMessage);
+      return;
+    }
     if (hybridPlay?.kind === "local") {
       if (hybridPlay.episode.fileId != null)
         play(hybridPlay.episode.fileId);
@@ -799,9 +829,18 @@ export function TitleScreen({
     const fileId = getFirstPlayableFileId();
     if (fileId) play(fileId);
   }
+  function guardedPlay(fileId: number) {
+    if (playbackBlocked) {
+      setActionError(playbackBlockedMessage);
+      return;
+    }
+    play(fileId);
+  }
   const autoOpened = useRef(false);
   React.useEffect(() => {
     if (!autoPlay || autoOpened.current || !item) return;
+    // The blocked state already renders a notice and hides the action bar.
+    if (playbackBlocked) return;
     autoOpened.current = true;
     // Navigate after the detail surface has mounted. This also keeps the
     // auto-play decision out of the render/effect commit path.
@@ -866,11 +905,7 @@ export function TitleScreen({
     if (remoteDetail) toggleSaved();
   };
 
-  if (media.loading && !detail) {
-    // Cards warm their detail as they enter the viewport. If the tap wins the
-    // race, paint the hero from the tapped card instead of an empty canvas.
-    if (media.preview)
-      return <TitleLoadingShell preview={media.preview} back={back} />;
+  if ((media.loading && !detail) || (detail && onlineEnabled && media.remoteLoading && !remoteDetail)) {
     return (
       <View className="flex-1 bg-background">
         <TopFade />
@@ -1005,8 +1040,11 @@ export function TitleScreen({
     ...(canRecommend
       ? [{ key: "more" as const, label: "More Like This" }]
       : []),
-    ...(hasEpisodes || canRecommend
+    ...(hasEpisodes || canRecommend || hasCollection
       ? [{ key: "details" as const, label: "Details" }]
+      : []),
+    ...(hasCollection
+      ? [{ key: "collection" as const, label: "Collection" }]
       : []),
   ];
   const activeTab = tabOptions.some((tab) => tab.key === detailTab)
@@ -1061,7 +1099,13 @@ export function TitleScreen({
     <View className="gap-[18px]">
       {seasonOptions.length > 0 ? (
         <SeasonPicker
-          seasons={seasonOptions}
+          seasons={seasonOptions.map((option) => ({
+            ...option,
+            count: remoteDetail?.seasons.find((entry) => entry.number === option.number)?.episodes ??
+              detail.episodes?.filter((episode) => episode.seasonNumber === option.number).length,
+          }))}
+          busy={seasonBusy}
+          onMarkWatched={() => void markSeasonWatched()}
           value={selectedSeason ?? null}
           onChange={(number) => setSeason(number)}
         />
@@ -1070,10 +1114,29 @@ export function TitleScreen({
       ) : null}
 
       <View className="flex-row items-center justify-between">
-        <Text className="font-archivo-medium text-[12px] text-muted">
-          {mergedSeasonEpisodes.length}{" "}
-          {mergedSeasonEpisodes.length === 1 ? "episode" : "episodes"}
-        </Text>
+        <View className="z-10">
+          <Pressable accessibilityRole="button" accessibilityLabel="Sort episodes"
+            accessibilityState={{ expanded: sortOpen }}
+            onPress={() => setSortOpen(!sortOpen)} className="min-h-11 justify-center">
+            <Text className="font-archivo-medium text-sm text-muted">
+              Sort by: {episodeSort === "oldest" ? "Oldest first" : "Newest first"}
+            </Text>
+          </Pressable>
+          {sortOpen && (
+            <View className="absolute left-0 top-12 z-20 w-48 rounded-2xl border border-border bg-surface p-2">
+              {(["newest", "oldest"] as const).map((order) => (
+                <Pressable key={order} accessibilityRole="button"
+                  accessibilityState={{ selected: episodeSort === order }}
+                  onPress={() => { setEpisodeSort(order); setSortOpen(false); }}
+                  className="min-h-12 justify-center px-3">
+                  <Text className="font-archivo-medium text-foreground">
+                    {order === "newest" ? "Newest first" : "Oldest first"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
         {!selectingEpisodes && localSeasonEpisodes.length > 0 && (
           <Pressable
             accessibilityRole="button"
@@ -1091,12 +1154,14 @@ export function TitleScreen({
       </View>
 
       <SeasonPage
+        sort={episodeSort}
+        key={`${selectedSeason}:${episodeSort}`}
         api={api}
         detail={detail}
         season={selectedSeason ?? 1}
         remoteMediaType={remoteMediaType}
         tmdbId={tmdbId}
-        play={play}
+        play={guardedPlay}
         progress={progress}
         overrides={episodesWatchedOverride}
         onToggleWatched={toggleEpisodeWatched}
@@ -1131,9 +1196,24 @@ export function TitleScreen({
       onLongPress={longPressRecommendation}
     />
   );
+  const collectionPage =
+    collectionId != null ? (
+      <MovieCollection
+        collectionId={collectionId}
+        api={api}
+        onSelect={(title) => remoteNavigation.open(title)}
+        onLongPress={(item, title) =>
+          remoteActions(item, {
+            play: () => remoteNavigation.play(title),
+            onChanged: media.retry,
+          })
+        }
+      />
+    ) : null;
   const renderTabPage = (key: DetailTab) => {
     if (key === "episodes") return episodesPage;
     if (key === "more") return morePage;
+    if (key === "collection") return collectionPage;
     return detailsPage;
   };
   const singlePage = tabOptions.length <= 1;
@@ -1152,6 +1232,7 @@ export function TitleScreen({
 
         <View className="gap-[18px] px-5 pt-5">
           {!!actionError && <Notice message={actionError} />}
+          {playbackBlocked && <Notice message={playbackBlockedMessage} />}
 
           <TitleFactLine
             item={item}
@@ -1287,7 +1368,7 @@ export function TitleScreen({
         open={(id) =>
           push({ pathname: "/item/[id]", params: { id: String(id) } })
         }
-        play={play}
+        play={guardedPlay}
         onChanged={() => media.retry()}
       />
       <Pressable
@@ -1333,6 +1414,31 @@ export function TitleScreen({
               onPress={() => {
                 toggleSaved();
                 setMenuOpen(false);
+              }}
+            />
+          )}
+          {item && (
+            <TitleMenuAction
+              destructive
+              icon={EyeOff}
+              label="Remove this title"
+              onPress={() => {
+                setMenuOpen(false);
+                showDialog(
+                  "Remove this title?",
+                  "It will be hidden from Home, Search and Library. You can restore it later in Settings → Hidden titles.",
+                  [
+                    {
+                      text: "Remove",
+                      style: "destructive",
+                      onPress: () => {
+                        void hideTitle(item)
+                          .then(back)
+                          .catch((e) => setActionError(String(e)));
+                      },
+                    },
+                  ],
+                );
               }}
             />
           )}
@@ -1440,6 +1546,18 @@ export function TitleScreen({
             </Pressable>
           </View>
         </View>
+      ) : playbackBlocked ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 border-t border-t-border bg-background px-5 pt-4"
+          style={{ paddingBottom: Math.max(insets.bottom, 14) }}
+        >
+          <View className="flex-row items-center gap-3 rounded-2xl bg-surface px-4 py-3">
+            <EyeOff size={20} color={colors.muted} />
+            <Text className="flex-1 font-archivo-regular text-[13px] leading-[19px] text-muted">
+              {playbackBlockedMessage}
+            </Text>
+          </View>
+        </View>
       ) : (
         <TitleActionBar
           label={hybridLabel}
@@ -1473,6 +1591,7 @@ export function TitleScreen({
 }
 
 function SeasonPage({
+  sort,
   api,
   detail,
   season,
@@ -1490,6 +1609,7 @@ function SeasonPage({
   onToggleRemoteWatched,
   onLongPressRemoteEpisode,
 }: {
+  sort: "oldest" | "newest";
   api: LocalCatalog;
   detail: TitleDetail;
   season: number;
@@ -1553,7 +1673,7 @@ function SeasonPage({
         <EpisodeListSkeleton count={5} />
       ) : (
         <SeasonEpisodes
-          episodes={episodes}
+          episodes={sort === "newest" ? [...episodes].reverse() : episodes}
           api={api}
           play={play}
           progress={progress}

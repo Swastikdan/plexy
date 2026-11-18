@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useClient } from "@/core/client/client-provider";
 import type {
   ItemCard,
   LocalCatalog,
@@ -10,7 +11,13 @@ import {
   rememberLocalDetail,
 } from "@/core/library/title-prefetch";
 import { useResource } from "@/core/resources/use-resource";
-import { fetchDetail, peekDetail, type RemoteDetail, type RemoteMediaType } from "@/features/remote/lib/tmdb";
+import {
+  certificationFor,
+  fetchDetail,
+  peekDetail,
+  type RemoteDetail,
+  type RemoteMediaType,
+} from "@/features/remote/lib/tmdb";
 import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
 
 export type MediaTitleInput =
@@ -42,9 +49,14 @@ export interface MediaTitle {
 
 function remoteDetailToTitleDetail(
   remote: RemoteDetail,
-  fallbackName?: string,
+  fallbackName: string | undefined,
+  region: string,
 ): TitleDetail {
-  const card = toItemCard(remote, remote.runtime);
+  const certification = certificationFor(remote, region);
+  const card = toItemCard(
+    { ...remote, certification },
+    remote.runtime,
+  );
   const item: ItemCard = {
     ...card,
     name:
@@ -59,7 +71,7 @@ function remoteDetailToTitleDetail(
       tagline: remote.tagline,
       runtime: remote.runtime,
       rating: remote.rating,
-      certification: null,
+      certification,
       genres: remote.genres,
     },
     cast: remote.cast.map((member, index) => ({
@@ -92,6 +104,8 @@ export function useMediaTitle(
   api: LocalCatalog,
   onlineEnabled: boolean,
 ): MediaTitle {
+  const { preferences } = useClient();
+  const region = preferences.familyRegion || "US";
   const localId = input.source === "local" ? input.id : null;
   const remoteInput = input.source === "remote" ? input : null;
   const fallbackName = remoteInput?.fallbackName;
@@ -181,9 +195,9 @@ export function useMediaTitle(
   const detail = useMemo(() => {
     if (localDetail) return localDetail;
     return remote.value
-      ? remoteDetailToTitleDetail(remote.value, fallbackName)
+      ? remoteDetailToTitleDetail(remote.value, fallbackName, region)
       : null;
-  }, [fallbackName, localDetail, remote.value]);
+  }, [fallbackName, localDetail, region, remote.value]);
 
   const preview = useMemo(() => {
     if (input.source === "local") return peekTitlePreview(input.id);

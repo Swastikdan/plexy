@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { hideTitle } from "@/core/content/hidden-titles";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
@@ -23,6 +24,8 @@ export function remoteTitleFromCard(item: ItemCard): RemoteTitle | null {
     overview: item.overview ?? "",
     rating: item.rating,
     genres: item.genres,
+    releaseDate: item.releaseDate ?? null,
+    certification: item.certification ?? null,
   };
 }
 
@@ -87,6 +90,24 @@ export function useRemoteTitleActions() {
           text: saved ? "Remove from library" : "Add to library",
           onPress: () =>
             void save(title).then(() => options.onChanged?.()),
+        },
+        {
+          text: "Remove this title",
+          style: "destructive",
+          onPress: () =>
+            showDialog(
+              "Remove this title?",
+              "It will be hidden from Home, Search and Library. You can restore it later in Settings → Hidden titles.",
+              [
+                {
+                  text: "Remove",
+                  style: "destructive",
+                  onPress: () => {
+                    void hideTitle(item).then(() => options.onChanged?.());
+                  },
+                },
+              ],
+            ),
         },
       ]);
     },

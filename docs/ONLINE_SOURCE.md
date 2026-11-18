@@ -92,6 +92,28 @@ downloaded copy wins, so the same title is never shown twice. The Library filter
 sheet has an **Offline only** switch that hides online titles. Removing is the
 same menu action.
 
+## Online catalog cache
+
+The TMDB catalog is cached on the device in SQLite (`plexy-remote.db`):
+
+- **Home** paints the last saved rows first, then refreshes from TMDB every time
+  Home opens. Pull-to-refresh forces a new request. This is the only online
+  screen that refreshes on open.
+- **Titles** (`detail`, season episodes, recommendations, movie collections)
+  open from the database immediately. If the saved copy is more than ten minutes
+  old, a background request updates the memory and database copies for the next
+  open; it never replaces the page the user is currently reading.
+- **Search** stays live because it answers a new query each time.
+
+Cached titles remain browsable while offline, and a failed refresh keeps the
+previously saved data instead of blanking the screen.
+
+## Movie collections
+
+A movie that belongs to a TMDB collection gets a **Collection** tab after
+**Details**. It lists every part of the collection in the same poster grid used
+by **More Like This**, and each part opens its own online title page.
+
 ## Playback
 
 The online player is a full-bleed, landscape Vidy embed in a `WebView`:
@@ -114,7 +136,6 @@ The URL is populated from app state:
 Vidy posts `PLAYER_EVENT` time updates to the parent window. The wrapper forwards
 them to React Native, which records progress (debounced) and resumes the next
 session with `progress`. Both players share a landscape orientation lock. The
-iframe's own fullscreen request is disabled, and the app supplies its own
-fullscreen/immersive button plus a floating back control. Posters, backdrops,
-title logos and the next episode's stills are prefetched so shelves and title
-pages open without blank image tiles.
+iframe owns its fullscreen UI, so the wrapper only adds a floating back control
+over the embed. Posters, backdrops, title logos and the next episode's stills are
+prefetched so shelves and title pages open without blank image tiles.

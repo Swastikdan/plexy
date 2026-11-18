@@ -1,3 +1,26 @@
+import {
+  findLanguageTrack,
+  mediaLanguageName as subtitleLanguageName,
+} from "../../../shared/lib/media-language";
+
+export { subtitleLanguageName };
+
+export function preferredSubtitleTrack(
+  tracks: readonly { key: string; language?: string | null; isDefault?: boolean }[],
+  showLanguage: string | null | undefined,
+  autoSubtitles: boolean,
+  subtitleLanguage: string,
+): string | null {
+  if (showLanguage === null) return null;
+  const showTrack = findLanguageTrack(tracks, showLanguage);
+  if (showTrack) return showTrack.key;
+  if (!autoSubtitles) return null;
+  return (
+    findLanguageTrack(tracks, subtitleLanguage) ??
+    tracks.find((track) => track.isDefault)
+  )?.key ?? null;
+}
+
 export interface Cue {
   start: number;
   end: number;
@@ -77,64 +100,6 @@ export function subtitleText(cues: Cue[], time: number, offset = 0) {
     .map((cue) => cleanSubtitleText(cue.text))
     .filter((text) => text.length > 0)
     .join("\n");
-}
-
-/// Language codes arrive as ISO 639-1 (`en`), 639-2 (`eng`), or sometimes a
-/// full English name. Menus should always speak the reader's language.
-const LANGUAGE_NAMES: Record<string, string> = {
-  en: "English", eng: "English",
-  el: "Greek", gre: "Greek", ell: "Greek",
-  hi: "Hindi", hin: "Hindi",
-  es: "Spanish", spa: "Spanish",
-  fr: "French", fre: "French", fra: "French",
-  de: "German", ger: "German", deu: "German",
-  it: "Italian", ita: "Italian",
-  pt: "Portuguese", por: "Portuguese",
-  ja: "Japanese", jpn: "Japanese",
-  ko: "Korean", kor: "Korean",
-  zh: "Chinese", chi: "Chinese", zho: "Chinese",
-  ru: "Russian", rus: "Russian",
-  ar: "Arabic", ara: "Arabic",
-  tr: "Turkish", tur: "Turkish",
-  ta: "Tamil", tam: "Tamil",
-  te: "Telugu", tel: "Telugu",
-  ml: "Malayalam", mal: "Malayalam",
-  kn: "Kannada", kan: "Kannada",
-  bn: "Bengali", ben: "Bengali",
-  mr: "Marathi", mar: "Marathi",
-  gu: "Gujarati", guj: "Gujarati",
-  pa: "Punjabi", pan: "Punjabi",
-  ur: "Urdu", urd: "Urdu",
-  fa: "Persian", per: "Persian", fas: "Persian",
-  he: "Hebrew", heb: "Hebrew",
-  pl: "Polish", pol: "Polish",
-  nl: "Dutch", dut: "Dutch", nld: "Dutch",
-  sv: "Swedish", swe: "Swedish",
-  no: "Norwegian", nor: "Norwegian",
-  da: "Danish", dan: "Danish",
-  fi: "Finnish", fin: "Finnish",
-  cs: "Czech", cze: "Czech", ces: "Czech",
-  hu: "Hungarian", hun: "Hungarian",
-  ro: "Romanian", rum: "Romanian", ron: "Romanian",
-  uk: "Ukrainian", ukr: "Ukrainian",
-  th: "Thai", tha: "Thai",
-  vi: "Vietnamese", vie: "Vietnamese",
-  id: "Indonesian", ind: "Indonesian",
-  ms: "Malay", may: "Malay", msa: "Malay",
-  fil: "Filipino", tl: "Filipino", tgl: "Filipino",
-};
-
-/** `eng`, `en-US`, or `English` → a reader-friendly language name. */
-export function subtitleLanguageName(language: string | null | undefined): string | null {
-  const raw = language?.trim();
-  if (!raw) return null;
-  const base = raw.toLowerCase().split(/[-_]/)[0] ?? "";
-  if (LANGUAGE_NAMES[base]) return LANGUAGE_NAMES[base]!;
-  if (base === "und" || base === "mul" || base === "zxx") return null;
-  // Already human-readable, e.g. "Greek" or "Brazilian Portuguese".
-  return /^[a-z]{2,3}$/.test(base)
-    ? null
-    : raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 const TECHNICAL_TOKENS = new Set([

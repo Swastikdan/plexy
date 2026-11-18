@@ -1,4 +1,6 @@
 import { modeLabels } from "@/core/client/preferences";
+import { familyLevelLabels } from "@/core/content/audience";
+import { useHiddenTitles } from "@/core/content/hidden-titles";
 import * as Linking from "expo-linking";
 import { fetchUpdateReleases } from "./lib/update-releases";
 import { selectUpdate } from "./lib/update-policy";
@@ -24,13 +26,20 @@ import {
 } from "@/core/library/local-runtime";
 import { useOnline } from "@/shared/hooks/use-online";
 import { cn } from "@/shared/lib/cn";
+import {
+  languageIdentity,
+  mediaLanguageName,
+  mediaLanguageOptions,
+} from "@/shared/lib/media-language";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import {
   Download,
+  EyeOff,
   Film,
   Gauge,
   Library,
+  Lock,
   RefreshCw,
   X,
 } from "@/shared/ui/icons";
@@ -39,13 +48,22 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
 import { Updates } from "./components/app-updates";
 import { AppearanceModeSelector } from "./components/appearance-mode-selector";
+import { FamilySettings } from "./components/family-settings";
+import { HiddenTitlesSettings } from "./components/hidden-titles-settings";
 import { SettingsRow } from "./components/settings-row";
 import { useAppUpdates } from "./hooks/use-app-updates";
 
 export function SettingsScreen({
   page = "settings",
 }: {
-  page?: "settings" | "folders" | "updates" | "metadata" | "playback";
+  page?:
+    | "settings"
+    | "folders"
+    | "updates"
+    | "metadata"
+    | "playback"
+    | "family"
+    | "hidden";
 }) {
   const showDialog = useAppDialog();
   const colors = useColors();
@@ -82,6 +100,7 @@ export function SettingsScreen({
   }, [expandedFolder, folderFiles]);
   const [message, setMessage] = useState("");
   const { api, runtime, preferences, updatePreferences } = useClient();
+  const { hidden } = useHiddenTitles();
   const hasLocal = preferences.mode !== "online";
   const hasOnline = preferences.mode !== "local";
   const {
@@ -140,15 +159,41 @@ export function SettingsScreen({
   };
   const metadata = localLibrary.metadataSettings;
   const [picker, setPicker] = useState<{
-    key: "language" | "region" | "posterSize";
     title: string;
-    options: [string, string][];
+    value: string;
+    options: readonly [string, string][];
+    onSelect: (value: string) => void;
   } | null>(null);
   const choose = (
     key: "language" | "region" | "posterSize",
     title: string,
     options: [string, string][],
-  ) => setPicker({ key, title, options });
+  ) => setPicker({
+    title,
+    value: metadata[key],
+    options,
+    onSelect: (value) => void action(() =>
+      localLibrary.updateMetadataSettings({ [key]: value }),
+    ),
+  });
+  const chooseTrackLanguage = (
+    key: "audioLanguage" | "subtitleLanguage",
+    title: string,
+    defaultLabel: string,
+  ) => {
+    const savedLanguage = preferences[key];
+    const value = languageIdentity(savedLanguage) ?? savedLanguage;
+    const options: [string, string][] = [["", defaultLabel], ...mediaLanguageOptions];
+    if (value && !options.some(([code]) => code === value)) {
+      options.splice(1, 0, [value, mediaLanguageName(value) ?? value]);
+    }
+    setPicker({
+      title,
+      value,
+      options,
+      onSelect: (language) => updatePreferences({ [key]: language }),
+    });
+  };
   const languages: [string, string][] = [
     ["en-US", "English (US)"],
     ["en-GB", "English (UK)"],
@@ -220,7 +265,11 @@ export function SettingsScreen({
                   ? "Metadata & markers"
                   : page === "playback"
                     ? "Playback"
-                    : "Settings"
+                    : page === "family"
+                      ? "Kids & family"
+                      : page === "hidden"
+                        ? "Hidden titles"
+                        : "Settings"
         }
         style={{
           paddingHorizontal: 20,
@@ -276,13 +325,10 @@ export function SettingsScreen({
                   <SettingsRow
                     key={value}
                     title={title}
-                    selected={metadata[picker.key] === value}
+                    selected={picker.value === value}
                     onPress={() => {
-                      const key = picker.key;
                       setPicker(null);
-                      void action(() =>
-                        localLibrary.updateMetadataSettings({ [key]: value }),
-                      );
+                      picker.onSelect(value);
                     }}
                   />
                 ))}
@@ -302,6 +348,29 @@ export function SettingsScreen({
             />
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow navigation title="Watching mode" subtitle={modeLabels[preferences.mode]} onPress={() => push("/watching-mode")} />
+            </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Kids & family
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                navigation
+                title="Kids & family mode"
+                subtitle={familyLevelLabels[preferences.familyLevel]}
+                icon={Lock}
+                onPress={() => push("/settings/family")}
+              />
+              <SettingsRow
+                navigation
+                title="Hidden titles"
+                subtitle={
+                  hidden.length
+                    ? `${hidden.length} ${hidden.length === 1 ? "title" : "titles"} hidden`
+                    : "Restore titles removed from browsing"
+                }
+                icon={EyeOff}
+                onPress={() => push("/settings/hidden")}
+              />
             </View>
             {hasLocal && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
@@ -476,18 +545,31 @@ export function SettingsScreen({
               />
             </View>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-              Subtitles
+              Audio and subtitles
             </Text>
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow
+                navigation
+                title="Preferred audio language"
+                subtitle={mediaLanguageName(preferences.audioLanguage) || preferences.audioLanguage || "File default"}
+                onPress={() => chooseTrackLanguage("audioLanguage", "Preferred audio language", "File default")}
+              />
+              <SettingsRow
                 title="Automatic subtitles"
-                subtitle="Use preferred track"
+                subtitle="Show subtitles during local playback"
               >
                 <ToggleSwitch
                   value={preferences.autoSubtitles}
                   onValueChange={(v) => updatePreferences({ autoSubtitles: v })}
+                  accessibilityLabel="Automatic subtitles"
                 />
               </SettingsRow>
+              <SettingsRow
+                navigation
+                title="Preferred subtitle language"
+                subtitle={mediaLanguageName(preferences.subtitleLanguage) || preferences.subtitleLanguage || "File default"}
+                onPress={() => chooseTrackLanguage("subtitleLanguage", "Preferred subtitle language", "File default")}
+              />
             </View>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Playback behavior
@@ -810,6 +892,8 @@ export function SettingsScreen({
             </Text>
           </>
         )}
+        {page === "family" && <FamilySettings />}
+        {page === "hidden" && <HiddenTitlesSettings />}
         {page === "updates" && <Updates />}
       </ScrollView>
     </View>

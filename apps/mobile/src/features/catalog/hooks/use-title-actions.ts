@@ -6,6 +6,7 @@ import {
 } from "../lib/title-actions";
 import { useRef } from "react";
 import { useClient } from "@/core/client/client-provider";
+import { hideTitle } from "@/core/content/hidden-titles";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { triggerHaptic } from "@/shared/lib/haptics";
@@ -112,6 +113,24 @@ export function useTitleActions() {
           ]
         : []),
       toggleWatched,
+      {
+        text: "Remove this title",
+        style: "destructive" as const,
+        onPress: () =>
+          showDialog(
+            "Remove this title?",
+            "It will be hidden from Home, Search and Library. Your video files stay on this device. You can restore it later in Settings → Hidden titles.",
+            [
+              {
+                text: "Remove",
+                style: "destructive",
+                onPress: () => {
+                  void hideTitle(item).then(() => options.onChanged?.());
+                },
+              },
+            ],
+          ),
+      },
       remove,
     ]);
   };

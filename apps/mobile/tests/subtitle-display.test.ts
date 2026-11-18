@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import {
   cleanSubtitleName,
+  preferredSubtitleTrack,
   subtitleLanguageName,
   subtitleTrackDisplay,
 } from "../src/features/player/lib/subtitles";
+import { findLanguageTrack } from "../src/shared/lib/media-language";
 
 test("subtitle language codes become readable names", () => {
   expect(subtitleLanguageName("eng")).toBe("English");
@@ -31,4 +33,29 @@ test("subtitle rows keep both the name and its language", () => {
   expect(
     subtitleTrackDisplay({ title: "English", language: "en" }),
   ).toEqual({ label: "English", eyebrow: undefined });
+});
+
+test("language preferences match track aliases and prefer exact regional tags", () => {
+  const tracks = [
+    { language: "eng" },
+    { language: "por" },
+    { language: "pt-BR" },
+  ];
+  expect(findLanguageTrack(tracks, "pt_BR")).toBe(tracks[2]!);
+  expect(findLanguageTrack(tracks, "English")).toBe(tracks[0]!);
+  expect(findLanguageTrack(tracks, "ja", "en")).toBe(tracks[0]!);
+  expect(findLanguageTrack(tracks, "")).toBeUndefined();
+});
+
+test("subtitle overrides, app defaults and file defaults work across track sources", () => {
+  const tracks = [
+    { key: "sidecar", language: "jpn", isDefault: true },
+    { key: "native:1", language: "eng" },
+  ];
+  expect(preferredSubtitleTrack(tracks, undefined, true, "en")).toBe("native:1");
+  expect(preferredSubtitleTrack(tracks, "ja", false, "en")).toBe("sidecar");
+  expect(preferredSubtitleTrack(tracks, "hi", true, "en")).toBe("native:1");
+  expect(preferredSubtitleTrack(tracks, undefined, true, "")).toBe("sidecar");
+  expect(preferredSubtitleTrack(tracks, "hi", false, "en")).toBeNull();
+  expect(preferredSubtitleTrack(tracks, null, true, "en")).toBeNull();
 });

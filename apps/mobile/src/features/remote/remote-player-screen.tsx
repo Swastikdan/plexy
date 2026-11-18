@@ -4,7 +4,6 @@ import {
   BackHandler,
   StatusBar,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
 import { WebView } from "react-native-webview";
@@ -14,7 +13,7 @@ import { useClient } from "@/core/client/client-provider";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
-import { ArrowLeft, Maximize, Minimize } from "@/shared/ui/icons";
+import { ArrowLeft } from "@/shared/ui/icons";
 import { PlayerControl } from "@/features/player/components/player-control";
 import { PlayerLoading } from "@/features/player/components/player-loading";
 import { lockPlayerLandscape, usePlayerOrientation } from "@/features/player/hooks/use-player-orientation";
@@ -52,7 +51,6 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [active, setActive] = useState(AppState.currentState === "active");
-  const [immersive, setImmersive] = useState(false);
   const lastRecorded = useRef(0);
   const lastPosition = useRef<{
     currentTime: number;
@@ -264,7 +262,7 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
 
           {!active && <View style={styles.paused} pointerEvents="auto" />}
 
-          {/* Full-bleed playback: close and our own fullscreen control. */}
+          {/* Online playback is just the provider iframe plus a back control. */}
           <View
             pointerEvents="box-none"
             style={[
@@ -276,39 +274,13 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
               },
             ]}
           >
-            {!immersive && (
-              <PlayerControl
-                accessibilityLabel="Close player"
-                onPress={close}
-                size={48}
-                bg="rgba(0,0,0,0.4)"
-              >
-                <ArrowLeft size={20} color="#ffffff" strokeWidth={2.2} />
-              </PlayerControl>
-            )}
-            {immersive ? (
-              <View style={{ flex: 1 }} />
-            ) : (
-              <Text numberOfLines={1} style={styles.title}>
-                {input.display}
-              </Text>
-            )}
             <PlayerControl
-              accessibilityLabel={
-                immersive ? "Exit fullscreen" : "Fullscreen landscape"
-              }
-              onPress={() => {
-                lockPlayerLandscape();
-                setImmersive((value) => !value);
-              }}
+              accessibilityLabel="Close player"
+              onPress={close}
               size={48}
               bg="rgba(0,0,0,0.4)"
             >
-              {immersive ? (
-                <Minimize size={20} color="#ffffff" strokeWidth={2.2} />
-              ) : (
-                <Maximize size={20} color="#ffffff" strokeWidth={2.2} />
-              )}
+              <ArrowLeft size={20} color="#ffffff" strokeWidth={2.2} />
             </PlayerControl>
           </View>
         </>
@@ -340,14 +312,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     flexDirection: "row",
     alignItems: "center",
-  },
-  title: {
-    flex: 1,
-    paddingHorizontal: 12,
-    color: "rgba(255,255,255,0.95)",
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "center",
   },
   error: {
     flex: 1,

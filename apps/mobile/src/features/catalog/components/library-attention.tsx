@@ -36,7 +36,7 @@ export function LibraryAttention() {
         onPress={() => { triggerHaptic("light"); push("/settings/report"); }}
       >
         <Text className="flex-1 text-foreground">
-          {attention.count} title{attention.count === 1 ? "" : "s"} need attention
+          {attention.count} {attention.count === 1 ? "title needs" : "titles need"} attention
         </Text>
         <Text className="text-foreground">Review</Text>
       </Pressable>

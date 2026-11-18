@@ -428,22 +428,31 @@ export function HomeScreen({
           <View className="min-h-[320px] justify-center gap-5 px-7 py-12">
             <Film size={36} color={colors.brandLight} />
             <Text className="font-archivo-bold text-[30px] leading-[36px] text-foreground">
-              Your next watch starts here.
+              {preferences.familyLevel !== "off"
+                ? "No titles for this family setting."
+                : "Your next watch starts here."}
             </Text>
             <Text className="font-archivo-regular text-[16px] leading-[24px] text-muted">
-              Connect a media folder to bring your movies and shows into Plexy.
+              {preferences.familyLevel !== "off"
+                ? "Everything in this library is above the Kids & family limit or has no age rating."
+                : "Connect a media folder to bring your movies and shows into Plexy."}
             </Text>
             <NativeButton
               className="self-start rounded-full bg-accent"
               size="lg"
               onPress={() =>
                 push({
-                  pathname: "/settings/folders",
+                  pathname:
+                    preferences.familyLevel !== "off"
+                      ? "/settings/family"
+                      : "/settings/folders",
                 })
               }
             >
               <NativeButton.Label className="text-accent-foreground">
-                Add media folders
+                {preferences.familyLevel !== "off"
+                  ? "Kids & family settings"
+                  : "Add media folders"}
               </NativeButton.Label>
             </NativeButton>
           </View>

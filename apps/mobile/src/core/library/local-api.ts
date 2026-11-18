@@ -1,5 +1,13 @@
 import type { Chapter } from "@plexy/api-client/types";
-import { LocalLibrary } from "@plexy/local-library/library";
+import { LocalLibrary, type LocalRecord } from "@plexy/local-library/library";
+import {
+    audienceAllows,
+    audienceVersion,
+} from "@/core/content/audience";
+import {
+    hiddenTitleVersion,
+    isTitleHidden,
+} from "@/core/content/hidden-titles";
 import { LocalCatalog, type Playability, type TitleIdentity } from "./catalog-api";
 /** Implements the existing UI contract in process, without a network listener. */
 export class LocalApi extends LocalCatalog {
@@ -11,25 +19,42 @@ export class LocalApi extends LocalCatalog {
     private countsCache = { movie: 0, series: 0 };
     private collectionsCache: ReturnType<LocalApi["buildCollections"]> = [];
     private itemsCache = new Map<string, import("./catalog-api").ItemCard[]>();
+    private policyVersion = "";
+    private policyKey() {
+        return `${audienceVersion()}:${hiddenTitleVersion()}`;
+    }
+    private allowed(card: import("./catalog-api").ItemCard) {
+        return (audienceAllows(card.certification) &&
+            !isTitleHidden(card.publicId) &&
+            !isTitleHidden(card.parentPublicId));
+    }
+    private allowedRecord(record: LocalRecord) {
+        return (audienceAllows(record.certification ?? record.card.certification) &&
+            !isTitleHidden(record.card.publicId) &&
+            !isTitleHidden(record.card.parentPublicId));
+    }
     constructor(private readonly library: LocalLibrary, private readSubtitle: (uri: string) => Promise<string>, private subtitles: (fileId: number) => Promise<NonNullable<Playability["tracks"]>>, private chapters: (fileId: number) => Promise<Chapter[]> = async () => []) {
         super();
     }
     /** Rebuild only when the library snapshot changed; `cards()` is stable. */
     private ensureCatalog() {
         const cards = this.library.cards();
-        if (cards === this.cardsRef) return cards;
+        const policy = this.policyKey();
+        if (cards === this.cardsRef && policy === this.policyVersion) return cards;
         this.cardsRef = cards;
+        this.policyVersion = policy;
         this.byTmdb.clear();
         this.people.clear();
         this.peopleSource = null;
         this.countsCache = { movie: 0, series: 0 };
         this.itemsCache.clear();
         for (const card of cards) {
-            if (card.kind === "movie") this.countsCache.movie++;
-            else if (card.kind === "series") this.countsCache.series++;
             if (card.tmdbId != null) {
                 this.byTmdb.set(`${card.kind === "series" ? "tv" : "movie"}:${card.tmdbId}`, card);
             }
+            if (!this.allowed(card)) continue;
+            if (card.kind === "movie") this.countsCache.movie++;
+            else if (card.kind === "series") this.countsCache.series++;
         }
         this.collectionsCache = this.buildCollections();
         return cards;
@@ -43,7 +68,7 @@ export class LocalApi extends LocalCatalog {
         const groups = new Map<string, Map<number, import("./catalog-api").ItemCard>>();
         for (const record of this.library.state.records) {
             const card = byId.get(record.card.parentId ?? record.id);
-            if (!card) continue;
+            if (!card || !this.allowed(card)) continue;
             for (const person of record.cast) {
                 const titles = groups.get(person.name) ?? new Map();
                 titles.set(card.id, card);
@@ -61,6 +86,8 @@ export class LocalApi extends LocalCatalog {
         }>();
         for (const record of this.library.state.records) {
             if (record.card.kind !== "movie" || !record.collection)
+                continue;
+            if (!this.allowedRecord(record))
                 continue;
             const entry = groups.get(record.collection.id) ?? { ...record.collection, count: 0, poster: null };
             entry.count++;
@@ -138,8 +165,10 @@ export class LocalApi extends LocalCatalog {
     }
     override async home(signal?: AbortSignal) {
         this.checkSignal(signal);
-        const all = this.ensureCatalog();
-        const continuing = this.library.state.records.map((r) => r.card)
+        const all = this.ensureCatalog().filter((card) => this.allowed(card));
+        const continuing = this.library.state.records
+            .filter((record) => this.allowedRecord(record))
+            .map((r) => r.card)
             .filter((c) => c.watch && !c.watch.played && c.watch.position > 0);
         return {
             featured: all.find((c) => c.backdrop) || all[0] || null,
@@ -152,10 +181,10 @@ export class LocalApi extends LocalCatalog {
     override async items(kind: "all" | "movie" | "series", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
         this.checkSignal(signal);
         const cards = this.ensureCatalog();
-        const key = `${kind}|${sort}|${unwatched}`;
+        const key = `${kind}|${sort}|${unwatched}|${this.policyVersion}`;
         let items = this.itemsCache.get(key);
         if (!items) {
-            items = cards.filter((c) => kind === "all" ? true : c.kind === kind);
+            items = cards.filter((c) => this.allowed(c) && (kind === "all" || c.kind === kind));
             if (unwatched)
                 items = items.filter((c) => !c.watch?.played);
             items = [...items].sort((a, b) => sort === "year" ? (b.year || 0) - (a.year || 0)
@@ -169,8 +198,13 @@ export class LocalApi extends LocalCatalog {
         this.checkSignal(signal);
         const q = query.toLowerCase();
         return {
-            titles: this.ensureCatalog().filter((c) => c.name.toLowerCase().includes(q)),
-            episodes: this.library.state.records.filter((r) => r.card.kind === "episode" && r.card.name.toLowerCase().includes(q)).map((r) => r.card),
+            titles: this.ensureCatalog()
+                .filter((c) => this.allowed(c) && c.name.toLowerCase().includes(q)),
+            episodes: this.library.state.records
+                .filter((r) => r.card.kind === "episode" &&
+                this.allowedRecord(r) &&
+                r.card.name.toLowerCase().includes(q))
+                .map((r) => r.card),
         };
     }
     override async detail(id: string | number, signal?: AbortSignal) {
@@ -220,7 +254,11 @@ export class LocalApi extends LocalCatalog {
         return this.collectionsCache;
     }
     override collectionItems(id: number) {
-        return this.library.state.records.filter((r) => r.card.kind === "movie" && r.collection?.id === id).map((r) => r.card);
+        return this.library.state.records
+            .filter((r) => r.card.kind === "movie" &&
+            r.collection?.id === id &&
+            this.allowedRecord(r))
+            .map((r) => ({ ...r.card, certification: r.certification ?? r.card.certification ?? null }));
     }
     override episodes(id: number) {
         return this.library.state.records.filter((r) => r.card.parentId === id).map((r) => r.card);

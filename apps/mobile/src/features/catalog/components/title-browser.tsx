@@ -8,6 +8,7 @@ useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
+import { useHiddenTitles } from "@/core/content/hidden-titles";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { useColors } from "@/shared/theme";
@@ -35,8 +36,10 @@ export function TitleBrowser({
 }) {
   const colors = useColors();
   const { api } = useClient();
+  const { isHidden } = useHiddenTitles();
   const prefetch = useTitlePrefetch();
   const titleActions = useTitleActions();
+  const visibleItems = items.filter((item) => !isHidden(item.publicId));
   const playTitle = usePlayTitle(play, (item) => {
     close();
     open(item.publicId);
@@ -71,14 +74,14 @@ export function TitleBrowser({
               {title}
             </Text>
             <Text className="mt-1 font-archivo-regular text-muted">
-              {items.length} {items.length === 1 ? "title" : "titles"} in your
-              library
+              {visibleItems.length}{" "}
+              {visibleItems.length === 1 ? "title" : "titles"} in your library
             </Text>
           </View>
         </View>
         <FlatList
           key={columns}
-          data={items}
+          data={visibleItems}
           numColumns={columns}
           keyExtractor={(item) => String(item.id)}
           initialNumToRender={6}

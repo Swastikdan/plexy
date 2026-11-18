@@ -12,6 +12,7 @@ import {
   isPictureInPictureSupported,
   useVideoPlayer,
   VideoView,
+  type AudioTrack,
   type VideoPlayer,
 } from "expo-video";
 import {
@@ -29,12 +30,18 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { localSegments } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
+import type { ShowTrackPreferences } from "@/core/client/preferences";
 import type {
   ItemCard,
   Playability,
 } from "@/core/library/catalog-api";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { cn } from "@/shared/lib/cn";
+import {
+  findLanguageTrack,
+  languageTag,
+  mediaLanguageName,
+} from "@/shared/lib/media-language";
 import { timeLabel } from "@/shared/theme";
 import { Notice } from "@/shared/ui/notice";
 import { LocalThumbnail } from "./components/local-thumbnail";
@@ -133,6 +140,11 @@ export function PlaybackScreen({
   useKeepAwake();
   const { api, runtime, preferences, updatePreferences, progress } =
     useClient();
+  const showKey =
+    initial.mediaType === "tv" && initial.parentItemId != null
+      ? `local-${initial.parentItemId}`
+      : null;
+  const showTracks = showKey ? preferences.showTrackPreferences[showKey] : undefined;
   const insets = useSafeAreaInsets();
   const win = useWindowDimensions();
   const reduceMotion = useReducedMotion();
@@ -280,6 +292,7 @@ export function PlaybackScreen({
   const [nativeAudio, setNativeAudio] = useState<
     typeof player.availableAudioTracks
   >([]);
+  const sessionAudio = useRef<AudioTrack | null>(null);
   const expectedUri = useRef("");
 
   const video = useRef<VideoView>(null);
@@ -307,19 +320,35 @@ export function PlaybackScreen({
   });
   const {
     subtitle,
-    setSubtitle,
+    pickSubtitle,
+    resetSubtitle,
     nativeSubtitles,
     subVertical,
     setSubVertical,
     loadSubtitleTracks,
     text,
   } = usePlayerSubtitles({
-    initial,
-    fileId: manifest.fileId,
+    manifest,
     player,
     position,
     onError: setMessage,
+    showLanguage: showTracks?.subtitleLanguage,
   });
+  const loadAudioTracks = useEventCallback((tracks: AudioTrack[]) => {
+    setNativeAudio(tracks);
+    const manual = sessionAudio.current;
+    const selected =
+      (manual && tracks.find((track) => track.id === manual.id)) ||
+      findLanguageTrack(tracks, showTracks?.audioLanguage, preferences.audioLanguage);
+    if (selected) updateNativePlayer(player, "audioTrack", selected);
+  });
+  const updateShowTracks = (override?: ShowTrackPreferences) => {
+    if (!showKey) return;
+    const next = { ...preferences.showTrackPreferences };
+    if (override) next[showKey] = override;
+    else delete next[showKey];
+    updatePreferences({ showTrackPreferences: next });
+  };
   useEffect(() => {
     playerRef.current = player;
   }, [player]);
@@ -471,7 +500,7 @@ export function PlaybackScreen({
         )
           return;
         setHasLoaded(true);
-        setNativeAudio(e.availableAudioTracks);
+        loadAudioTracks(e.availableAudioTracks);
         loadSubtitleTracks(e.availableSubtitleTracks);
         const value = Math.max(0, chosenStart.current - offset.current);
         updateNativePlayer(player, "currentTime", value);
@@ -494,7 +523,7 @@ export function PlaybackScreen({
       save(false, true);
       subs.forEach((s) => s.remove());
     };
-  }, [player, save, lastInteraction, loadSubtitleTracks, setVisible, touchControls, endBoost]);
+  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost]);
   const [previousChoice, setPreviousChoice] = useState(choice);
   if (previousChoice !== choice) {
     setPreviousChoice(choice);
@@ -608,7 +637,10 @@ export function PlaybackScreen({
       if (state !== "active") {
         endBoost();
         save(false, true);
-        if (!pip.current) player.pause();
+        // Expo handles background pausing natively. Pausing here races Android's
+        // home-gesture PiP transition, whose start callback can arrive later.
+        // staysActiveInBackground remains false, so playback stops when the
+        // native view is not entering PiP (for example when the device locks).
       } else reveal();
     });
     return () => sub.remove();
@@ -739,7 +771,10 @@ export function PlaybackScreen({
     surfaceType: "textureView" as const,
     fullscreenOptions: { enable: false },
     allowsPictureInPicture: true,
-    startsPictureInPictureAutomatically: false,
+    // Arm the system home gesture only for active playback. Keeping this false
+    // while paused or finished prevents the app shrinking into an idle PiP.
+    startsPictureInPictureAutomatically:
+      playing && hasLoaded && !ended && isPictureInPictureSupported(),
     onPictureInPictureStart: () => {
       pip.current = true;
     },
@@ -1300,20 +1335,42 @@ export function PlaybackScreen({
         serverTracks={manifest.tracks}
         nativeSubtitles={nativeSubtitles}
         canAddSubtitleFile={Boolean(runtime.pickSubtitle)}
-        onPickAudio={(track) => {
-          updateNativePlayer(player, "audioTrack", track);
+        canRememberShow={Boolean(showKey)}
+        showOverrideLabel={showTracks && [
+          showTracks.audioLanguage && `Audio · ${mediaLanguageName(showTracks.audioLanguage) ?? showTracks.audioLanguage}`,
+          showTracks.subtitleLanguage === null
+            ? "Subtitles off"
+            : showTracks.subtitleLanguage && `Subtitles · ${mediaLanguageName(showTracks.subtitleLanguage) ?? showTracks.subtitleLanguage}`,
+        ].filter(Boolean).join("  /  ")}
+        onClearShowOverride={() => {
+          updateShowTracks();
+          sessionAudio.current = null;
+          const track = findLanguageTrack(nativeAudio, preferences.audioLanguage) ??
+            nativeAudio.find((entry) => entry.isDefault) ??
+            nativeAudio[0];
+          if (track) updateNativePlayer(player, "audioTrack", track);
+          resetSubtitle();
           setAudioPanel(false);
         }}
-        onPickSubtitle={(value) => {
-          setSubtitle(value);
-          if (!value) {
-            updatePreferences({ autoSubtitles: false });
-          } else {
-            updatePreferences({ autoSubtitles: true });
-            const server = manifest.tracks?.find((t) => t.track === value);
-            if (server) {
-              updatePreferences({ subtitleLanguage: server.language || "" });
-            }
+        onPickAudio={(track, remember) => {
+          sessionAudio.current = track;
+          updateNativePlayer(player, "audioTrack", track);
+          if (remember) {
+            const audioLanguage = languageTag(track.language);
+            if (audioLanguage) updateShowTracks({ ...showTracks, audioLanguage });
+            else setMessage("This audio track has no language to save for the show.");
+          }
+          setAudioPanel(false);
+        }}
+        onPickSubtitle={(value, remember) => {
+          pickSubtitle(value);
+          if (remember) {
+            const track = value?.startsWith("native:")
+              ? nativeSubtitles.find((entry) => `native:${entry.id}` === value)
+              : manifest.tracks?.find((entry) => entry.track === value);
+            const subtitleLanguage = value === null ? null : languageTag(track?.language);
+            if (subtitleLanguage !== undefined) updateShowTracks({ ...showTracks, subtitleLanguage });
+            else setMessage("This subtitle track has no language to save for the show.");
           }
           setAudioPanel(false);
         }}
@@ -1330,8 +1387,7 @@ export function PlaybackScreen({
                   track,
                 ],
               }));
-              setSubtitle(track.track);
-              updatePreferences({ autoSubtitles: true });
+              pickSubtitle(track.track);
               setAudioPanel(false);
             })
             .catch(() =>

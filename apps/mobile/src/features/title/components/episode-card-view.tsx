@@ -1,5 +1,6 @@
 import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
+import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { useColors } from "@/shared/theme";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { Check, Globe, Play } from "@/shared/ui/icons";
@@ -52,7 +53,7 @@ export function EpisodeCardView({
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      delayLongPress={800}
+      delayLongPress={LONG_PRESS_MS}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityState={selecting ? { selected } : undefined}

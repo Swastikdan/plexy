@@ -13,6 +13,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
+import { familyAllows } from "@/core/content/audience";
+import { useHiddenTitles } from "@/core/content/hidden-titles";
+import { isReleased } from "@/core/content/release";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { triggerHaptic } from "@/shared/lib/haptics";
@@ -43,6 +46,7 @@ import { useRemoteTitleActions, remoteTitleFromCard } from "@/features/remote/ho
 import { useRemoteProgress, remoteWatch } from "@/features/remote/lib/remote-progress";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
+import { certificationFor } from "@/features/remote/lib/tmdb";
 import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
 import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
 
@@ -59,6 +63,7 @@ export function LibraryScreen({
   const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { api, runtime, preferences } = useClient();
+  const { isHidden } = useHiddenTitles();
   const { saved } = useRemote();
   const focused = useIsFocused();
   const remoteProgress = useRemoteProgress(focused);
@@ -90,12 +95,24 @@ export function LibraryScreen({
     void remoteProgress;
     if (!online) return [];
     return saved
-      .filter(
-        (entry) =>
+      .filter((entry) => {
+        const publicId = remotePublicId(
+          entry.title.mediaType,
+          entry.title.tmdbId,
+        );
+        return (
           !localByTmdb.has(
             `${entry.title.mediaType}:${entry.title.tmdbId}`,
-          ),
-      )
+          ) &&
+          !isHidden(publicId) &&
+          isReleased(entry.title.releaseDate) &&
+          familyAllows(
+            certificationFor(entry.title, preferences.familyRegion),
+            preferences.familyLevel,
+            preferences.familyBlockUnrated,
+          )
+        );
+      })
       .map((entry) =>
         toItemCard(
           entry.title,
@@ -103,7 +120,16 @@ export function LibraryScreen({
           remoteWatch(entry.title.mediaType, entry.title.tmdbId),
         ),
       );
-  }, [localByTmdb, online, remoteProgress, saved]);
+  }, [
+    isHidden,
+    localByTmdb,
+    online,
+    preferences.familyBlockUnrated,
+    preferences.familyLevel,
+    preferences.familyRegion,
+    remoteProgress,
+    saved,
+  ]);
   React.useEffect(() => {
     prefetchImages(
       savedOnline.flatMap((item) => [item.poster, item.backdrop]),
@@ -111,7 +137,9 @@ export function LibraryScreen({
     );
   }, [savedOnline]);
   const libraryEmpty =
-    counts.movie + counts.series === 0 && savedOnline.length === 0;
+    preferences.familyLevel === "off" &&
+    counts.movie + counts.series === 0 &&
+    savedOnline.length === 0;
   const visibleOnline = React.useMemo(
     () => offlineOnly && preferences.mode === "hybrid" ? [] : savedOnline,
     [offlineOnly, savedOnline, preferences.mode],
@@ -143,14 +171,13 @@ export function LibraryScreen({
     open(publicId);
   };
   const libraryTabs = React.useMemo(() => {
-    const base: LibraryTab[] = ["all"];
-    const hasOnlineMovie = visibleOnline.some((item) => item.kind !== "series");
-    const hasOnlineSeries = visibleOnline.some((item) => item.kind === "series");
-    if (counts.movie || hasOnlineMovie) base.push("movie");
-    if (counts.series || hasOnlineSeries) base.push("series");
+    // Keep the three browse tabs together even when one side of the library is
+    // empty today. A library with only shows still offers Movies (and vice
+    // versa) instead of silently collapsing to "All" + "TV Shows".
+    const base: LibraryTab[] = ["all", "movie", "series"];
     if (collections.length) base.push("collection");
     return base;
-  }, [collections, counts, visibleOnline]);
+  }, [collections.length]);
   if (!libraryTabs.includes(activeTab)) setActiveTab("all");
   const tabScroll = useRef<ScrollView>(null);
   const tabLayouts = useRef<Record<string, { x: number; width: number }>>({});
@@ -254,8 +281,8 @@ export function LibraryScreen({
                     switchTab(tab);
                   }}
                   className={cn(
-                    "flex-grow rounded-full items-center justify-center",
-                    libraryTabs.length >= 5 ? "px-2" : "min-w-[72px] px-3",
+                    "flex-1 items-center justify-center rounded-full",
+                    libraryTabs.length >= 5 ? "px-1.5" : "px-2",
                     active && "bg-foreground",
                     !active && "active:opacity-[0.65]",
                   )}

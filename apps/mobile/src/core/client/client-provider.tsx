@@ -3,7 +3,13 @@ import { catalogForMode } from "./mode-catalog";
 import { Uniwind } from "uniwind";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { AppState } from "react-native";
+import {
+    setAudiencePolicy,
+    type FamilyLevel,
+} from "@/core/content/audience";
+import { loadHiddenTitles } from "@/core/content/hidden-titles";
 import type { LocalCatalog } from "@/core/library/catalog-api";
+import { invalidateLocalResources } from "@/core/resources/use-resource";
 import { defaultPreferences, modePreferences, PREFERENCE_KEY, readJson, writeJson, type Preferences, } from "./preferences";
 import { ProgressQueue, type Progress } from "./progress-queue";
 export interface TitleSearchResult {
@@ -64,11 +70,17 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
             if (typeof saved.onlineEpisodeSelector !== "boolean") saved.onlineEpisodeSelector = true;
             if (typeof saved.onlineDisclaimerSeen !== "boolean") saved.onlineDisclaimerSeen = false;
+            const familyLevels: FamilyLevel[] = ["off", "little", "older", "teen"];
+            if (!familyLevels.includes(saved.familyLevel)) saved.familyLevel = "off";
+            if (typeof saved.familyBlockUnrated !== "boolean") saved.familyBlockUnrated = true;
+            if (!saved.familyRegion) saved.familyRegion = "US";
+            if (typeof saved.familyPinHash !== "string") saved.familyPinHash = "";
             Uniwind.setTheme(saved.theme);
+            setAudiencePolicy(saved.familyLevel, saved.familyBlockUnrated);
             preferencesRef.current = saved;
             if (live)
                 setPreferences(saved);
-            await progress.restore();
+            await Promise.all([progress.restore(), loadHiddenTitles()]);
             await progress.flush(runtime.api);
             if (live)
                 setReady(true);
@@ -90,6 +102,13 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
         const next = { ...preferencesRef.current, ...patch };
         if (patch.mode && patch.mode !== "hybrid") Object.assign(next, modePreferences(patch.mode));
         if (patch.theme) Uniwind.setTheme(patch.theme);
+        const familyChanged =
+            patch.familyLevel !== undefined ||
+            patch.familyBlockUnrated !== undefined;
+        if (familyChanged) {
+            setAudiencePolicy(next.familyLevel, next.familyBlockUnrated);
+            invalidateLocalResources();
+        }
         preferencesRef.current = next;
         setPreferences(next);
         void writeJson(PREFERENCE_KEY, next).catch(() => setStorageError("Could not save preferences. Check available device storage."));

@@ -48,6 +48,8 @@ export function toItemCard(
     tmdbId: title.tmdbId,
     matchStatus: "matched",
     watch: watch ?? null,
+    certification: title.certification ?? null,
+    releaseDate: title.releaseDate ?? null,
   };
 }
 

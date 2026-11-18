@@ -1,11 +1,17 @@
 import { useIsFocused } from "expo-router";
 import { useEffect, useMemo } from "react";
+import { useClient } from "@/core/client/client-provider";
+import { familyMaxAge } from "@/core/content/audience";
+import { useHiddenTitles } from "@/core/content/hidden-titles";
+import { isReleased } from "@/core/content/release";
 import type { ItemCard, LocalCatalog } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { remoteWatch, useRemoteProgress } from "./remote-progress";
 import { prefetchImages } from "./prefetch";
 import {
   fetchRecommendations,
+  remoteOptionsKey,
+  type RemoteCatalogOptions,
   type RemoteMediaType,
   type RemoteTitle,
 } from "./tmdb";
@@ -30,12 +36,27 @@ export function useRecommendations({
   /** Defer the network request until the recommendations tab is visible. */
   enabled?: boolean;
 }) {
+  const { preferences } = useClient();
+  const { isHidden } = useHiddenTitles();
+  const options = useMemo<RemoteCatalogOptions>(
+    () => ({
+      maxAge: familyMaxAge(preferences.familyLevel),
+      blockUnrated: preferences.familyBlockUnrated,
+      region: preferences.familyRegion,
+    }),
+    [
+      preferences.familyBlockUnrated,
+      preferences.familyLevel,
+      preferences.familyRegion,
+    ],
+  );
+  const optionsKey = remoteOptionsKey(options);
   const source = useResource(
     (signal) =>
       enabled && mediaType && tmdbId
-        ? fetchRecommendations(mediaType, tmdbId, signal)
+        ? fetchRecommendations(mediaType, tmdbId, signal, options)
         : Promise.resolve([]),
-    [enabled, mediaType, tmdbId],
+    [enabled, mediaType, tmdbId, optionsKey],
     "recommendations",
   );
   const focused = useIsFocused();
@@ -58,6 +79,8 @@ export function useRecommendations({
     const seen = new Set<string>();
     for (const title of source.value ?? []) {
       if (title.tmdbId === tmdbId && title.mediaType === mediaType) continue;
+      if (!isReleased(title.releaseDate)) continue;
+      if (isHidden(remotePublicId(title.mediaType, title.tmdbId))) continue;
       const local = localByTmdb.get(`${title.mediaType}:${title.tmdbId}`);
       if (local) {
         if (seen.has(local.publicId)) continue;
@@ -86,6 +109,7 @@ export function useRecommendations({
     };
   }, [
     enabled,
+    isHidden,
     localByTmdb,
     mediaType,
     online,

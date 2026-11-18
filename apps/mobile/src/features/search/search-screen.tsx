@@ -514,7 +514,11 @@ export function SearchScreen({
       <PageState
         icon={SearchIcon}
         title="No results"
-        message={`Nothing matched “${debounced}”. Try a different title or episode.`}
+        message={
+          preferences.familyLevel !== "off"
+            ? `Nothing matched “${debounced}”. Some titles may be hidden by Kids & family mode.`
+            : `Nothing matched “${debounced}”. Try a different title or episode.`
+        }
       />
     );
   }

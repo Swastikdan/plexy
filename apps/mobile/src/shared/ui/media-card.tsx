@@ -5,6 +5,7 @@ import { Pressable,Text,View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { rememberTitlePreview } from "@/core/library/title-prefetch";
+import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { useColors } from "@/shared/theme";
 import { Film, Tv , Check, Globe } from "./icons";
 import { PosterImage } from "./poster-image";
@@ -70,7 +71,7 @@ export function Card({
         onPress();
       }}
       onLongPress={onLongPress}
-      delayLongPress={1000}
+      delayLongPress={LONG_PRESS_MS}
       style={{
         width: cardWidth,
         transform: [{ scale: pressed && !reducedMotion ? 0.97 : 1 }],

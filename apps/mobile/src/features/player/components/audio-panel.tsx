@@ -1,7 +1,7 @@
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { Check, X } from "@/shared/ui/icons";
 import type { AudioTrack, SubtitleTrack, VideoPlayer } from "expo-video";
-import React from "react";
+import React, { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import type { Playability } from "@/core/library/catalog-api";
 import { useColors } from "@/shared/theme";
@@ -73,6 +73,9 @@ export function AudioPanel({
   serverTracks,
   nativeSubtitles,
   canAddSubtitleFile,
+  canRememberShow,
+  showOverrideLabel,
+  onClearShowOverride,
   onPickAudio,
   onPickSubtitle,
   onAddSubtitleFile,
@@ -85,17 +88,27 @@ export function AudioPanel({
   serverTracks: Playability["tracks"];
   nativeSubtitles: SubtitleTrack[];
   canAddSubtitleFile: boolean;
-  onPickAudio: (track: AudioTrack) => void;
-  onPickSubtitle: (value: string | null) => void;
+  canRememberShow: boolean;
+  showOverrideLabel?: string;
+  onClearShowOverride: () => void;
+  onPickAudio: (track: AudioTrack, remember: boolean) => void;
+  onPickSubtitle: (value: string | null, remember: boolean) => void;
   onAddSubtitleFile: () => void;
 }) {
   const colors = useColors();
+  const [remember, setRemember] = useState(false);
+  const pickSubtitle = (value: string | null) => {
+    onPickSubtitle(value, remember);
+    setRemember(false);
+  };
+  const selectedAudio =
+    player.audioTrack ?? nativeAudio.find((track) => track.isDefault) ?? nativeAudio[0];
   const subtitleRows: TrackRow[] = [
     {
       key: "off",
       label: "Off",
       selected: !subtitle,
-      onPress: () => onPickSubtitle(null),
+      onPress: () => pickSubtitle(null),
     },
     ...(serverTracks ?? []).map((track) => ({
       key: track.track,
@@ -105,7 +118,7 @@ export function AudioPanel({
         isDefault: track.isDefault,
       }),
       selected: subtitle === track.track,
-      onPress: () => onPickSubtitle(track.track),
+      onPress: () => pickSubtitle(track.track),
     })),
     ...nativeSubtitles.map((track) => ({
       key: `native:${track.id}`,
@@ -115,7 +128,7 @@ export function AudioPanel({
         fallback: "Embedded subtitles",
       }),
       selected: subtitle === `native:${track.id}`,
-      onPress: () => onPickSubtitle(`native:${track.id}`),
+      onPress: () => pickSubtitle(`native:${track.id}`),
     })),
   ];
   if (canAddSubtitleFile) {
@@ -123,10 +136,17 @@ export function AudioPanel({
       key: "add",
       label: "Add subtitle file (SRT / VTT)",
       selected: false,
-      onPress: onAddSubtitleFile,
+      onPress: () => {
+        setRemember(false);
+        onAddSubtitleFile();
+      },
     });
   }
-  const close = () => { triggerHaptic("light"); onClose(); };
+  const close = () => {
+    setRemember(false);
+    triggerHaptic("light");
+    onClose();
+  };
   return (
     <Modal
       visible={visible}
@@ -160,9 +180,42 @@ export function AudioPanel({
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
+            {canRememberShow ? (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: remember }}
+                accessibilityHint="Saves the language from your next track selection"
+                onPress={() => {
+                  triggerHaptic("selection");
+                  setRemember((value) => !value);
+                }}
+                className={cn(
+                  "min-h-[52px] flex-row items-center justify-between gap-3 rounded-[12px] px-4 active:bg-foreground/10",
+                  remember && "bg-foreground/[0.08]",
+                )}
+              >
+                <View className="flex-1">
+                  <Text className="text-[14px] font-bold text-foreground">Remember for this show</Text>
+                  <Text className="text-[12px] text-foreground/55">Save your next language choice</Text>
+                </View>
+                {remember ? <Check size={15} strokeWidth={2.5} color={colors.brand} /> : null}
+              </Pressable>
+            ) : null}
+            {showOverrideLabel ? (
+              <Row row={{
+                key: "app-defaults",
+                label: "Use app defaults",
+                eyebrow: showOverrideLabel,
+                selected: false,
+                onPress: () => {
+                  setRemember(false);
+                  onClearShowOverride();
+                },
+              }} />
+            ) : null}
             <Section label="Audio" />
             {nativeAudio.length ? (
-              nativeAudio.map((track, index) => (
+              nativeAudio.map((track) => (
                 <Row
                   key={String(track.id ?? track.label ?? track.language)}
                   row={{
@@ -177,12 +230,12 @@ export function AudioPanel({
                       track.label.toLowerCase() !== (subtitleLanguageName(track.language) ?? "").toLowerCase()
                         ? subtitleLanguageName(track.language) ?? undefined
                         : undefined,
-                    // With no explicit selection the first track is the
-                    // default — highlight it just like subtitles.
-                    selected: player.audioTrack
-                      ? player.audioTrack?.id === track.id
-                      : index === 0,
-                    onPress: () => onPickAudio(track),
+                    selected: selectedAudio === track ||
+                      (selectedAudio?.id != null && selectedAudio.id === track.id),
+                    onPress: () => {
+                      onPickAudio(track, remember);
+                      setRemember(false);
+                    },
                   }}
                 />
               ))
@@ -192,7 +245,7 @@ export function AudioPanel({
                   key: "default-audio",
                   label: "Default audio track",
                   selected: true,
-                  onPress: onClose,
+                  onPress: close,
                 }}
               />
             )}
