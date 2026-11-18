@@ -9,5 +9,5 @@
       "@plexy/local-library/*": ["./packages/local-library/src/*"]
     }
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts", "apps/mobile/scripts/**/*.ts"]
 }

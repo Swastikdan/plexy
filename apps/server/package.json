@@ -7,8 +7,10 @@
   "scripts": {
     "dev": "bun --watch src/main.ts",
     "start": "bun src/main.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun ../../scripts/test-server.ts",
+    "typecheck": "tsc --noEmit",
+    "compile": "cd ../.. && bun build --compile --minify --outfile=apps/server/dist/plexy-server apps/server/src/main.ts",
+    "assemble:server": "cd ../.. && bun scripts/build-server.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",

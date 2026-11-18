@@ -112,7 +112,13 @@ export function SettingsScreen({
     updateStatusText,
     handleCheckUpdate,
     handleDownloadAndInstall,
+    offerOta,
+    otaPending,
   } = useAppUpdates(online);
+  const hasAppUpdate = offerOta || Boolean(availableUpdate);
+  let appUpdateLabel = updateChecking ? "Checking…" : "Check";
+  if (hasAppUpdate) appUpdateLabel = offerOta ? (otaPending ? "Restart" : "Download") : "Update now";
+  if (updateDownloading) appUpdateLabel = updateProgress === 100 ? "Install…" : "Downloading…";
   useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
   const action = async (fn: () => Promise<void>, key = "") => {
     if (busy) return;
@@ -456,21 +462,11 @@ export function SettingsScreen({
                   </Text>
                 </View>
                 <Button
-                  label={
-                    availableUpdate
-                      ? updateDownloading
-                        ? updateProgress === 100
-                          ? "Install…"
-                          : "Downloading…"
-                        : "Update now"
-                      : updateChecking
-                        ? "Checking…"
-                        : "Check"
-                  }
-                  primary={Boolean(availableUpdate)}
-                  disabled={!online || updateChecking || updateDownloading}
+                  label={appUpdateLabel}
+                  primary={hasAppUpdate}
+                  disabled={(!online && !otaPending) || updateChecking || updateDownloading}
                   onPress={() =>
-                    void (availableUpdate
+                    void (hasAppUpdate
                       ? handleDownloadAndInstall()
                       : handleCheckUpdate())
                   }

@@ -1,6 +1,7 @@
 import { fetchUpdateJson, UpdateRequestError } from "@/features/settings/lib/update-request";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { usePathname } from "expo-router";
+import * as ExpoUpdates from "expo-updates";
 import { createContext, useContext, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { AppState, Modal, ScrollView, Text, View } from "react-native";
 import { useOnline } from "@/shared/hooks/use-online";
@@ -22,6 +23,8 @@ function useUpdateCoordinator() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [policy, setPolicy] = useState<MobileUpdateManifest | null>(null);
   const [legacyUpdate, setLegacyUpdate] = useState<UpdateInfo | null>(null);
+  const [otaAvailable, setOtaAvailable] = useState(false);
+  const [otaPending, setOtaPending] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateDownloading, setUpdateDownloading] = useState(false);
@@ -69,25 +72,35 @@ function useUpdateCoordinator() {
       const installed = await getInstalledAppInfo();
       if (!alive.current) return;
       setAppInfo(installed);
-      const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal: controller.signal });
-      if (response.status === 404 && !policyRef.current) {
-        const legacy = await checkForUpdate(installed, controller.signal);
-        if (!alive.current) return;
-        setLegacyUpdate(legacy);
-        setUpdateStatusText(legacy ? "An update is available." : "Plexy is up to date.");
-        return;
-      }
-      if (response.status === 404) throw new UpdateRequestError("The update policy is temporarily unavailable (HTTP 404). Please retry.", 404);
-      const incoming = parseMobileManifest(response.data);
-      const merged = mergeMobilePolicy(policyRef.current, incoming);
-      if (!alive.current) return;
-      policyRef.current = merged;
-      setPolicy(merged);
-      setLegacyUpdate(null);
-      // Apply even if storage is full; persistence failures must not bypass a known requirement.
-      await AsyncStorage.setItem(POLICY_KEY, JSON.stringify(merged));
-      if (!alive.current) return;
-      setUpdateStatusText(manifestUpdate(merged, installed.versionName, installed.versionCode) ? `Version ${merged.latestVersion} is available.` : "Plexy is up to date.");
+      const [apk, ota] = await Promise.allSettled([
+        (async () => {
+          const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal: controller.signal });
+          if (response.status === 404) {
+            if (policyRef.current) throw new UpdateRequestError("The update policy is temporarily unavailable (HTTP 404). Please retry.", 404);
+            const legacy = await checkForUpdate(installed, controller.signal);
+            if (alive.current) setLegacyUpdate(legacy);
+            return legacy;
+          }
+          const merged = mergeMobilePolicy(policyRef.current, parseMobileManifest(response.data));
+          if (!alive.current) return null;
+          policyRef.current = merged;
+          setPolicy(merged);
+          setLegacyUpdate(null);
+          await AsyncStorage.setItem(POLICY_KEY, JSON.stringify(merged));
+          return manifestUpdate(merged, installed.versionName, installed.versionCode);
+        })(),
+        ExpoUpdates.isEnabled && !otaPending ? ExpoUpdates.checkForUpdateAsync() : null,
+      ]);
+      if (!alive.current || controller.signal.aborted) return;
+      const mustInstallApk = policyRef.current && isUpdateRequired(policyRef.current, installed.versionName);
+      const hasOta = ota.status === "fulfilled" && (ota.value?.isAvailable || ota.value?.isRollBackToEmbedded);
+      setOtaAvailable(Boolean(hasOta));
+      if (mustInstallApk) setUpdateStatusText("An Android update is required.");
+      else if (otaPending || hasOta) setUpdateStatusText(otaPending ? "Restart Plexy to apply the update." : "An app update is available.");
+      else if (apk.status === "fulfilled" && apk.value) setUpdateStatusText(`Version ${apk.value.version || apk.value.tagName} is available.`);
+      else if (apk.status === "rejected") throw apk.reason;
+      else if (ota.status === "rejected") throw ota.reason;
+      else setUpdateStatusText("Plexy is up to date.");
     } catch (error) {
       // Failed checks should not suppress recovery for the full success interval.
       lastCheck.current = Date.now() - CHECK_INTERVAL + 60_000;
@@ -107,8 +120,33 @@ function useUpdateCoordinator() {
 
   const availableUpdate = appInfo && policy ? manifestUpdate(policy, appInfo.versionName, appInfo.versionCode) : legacyUpdate;
   const required = Boolean(appInfo && policy && isUpdateRequired(policy, appInfo.versionName));
+  const offerOta = !required && (otaAvailable || otaPending);
+  const applyOta = useEventCallback(async () => {
+    if (!offerOta || downloading.current || checking.current) return;
+    downloading.current = true;
+    setUpdateDownloading(true);
+    try {
+      if (!otaPending) {
+        setUpdateStatusText("Downloading app update…");
+        const result = await ExpoUpdates.fetchUpdateAsync();
+        setOtaAvailable(false);
+        if (!result.isNew && !result.isRollBackToEmbedded) {
+          setUpdateStatusText("No new update was downloaded. Check again to retry.");
+          return;
+        }
+        setOtaPending(true);
+      }
+      setUpdateStatusText("Restarting Plexy…");
+      await ExpoUpdates.reloadAsync();
+    } catch (error) {
+      if (alive.current) setUpdateStatusText(error instanceof Error ? error.message : String(error));
+    } finally {
+      downloading.current = false;
+      if (alive.current) setUpdateDownloading(false);
+    }
+  });
   const install = useEventCallback(async () => {
-    if (!availableUpdate || downloading.current) return;
+    if (!availableUpdate || downloading.current || checking.current) return;
     downloading.current = true;
     setUpdateDownloading(true);
     setUpdateProgress(0);
@@ -132,6 +170,7 @@ function useUpdateCoordinator() {
   });
   const handleDownloadAndInstall = () => {
     if (required) { void install(); return; }
+    if (offerOta) { void applyOta(); return; }
     if (!availableUpdate || updateDownloading) return;
     showDialog("Download update?", `Download version ${availableUpdate.version || availableUpdate.tagName} (${(availableUpdate.apkSize / 1024 ** 2).toFixed(1)} MB)? Android will ask you to confirm installation.`, [{ text: "Download update", onPress: () => void install() }]);
   };
@@ -141,7 +180,7 @@ function useUpdateCoordinator() {
     void AsyncStorage.setItem(DISMISSED_KEY, availableUpdate.tagName).catch(() => {});
   };
   return { appInfo, availableUpdate, updateChecking, updateDownloading, updateProgress, updateStatusText, handleCheckUpdate: () => check(true), handleDownloadAndInstall,
-    bootstrapped, required, dismissed, dismiss, install, policy, online };
+    bootstrapped, required, dismissed, dismiss, install, policy, online, offerOta, otaPending };
 }
 
 type Coordinator = ReturnType<typeof useUpdateCoordinator>;
@@ -154,7 +193,7 @@ function UpdateContent({ state, required }: { state: Coordinator; required: bool
     <Text className="text-muted text-[16px]">{required ? "Update Plexy to continue using the app." : state.policy?.message || "A newer version of Plexy is ready to install."}</Text>
     <Text className="text-foreground text-[16px]">Version {state.availableUpdate?.version || state.availableUpdate?.tagName || state.policy?.latestVersion}</Text>
     {!!state.availableUpdate?.releaseNotes && <Text className="text-muted text-[14px]">{state.availableUpdate.releaseNotes}</Text>}
-    <Button primary label={state.updateDownloading ? `Updating${state.updateProgress != null ? `… ${state.updateProgress}%` : "…"}` : "Update now"} disabled={!state.online || !state.availableUpdate || state.updateDownloading} onPress={() => void state.install()} />
+    <Button primary label={state.updateDownloading ? `Updating${state.updateProgress != null ? `… ${state.updateProgress}%` : "…"}` : "Update now"} disabled={!state.online || !state.availableUpdate || state.updateChecking || state.updateDownloading} onPress={() => void state.install()} />
     {!state.online && <Text className="text-muted">Connect to the internet to download this update.</Text>}
     {!!state.updateStatusText && <Text accessibilityLiveRegion="polite" className="text-muted">{state.updateStatusText}</Text>}
     <Button label={state.updateChecking ? "Checking…" : "Check again"} disabled={!state.online || state.updateChecking || state.updateDownloading} onPress={() => void state.handleCheckUpdate()} />
@@ -167,7 +206,7 @@ export function UpdateProvider({ children }: PropsWithChildren) {
   const state = useUpdateCoordinator();
   const path = usePathname();
   const optional = state.availableUpdate?.updateType !== "feature";
-  const notice = Boolean(state.availableUpdate && state.availableUpdate.tagName !== state.dismissed && !path.includes("/player/"));
+  const notice = Boolean(!state.offerOta && state.availableUpdate && state.availableUpdate.tagName !== state.dismissed && !path.includes("/player/"));
   return <Context.Provider value={state}>
     {!state.bootstrapped ? <Loading /> : state.required ? <View className="flex-1 bg-background"><UpdateContent state={state} required /></View> : children}
     <Modal transparent={optional} visible={state.bootstrapped && !state.required && notice} animationType="fade" onRequestClose={() => { if (!state.updateDownloading) state.dismiss(); }} supportedOrientations={["portrait", "landscape"]}>

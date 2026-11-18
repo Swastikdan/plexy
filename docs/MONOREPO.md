@@ -1,6 +1,6 @@
 # Monorepo layout and ownership
 
-Plexy is a Bun workspace monorepo. The root orchestrates installs, builds, and releases; application code lives in `apps/*`; reusable code lives in `packages/*`.
+Plexy is a Bun workspace monorepo. Bun installs and links packages. Turborepo schedules workspace tasks. Application code lives in `apps/*` and reusable code lives in `packages/*`.
 
 ```text
 apps/
@@ -44,7 +44,7 @@ The arrow points one way. Concretely:
 | `bun run build:check:mobile` | Preflight only the mobile app |
 | `bun run build` | Build desktop, server, and mobile deliverables |
 
-The build system stays on Bun workspaces and the scripts in `scripts/`; CI calls those same commands. There is no Turborepo/Nx layer to keep in sync.
+`turbo.json` defines task dependencies and cache outputs. On CI, the web build uploads `dist/web` once and the release jobs use the downloaded artifact. Native packaging and server compilation run uncached on their target hosts.
 
 ## Shared packages are source-only
 
@@ -73,7 +73,7 @@ Apps and packages extend the package by name. `apps/mobile` extends `expo/tsconf
 2. Give it a `package.json` with a `@plexy/*` name, `private: true`, and scripts for `typecheck` and tests where relevant.
 3. Extend the appropriate `@plexy/tsconfig` preset and add `@plexy/tsconfig` to its dev dependencies.
 4. Declare every third-party import in that package's own dependencies.
-5. Add the package to the root `typecheck` script if it is not already checked transitively.
+5. Verify that Turbo discovers the new package and its tasks.
 6. Add it to the CI verification step if it has its own test or type surface.
 
 ## Dependency hygiene

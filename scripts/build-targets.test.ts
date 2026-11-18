@@ -9,6 +9,7 @@ test("mobile-only changes never build desktop or server", () => {
     "apps/mobile/src/app/_layout.tsx",
     "packages/local-library/src/library.ts",
     "scripts/native/build-preview.ts",
+    "licenses/mobile-supplemental.json",
   ])
     expect(selected([file])).toEqual(["mobile"]);
 });
@@ -18,6 +19,7 @@ test("backend and UI changes rebuild both embedded consumers", () => {
     "apps/web/src/routes/index.tsx",
     "scripts/install-macos-ffmpeg.mjs",
     "scripts/install-ffmpeg.mjs",
+    "scripts/find-ffmpeg.ts",
   ])
     expect(selected([file])).toEqual(["desktop", "server"]);
   expect(selected(["packages/api-client/src/types.ts"])).toEqual([
@@ -25,13 +27,22 @@ test("backend and UI changes rebuild both embedded consumers", () => {
     "server",
     "mobile",
   ]);
-  expect(selected(["apps/desktop/src/main/index.ts"])).toEqual(["desktop"]);
+  for (const file of [
+    "apps/desktop/src/main/index.ts",
+    "scripts/bundle-mpv.ts",
+    "scripts/bundle-libmpv.ts",
+    "scripts/after-pack-mpv.cjs",
+    "scripts/mpv-manifest.json",
+    ".github/actions/package-macos/action.yml",
+  ])
+    expect(selected([file])).toEqual(["desktop"]);
 });
 test("manual targets, shared inputs and documentation", () => {
   expect(selected([], "backend")).toEqual(["server"]);
   expect(selected([], "mobile")).toEqual(["mobile"]);
   expect(selected(["README.md", "docs/API.md"])).toEqual([]);
-  expect(selected(["bun.lock"])).toEqual(["desktop", "server", "mobile"]);
+  for (const file of ["bun.lock", "turbo.json"])
+    expect(selected([file])).toEqual(["desktop", "server", "mobile"]);
   expect(selected(["packages/tsconfig/base.json"])).toEqual([
     "desktop",
     "server",

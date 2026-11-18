@@ -1,6 +1,6 @@
 # Mobile app
 
-A standalone Android library and player. Files and watch progress stay on the device. No Plexy backend, accounts, server connection, remote downloads, or casting are needed or included. Optional metadata/artwork and skip-marker lookups use TMDB and IntroDB; app updates use GitHub releases.
+A standalone Android library and player. Files and watch progress stay on the device. Plexy uses TMDB and IntroDB for optional metadata, artwork, and skip markers. Expo delivers compatible app updates and GitHub delivers APKs.
 
 ## Source layout
 
@@ -41,6 +41,12 @@ APK builds use JDK 17 and Android SDK tooling. `expo prebuild` generates the ign
 CI and local preview builds target `arm64-v8a`. Override `PLEXY_ANDROID_ARCHITECTURES` for other devices. APKs use the repository's preview signing key; production signing belongs to the EAS production profile. Build output is ignored under `.build/native`.
 
 Check folder/file access, manual identification, embedded/imported subtitles, watch progress after restart, next-episode playback, Android Back, the landscape player lock (portrait shell restored on exit), and PiP on a real device before release.
+
+## Android updates
+
+The first OTA-capable APK is delivered through the existing GitHub update feed. After installing it, users can download compatible updates under **Settings → App update**. Changes to the Android runtime or the APK update policy still go through GitHub APK releases. A mandatory APK takes priority in the app.
+
+GitHub Actions uses the `PLEXY_EXPO_PROJECT_ID` repository variable and the `EXPO_TOKEN` secret to publish to the Expo `production` channel, which tracks the `production` branch. It compares the candidate runtime with the latest published APK, then compares exported code and assets with the latest OTA for that runtime. To publish an APK manually, run **Build & Release** with the `mobile` target and enable **Publish a new Android APK even when OTA is compatible**.
 
 ## Player interaction
 

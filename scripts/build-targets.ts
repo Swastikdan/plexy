@@ -12,25 +12,25 @@ export function buildTargets(files: string[], target = "", fullBuild = false) {
   else
     for (const file of files) {
       if (
-        /^(package\.json|bun\.lock|tsconfig[^/]*\.json|packages\/tsconfig\/|\.github\/workflows\/build\.yml|scripts\/build-targets)/.test(
+        /^(package\.json|bun\.lock|turbo\.json|tsconfig[^/]*\.json|packages\/tsconfig\/|\.github\/workflows\/build\.yml|scripts\/build-targets)/.test(
           file,
         )
       )
         all();
       else if (
-        /^(apps\/mobile\/|packages\/(local-library)\/|scripts\/native\/)/.test(
+        /^(apps\/mobile\/|packages\/local-library\/|scripts\/native\/|licenses\/mobile-supplemental\.json)/.test(
           file,
         )
       )
         flags.mobile = true;
       else if (
-        /^(apps\/web\/|apps\/server\/|packages\/(api-client|server|sqlite|protocol)\/|scripts\/(build-server|test-server|generate-pwa-icons|build-minimal-ffmpeg)\.)/.test(
+        /^(apps\/web\/|apps\/server\/|packages\/(api-client|server|sqlite|protocol)\/|scripts\/(build-server|test-server|find-ffmpeg|generate-pwa-icons|build-minimal-ffmpeg)\.)/.test(
           file,
         )
       )
         flags.server = true;
       else if (
-        /^(apps\/desktop\/|build\/|scripts\/(build-desktop|generate-icon|generate-dmg-background)\.)/.test(
+        /^(apps\/desktop\/|\.github\/actions\/package-macos\/|build\/|scripts\/(build-desktop|bundle-(?:mpv|libmpv)|after-pack-mpv|mpv-manifest|generate-icon|generate-dmg-background)\.)/.test(
           file,
         )
       )

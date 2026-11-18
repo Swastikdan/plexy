@@ -18,7 +18,7 @@
   ],
   "extraResources": [
     {
-      "from": "dist/bin/plexy-server",
+      "from": "apps/server/dist/plexy-server",
       "to": "bin/plexy-server"
     },
     {
@@ -26,8 +26,9 @@
       "to": "bin/ffmpeg"
     },
     {
-      "from": "dist/migrations",
-      "to": "migrations"
+      "from": "apps/server/src/migrations",
+      "to": "migrations",
+      "filter": ["*.sql"]
     },
     {
       "from": "dist/web",

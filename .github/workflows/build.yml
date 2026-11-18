@@ -30,10 +30,14 @@ on:
         type: choice
         default: patch
         options: [patch, minor, major]
+      mobile_force_apk:
+        description: "Publish a new Android APK even when OTA is compatible"
+        type: boolean
+        default: false
 
 concurrency:
   group: plexy-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: write
@@ -91,12 +95,12 @@ jobs:
         env:
           SKIP_FFMPEG: "true"
       - name: Verify target selection
-        run: bun test scripts/build-targets.test.ts
+        run: bun test scripts/build-targets.test.ts scripts/native/mobile-delivery-state.test.ts
       - name: Verify shared packages
-        run: bun run --filter @plexy/api-client typecheck && bun run --filter @plexy/local-library typecheck
+        run: bun run turbo run typecheck typecheck:scripts --filter=@plexy/api-client --filter=@plexy/local-library --filter=//
       - name: Build and verify embedded website
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
-        run: bun run build:web && bun run --filter @plexy/web typecheck
+        run: bun run turbo run typecheck --filter=@plexy/web
       - name: Install FFmpeg for preparation integration tests
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
         run: |
@@ -105,25 +109,14 @@ jobs:
           ffmpeg -version
       - name: Verify backend
         if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
-        run: bun run --filter @plexy/server typecheck && bun run test:server
+        run: bun run turbo run typecheck test --filter=@plexy/server
       - name: Verify desktop
         if: needs.plan.outputs.build_desktop == 'true'
-        run: bun run --filter @plexy/desktop typecheck && bun run test:desktop
+        run: bun run turbo run typecheck test --filter=@plexy/desktop
       - name: Verify Android clients
         if: needs.plan.outputs.build_mobile == 'true'
-        run: |
-          bun run typecheck:native
-          bun run --cwd apps/mobile lint:strict
-          # The app typecheck excludes tests so they can use bun:test. Without
-          # this second pass a test can drift from a changed signature and only
-          # fail when the path happens to run.
-          bun run typecheck:tests
-          bun run test:native
-      - name: Verify the Android bundle is buildable
-        if: needs.plan.outputs.build_mobile == 'true'
-        # Metro export catches broken routes, assets and native module config
-        # without paying for a full Gradle build on every pull request.
-        run: bun run --filter @plexy/mobile bundle
+        # Typecheck the suites separately from the Expo app and verify Metro's export.
+        run: bun run turbo run typecheck typecheck:tests lint:strict bundle --filter=@plexy/mobile
       - name: Enforce mobile coverage floor
         if: needs.plan.outputs.build_mobile == 'true'
         run: bun run test:native:coverage
@@ -157,131 +150,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Cache Bun packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
-
-      - name: Install dependencies
-        env:
-          SKIP_FFMPEG: "true"
-        run: bun install --frozen-lockfile
-
-      - name: Cache FFmpeg runtime
-        uses: actions/cache@v5
-        with:
-          path: node_modules/node-av/binary
-          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs', 'scripts/install-ffmpeg.mjs') }}
-
-      - name: Ensure FFmpeg runtime is installed
-        run: node scripts/install-macos-ffmpeg.mjs
-
-      - name: Cache Electron downloads
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/Library/Caches/electron
-            ~/Library/Caches/electron-builder
-          key: electron-macos-arm64-${{ hashFiles('bun.lock') }}
-          restore-keys: electron-macos-arm64-
-
-      - name: Verify Apple Silicon runner
-        run: test "$(uname -m)" = "arm64"
-
-      - name: Reuse verified website
-        uses: actions/download-artifact@v8
-        with:
-          name: verified-web
-          path: dist/web
-
-      - name: Cache native playback engine
-        uses: actions/cache@v5
-        with:
-          path: .build/mpv
-          key: mpv-macos-arm64-${{ hashFiles('scripts/mpv-manifest.json') }}
-          restore-keys: mpv-macos-arm64-
-
-      - name: Build macOS app
-        id: build
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          PLEXY_REUSE_WEB_BUILD: "true"
-        run: bun run package:mac
-
-      - name: Show artifacts
-        if: steps.build.outcome == 'success'
-        run: ls -lh dist/mac
-
-      - name: Verify desktop release version
-        if: steps.build.outcome == 'success'
-        run: |
-          expected="$(node -p "require('./package.json').version")"
-          actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'dist/mac/mac-arm64/Plexy Beta.app/Contents/Info.plist')"
-          test "$actual" = "$expected" || { echo "Desktop version $actual does not match release $expected"; exit 1; }
-
-      - name: Verify app signature
-        if: steps.build.outcome == 'success'
-        run: codesign --verify --deep --strict --verbose=2 "dist/mac/mac-arm64/Plexy Beta.app"
-
-      - name: Upload macOS artifacts
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: plexy-macos
-          path: |
-            dist/mac/*.dmg
-            dist/mac/*.zip
-          if-no-files-found: warn
-          retention-days: 14
-
-      # The release job no longer waits for macOS runners (GitHub's arm64 pool
-      # can stay queued for a long time). This step attaches the app to the same
-      # tag as soon as the build finishes, creating the release first if needed.
-      - name: Publish macOS assets to the release
-        if: steps.build.outcome == 'success'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          assets=(dist/mac/*.dmg dist/mac/*.zip)
-          if [ ${#assets[@]} -eq 0 ]; then
-            echo "::warning::macOS build produced no DMG/ZIP; publishing the release without it."
-            exit 0
-          fi
-          version="$(node -p "require('./package.json').version")"
-          build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
-          tag="v${version}-build.${build_num}"
-          if [[ "$version" == *-beta.* ]]; then
-            prerelease_flag="--prerelease"
-            release_title="Plexy Beta ${tag}"
-          else
-            prerelease_flag=""
-            release_title="Plexy ${tag}"
-          fi
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" \
-              --title "$release_title" \
-              --target "$GITHUB_SHA" \
-              $prerelease_flag \
-              --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
-          fi
-          gh release upload "$tag" "${assets[@]}" --clobber
-          echo "Attached macOS assets to $tag"
+      - uses: ./.github/actions/package-macos
 
   mac-fallback:
     name: macOS app (Apple Silicon, fallback pool)
@@ -303,127 +172,52 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/package-macos
 
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Cache Bun packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
-
-      - name: Install dependencies
-        env:
-          SKIP_FFMPEG: "true"
-        run: bun install --frozen-lockfile
-
-      - name: Cache FFmpeg runtime
-        uses: actions/cache@v5
-        with:
-          path: node_modules/node-av/binary
-          key: ffmpeg-macos-arm64-v1-${{ hashFiles('bun.lock', 'scripts/install-macos-ffmpeg.mjs', 'scripts/install-ffmpeg.mjs') }}
-
-      - name: Ensure FFmpeg runtime is installed
-        run: node scripts/install-macos-ffmpeg.mjs
-
-      - name: Verify Apple Silicon runner
-        run: test "$(uname -m)" = "arm64"
-
-      - name: Reuse verified website
-        uses: actions/download-artifact@v8
-        with:
-          name: verified-web
-          path: dist/web
-
-      - name: Cache native playback engine
-        uses: actions/cache@v5
-        with:
-          path: .build/mpv
-          key: mpv-macos-arm64-${{ hashFiles('scripts/mpv-manifest.json') }}
-          restore-keys: mpv-macos-arm64-
-
-      - name: Build macOS app
-        id: build
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          PLEXY_REUSE_WEB_BUILD: "true"
-        run: bun run package:mac
-
-      - name: Verify desktop release version
-        if: steps.build.outcome == 'success'
-        run: |
-          expected="$(node -p "require('./package.json').version")"
-          actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'dist/mac/mac-arm64/Plexy Beta.app/Contents/Info.plist')"
-          test "$actual" = "$expected" || { echo "Desktop version $actual does not match release $expected"; exit 1; }
-
-      - name: Verify app signature
-        if: steps.build.outcome == 'success'
-        run: codesign --verify --deep --strict --verbose=2 "dist/mac/mac-arm64/Plexy Beta.app"
-
-      - name: Upload macOS artifacts
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: plexy-macos
-          path: |
-            dist/mac/*.dmg
-            dist/mac/*.zip
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Publish macOS assets to the release
-        if: steps.build.outcome == 'success'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          assets=(dist/mac/*.dmg dist/mac/*.zip)
-          if [ ${#assets[@]} -eq 0 ]; then
-            echo "::warning::macOS build produced no DMG/ZIP; publishing the release without it."
-            exit 0
-          fi
-          version="$(node -p "require('./package.json').version")"
-          build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
-          tag="v${version}-build.${build_num}"
-          if [[ "$version" == *-beta.* ]]; then
-            prerelease_flag="--prerelease"
-            release_title="Plexy Beta ${tag}"
-          else
-            prerelease_flag=""
-            release_title="Plexy ${tag}"
-          fi
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" \
-              --title "$release_title" \
-              --target "$GITHUB_SHA" \
-              $prerelease_flag \
-              --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
-          fi
-          gh release upload "$tag" "${assets[@]}" --clobber
-          echo "Attached macOS assets to $tag"
-
-  android:
-    name: Android mobile APK
+  mobile-delivery:
+    name: Route Android delivery
     needs: [plan, checks]
     runs-on: ubuntu-24.04
-    # A device build that fails or stalls is skipped, not a release blocker.
-    continue-on-error: true
-    timeout-minutes: 60
+    timeout-minutes: 30
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      (needs.plan.outputs.build_mobile == 'true')
+      needs.plan.outputs.build_mobile == 'true'
+    outputs:
+      delivery: ${{ steps.route.outputs.delivery }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          SKIP_FFMPEG: "true"
+      - name: Compare published Android release and publish compatible OTA
+        id: route
+        working-directory: apps/mobile
+        run: bun scripts/delivery.ts publish
+        env:
+          CI: "true"
+          NODE_ENV: production
+          EXPO_NO_DOTENV: "1"
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_TMDB_TOKEN: ${{ secrets.TMDB_TOKEN || secrets.EXPO_PUBLIC_TMDB_TOKEN || secrets.TMDB_ACCESS_TOKEN || secrets.VITE_PUBLIC_TMDB_ACCESS_TOKEN }}
+          PLEXY_EXPO_PROJECT_ID: ${{ vars.PLEXY_EXPO_PROJECT_ID }}
+          PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
+          PLEXY_FORCE_APK: ${{ inputs.mobile_force_apk || (inputs.mobile_update_type != '' && inputs.mobile_update_type != 'optional') || (inputs.mobile_version_bump != '' && inputs.mobile_version_bump != 'patch') }}
+
+  android:
+    name: Android mobile APK
+    needs: mobile-delivery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    if: needs.mobile-delivery.outputs.delivery == 'apk'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -463,23 +257,24 @@ jobs:
           key: android-arm64-${{ runner.os }}-${{ hashFiles('bun.lock', 'apps/mobile/app.config.ts', 'scripts/native/*.cjs') }}-${{ github.sha }}
           restore-keys: android-arm64-${{ runner.os }}-${{ hashFiles('bun.lock', 'apps/mobile/app.config.ts', 'scripts/native/*.cjs') }}-
       - name: Build standalone preview APK
-        run: bun scripts/native/build-preview.ts
+        run: bun run build:mobile
         env:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN || secrets.EXPO_PUBLIC_TMDB_TOKEN || secrets.TMDB_ACCESS_TOKEN || secrets.VITE_PUBLIC_TMDB_ACCESS_TOKEN }}
           GH_TOKEN: ${{ github.token }}
+          PLEXY_EXPO_PROJECT_ID: ${{ vars.PLEXY_EXPO_PROJECT_ID }}
           PLEXY_UPDATE_TYPE: ${{ inputs.mobile_update_type }}
           PLEXY_VERSION_BUMP: ${{ inputs.mobile_version_bump }}
           PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
           # Use the standard public Linux runner's 4 vCPUs and 16 GB RAM.
           PLEXY_GRADLE_WORKERS: "4"
-          PLEXY_GRADLE_JVMARGS: "-Xmx4096m -XX:MaxMetaspaceSize=512m"
+          PLEXY_GRADLE_JVMARGS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
       - uses: actions/upload-artifact@v7
         with:
           name: plexy-android-mobile
           path: |
             .build/native/Plexy-*.apk
             .build/native/mobile-update.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
   server:
     name: Backend (${{ matrix.platform }})
@@ -525,9 +320,7 @@ jobs:
         with:
           name: verified-web
           path: dist/web
-      - run: bun run build:server
-        env:
-          PLEXY_REUSE_WEB_BUILD: "true"
+      - run: bun run turbo run assemble:server --filter=@plexy/server
       - name: Smoke test backend
         run: |
           ./dist/server/ffmpeg -version
@@ -547,6 +340,7 @@ jobs:
       - plan
       - checks
       - android
+      - mobile-delivery
       - server
     # Artifact builds (macOS/Android/backend) are best-effort: the release still
     # publishes whatever succeeded. Only planning and verification must pass.
@@ -554,7 +348,7 @@ jobs:
       always() &&
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.any_build == 'true' &&
+      (needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true' || needs.mobile-delivery.outputs.delivery == 'apk') &&
       needs.plan.result == 'success' &&
       needs.checks.result == 'success' &&
       !cancelled()
@@ -576,7 +370,7 @@ jobs:
       - name: Verify selected release artifacts
         env:
           BUILD_DESKTOP: ${{ needs.plan.outputs.build_desktop }}
-          BUILD_MOBILE: ${{ needs.plan.outputs.build_mobile }}
+          BUILD_MOBILE: ${{ needs.mobile-delivery.outputs.delivery == 'apk' }}
           BUILD_SERVER: ${{ needs.plan.outputs.build_server }}
         shell: bash
         run: |
@@ -619,6 +413,7 @@ jobs:
           fi
 
       - name: Create update checksums
+        if: needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true' || hashFiles('release/Plexy-mobile-*.apk') != ''
         shell: bash
         run: |
           mkdir -p release
@@ -630,6 +425,7 @@ jobs:
           fi
 
       - name: Create or update release
+        if: needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true' || hashFiles('release/Plexy-mobile-*.apk') != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -659,6 +455,11 @@ jobs:
             mac_paragraph="_The macOS app is not attached to this run because an Apple Silicon runner was unavailable. Every other component below is complete; a macOS build may still attach itself here if one becomes available._"
           fi
 
+          mobile_paragraph=""
+          if compgen -G 'release/Plexy-mobile-*.apk' >/dev/null; then
+            mobile_paragraph="**Android phone/tablet:** install the **Plexy-mobile-…apk** asset. Phone APKs target ARM64."
+          fi
+
           cat > release-notes.md <<EOF
           ## ${release_title}
 
@@ -666,7 +467,7 @@ jobs:
 
           ${mac_paragraph}
 
-          **Android phone/tablet:** install the **Plexy-mobile-…apk** asset. Phone APKs target ARM64. These standalone preview APKs use a dedicated preview signing identity (not the public Android debug key) and are not store releases.
+          ${mobile_paragraph}
 
           **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg, migrations, and the web folder beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. The browser UI is included: open the server address, or pass \`--no-ui\` for API-only operation.
 

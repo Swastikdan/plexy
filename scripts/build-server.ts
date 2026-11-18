@@ -1,70 +1,28 @@
-import { mkdir, copyFile, chmod, readdir, rm, cp } from "node:fs/promises";
+import { mkdir, copyFile, chmod, rm, cp } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
-import { execSync } from "node:child_process";
+import { join } from "node:path";
+import { findFfmpeg } from "./find-ffmpeg";
 
 /// Standalone backend binary with migrations, FFmpeg, and an optional static UI.
 /// Data stays outside the artifact in PLEXY_DATA_DIR.
 const OUT_DIR = "dist/server";
 
-/// Resolve the FFmpeg binary whether dependencies came from Bun, pnpm or npm.
-/// Probing and transcoding need it at runtime, so it ships next to the binary.
-async function findFfmpeg(rootDir: string): Promise<string | null> {
-  const candidates = [
-    join(rootDir, "node_modules/node-av/binary/ffmpeg"),
-    join(rootDir, "node_modules/.pnpm/node_modules/node-av/binary/ffmpeg"),
-  ];
-
-  try {
-    const require = createRequire(join(rootDir, "package.json"));
-    const packageJson = require.resolve("node-av/package.json");
-    candidates.unshift(join(dirname(packageJson), "binary", "ffmpeg"));
-  } catch {
-    /* fall through to the known layouts */
-  }
-
-  try {
-    const bunStore = join(rootDir, "node_modules", ".bun");
-    for (const entry of await readdir(bunStore)) {
-      if (entry.startsWith("node-av@")) {
-        candidates.push(
-          join(bunStore, entry, "node_modules/node-av/binary/ffmpeg"),
-        );
-      }
-    }
-  } catch {
-    /* not installed with Bun */
-  }
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
-
 async function buildServer(): Promise<void> {
   const root = process.cwd();
   const outDir = join(root, OUT_DIR);
-  const migrationsOut = join(outDir, "migrations");
 
   console.log("Plexy Server (with optional browser UI)");
   console.log("===========================");
 
+  const web = join(root, "dist/web");
+  if (!existsSync(join(web, "index.html"))) throw new Error("Missing built browser UI");
   await rm(outDir, { recursive: true, force: true });
-  await mkdir(migrationsOut, { recursive: true });
-
-  if (process.env.PLEXY_REUSE_WEB_BUILD !== "true") {
-    execSync("bun run build:web", { stdio: "inherit" });
-  }
-  if (!existsSync(join(root, "dist/web/index.html")))
-    throw new Error("Missing built browser UI");
-  await cp(join(root, "dist/web"), join(outDir, "web"), { recursive: true });
-
-  console.log("· Copying SQL migrations");
-  const migrationsSrc = join(root, "apps/server/src/migrations");
-  for (const file of await readdir(migrationsSrc)) {
-    if (file.endsWith(".sql")) {
-      await copyFile(join(migrationsSrc, file), join(migrationsOut, file));
-    }
-  }
+  await cp(web, join(outDir, "web"), { recursive: true });
+  await cp(join(root, "apps/server/src/migrations"), join(outDir, "migrations"), {
+    recursive: true,
+    filter: (source) => source.endsWith("/migrations") || source.endsWith(".sql"),
+  });
+  await copyFile(join(root, "apps/server/dist/plexy-server"), join(outDir, "plexy-server"));
 
   console.log("· Bundling FFmpeg");
   const ffmpegSource = await findFfmpeg(root);
@@ -76,14 +34,6 @@ async function buildServer(): Promise<void> {
   const ffmpegOut = join(outDir, "ffmpeg");
   await copyFile(ffmpegSource, ffmpegOut);
   await chmod(ffmpegOut, 0o755);
-
-  console.log("· Compiling the standalone binary");
-  const binaryOut = join(outDir, "plexy-server");
-  execSync(
-    `bun build --compile --minify --outfile="${binaryOut}" apps/server/src/main.ts`,
-    { stdio: "inherit" },
-  );
-  await chmod(binaryOut, 0o755);
 
   console.log("");
   console.log("✓ Plexy Server built: dist/server");

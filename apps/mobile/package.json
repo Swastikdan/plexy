@@ -8,11 +8,14 @@
     "android": "expo run:android",
     "prebuild": "bun ../../scripts/native/generate-licenses.ts && expo prebuild --platform android",
     "bundle": "bun ../../scripts/native/generate-licenses.ts && expo export --platform android",
-    "build:check": "bun run typecheck && bun run lint && bun test tests ../../packages/local-library/tests && bun run bundle",
     "typecheck": "tsc --noEmit",
     "eas-build-post-install": "bun ../../scripts/native/generate-licenses.ts",
     "lint": "eslint src",
-    "lint:strict": "eslint src --max-warnings 0"
+    "lint:strict": "eslint src --max-warnings 0",
+    "dev": "bun run start",
+    "test": "bun test tests",
+    "typecheck:tests": "tsc --noEmit -p tests/tsconfig.json",
+    "apk": "cd ../.. && bun scripts/native/build-preview.ts"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
@@ -44,6 +47,7 @@
     "expo-sqlite": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "expo-updates": "~57.0.28",
     "expo-video": "~57.0.5",
     "heroui-native": "^1.0.11",
     "react": "19.2.3",
@@ -61,6 +65,7 @@
     "uniwind": "^1.13.2"
   },
   "devDependencies": {
+    "@expo/fingerprint": "~0.20.16",
     "@types/react": "~19.2.2",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",

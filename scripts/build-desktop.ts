@@ -1,46 +1,12 @@
-import { mkdir, copyFile, chmod, readdir, readFile } from "node:fs/promises";
+import { mkdir, copyFile, chmod, readFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
+import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { generateIcons } from "./generate-icon";
 import { generateDmgBackground } from "./generate-dmg-background";
 import { bundleMpv } from "./bundle-mpv";
 import { bundleLibmpv } from "./bundle-libmpv";
-
-/**
- * Resolve the FFmpeg binary regardless of whether dependencies were installed
- * with Bun (`.bun/`), pnpm (`.pnpm/`) or a plain npm-style `node_modules/`.
- */
-async function findFfmpeg(rootDir: string): Promise<string | null> {
-  const candidates = [
-    join(rootDir, "node_modules/node-av/binary/ffmpeg"),
-    join(rootDir, "node_modules/.pnpm/node_modules/node-av/binary/ffmpeg"),
-  ];
-
-  try {
-    const require = createRequire(join(rootDir, "package.json"));
-    const packageJson = require.resolve("node-av/package.json");
-    candidates.unshift(join(dirname(packageJson), "binary", "ffmpeg"));
-  } catch {
-    /* fall through to the known layouts */
-  }
-
-  try {
-    const bunStore = join(rootDir, "node_modules", ".bun");
-    for (const entry of await readdir(bunStore)) {
-      if (entry.startsWith("node-av@")) {
-        candidates.push(
-          join(bunStore, entry, "node_modules/node-av/binary/ffmpeg"),
-        );
-      }
-    }
-  } catch {
-    /* not installed with Bun */
-  }
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
+import { findFfmpeg } from "./find-ffmpeg";
 
 /**
  * dmg-builder mounts the image to author its `.DS_Store`. If a volume with the
@@ -75,7 +41,6 @@ async function buildDesktop() {
   const rootDir = process.cwd();
   const distDir = join(rootDir, "dist");
   const distBin = join(distDir, "bin");
-  const distMigrations = join(distDir, "migrations");
   const distMac = join(distDir, "mac");
 
   console.log("\n========================================================");
@@ -85,34 +50,11 @@ async function buildDesktop() {
     await readFile(join(rootDir, "package.json"), "utf8"),
   ) as { version: string };
 
+  if (!existsSync(join(distDir, "web/index.html"))) {
+    throw new Error("Missing built browser UI");
+  }
   await mkdir(distBin, { recursive: true });
-  await mkdir(distMigrations, { recursive: true });
   await mkdir(distMac, { recursive: true });
-
-  // 1. Build Web Frontend
-  console.log("1. Building Web UI (Vite + React)...");
-  if (process.env.PLEXY_REUSE_WEB_BUILD === "true") {
-    if (!existsSync(join(rootDir, "dist/web/index.html"))) {
-      throw new Error(
-        "Verified website artifact is missing dist/web/index.html",
-      );
-    }
-    console.log("✓ Reusing verified web build");
-  } else {
-    execSync("bun run --filter @plexy/web build", { stdio: "inherit" });
-  }
-  console.log("✓ Web UI built in dist/web");
-
-  // 2. Copy Migrations
-  console.log("\n2. Copying SQL Migrations...");
-  const srcMigrations = join(rootDir, "apps/server/src/migrations");
-  const migrationFiles = await readdir(srcMigrations);
-  for (const file of migrationFiles) {
-    if (file.endsWith(".sql")) {
-      await copyFile(join(srcMigrations, file), join(distMigrations, file));
-    }
-  }
-  console.log("✓ Migrations copied to dist/migrations");
 
   // Keep node-av as the default and rollback path. Set
   // PLEXY_FFMPEG_VARIANT=custom to package the LGPL-only minimal build from
@@ -138,49 +80,29 @@ async function buildDesktop() {
   await chmod(ffmpegOut, 0o755);
   console.log(`✓ FFmpeg bundled: ${ffmpegOut}`);
 
-  // 2b. Required native playback engine (mpv CLI used by the server probes)
-  console.log("\n2b. Bundling native playback engine...");
+  // Required native playback engine (mpv CLI used by the server probes)
+  console.log("Bundling native playback engine...");
   if (!await bundleMpv(rootDir)) {
     throw new Error("Desktop requires mpv. Set PLEXY_MPV_PATH or configure scripts/mpv-manifest.json before packaging.");
   }
 
-  // 2c. Embedded player: desktop shell + libmpv for in-window playback
-  console.log("\n2c. Building the embedded player...");
-  execSync("bun run --filter @plexy/desktop build:main", { stdio: "inherit" });
   if (!await bundleLibmpv(rootDir)) {
     throw new Error("Desktop requires libmpv. Set PLEXY_LIBMPV_SOURCE to a libmpv.2.dylib before packaging.");
   }
 
-  // 3. Generate High-Resolution Apple Application Icon (.icns)
-  console.log("\n3. Generating High-Resolution Apple Application Icon...");
+  // Generate High-Resolution Apple Application Icon (.icns)
+  console.log("\nGenerating High-Resolution Apple Application Icon...");
   await generateIcons();
 
-  // 3b. Render the DMG installer window artwork (1x + retina)
-  console.log("\n3b. Generating DMG installer window background...");
+  // Render the DMG installer window artwork (1x + retina)
+  console.log("\nGenerating DMG installer window background...");
   await generateDmgBackground();
 
-  // 4. Compile Standalone Server Binary
-  console.log(
-    "\n4. Compiling Standalone Backend Server (Bun native compilation)...",
-  );
-  const serverOut = join(distBin, "plexy-server");
-  execSync(
-    `bun build --compile --minify --outfile="${serverOut}" apps/server/src/main.ts`,
-    { stdio: "inherit" },
-  );
-  await chmod(serverOut, 0o755);
-  console.log(`✓ Standalone server compiled: ${serverOut}`);
-
-  // 5. Build Desktop Electron Main & Preload Scripts
-  console.log("\n5. Compiling Electron Main and Preload scripts...");
-  execSync("bun apps/desktop/build.ts", { stdio: "inherit" });
-
-  // 6. Package macOS Electron Application
   // `--publish never` is required: on CI, electron-builder otherwise tries to
   // publish to GitHub and fails without GH_TOKEN. The release workflow uploads
   // the artifacts itself.
   console.log(
-    "\n6. Packaging macOS Electron Application with electron-builder...",
+    "\nPackaging macOS Electron Application with electron-builder...",
   );
   detachStaleInstallerVolumes("Plexy Beta");
   execSync(
@@ -191,7 +113,7 @@ async function buildDesktop() {
     },
   );
 
-  // 7. Verify and refresh app bundle resources
+  // Verify and refresh app bundle resources
   const appBundle = join(distMac, "mac-arm64", "Plexy Beta.app");
   const appResources = join(appBundle, "Contents", "Resources");
   try {

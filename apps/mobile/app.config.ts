@@ -2,6 +2,9 @@ import type { ExpoConfig } from "expo/config";
 import { encodeVersionCode } from "./src/shared/lib/build-version.ts";
 import packageInfo from "./package.json";
 const version = process.env.PLEXY_MOBILE_VERSION || packageInfo.version;
+const projectId = process.env.PLEXY_EXPO_PROJECT_ID;
+const runtimeVersion = process.env.PLEXY_ANDROID_RUNTIME;
+const updateChannel = process.env.PLEXY_EXPO_UPDATE_CHANNEL || "production";
 const tmdbToken =
   process.env.EXPO_PUBLIC_TMDB_TOKEN ||
   process.env.TMDB_TOKEN ||
@@ -24,6 +27,14 @@ const config: ExpoConfig = {
   icon: "../../build/icon.png",
   backgroundColor: "#f5f5f5",
   orientation: "default",
+  ...(projectId ? {
+    runtimeVersion,
+    updates: {
+      url: `https://u.expo.dev/${projectId}`,
+      requestHeaders: { "expo-channel-name": updateChannel },
+      checkAutomatically: "NEVER" as const,
+    },
+  } : { updates: { enabled: false } }),
   android: {
     package: "app.plexy.mobile",
     versionCode: encodeVersionCode(2000, version),
@@ -42,7 +53,7 @@ const config: ExpoConfig = {
   },
   extra: {
     tmdbToken,
-
+    ...(projectId ? { eas: { projectId } } : {}),
   },
   plugins: [
     "expo-router",
