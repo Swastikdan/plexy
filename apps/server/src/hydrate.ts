@@ -41,6 +41,8 @@ export async function hydrateItemMetadata(
   run("DELETE FROM artwork WHERE item_id=?", itemId);
   await writeArtwork(itemId, "poster", full.poster_path, img);
   await writeArtwork(itemId, "backdrop", full.backdrop_path, img);
+  const logoPath = await tmdb.logo(tmdbType, tmdbId).catch(() => null);
+  await writeArtwork(itemId, "logo", logoPath, img);
 
   run("DELETE FROM videos WHERE item_id=?", itemId);
   const trailer = bestTrailer(full);
@@ -316,12 +318,18 @@ export async function hydrateMissingEpisodes(targetSeriesId?: number): Promise<n
 
 async function writeArtwork(
   itemId: number,
-  kind: "poster" | "backdrop" | "thumb",
+  kind: "poster" | "backdrop" | "thumb" | "logo",
   path: string | null | undefined,
   img: tmdb.ImageConfig,
 ): Promise<void> {
   if (!path) return;
-  const size = kind === "backdrop" ? img.backdropSize : kind === "thumb" ? img.stillSize : img.posterSize;
+  const size = kind === "backdrop"
+    ? img.backdropSize
+    : kind === "thumb"
+      ? img.stillSize
+      : kind === "logo"
+        ? img.logoSize
+        : img.posterSize;
   const url = img.baseUrl + size + path;
   q("INSERT INTO artwork (item_id, kind, source, url) VALUES (?,?,?,?)").run(itemId, kind, "tmdb", url);
 }
@@ -381,4 +389,46 @@ export async function refreshStaleLocalMetadata(): Promise<void> {
     }
   } catch { /* Offline operation uses the existing local metadata and artwork. */ }
   finally { refreshingLocalMetadata = false; }
+}
+
+let backfillingLogos = false;
+/**
+ * Titles hydrated before logo support existed keep text-only heroes. Fetch the
+ * missing transparent logos in the background, one throttle-friendly request
+ * at a time. Existing sidecar logos are left untouched.
+ */
+export async function backfillMissingLogos(limit = 50): Promise<number> {
+  if (backfillingLogos) return 0;
+  backfillingLogos = true;
+  let updated = 0;
+  try {
+    const { getConfig } = await import("./config");
+    const cfg = await getConfig();
+    if (!cfg.tmdbToken) return 0;
+    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv" }>(
+      `SELECT i.id, i.tmdb_id, i.tmdb_type FROM items i
+       WHERE i.kind IN ('movie','series') AND i.tmdb_id IS NOT NULL
+         AND i.tmdb_type IN ('movie','tv')
+         AND NOT EXISTS (SELECT 1 FROM artwork a WHERE a.item_id = i.id AND a.kind = 'logo')
+       ORDER BY i.added_at DESC, i.id DESC LIMIT ?`,
+    ).all(limit);
+    if (!rows.length) return 0;
+    const img = await tmdb.imageConfig();
+    for (const row of rows) {
+      try {
+        const path = await tmdb.logo(row.tmdb_type, Number(row.tmdb_id));
+        if (!path) continue;
+        await writeArtwork(Number(row.id), "logo", path, img);
+        updated++;
+      } catch {
+        break;
+      }
+    }
+    if (updated) log.debug("tmdb", "backfilled title logos", { updated });
+  } catch {
+    /* logos are decoration; a missing token or offline machine is not an error */
+  } finally {
+    backfillingLogos = false;
+  }
+  return updated;
 }

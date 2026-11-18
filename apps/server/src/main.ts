@@ -158,6 +158,14 @@ async function main(): Promise<void> {
       .catch(() => {});
   }, 3_000);
 
+  // Titles hydrated before transparent logo support existed fall back to text
+  // in the hero. Fill those in quietly once the server is serving requests.
+  setTimeout(() => {
+    void import("./hydrate")
+      .then(({ backfillMissingLogos }) => backfillMissingLogos())
+      .catch(() => {});
+  }, 5_000);
+
   // Backfill community skip markers for libraries indexed before the cache
   // existed. Scans and playbacks refresh stale rows from here on.
   if (cfg.skipSegmentsEnabled) {

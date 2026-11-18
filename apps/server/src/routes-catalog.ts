@@ -34,10 +34,13 @@ export function upgradeArtworkUrl(url: string | null, kind: string): string | nu
   if (kind === "thumb") {
     return url.replace(/\/t\/p\/(w92|w185)\//, "/t/p/w300/");
   }
+  if (kind === "logo") {
+    return url.replace(/\/t\/p\/(w45|w92|w154|w185)\//, "/t/p/w500/");
+  }
   return url;
 }
 
-const ART_WIDTH: Record<string, number> = { poster: 500, backdrop: 1600, thumb: 300 };
+const ART_WIDTH: Record<string, number> = { poster: 500, backdrop: 1600, thumb: 300, logo: 800 };
 
 /** Request exactly the pixels a card renders, not the full-size original. */
 function sizedImageUrl(artworkId: number, kind: string): string {
@@ -57,7 +60,7 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
   const ph = ids.map(() => "?").join(",");
 
   const artRows = q<Row>(
-    `SELECT id, item_id, kind, source, url FROM artwork WHERE item_id IN (${ph}) AND kind IN ('poster','backdrop','thumb')`,
+    `SELECT id, item_id, kind, source, url FROM artwork WHERE item_id IN (${ph}) AND kind IN ('poster','backdrop','thumb','logo')`,
   ).all(...ids);
   const metaRows = q<Row>(
     `SELECT item_id, rating, runtime, overview, genres FROM item_metadata WHERE item_id IN (${ph})`,
@@ -109,6 +112,7 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
       parentId: row.parent_id == null ? null : Number(row.parent_id),
       poster: m?.poster ?? (row.kind === "episode" ? m?.thumb ?? null : null),
       backdrop: m?.backdrop ?? (row.kind === "episode" ? m?.thumb ?? m?.poster ?? null : null),
+      logo: m?.logo ?? null,
       overview: md?.overview == null ? null : String(md.overview),
       rating: md?.rating == null ? null : Number(md.rating),
       runtime: md?.runtime == null ? null : Number(md.runtime),

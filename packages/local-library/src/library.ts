@@ -447,6 +447,8 @@ export class LocalLibrary {
           logo: record.logo || record.card.logo || null,
           isAnime: record.isAnime || record.card.isAnime,
           watchlist: Boolean(record.watchlist),
+          certification:
+            record.certification ?? record.card.certification ?? null,
         });
       } else if (record.card.parentId != null) {
         const group = children.get(record.card.parentId);
@@ -475,6 +477,10 @@ export class LocalLibrary {
         logo: first.logo || first.card.logo || null,
         isAnime: records.some((record) => record.isAnime || record.card.isAnime),
         watchlist: records.some((record) => Boolean(record.watchlist)),
+        certification:
+          records.find((record) => record.certification)?.certification ??
+          first.seriesMetadata?.certification ??
+          null,
         watch: records.every((record) => record.card.watch?.played)
           ? { position: 0, duration: null, played: true, percent: 100 }
           : null,

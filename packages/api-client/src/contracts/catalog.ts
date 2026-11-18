@@ -44,6 +44,10 @@ export interface ItemCard {
   still?: string | null;
   /** The title is in the user's watch list. */
   watchlist?: boolean;
+  /** Age rating from metadata (for example "PG-13" or "TV-14"). */
+  certification?: string | null;
+  /** TMDB release / first-air date, used to hide unreleased online titles. */
+  releaseDate?: string | null;
 }
 
 export interface HomeRow {

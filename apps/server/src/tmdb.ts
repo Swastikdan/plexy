@@ -37,6 +37,7 @@ const ImagesConfig = z.object({
     backdrop_sizes: z.array(z.string()),
     still_sizes: z.array(z.string()).optional(),
     profile_sizes: z.array(z.string()).optional(),
+    logo_sizes: z.array(z.string()).optional(),
   }),
 });
 const Detail = z.object({
@@ -90,6 +91,14 @@ const EpisodeResults = z.object({ episodes: z.array(z.object({
   order: z.number().optional(),
 })) });
 const ExternalIds = z.object({ imdb_id: z.string().nullable().optional() });
+const Logos = z.object({
+  logos: z.array(z.object({
+    file_path: z.string(),
+    iso_639_1: z.string().nullable().optional(),
+    vote_average: z.number().optional(),
+    vote_count: z.number().optional(),
+  })).optional(),
+});
 
 export type TmdbSearchResult = z.infer<typeof SearchResults>["results"][number];
 export type TmdbDetail = z.infer<typeof Detail>;
@@ -103,6 +112,7 @@ export interface ImageConfig {
   backdropSize: string;
   stillSize: string;
   profileSize: string;
+  logoSize: string;
 }
 
 const CONFIG_CACHE_KEY = "tmdb/images/config";
@@ -128,7 +138,7 @@ async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cache
   if (cached) {
     try {
       const parsed = JSON.parse(cached) as ImageConfig;
-      if (parsed.baseUrl && parsed.posterSize && parsed.backdropSize && parsed.stillSize) {
+      if (parsed.baseUrl && parsed.posterSize && parsed.backdropSize && parsed.stillSize && parsed.logoSize) {
         return parsed;
       }
     } catch { /* re-fetch */ }
@@ -139,6 +149,7 @@ async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cache
   const bSizes = json.images.backdrop_sizes;
   const sSizes = json.images.still_sizes ?? ["w300", "original"];
   const prSizes = json.images.profile_sizes ?? ["h632", "w185", "original"];
+  const lSizes = json.images.logo_sizes ?? ["w500", "original"];
 
   // Poster: crisp w780 by default on high-res screens
   const posterSize = (wanted && pSizes.includes(wanted))
@@ -172,12 +183,21 @@ async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cache
       ? "w185"
       : "original";
 
+  // Logos: transparent title art; w500 keeps the hero crisp without shipping
+  // multi-megabyte originals.
+  const logoSize = lSizes.includes("w500")
+    ? "w500"
+    : lSizes.includes("original")
+      ? "original"
+      : lSizes[lSizes.length - 1] ?? "original";
+
   const value: ImageConfig = {
     baseUrl: json.images.secure_base_url || json.images.base_url,
     posterSize,
     backdropSize,
     stillSize,
     profileSize,
+    logoSize,
   };
   await cachePut(cacheKey, "configuration", JSON.stringify(value), 24 * 3600_000);
   return value;
@@ -365,6 +385,28 @@ export async function season(seriesId: number, season: number): Promise<TmdbEpis
   const path = `/tv/${seriesId}/season/${season}?language=${cfg.metadataLanguage}`;
   const parsed = EpisodeResults.parse(await requestJson(path, `season/${seriesId}/${season}`, DETAIL_TTL));
   return parsed.episodes;
+}
+
+/**
+ * Best transparent title logo for a movie or series. TMDB returns logos in
+ * several languages; prefer the configured language, then language-neutral
+ * art, then English, and finally the highest-voted logo of any language.
+ */
+export async function logo(kind: "movie" | "tv", id: number): Promise<string | null> {
+  const language = (await getConfig()).metadataLanguage;
+  const base = language.split("-")[0];
+  const path = `/${kind}/${id}/images?include_image_language=${encodeURIComponent(`${language},${base},en,null`)}`;
+  const parsed = Logos.safeParse(await requestJson(path, `images/${kind}`, DETAIL_TTL));
+  if (!parsed.success) return null;
+  const logos = parsed.data.logos ?? [];
+  if (!logos.length) return null;
+  const preferred = logos.filter((entry) => {
+    const code = entry.iso_639_1 ?? null;
+    return code === null || code === base || code === language || code === "en";
+  });
+  const pool = preferred.length ? preferred : logos;
+  pool.sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0));
+  return pool[0]?.file_path ?? null;
 }
 
 /** IMDb id used by community skip-segment databases; cached by the normal TMDB layer. */
