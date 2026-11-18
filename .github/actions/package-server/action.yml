@@ -1,0 +1,46 @@
+name: Package Plexy Server
+description: Build and verify a server archive for the current runner.
+inputs:
+  platform:
+    description: Platform suffix for the server archive
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ env.BUN_VERSION }}
+    - name: Cache Bun packages
+      uses: actions/cache@v5
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+    - shell: bash
+      run: bun install --frozen-lockfile
+      env:
+        SKIP_FFMPEG: "true"
+    - name: Cache FFmpeg runtime
+      uses: actions/cache@v5
+      with:
+        path: node_modules/node-av/binary
+        key: ffmpeg-${{ inputs.platform }}-v1-${{ hashFiles('bun.lock', 'scripts/install-ffmpeg.mjs') }}
+    - name: Ensure FFmpeg runtime is installed
+      run: node scripts/install-ffmpeg.mjs
+    - uses: actions/download-artifact@v8
+      with:
+        name: verified-web
+        path: dist/web
+    - shell: bash
+      run: bun run turbo run assemble:server --filter=@plexy/server
+    - name: Smoke test backend
+      run: |
+        ./dist/server/ffmpeg -version
+        ./dist/server/plexy-server --version
+    - shell: bash
+      run: tar -czf dist/plexy-server-${{ inputs.platform }}.tar.gz -C dist/server .
+    - uses: actions/upload-artifact@v7
+      with:
+        name: plexy-server-${{ inputs.platform }}
+        path: dist/plexy-server-*.tar.gz
+        if-no-files-found: warn

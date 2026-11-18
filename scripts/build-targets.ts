@@ -24,7 +24,7 @@ export function buildTargets(files: string[], target = "", fullBuild = false) {
       )
         flags.mobile = true;
       else if (
-        /^(apps\/web\/|apps\/server\/|packages\/(api-client|server|sqlite|protocol)\/|scripts\/(build-server|test-server|find-ffmpeg|generate-pwa-icons|build-minimal-ffmpeg)\.)/.test(
+        /^(apps\/web\/|apps\/server\/|\.github\/actions\/package-server\/|packages\/(api-client|server|sqlite|protocol)\/|scripts\/(build-server|publish-release|test-server|find-ffmpeg|generate-pwa-icons|build-minimal-ffmpeg)\.)/.test(
           file,
         )
       )

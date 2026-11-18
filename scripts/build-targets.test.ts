@@ -20,6 +20,8 @@ test("backend and UI changes rebuild both embedded consumers", () => {
     "scripts/install-macos-ffmpeg.mjs",
     "scripts/install-ffmpeg.mjs",
     "scripts/find-ffmpeg.ts",
+    ".github/actions/package-server/action.yml",
+    "scripts/publish-release.sh",
   ])
     expect(selected([file])).toEqual(["desktop", "server"]);
   expect(selected(["packages/api-client/src/types.ts"])).toEqual([

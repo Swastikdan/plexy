@@ -276,61 +276,39 @@ jobs:
             .build/native/mobile-update.json
           if-no-files-found: error
 
-  server:
-    name: Backend (${{ matrix.platform }})
+  server-linux:
+    name: Backend (linux-x64)
     needs: [plan, checks]
-    # Publish whatever platforms build; one bad target does not block the rest.
-    continue-on-error: true
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux-x64
-          - os: macos-15
-            platform: macos-arm64
-    runs-on: ${{ matrix.os }}
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
       needs.plan.outputs.build_server == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/package-server
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Cache Bun packages
-        uses: actions/cache@v5
+          platform: linux-x64
+
+  server-macos:
+    name: Backend (macos-arm64)
+    needs: [plan, checks]
+    runs-on: macos-15
+    timeout-minutes: 45
+    if: |
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
+      needs.plan.outputs.build_server == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/package-server
         with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-${{ env.BUN_VERSION }}-
-      - run: bun install --frozen-lockfile
+          platform: macos-arm64
+      - name: Attach macOS backend to the release
         env:
-          SKIP_FFMPEG: "true"
-      - name: Cache FFmpeg runtime
-        uses: actions/cache@v5
-        with:
-          path: node_modules/node-av/binary
-          key: ffmpeg-${{ matrix.platform }}-v1-${{ hashFiles('bun.lock', 'scripts/install-ffmpeg.mjs') }}
-      - name: Ensure FFmpeg runtime is installed
-        run: node scripts/install-ffmpeg.mjs
-      - uses: actions/download-artifact@v8
-        with:
-          name: verified-web
-          path: dist/web
-      - run: bun run turbo run assemble:server --filter=@plexy/server
-      - name: Smoke test backend
-        run: |
-          ./dist/server/ffmpeg -version
-          ./dist/server/plexy-server --version
-      - run: tar -czf dist/plexy-server-${{ matrix.platform }}.tar.gz -C dist/server .
-      - uses: actions/upload-artifact@v7
-        with:
-          name: plexy-server-${{ matrix.platform }}
-          path: dist/plexy-server-*.tar.gz
-          if-no-files-found: warn
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/publish-release.sh "" dist/plexy-server-macos-arm64.tar.gz
 
   release:
     name: Publish GitHub release
@@ -340,15 +318,13 @@ jobs:
       - plan
       - checks
       - android
-      - mobile-delivery
-      - server
-    # Artifact builds (macOS/Android/backend) are best-effort: the release still
-    # publishes whatever succeeded. Only planning and verification must pass.
+      - server-linux
+    # macOS jobs attach their artifacts independently as runners become available.
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      (needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true' || needs.mobile-delivery.outputs.delivery == 'apk') &&
+      (needs.server-linux.result == 'success' || needs.android.result == 'success') &&
       needs.plan.result == 'success' &&
       needs.checks.result == 'success' &&
       !cancelled()
@@ -356,44 +332,22 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Download release artifacts
-        continue-on-error: true
+      - name: Download Linux backend
+        if: needs.server-linux.result == 'success'
         uses: actions/download-artifact@v8
         with:
-          pattern: plexy-*
-          merge-multiple: true
+          name: plexy-server-linux-x64
           path: release
 
-      - name: Ensure release folder exists
-        run: mkdir -p release
-
-      - name: Verify selected release artifacts
-        env:
-          BUILD_DESKTOP: ${{ needs.plan.outputs.build_desktop }}
-          BUILD_MOBILE: ${{ needs.mobile-delivery.outputs.delivery == 'apk' }}
-          BUILD_SERVER: ${{ needs.plan.outputs.build_server }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          warn_missing() { echo "::warning::Missing release asset: $1 — publishing without it."; }
-          have_asset() { compgen -G "release/$1" >/dev/null; }
-          if [ "$BUILD_DESKTOP" = true ]; then
-            version="$(node -p "require('./package.json').version")"
-            if have_asset "Plexy Beta-${version}-arm64.dmg"; then
-              have_asset "Plexy Beta-${version}-arm64.zip" || warn_missing "Plexy Beta-${version}-arm64.zip"
-            else
-              echo "::warning::macOS assets are not available for this run; the release is published without them."
-            fi
-          fi
-          if [ "$BUILD_MOBILE" = true ] && ! have_asset 'Plexy-mobile-*.apk'; then
-            warn_missing 'Plexy-mobile-*.apk'
-          fi
-          if [ "$BUILD_SERVER" = true ]; then
-            have_asset 'plexy-server-linux-x64.tar.gz' || warn_missing 'plexy-server-linux-x64.tar.gz'
-            have_asset 'plexy-server-macos-arm64.tar.gz' || warn_missing 'plexy-server-macos-arm64.tar.gz'
-          fi
+      - name: Download Android APK
+        if: ${{ !cancelled() && needs.android.result == 'success' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: plexy-android-mobile
+          path: release
 
       - name: Publish mobile version and startup update policy
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -413,7 +367,7 @@ jobs:
           fi
 
       - name: Create update checksums
-        if: needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true' || hashFiles('release/Plexy-mobile-*.apk') != ''
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           mkdir -p release
@@ -425,7 +379,7 @@ jobs:
           fi
 
       - name: Create or update release
-        if: needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true' || hashFiles('release/Plexy-mobile-*.apk') != ''
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -440,20 +394,12 @@ jobs:
           build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
           tag="v${version}-build.${build_num}"
           if [[ "$version" == *-beta.* ]]; then
-            prerelease_flag="--prerelease"
-            latest_flag=""
             release_title="Plexy Beta ${tag}"
           else
-            prerelease_flag=""
-            latest_flag="--latest"
             release_title="Plexy ${tag}"
           fi
 
-          if compgen -G "release/Plexy Beta-"*.dmg >/dev/null; then
-            mac_paragraph="**Install on Apple Silicon Mac:** download the DMG, open it, drag **Plexy** into **Applications**, wait for it to finish copying, then eject the DMG. You can also download the ZIP, extract it, and move **Plexy.app** into **Applications**."
-          else
-            mac_paragraph="_The macOS app is not attached to this run because an Apple Silicon runner was unavailable. Every other component below is complete; a macOS build may still attach itself here if one becomes available._"
-          fi
+          mac_paragraph="_macOS assets are attached separately when Apple Silicon builds succeed._"
 
           mobile_paragraph=""
           if compgen -G 'release/Plexy-mobile-*.apk' >/dev/null; then
@@ -489,27 +435,13 @@ jobs:
           EOF
 
           shopt -s nullglob
-          release_files=(release/*)
-
-          if [ ${#release_files[@]} -gt 0 ]; then
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release upload "$tag" "${release_files[@]}" --clobber
-              gh release edit "$tag" --notes-file release-notes.md --title "$release_title"
-            else
-              gh release create "$tag" "${release_files[@]}" \
-                --title "$release_title" \
-                --notes-file release-notes.md \
-                --target "$GITHUB_SHA" \
-                $prerelease_flag $latest_flag
-            fi
-          else
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release edit "$tag" --notes-file release-notes.md --title "$release_title"
-            else
-              gh release create "$tag" \
-                --title "$release_title" \
-                --notes-file release-notes.md \
-                --target "$GITHUB_SHA" \
-                $prerelease_flag $latest_flag
-            fi
+          assets=(release/*.apk release/*.tar.gz)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::warning::No installable artifacts were built for the main release."
+            exit 0
           fi
+          assets+=(release/SHA256SUMS)
+          if compgen -G "release/*.apk" >/dev/null && [ -f release/mobile-update.json ]; then
+            assets+=(release/mobile-update.json)
+          fi
+          bash scripts/publish-release.sh release-notes.md "${assets[@]}"

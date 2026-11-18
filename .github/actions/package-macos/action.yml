@@ -94,37 +94,8 @@ runs:
         if-no-files-found: warn
         retention-days: 14
 
-    # The release job no longer waits for macOS runners (GitHub's arm64 pool
-    # can stay queued for a long time). This step attaches the app to the same
-    # tag as soon as the build finishes, creating the release first if needed.
-    - name: Publish macOS assets to the release
+    - name: Attach macOS app to the release
       env:
         GH_TOKEN: ${{ github.token }}
       shell: bash
-      run: |
-        set -euo pipefail
-        shopt -s nullglob
-        assets=(dist/mac/*.dmg dist/mac/*.zip)
-        if [ ${#assets[@]} -eq 0 ]; then
-          echo "::warning::macOS build produced no DMG/ZIP; publishing the release without it."
-          exit 0
-        fi
-        version="$(node -p "require('./package.json').version")"
-        build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
-        tag="v${version}-build.${build_num}"
-        if [[ "$version" == *-beta.* ]]; then
-          prerelease_flag="--prerelease"
-          release_title="Plexy Beta ${tag}"
-        else
-          prerelease_flag=""
-          release_title="Plexy ${tag}"
-        fi
-        if ! gh release view "$tag" >/dev/null 2>&1; then
-          gh release create "$tag" \
-            --title "$release_title" \
-            --target "$GITHUB_SHA" \
-            $prerelease_flag \
-            --notes "macOS build assets are being attached. The full release notes appear once the other artifacts finish."
-        fi
-        gh release upload "$tag" "${assets[@]}" --clobber
-        echo "Attached macOS assets to $tag"
+      run: bash scripts/publish-release.sh "" dist/mac/*.dmg dist/mac/*.zip
