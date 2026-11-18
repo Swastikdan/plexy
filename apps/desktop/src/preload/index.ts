@@ -29,6 +29,8 @@ const api: ElectronAPI = {
   getServerUrl: () => ipcRenderer.invoke("app:get-server-url"),
   setServerUrl: (url: string) => ipcRenderer.invoke("app:set-server-url", url),
   isFullScreen: () => ipcRenderer.invoke("app:is-fullscreen"),
+  setFullScreen: (value: boolean) =>
+    ipcRenderer.invoke("app:set-fullscreen", Boolean(value)),
   onFullScreenChange: (callback: (isFullScreen: boolean) => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,

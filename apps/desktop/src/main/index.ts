@@ -28,7 +28,7 @@ import { startServer, stopServer } from "./server";
 import { startStaticUi } from "./static";
 import { ensureDesktopAuth } from "./auth";
 import { checkForUpdates, getUpdateStatus } from "./updater";
-import { NativePlayerManager } from "./native-player";
+import { NativePlayerManager, type NativePlayerAction } from "./native-player";
 
 // The updater downloads only the published Apple Silicon ZIP, verifies the
 // release checksum, then replaces the app bundle while preserving userData.
@@ -36,12 +36,24 @@ let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let stopStaticUi: (() => Promise<void>) | null = null;
 
-const nativePlayer = new NativePlayerManager((event) => {
-  const target = mainWindow;
-  if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
-    target.webContents.send("native:event", event);
-  }
-});
+const nativePlayer = new NativePlayerManager(
+  (event) => {
+    const target = mainWindow;
+    if (target && !target.isDestroyed() && !target.webContents.isDestroyed()) {
+      target.webContents.send("native:event", event);
+    }
+  },
+  {
+    // libmpv draws into an NSView that lives inside the Plexy window; the
+    // manager attaches it beneath the web contents view on the first play.
+    surface: () => {
+      const target = mainWindow;
+      if (!target || target.isDestroyed()) return null;
+      const [width, height] = target.getContentSize();
+      return { handle: target.getNativeWindowHandle(), width, height };
+    },
+  },
+);
 
 /** Only the app's own window may drive native playback, never a web frame. */
 function trustedFrameOrigin(event: Electron.IpcMainInvokeEvent): string {
@@ -214,7 +226,10 @@ function createWindow(serverUrl: string): BrowserWindow {
     height: 820,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: "#060607",
+    // The native video surface sits below the web contents view, so the page
+    // must be able to show it through a transparent player surface.
+    backgroundColor: isMac ? "#00000000" : "#060607",
+    ...(isMac ? { transparent: true } : {}),
     show: false,
     title: "Plexy",
     ...(iconImage && !iconImage.isEmpty() ? { icon: iconImage } : {}),
@@ -251,6 +266,12 @@ function createWindow(serverUrl: string): BrowserWindow {
 
   win.on("leave-full-screen", () => {
     win.webContents.send("fullscreen-change", false);
+  });
+
+  // A renderer reload or navigation ends any embedded playback: libmpv's
+  // surface belongs to the window, not the document that asked for it.
+  win.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) void nativePlayer.stop();
   });
 
   win.webContents.on(
@@ -395,6 +416,13 @@ function setupIpcHandlers() {
   ipcMain.handle("app:is-fullscreen", () => {
     return mainWindow?.isFullScreen() ?? false;
   });
+  ipcMain.handle("app:set-fullscreen", (event, value: unknown) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) {
+      throw new Error("Fullscreen is only available in the Plexy window");
+    }
+    mainWindow.setFullScreen(Boolean(value));
+    return mainWindow.isFullScreen();
+  });
 
   // --- Native (mpv) playback -------------------------------------------------
   ipcMain.handle("native:info", () => nativePlayer.info());
@@ -412,7 +440,7 @@ function setupIpcHandlers() {
   ipcMain.handle("native:command", async (event, request: Record<string, unknown>) => {
     trustedFrameOrigin(event);
     const action = String(request?.action ?? "");
-    const actions = [
+    const actions: NativePlayerAction[] = [
       "pause",
       "resume",
       "seek",
@@ -422,14 +450,13 @@ function setupIpcHandlers() {
       "set-volume",
       "set-mute",
       "set-speed",
-      "toggle-fullscreen",
-    ] as const;
-    if (!actions.includes(action as (typeof actions)[number])) {
+    ];
+    if (!actions.includes(action as NativePlayerAction)) {
       throw new Error("Unsupported player action");
     }
     return nativePlayer.command({
       sessionId: String(request?.sessionId ?? ""),
-      action: action as (typeof actions)[number],
+      action: action as NativePlayerAction,
       value: Number(request?.value) || 0,
     });
   });

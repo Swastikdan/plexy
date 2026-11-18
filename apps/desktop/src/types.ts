@@ -24,6 +24,7 @@ export interface ElectronAPI {
   setServerUrl: (url: string) => Promise<void>;
   onNavigate: (callback: (route: string) => void) => () => void;
   isFullScreen?: () => Promise<boolean>;
+  setFullScreen?: (value: boolean) => Promise<boolean>;
   onFullScreenChange?: (
     callback: (isFullScreen: boolean) => void,
   ) => () => void;
@@ -64,8 +65,7 @@ export interface NativeCommandRequest {
     | "set-subtitle"
     | "set-volume"
     | "set-mute"
-    | "set-speed"
-    | "toggle-fullscreen";
+    | "set-speed";
   value?: number;
 }
 

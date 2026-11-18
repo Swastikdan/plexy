@@ -1,37 +1,33 @@
-/// Native mpv playback manager (desktop, macOS first).
+/// Embedded mpv playback manager (desktop, macOS first).
 ///
 /// Flow: renderer asks to play a file id -> this module fetches the native
 /// manifest from the active Plexy server with Chromium's session cookies ->
 /// the original file and any sidecar subtitles are exposed through a
-/// short-lived loopback relay -> a bundled mpv process opens the relay URL and
-/// is driven over mpv's JSON IPC socket.
+/// short-lived loopback relay -> libmpv, loaded in the Electron main process,
+/// decodes the original file into an NSView that sits below the web contents
+/// view inside the Plexy window.
 ///
 /// mpv never sees backend credentials or arbitrary filesystem paths: it gets
 /// unguessable loopback URLs, and the renderer can only name a file id and a
 /// small set of playback actions. Transport lives in `native-relay.ts`.
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
-import { mkdir as mkdirAsync } from "node:fs/promises";
-import * as net from "node:net";
-import os from "node:os";
+import { existsSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
 import { MediaRelay } from "./native-relay";
 
 /**
- * Electron APIs are loaded lazily so the manager can be unit-tested with a fake
- * engine process outside the Electron runtime.
+ * Electron APIs are loaded lazily so the manager can be exercised with a fake
+ * window outside the Electron runtime.
  */
 function electron(): typeof import("electron") {
   return require("electron") as typeof import("electron");
 }
 
-function isPackagedApp(): boolean {
-  try {
-    return Boolean(electron()?.app?.isPackaged);
-  } catch {
-    return false;
-  }
+export interface NativeWindowSurface {
+  /** Native NSView pointer from `BrowserWindow.getNativeWindowHandle()`. */
+  handle: Buffer;
+  width: number;
+  height: number;
 }
 
 type ManifestFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -54,19 +50,20 @@ export interface NativePlayRequest {
   subtitleLanguage?: string;
 }
 
+export type NativePlayerAction =
+  | "pause"
+  | "resume"
+  | "seek"
+  | "stop"
+  | "set-audio"
+  | "set-subtitle"
+  | "set-volume"
+  | "set-mute"
+  | "set-speed";
+
 export interface NativeCommandRequest {
   sessionId: string;
-  action:
-    | "pause"
-    | "resume"
-    | "seek"
-    | "stop"
-    | "set-audio"
-    | "set-subtitle"
-    | "set-volume"
-    | "set-mute"
-    | "set-speed"
-    | "toggle-fullscreen";
+  action: NativePlayerAction;
   value?: number;
 }
 
@@ -99,8 +96,7 @@ export interface NativePlaybackEvent {
     | "audio"
     | "tracks"
     | "volume"
-    | "speed"
-    | "fullscreen";
+    | "speed";
   position?: number;
   duration?: number;
   paused?: boolean;
@@ -114,7 +110,6 @@ export interface NativePlaybackEvent {
   volume?: number;
   muted?: boolean;
   speed?: number;
-  fullscreen?: boolean;
 }
 
 export interface NativePlayResult {
@@ -151,10 +146,26 @@ interface MpvTrack {
   image?: boolean;
 }
 
-interface PendingRequest {
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+interface MpvEmbedEvent {
+  type: "property" | "event" | "error";
+  name?: string;
+  value?: number | string | boolean;
+  message?: string;
+}
+
+interface MpvEmbedHandle {
+  attach(handle: Buffer, x: number, y: number, width: number, height: number): boolean;
+  setBounds(x: number, y: number, width: number, height: number): boolean;
+  setVisible(visible: boolean): boolean;
+  load(url: string, startSeconds: number, title: string, audioLanguage: string): boolean;
+  setProperty(name: string, value: string | number | boolean): boolean;
+  getPropertyString(name: string): string | null;
+  command(parts: string[]): boolean;
+  destroy(): void;
+}
+
+interface MpvEmbedConstructor {
+  new (libmpvPath: string, onEvent: (event: MpvEmbedEvent) => void): MpvEmbedHandle;
 }
 
 interface Session {
@@ -164,36 +175,28 @@ interface Session {
   manifest: NativeManifest;
   relay: MediaRelay;
   serverOrigin: string;
-  binary: string;
-  socketPath: string;
-  proc: ChildProcess | null;
-  socket: net.Socket | null;
-  buffer: string;
-  nextRequestId: number;
-  pending: Map<number, PendingRequest>;
+  embed: MpvEmbedHandle;
   duration: number | null;
   position: number;
   paused: boolean;
   volume: number;
   muted: boolean;
   speed: number;
-  fullscreen: boolean;
-  /** Absolute media time (seconds) mpv has cached up to, or 0. */
   cacheEnd: number;
   stopping: boolean;
   cleaned: boolean;
-  startedAt: number;
   lastTimeEvent: number;
-  stderr: string;
   autoSubtitles: boolean;
   subtitleLanguage: string;
   preferredAudioLanguage: string;
+  /** mpv track ids by kind, refreshed from `track-list`. */
+  audioTracks: NativeAudioTrack[];
+  subtitleTracks: NativeAudioTrack[];
 }
 
-const MPV_IPC_TIMEOUT_MS = 5_000;
 const TIME_EVENT_INTERVAL_MS = 1_000;
 
-function isExecutable(file: string): boolean {
+function isFile(file: string): boolean {
   try {
     return existsSync(file) && statSync(file).isFile();
   } catch {
@@ -201,56 +204,93 @@ function isExecutable(file: string): boolean {
   }
 }
 
-function pathLookup(binary: string): string | null {
-  const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    const candidate = path.join(dir, binary);
-    if (isExecutable(candidate)) return candidate;
+/**
+ * The app directory. Bun rewrites `__dirname` to the source tree at build time,
+ * so ask Electron where the running app lives instead.
+ */
+function appRoot(): string {
+  try {
+    return electron().app.getAppPath();
+  } catch {
+    return process.cwd();
   }
-  return null;
 }
 
 function repoRoot(): string {
-  // apps/desktop/dist/main.cjs -> repo root
-  return path.resolve(__dirname, "..", "..", "..");
+  // dev: apps/desktop -> repo root
+  return path.resolve(appRoot(), "..", "..");
 }
 
-/** Locate a usable mpv: explicit override, bundled binary, then PATH. */
-export function resolveMpv(): { binary: string; engine: "bundled" | "system" } | null {
-  const override = process.env.PLEXY_MPV;
-  if (override && isExecutable(override)) return { binary: override, engine: "system" };
+function isPackagedApp(): boolean {
+  try {
+    return Boolean(electron()?.app?.isPackaged);
+  } catch {
+    return false;
+  }
+}
 
-  const bundled = isPackagedApp()
-    ? path.join(process.resourcesPath, "bin", "mpv")
-    : path.join(repoRoot(), "dist", "bin", "mpv");
-  if (isExecutable(bundled)) return { binary: bundled, engine: "bundled" };
+function packagedBinaries(): string {
+  try {
+    return path.join(process.resourcesPath, "bin");
+  } catch {
+    return "";
+  }
+}
 
-  const onPath = pathLookup("mpv");
-  if (onPath) return { binary: onPath, engine: "system" };
-
-  // GUI-launched Electron apps inherit a minimal PATH, so a Homebrew install
-  // is often invisible even though it is present.
-  const home = process.env.HOME ?? "";
-  for (const candidate of [
-    "/opt/homebrew/bin/mpv",
-    "/usr/local/bin/mpv",
-    "/usr/bin/mpv",
-    path.join(home, ".local", "bin", "mpv"),
-    "/Applications/mpv.app/Contents/MacOS/mpv",
-  ]) {
-    if (isExecutable(candidate)) return { binary: candidate, engine: "system" };
+/** Locate libmpv: explicit override, bundled copy, then Homebrew/system paths. */
+export function resolveLibmpv(): string | null {
+  const candidates: Array<string | undefined> = [];
+  if (process.env.PLEXY_LIBMPV) candidates.push(process.env.PLEXY_LIBMPV);
+  const bin = packagedBinaries();
+  if (bin) {
+    candidates.push(path.join(bin, "libmpv.2.dylib"), path.join(bin, "mpv-libs", "libmpv.2.dylib"));
+  }
+  candidates.push(
+    path.join(repoRoot(), "dist", "bin", "libmpv.2.dylib"),
+    path.join(repoRoot(), "dist", "bin", "mpv-libs", "libmpv.2.dylib"),
+    "/opt/homebrew/opt/mpv/lib/libmpv.2.dylib",
+    "/usr/local/opt/mpv/lib/libmpv.2.dylib",
+    "/opt/homebrew/lib/libmpv.2.dylib",
+    "/usr/local/lib/libmpv.2.dylib",
+  );
+  for (const candidate of candidates) {
+    if (candidate && isFile(candidate)) return candidate;
   }
   return null;
 }
 
-/** The bundling step writes `<binary>.version` next to the engine. */
-function bundledVersion(binary: string): string | null {
-  try {
-    const text = readFileSync(binary + ".version", "utf8").trim();
-    return text || null;
-  } catch {
+/** The native addon lives next to the bundled main script. */
+export function resolveEmbedAddon(): string | null {
+  const candidates = [
+    path.join(process.resourcesPath ?? "", "native", "mpv_embed.node"),
+    path.join(appRoot(), "dist", "native", "mpv_embed.node"),
+    path.join(appRoot(), "native", "mpv_embed.node"),
+  ];
+  for (const candidate of candidates) {
+    if (candidate && isFile(candidate)) return candidate;
+  }
+  return null;
+}
+
+let cachedAddon: MpvEmbedConstructor | null | undefined;
+
+function loadEmbedAddon(): MpvEmbedConstructor | null {
+  if (cachedAddon !== undefined) return cachedAddon;
+  const addonPath = resolveEmbedAddon();
+  if (!addonPath) {
+    cachedAddon = null;
     return null;
   }
+  try {
+    const module = { exports: {} as Record<string, unknown> };
+    (process as NodeJS.Process & { dlopen: (m: unknown, p: string) => void }).dlopen(module, addonPath);
+    const constructor = module.exports.MpvEmbed as MpvEmbedConstructor | undefined;
+    cachedAddon = constructor ?? null;
+  } catch (error) {
+    console.error("[Plexy Desktop] Could not load the embedded player:", error);
+    cachedAddon = null;
+  }
+  return cachedAddon;
 }
 
 function validateServerUrl(raw: string, frameOrigin: string): URL {
@@ -283,11 +323,6 @@ function clampPosition(value: unknown, duration: number | null): number {
   return Math.min(number, limit);
 }
 
-/** mpv reports flags as booleans or "yes"/"no" depending on the property. */
-function truthy(value: unknown): boolean {
-  return value === true || value === "yes" || Number(value) > 0;
-}
-
 function redact(value: string): string {
   return value.replace(/\/s\/[a-f0-9]+\/[a-f0-9]+/g, "/s/<redacted>");
 }
@@ -296,28 +331,15 @@ function displayTitle(manifest: NativeManifest): string {
   return [manifest.title, manifest.subtitle].filter(Boolean).join(" · ") || "Plexy";
 }
 
-/** Send one mpv IPC command and await its response. */
-function sendCommand(session: Session, command: unknown[], timeoutMs = MPV_IPC_TIMEOUT_MS): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const socket = session.socket;
-    if (!socket || socket.destroyed) {
-      reject(new Error("The native player is not ready"));
-      return;
-    }
-    const requestId = session.nextRequestId++;
-    const timer = setTimeout(() => {
-      session.pending.delete(requestId);
-      reject(new Error("The native player did not answer"));
-    }, timeoutMs);
-    session.pending.set(requestId, { resolve, reject, timer });
-    try {
-      socket.write(JSON.stringify({ command, request_id: requestId }) + "\n");
-    } catch (error) {
-      clearTimeout(timer);
-      session.pending.delete(requestId);
-      reject(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
+function mapTrack(track: MpvTrack): NativeAudioTrack {
+  return {
+    id: track.id,
+    title: track.title ?? null,
+    language: track.lang ?? null,
+    default: Boolean(track.default),
+    selected: Boolean(track.selected),
+    external: Boolean(track.external),
+  };
 }
 
 export class NativePlayerManager {
@@ -329,27 +351,59 @@ export class NativePlayerManager {
       fetch?: ManifestFetch;
       /** Injectable so the manager can be exercised on non-macOS CI runners. */
       platform?: NodeJS.Platform;
+      /** The window the video surface is attached to. */
+      surface?: () => NativeWindowSurface | null;
+      /** Overrides for tests: a fake engine and module factory. */
+      libmpv?: string;
+      createEmbed?: (libmpvPath: string, onEvent: (event: MpvEmbedEvent) => void) => MpvEmbedHandle;
     } = {},
   ) {}
 
   info(): NativePlaybackInfo {
-    const mpv = resolveMpv();
     const platform = this.options.platform ?? process.platform;
     const supported = platform === "darwin";
+    const libmpv = this.options.libmpv ?? resolveLibmpv();
+    const addon = this.options.createEmbed ?? loadEmbedAddon();
+    const available = supported && Boolean(libmpv) && Boolean(addon);
+    const engine = libmpv?.includes("/Cellar/") || libmpv?.includes("/opt/homebrew/")
+      ? "system"
+      : libmpv
+        ? "bundled"
+        : null;
     return {
-      available: supported && Boolean(mpv),
+      available,
       platform,
-      engine: mpv?.engine ?? null,
-      version: mpv ? bundledVersion(mpv.binary) : null,
-      ...(supported && mpv
+      engine,
+      version: this.mpvVersion(libmpv),
+      ...(available
         ? {}
         : {
-            reason: supported
-              ? "The native playback engine is not installed. Run the app's mpv bundling step or set PLEXY_MPV to an mpv binary."
-              : "Native playback is only available on macOS.",
+            reason: !supported
+              ? "Native playback is only available on macOS."
+              : !libmpv
+                ? "The embedded playback engine (libmpv) is not installed. Install mpv or bundle libmpv."
+                : "The embedded player module is missing. Rebuild the desktop app.",
           }),
     };
   }
+
+  private mpvVersion(libmpv: string | null): string | null {
+    if (!libmpv) return null;
+    try {
+      const text = require("node:fs").readFileSync(libmpv + ".version", "utf8").trim();
+      return text || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The renderer can move the surface when the player layout changes. */
+  setSurfaceBounds(bounds: { x: number; y: number; width: number; height: number }): boolean {
+    const session = this.session;
+    if (!session) return false;
+    return session.embed.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+  }
+
   async play(request: NativePlayRequest): Promise<NativePlayResult> {
     const info = this.info();
     if (!info.available) throw new Error(info.reason ?? "Native playback is unavailable");
@@ -358,47 +412,46 @@ export class NativePlayerManager {
     if (!Number.isSafeInteger(fileId) || fileId <= 0) throw new Error("Invalid file id");
     const serverUrl = validateServerUrl(String(request.serverUrl ?? ""), String(request.serverOrigin ?? ""));
 
+    const surface = this.options.surface?.() ?? null;
+    if (!surface) throw new Error("The Plexy window is not ready for playback.");
+
     const manifest = await this.fetchManifest(serverUrl, fileId);
-    const mpv = resolveMpv();
-    if (!mpv) throw new Error(info.reason ?? "The native playback engine is not installed");
+    const libmpv = this.options.libmpv ?? resolveLibmpv();
+    const Addon = this.options.createEmbed ?? loadEmbedAddon();
+    if (!libmpv || !Addon) throw new Error(info.reason ?? "The native playback engine is not installed");
 
     await this.stop();
 
     const relay = new MediaRelay(serverUrl.origin);
     await relay.start();
-    const session: Session = {
+
+    const session = {} as Session;
+    Object.assign(session, {
       id: randomUUID(),
       fileId,
       title: displayTitle(manifest),
       manifest,
       relay,
       serverOrigin: serverUrl.origin,
-      binary: mpv.binary,
-      socketPath: path.join(os.tmpdir(), `plexy-mpv-${randomBytes(5).toString("hex")}.sock`),
-      proc: null,
-      socket: null,
-      buffer: "",
-      nextRequestId: 1,
-      pending: new Map(),
+      embed: null as unknown as MpvEmbedHandle,
       duration: manifest.duration ?? manifest.watch?.duration ?? null,
       position: 0,
       paused: false,
       volume: 100,
       muted: false,
       speed: 1,
-      fullscreen: false,
       cacheEnd: 0,
       stopping: false,
       cleaned: false,
-      startedAt: Date.now(),
       lastTimeEvent: 0,
-      stderr: "",
       autoSubtitles: request.autoSubtitles !== false,
       subtitleLanguage: String(request.subtitleLanguage ?? "en").toLowerCase().split(/[-_]/)[0] ?? "en",
       preferredAudioLanguage: String(manifest.native?.preferredAudioLanguage ?? "en")
         .toLowerCase()
         .split(/[-_]/)[0] ?? "en",
-    };
+      audioTracks: [],
+      subtitleTracks: [],
+    });
 
     let streamUrl: string;
     try {
@@ -408,13 +461,32 @@ export class NativePlayerManager {
       throw error;
     }
 
+    this.session = session;
     try {
-      await this.spawn(session, streamUrl, request.resumeSeconds);
+      const embed = this.options.createEmbed
+        ? this.options.createEmbed(libmpv, (event) => this.handleEmbedEvent(session, event))
+        : new (Addon as MpvEmbedConstructor)(libmpv, (event) => this.handleEmbedEvent(session, event));
+      session.embed = embed;
+      embed.attach(surface.handle, 0, 0, surface.width, surface.height);
+      embed.setVisible(true);
+
+      const resume = clampPosition(request.resumeSeconds, session.duration);
+      session.position = resume;
+      embed.load(streamUrl, resume, session.title, session.preferredAudioLanguage);
     } catch (error) {
-      await this.stopSession(session, false);
+      this.session = null;
+      session.stopping = true;
+      session.cleaned = true;
+      try {
+        session.embed?.destroy?.();
+      } catch {
+        /* already gone */
+      }
+      await relay.close();
       throw error;
     }
-    this.session = session;
+
+    this.refreshTracks(session);
     return { sessionId: session.id, fileId, title: session.title };
   }
 
@@ -424,16 +496,17 @@ export class NativePlayerManager {
       // A stale renderer must never steer a newer title.
       throw new Error("That native playback session has ended");
     }
+    const embed = session.embed;
     switch (request.action) {
       case "pause":
-        await sendCommand(session, ["set_property", "pause", true]);
+        embed.setProperty("pause", true);
         return { ok: true };
       case "resume":
-        await sendCommand(session, ["set_property", "pause", false]);
+        embed.setProperty("pause", false);
         return { ok: true };
       case "seek": {
         const target = clampPosition(request.value, session.duration ?? session.manifest.watch?.duration ?? null);
-        await sendCommand(session, ["seek", target, "absolute+exact"]);
+        embed.command(["seek", target.toFixed(3), "absolute+exact"]);
         session.position = target;
         this.publishTime(session, true);
         return { ok: true };
@@ -441,36 +514,30 @@ export class NativePlayerManager {
       case "set-audio": {
         const trackId = Number(request.value);
         if (!Number.isInteger(trackId) || trackId < 0) throw new Error("Invalid audio track");
-        await sendCommand(session, ["set_property", "aid", trackId]);
-        await this.emitTracks(session);
+        embed.setProperty("aid", String(trackId));
         return { ok: true };
       }
       case "set-subtitle": {
         const trackId = Number(request.value);
         if (!Number.isInteger(trackId) || trackId < 0) throw new Error("Invalid subtitle track");
         // 0 means "off"; any other value is an mpv subtitle track id.
-        await sendCommand(session, ["set_property", "sid", trackId === 0 ? "no" : trackId]);
-        await this.emitTracks(session);
+        embed.setProperty("sid", trackId === 0 ? "no" : String(trackId));
         return { ok: true };
       }
       case "set-volume": {
         const volume = Number(request.value);
         if (!Number.isFinite(volume)) throw new Error("Invalid volume");
-        await sendCommand(session, ["set_property", "volume", Math.min(130, Math.max(0, volume))]);
+        embed.setProperty("volume", Math.min(130, Math.max(0, volume)));
         return { ok: true };
       }
       case "set-mute": {
-        await sendCommand(session, ["set_property", "mute", Number(request.value) > 0]);
+        embed.setProperty("mute", Number(request.value) > 0);
         return { ok: true };
       }
       case "set-speed": {
         const speed = Number(request.value);
-        if (!Number.isFinite(speed) || speed < 0.25 || speed > 4) throw new Error("Invalid playback speed");
-        await sendCommand(session, ["set_property", "speed", speed]);
-        return { ok: true };
-      }
-      case "toggle-fullscreen": {
-        await sendCommand(session, ["set_property", "fullscreen", !session.fullscreen]);
+        if (!Number.isFinite(speed) || speed < 0.1 || speed > 4) throw new Error("Invalid playback speed");
+        embed.setProperty("speed", speed);
         return { ok: true };
       }
       case "stop":
@@ -486,7 +553,17 @@ export class NativePlayerManager {
     if (!session) return;
     if (sessionId && session.id !== sessionId) return;
     this.session = null;
-    await this.stopSession(session, true);
+    if (session.stopping) return;
+    session.stopping = true;
+    try {
+      session.embed.setVisible(false);
+      session.embed.destroy();
+    } catch {
+      /* the engine is already gone */
+    }
+    session.cleaned = true;
+    await session.relay.close().catch(() => {});
+    this.emitEvent(session, { type: "closed" });
   }
 
   async dispose(): Promise<void> {
@@ -520,230 +597,167 @@ export class NativePlayerManager {
     return manifest;
   }
 
-  private async spawn(session: Session, streamUrl: string, resumeSeconds: unknown): Promise<void> {
-    await mkdirAsync(path.dirname(session.socketPath), { recursive: true }).catch(() => {});
-    try {
-      unlinkSync(session.socketPath);
-    } catch {
-      /* no stale socket */
+  private handleEmbedEvent(session: Session, event: MpvEmbedEvent): void {
+    if (session.stopping) return;
+    if (event.type === "error") {
+      this.emitEvent(session, { type: "error", message: redact(event.message ?? "Native playback failed") });
+      return;
     }
-
-    const resume = clampPosition(resumeSeconds, session.duration ?? session.manifest.watch?.duration ?? null);
-    session.position = resume;
-    const args = [
-      "--no-config",
-      "--load-scripts=no",
-      `--input-ipc-server=${session.socketPath}`,
-      "--idle=yes",
-      "--force-window=yes",
-      "--keep-open=no",
-      "--hwdec=auto-safe",
-      "--no-resume-playback",
-      "--save-position-on-quit=no",
-      "--sub-auto=no",
-      "--audio-file-auto=no",
-      // Plexy owns the player chrome. mpv's on-screen controller would show a
-      // second, differently styled control surface in the video window.
-      "--osc=no",
-      "--user-agent=Plexy-Native",
-      `--title=${session.title}`,
-      ...(resume > 1 ? [`--start=${resume.toFixed(3)}`] : []),
-      streamUrl,
-    ];
-
-    // The official macOS mpv bundle ships MoltenVK; the ICD path is rewritten
-    // during bundling so Vulkan works from inside the Plexy app resources.
-    const icd = path.join(path.dirname(session.binary), "vulkan", "icd.d", "MoltenVK_icd.json");
-    const env = existsSync(icd)
-      ? { ...process.env, VK_ICD_FILENAMES: icd }
-      : process.env;
-    const proc = spawn(session.binary, args, { stdio: ["ignore", "ignore", "pipe"], env });
-    session.proc = proc;
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const text = redact(chunk.toString());
-      session.stderr = (session.stderr + text).slice(-2_000);
-    });
-    proc.on("error", (error: Error) => {
-      this.failSession(session, `The native player failed to start: ${error.message}`);
-    });
-    proc.on("exit", (code: number | null, signal: string | null) => {
-      const unexpected = !session.stopping;
-      this.cleanup(session).catch(() => {});
-      // A zero exit is the viewer closing the mpv window; only a non-zero exit
-      // is a crash worth surfacing as an error.
-      if (unexpected && code !== 0) {
-        const detail = session.stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
-        this.emitEvent(session, {
-          type: "error",
-          message: detail
-            ? `The native player stopped unexpectedly (${code ?? signal}): ${detail}`
-            : `The native player stopped unexpectedly (${code ?? signal})`,
-        });
-      }
-      this.emitEvent(session, { type: "closed" });
-    });
-
-    await this.connectIpc(session);
-  }
-
-  private async connectIpc(session: Session): Promise<void> {
-    const deadline = Date.now() + 7_000;
-    while (Date.now() < deadline) {
-      if (session.stopping) throw new Error("Native playback stopped before it started");
-      const socket = new net.Socket();
-      const connected = await new Promise<boolean>((resolve) => {
-        const onError = () => {
-          socket.destroy();
-          resolve(false);
-        };
-        socket.once("error", onError);
-        socket.once("connect", () => {
-          socket.off("error", onError);
-          resolve(true);
-        });
-        socket.connect(session.socketPath);
-      });
-      if (connected) {
-        session.socket = socket;
-        this.attachSocket(session, socket);
-        // Observe only what the Plexy session surface needs.
-        for (const [index, name] of [
-          "time-pos",
-          "duration",
-          "pause",
-          "paused-for-cache",
-          "demuxer-cache-time",
-          "volume",
-          "mute",
-          "speed",
-          "fullscreen",
-          "sid",
-        ].entries()) {
-          void sendCommand(session, ["observe_property", index + 1, name]).catch(() => {});
+    if (event.type === "event") {
+      switch (event.name) {
+        case "loaded": {
+          session.paused = false;
+          this.afterLoad(session).catch((error) =>
+            this.emitEvent(session, {
+              type: "error",
+              message: error instanceof Error ? error.message : String(error),
+            }));
+          this.emitEvent(session, { type: "ready" });
+          return;
         }
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    throw new Error("The native player did not start in time");
-  }
-
-  private attachSocket(session: Session, socket: net.Socket): void {
-    socket.on("data", (chunk: Buffer) => {
-      session.buffer += chunk.toString();
-      let index: number;
-      while ((index = session.buffer.indexOf("\n")) >= 0) {
-        const line = session.buffer.slice(0, index).trim();
-        session.buffer = session.buffer.slice(index + 1);
-        if (!line) continue;
-        try {
-          this.handleMessage(session, JSON.parse(line));
-        } catch {
-          /* ignore malformed IPC lines */
-        }
-      }
-    });
-    socket.on("close", () => {
-      session.socket = null;
-    });
-    socket.on("error", () => {
-      session.socket = null;
-    });
-  }
-
-  private handleMessage(session: Session, message: Record<string, unknown>): void {
-    if (typeof message.request_id === "number") {
-      const pending = session.pending.get(message.request_id);
-      if (!pending) return;
-      session.pending.delete(message.request_id);
-      clearTimeout(pending.timer);
-      if (message.error === "success") pending.resolve(message.data ?? null);
-      else pending.reject(new Error(String(message.error ?? "The native player rejected the command")));
-      return;
-    }
-    const event = String(message.event ?? "");
-    if (event === "property-change") {
-      this.handleProperty(session, String(message.name ?? ""), message.data);
-      return;
-    }
-    if (event === "file-loaded") {
-      void this.afterLoad(session).catch((error) =>
-        this.emitEvent(session, {
-          type: "error",
-          message: error instanceof Error ? error.message : String(error),
-        }));
-      this.emitEvent(session, { type: "ready" });
-      return;
-    }
-    if (event === "end-file") {
-      const reason = String(message.reason ?? "");
-      if (reason === "eof") {
-        this.emitEvent(session, { type: "ended", position: session.duration ?? session.position });
-      } else if (reason === "error") {
-        const detail = String(message.file_error ?? message.error ?? "Playback failed");
-        this.emitEvent(session, { type: "error", message: redact(detail) });
+        case "ended":
+          this.emitEvent(session, { type: "ended", position: session.duration ?? session.position });
+          return;
+        case "video-reconfig":
+          this.refreshTracks(session);
+          return;
+        case "stopped":
+          return;
+        default:
+          return;
       }
     }
-  }
+    if (event.type !== "property") return;
 
-  private handleProperty(session: Session, name: string, data: unknown): void {
-    switch (name) {
+    switch (event.name) {
       case "time-pos": {
-        const position = Number(data);
+        const position = Number(event.value);
         if (!Number.isFinite(position) || position < 0) return;
         session.position = position;
         this.publishTime(session, false);
         return;
       }
       case "duration": {
-        const duration = Number(data);
+        const duration = Number(event.value);
         if (!Number.isFinite(duration) || duration <= 0) return;
+        if (session.duration === duration) return;
         session.duration = duration;
         this.emitEvent(session, { type: "duration", duration });
         return;
       }
       case "pause": {
-        session.paused = Boolean(data);
+        session.paused = Boolean(event.value);
         this.emitEvent(session, { type: "pause", paused: session.paused, position: session.position });
         return;
       }
       case "paused-for-cache":
-        this.emitEvent(session, { type: "buffering", buffering: Boolean(data) });
+        this.emitEvent(session, { type: "buffering", buffering: Boolean(event.value) });
         return;
       case "demuxer-cache-time": {
-        const cached = Number(data);
+        const cached = Number(event.value);
         session.cacheEnd = Number.isFinite(cached) && cached > 0 ? cached : 0;
         return;
       }
       case "volume": {
-        const volume = Number(data);
+        const volume = Number(event.value);
         if (!Number.isFinite(volume)) return;
         session.volume = volume;
         this.emitEvent(session, { type: "volume", volume, muted: session.muted });
         return;
       }
       case "mute":
-        session.muted = truthy(data);
+        session.muted = Boolean(event.value);
         this.emitEvent(session, { type: "volume", volume: session.volume, muted: session.muted });
         return;
       case "speed": {
-        const speed = Number(data);
+        const speed = Number(event.value);
         if (!Number.isFinite(speed) || speed <= 0) return;
         session.speed = speed;
         this.emitEvent(session, { type: "speed", speed });
         return;
       }
-      case "fullscreen":
-        session.fullscreen = truthy(data);
-        this.emitEvent(session, { type: "fullscreen", fullscreen: session.fullscreen });
-        return;
+      case "aid":
       case "sid":
-        // The engine selected or cleared a subtitle track (sidecars included).
-        void this.emitTracks(session).catch(() => {});
+        this.refreshTracks(session);
         return;
       default:
         return;
     }
+  }
+
+  private readTracks(session: Session): MpvTrack[] | null {
+    const raw = session.embed.getPropertyString("track-list");
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as MpvTrack[];
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private refreshTracks(session: Session): void {
+    const tracks = this.readTracks(session);
+    if (!tracks) return;
+    session.audioTracks = tracks.filter((track) => track.type === "audio").map(mapTrack);
+    // Image-based subtitles (PGS/VobSub) are still selectable; the menu only
+    // needs their language and title.
+    session.subtitleTracks = tracks.filter((track) => track.type === "sub").map(mapTrack);
+    this.emitEvent(session, {
+      type: "tracks",
+      audioTracks: session.audioTracks,
+      subtitleTracks: session.subtitleTracks,
+    });
+  }
+
+  private async afterLoad(session: Session): Promise<void> {
+    const resume = clampPosition(session.position, session.duration ?? session.manifest.watch?.duration ?? null);
+    if (resume > 1) {
+      session.embed.command(["seek", resume.toFixed(3), "absolute+exact"]);
+    }
+    await this.selectAudio(session).catch(() => {});
+    await this.addSidecarSubtitles(session).catch(() => {});
+    this.refreshTracks(session);
+  }
+
+  private async selectAudio(session: Session): Promise<void> {
+    const tracks = this.readTracks(session);
+    if (!tracks) return;
+    const audio = tracks.filter((track) => track.type === "audio");
+    if (audio.length < 2) return;
+    const preferred = session.preferredAudioLanguage.toLowerCase();
+    const match =
+      (preferred ? audio.find((track) => (track.lang ?? "").toLowerCase().startsWith(preferred)) : undefined)
+      ?? audio.find((track) => track.default)
+      ?? audio[0];
+    if (match) session.embed.setProperty("aid", String(match.id));
+  }
+
+  private async addSidecarSubtitles(session: Session): Promise<void> {
+    const sidecars = (session.manifest.tracks ?? []).filter(
+      (track) => track.kind === "sidecar" && track.track.startsWith("sidecar-"),
+    );
+    const added: Array<{ id: number; language: string }> = [];
+    for (const track of sidecars.slice(0, 12)) {
+      try {
+        const url = session.relay.register(
+          new URL(`/api/subtitles/${session.fileId}/${encodeURIComponent(track.track)}`, session.serverOrigin).toString(),
+        );
+        session.embed.command(["sub-add", url, "auto", track.title ?? "", track.language ?? ""]);
+        added.push({ id: 0, language: (track.language ?? "").toLowerCase() });
+      } catch {
+        /* a broken sidecar must not fail playback */
+      }
+    }
+    if (!session.autoSubtitles || added.length === 0) return;
+    const preferred = session.subtitleLanguage.toLowerCase();
+    if (!preferred) return;
+    const tracks = this.readTracks(session);
+    if (!tracks) return;
+    const match = tracks.find(
+      (track) => track.type === "sub" && (track.lang ?? "").toLowerCase().startsWith(preferred),
+    );
+    if (match) session.embed.setProperty("sid", String(match.id));
   }
 
   private publishTime(session: Session, force: boolean): void {
@@ -758,90 +772,6 @@ export class NativePlayerManager {
     });
   }
 
-  private async afterLoad(session: Session): Promise<void> {
-    const resume = clampPosition(session.position, session.duration ?? session.manifest.watch?.duration ?? null);
-    if (resume > 1) {
-      await sendCommand(session, ["seek", resume, "absolute+exact"]).catch(() => {});
-    }
-    await this.selectAudio(session).catch(() => {});
-    await this.addSidecarSubtitles(session).catch(() => {});
-    // Let the in-app surface show every embedded language, not just the one
-    // mpv selected; the viewer can switch without opening mpv's own menus.
-    await this.emitTracks(session).catch(() => {});
-  }
-
-  private async readTracks(session: Session): Promise<MpvTrack[] | null> {
-    const tracks = await sendCommand(session, ["get_property", "track-list"]);
-    return Array.isArray(tracks) ? tracks as MpvTrack[] : null;
-  }
-
-  private async emitTracks(session: Session): Promise<void> {
-    const tracks = await this.readTracks(session);
-    if (!tracks) return;
-    const map = (track: MpvTrack): NativeAudioTrack => ({
-      id: track.id,
-      title: track.title ?? null,
-      language: track.lang ?? null,
-      default: Boolean(track.default),
-      selected: Boolean(track.selected),
-      external: Boolean(track.external),
-    });
-    this.emitEvent(session, {
-      type: "tracks",
-      audioTracks: tracks.filter((track) => track.type === "audio").map(map),
-      // Image-based subtitles (PGS/VobSub) are still selectable; the menu only
-      // needs their language and title.
-      subtitleTracks: tracks
-        .filter((track) => track.type === "sub")
-        .map(map),
-    });
-  }
-
-  private async selectAudio(session: Session): Promise<void> {
-    const tracks = await this.readTracks(session);
-    if (!tracks) return;
-    const audio = tracks.filter((track) => track.type === "audio");
-    if (audio.length < 2) return;
-    const preferred = session.preferredAudioLanguage.toLowerCase();
-    const match =
-      (preferred ? audio.find((track) => (track.lang ?? "").toLowerCase().startsWith(preferred)) : undefined)
-      ?? audio.find((track) => track.default)
-      ?? audio[0];
-    if (match) await sendCommand(session, ["set_property", "aid", match.id]).catch(() => {});
-  }
-
-  private async addSidecarSubtitles(session: Session): Promise<void> {
-    const sidecars = (session.manifest.tracks ?? []).filter(
-      (track) => track.kind === "sidecar" && track.track.startsWith("sidecar-"),
-    );
-    const added: Array<{ id: number; language: string }> = [];
-    for (const track of sidecars.slice(0, 12)) {
-      try {
-        const url = session.relay.register(
-          new URL(`/api/subtitles/${session.fileId}/${encodeURIComponent(track.track)}`, session.serverOrigin).toString(),
-        );
-        const id = (await sendCommand(session, [
-          "sub-add", url, "auto", track.title, track.language ?? "",
-        ])) as number;
-        if (typeof id === "number" && Number.isFinite(id)) {
-          added.push({ id, language: (track.language ?? "").toLowerCase() });
-        }
-      } catch {
-        /* a broken sidecar must not fail playback */
-      }
-    }
-    if (!session.autoSubtitles || added.length === 0) return;
-    const preferred = session.subtitleLanguage.toLowerCase();
-    const match = preferred
-      ? added.find((entry) => entry.language.startsWith(preferred))
-      : undefined;
-    if (match) await sendCommand(session, ["set_property", "sid", match.id]).catch(() => {});
-  }
-
-  private failSession(session: Session, message: string): void {
-    this.emitEvent(session, { type: "error", message });
-  }
-
   private emitEvent(
     session: Session,
     event: Omit<NativePlaybackEvent, "sessionId" | "fileId" | "type"> & {
@@ -849,52 +779,5 @@ export class NativePlayerManager {
     },
   ): void {
     this.emit({ sessionId: session.id, fileId: session.fileId, ...event });
-  }
-
-  private async stopSession(session: Session, notify: boolean): Promise<void> {
-    if (!session.stopping) {
-      session.stopping = true;
-      // Let mpv exit on its own (flush + close its window) before force-killing.
-      if (session.socket && !session.socket.destroyed) {
-        await sendCommand(session, ["quit"], 800).catch(() => {});
-      }
-      session.socket?.destroy();
-      session.socket = null;
-    }
-    await this.cleanup(session);
-    if (notify) this.emitEvent(session, { type: "closed" });
-  }
-
-  private async cleanup(session: Session): Promise<void> {
-    if (session.cleaned) return;
-    session.cleaned = true;
-    for (const [, pending] of session.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error("Native playback ended"));
-    }
-    session.pending.clear();
-    const proc = session.proc;
-    if (proc && proc.exitCode === null) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          try {
-            if (proc.exitCode === null) proc.kill("SIGKILL");
-          } catch {
-            /* already gone */
-          }
-          resolve();
-        }, 1_200);
-        proc.once("exit", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-    }
-    try {
-      unlinkSync(session.socketPath);
-    } catch {
-      /* already removed */
-    }
-    await session.relay.close().catch(() => {});
   }
 }

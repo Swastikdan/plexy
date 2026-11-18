@@ -16,7 +16,7 @@ import { useIsFullscreen } from "../../lib/use-fullscreen";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
 import { subtitleTrackLabel } from "../../lib/subtitle-label";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
-import { NativeWatchPage } from "../../components/native-watch";
+import { NativeWatchPage } from "../../components/native/native-watch";
 import {
   isNativeAvailable,
   PLAYER_ENGINE_EVENT,
@@ -1303,7 +1303,7 @@ function BrowserWatchRoute() {
 
 export const Route = createFileRoute("/watch/$fileId")({ component: WatchRoute });
 
-/** Desktop always uses mpv; browser playback is only used outside Electron. */
+/** Desktop uses the embedded mpv player; browsers keep the Video.js player. */
 function WatchRoute() {
   const { fileId } = useParams({ from: Route.id });
   if (typeof window !== "undefined" && window.electronAPI) {

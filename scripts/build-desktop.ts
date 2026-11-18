@@ -6,6 +6,7 @@ import { execSync } from "node:child_process";
 import { generateIcons } from "./generate-icon";
 import { generateDmgBackground } from "./generate-dmg-background";
 import { bundleMpv } from "./bundle-mpv";
+import { bundleLibmpv } from "./bundle-libmpv";
 
 /**
  * Resolve the FFmpeg binary regardless of whether dependencies were installed
@@ -137,10 +138,17 @@ async function buildDesktop() {
   await chmod(ffmpegOut, 0o755);
   console.log(`✓ FFmpeg bundled: ${ffmpegOut}`);
 
-  // 2b. Required native playback engine (mpv)
+  // 2b. Required native playback engine (mpv CLI used by the server probes)
   console.log("\n2b. Bundling native playback engine...");
   if (!await bundleMpv(rootDir)) {
     throw new Error("Desktop requires mpv. Set PLEXY_MPV_PATH or configure scripts/mpv-manifest.json before packaging.");
+  }
+
+  // 2c. Embedded player: desktop shell + libmpv for in-window playback
+  console.log("\n2c. Building the embedded player...");
+  execSync("bun run --filter @plexy/desktop build:main", { stdio: "inherit" });
+  if (!await bundleLibmpv(rootDir)) {
+    throw new Error("Desktop requires libmpv. Set PLEXY_LIBMPV_SOURCE to a libmpv.2.dylib before packaging.");
   }
 
   // 3. Generate High-Resolution Apple Application Icon (.icns)

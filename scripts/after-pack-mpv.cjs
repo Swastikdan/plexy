@@ -49,7 +49,9 @@ exports.default = async function afterPackMpv(context) {
   // Re-sign ad-hoc after copying binaries into the bundle.
   try {
     const { execFileSync } = require("node:child_process");
+    const addon = path.join(resources, "native", "mpv_embed.node");
     const files = [path.join(binDir, "mpv")];
+    if (fs.existsSync(addon)) files.push(addon);
     for (const name of ["lib", "mpv-libs"]) {
       const libs = path.join(binDir, name);
       if (!fs.existsSync(libs)) continue;

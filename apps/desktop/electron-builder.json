@@ -8,7 +8,9 @@
     "buildResources": "build"
   },
   "npmRebuild": false,
-  "electronLanguages": ["en"],
+  "electronLanguages": [
+    "en"
+  ],
   "files": [
     "dist/**/*",
     "package.json",
@@ -38,6 +40,10 @@
     {
       "from": "build/icon.icns",
       "to": "icon.icns"
+    },
+    {
+      "from": "apps/desktop/dist/native/mpv_embed.node",
+      "to": "native/mpv_embed.node"
     }
   ],
   "icon": "build/icon.icns",
@@ -48,15 +54,21 @@
     "target": [
       {
         "target": "dir",
-        "arch": ["arm64"]
+        "arch": [
+          "arm64"
+        ]
       },
       {
         "target": "dmg",
-        "arch": ["arm64"]
+        "arch": [
+          "arm64"
+        ]
       },
       {
         "target": "zip",
-        "arch": ["arm64"]
+        "arch": [
+          "arm64"
+        ]
       }
     ],
     "hardenedRuntime": false,

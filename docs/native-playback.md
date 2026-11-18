@@ -1,42 +1,59 @@
-# Native playback (desktop, mpv)
+# Embedded native playback (desktop, libmpv)
 
-Plexy's desktop app plays media with a native mpv window. This exists because the browser has to repack MKV files and
-cannot decode HEVC, Dolby audio or PGS subtitles; mpv plays the original file
-directly, so no preparation is involved.
+Plexy's desktop app plays media with **libmpv embedded in the main window**. This
+exists because the browser has to repack MKV files and cannot decode HEVC, Dolby
+audio or PGS subtitles; mpv plays the original file directly, so no preparation
+is involved.
 
-Native playback is **macOS arm64 first**. Browsers and the website always keep
-the existing React player.
+The video surface lives *inside* the Plexy window, under Chromium's compositor;
+the player controls are the ordinary Video.js skin. Browsers and the website
+always keep the existing React + Video.js player.
+
+Native playback is **macOS arm64 first**.
 
 ## What the viewer sees
 
-- Clicking Play opens the video in a native mpv window. mpv's own on-screen
-  controller is disabled: Plexy draws the player chrome in the app window, using
-  the same layout and controls as the Video.js skin (time slider, ±10s, volume,
-  audio, subtitles, speed, fullscreen). mpv is only the video surface.
-- Seeking, volume, mute, speed, audio and subtitle track selection and
-  fullscreen are all driven from that one control surface over mpv's JSON IPC.
+- Clicking Play opens the original file in the app window. There is no second
+  window and no preparation screen.
+- The player chrome is the same Video.js skin as the website: play/pause, ±10s,
+  volume popover, time slider with buffered range, audio track menu, captions
+  menu, settings (audio, speed, captions), fullscreen, and the same auto-hide
+  behaviour. Left/right arrow keys seek ±10s and accelerate while held (up to
+  120s per step); double-tap left/right still seeks.
+- Fullscreen expands the native window. HTML element fullscreen is deliberately
+  not used: Chromium puts the page in its own opaque compositor surface, which
+  hides the embedded video surface (a black screen).
 - Plexy still records watch progress, resume points, watched state and next
-  episode from mpv's position events.
-- Desktop always uses mpv, ignoring old browser-player preferences. Native errors
-  remain visible without falling back to browser preparation.
-- Native playback never shows the "Preparing for playback" blocker. It reads
-  the original file even if a prepared MP4 also exists.
+  episode from the playback position.
+- Native errors remain visible without falling back to browser preparation.
 
-### Why the video is not drawn inside the app window
+### How the video is drawn in the window
 
-True single-window playback needs libmpv rendered into an app-owned macOS
-`NSView`, which means a native Node addon (Objective-C++, AppKit/OpenGL or
-Metal), packaging for arm64, and its own signing story. The bundled player is the
-`mpv` application, not libmpv. `mpv --wid` exists on macOS, but it takes an
-`NSView*` and is not a supported drop-in: it covers the whole window (and the
-React UI with it) and is known to produce a black video surface inside Electron.
-So the current architecture keeps the video in mpv's window and owns every
-control in the Plexy window instead of faking an embedded surface.
+Chromium cannot composite another process's window into its view tree, so the
+player is libmpv, not the `mpv` application:
 
-Background preparation (`apps/server/src/optimize.ts`) is what removes the
-remaining wait: files that cannot stream as-is are converted right after a scan,
-not when someone presses Play, so a browser client never sees a preparation
-screen for a library that has already settled.
+1. `apps/desktop/native/mpv-embed` is a small N-API module that loads libmpv at
+   runtime, renders with libmpv's OpenGL render API into an `NSOpenGLView`, and
+   reports properties/events to JavaScript.
+2. The view is inserted into the window's content view **below Chromium's
+   compositor view**. The window is transparent and the player route makes the
+   page transparent, so video shows through where the page has no chrome.
+3. `apps/web/src/components/native/mpv-media.ts` implements the HTMLMediaElement
+   shape Video.js expects (`currentTime`, duration, paused, volume, text tracks,
+   DOM events). The existing Video.js skin, controls, hotkeys and gestures drive
+   mpv through that adapter; there is no second control surface to keep in sync.
+
+A `CAOpenGLLayer` looked like the natural fit, but on current macOS it is never
+asked to draw when it sits below Chromium's compositor view. An `NSOpenGLView`
+composites correctly there. The renderer never touches decoded frames.
+
+Clicking the video surface does not toggle playback on desktop. macOS delivers
+the click that focuses an inactive window to the page, which would otherwise
+resume a paused player whenever the viewer switched windows or Spaces and came
+back. Play/pause stays on the button and Space/K.
+
+The loopback relay keeps working exactly as before: libmpv receives a
+short-lived `127.0.0.1` URL and never the backend cookie or token.
 
 ## Backend
 
@@ -49,87 +66,80 @@ screen for a library that has already settled.
   episode, subtitle tracks and versions.
 - `GET /api/play/:fileId?audio=N` — readiness for one audio language, plus a
   short on-demand preparation when that language has no copy yet.
-- `GET /api/stream/:fileId?audio=N` — the prepared copy for language N. The
-  primary copy only carries the first track, so browsers (which cannot switch
-  audio inside one MP4) get a second file per selected language.
+- `GET /api/stream/:fileId?audio=N` — the prepared copy for language N.
 
 Both are covered by `apps/server/tests/native-playback.test.ts` and
 `apps/server/tests/audio-variants.test.ts`.
 
 ## Which player is running?
 
-Desktop exposes a small engine chip on the title page: **Native player (mpv)**
-or **Native player unavailable**. Hover prefetches use the native manifest too,
-so pointing at Play never starts browser optimization in the desktop app.
+The desktop app always uses the embedded player; there is no engine chip to
+configure. Hover prefetches use the native manifest too, so pointing at Play
+never starts browser optimization in the desktop app.
 
 ## Desktop architecture
 
-- `apps/desktop/src/main/native-player.ts` — one active session, mpv JSON IPC
-  (newline-delimited, request ids, timeouts, stale-session rejection), track
-  preference matching, sidecar subtitles, crash/EOF/close events, cleanup on
-  quit.
-- `apps/desktop/src/main/native-relay.ts` — loopback HTTP relay. mpv never sees
-  cookies or tokens: Electron registers the specific stream/subtitle URLs for
-  the session and hands mpv unguessable `127.0.0.1` URLs. The relay forwards
-  Range requests with backpressure and refuses anything not on the active
-  server.
+- `apps/desktop/src/main/native-player.ts` — one active session, manifest fetch,
+  relay registration, sidecar subtitles, event mapping, stale-session rejection,
+  cleanup on stop/quit.
+- `apps/desktop/src/main/native-relay.ts` — loopback HTTP relay (Range requests,
+  backpressure, active-server-only).
+- `apps/desktop/native/mpv-embed` — N-API module: libmpv handle, render context,
+  `NSOpenGLView` surface, property observations and typed commands.
 - `apps/desktop/src/preload/index.ts` — typed bridge (`native:info`,
   `native:play`, `native:command`, `native:stop`, `native:event`).
-- `apps/web/src/components/native-watch.tsx` — the player surface: the only
-  control UI (shaped like the Video.js skin), fed by mpv events and driving mpv
-  commands.
-- `apps/web/src/components/home-hero.tsx` + the `/home` route — the hero's Play
-  button opens the file the server resolved: a movie's own file, or the last
-  watched / first episode of a series.
+- `apps/web/src/components/native/native-watch.tsx` — the player route: the
+  Video.js skin plus Plexy's back/title/skip chips and progress wiring.
+- `apps/web/src/components/native/mpv-video.tsx` + `mpv-media.ts` — the media
+  component and adapter that connect the session to the Video.js player store.
 
 The renderer names a file id, never a URL or executable. The main process
-fetches the manifest with Chromium's session cookies, validates that the
-server belongs to the trusted window (or is loopback), and only then starts
-mpv.
+fetches the manifest with Chromium's session cookies, validates that the server
+belongs to the trusted window (or is loopback), and only then starts a session.
 
 ## Development
 
 ```bash
-# use an installed engine
-PLEXY_MPV=/opt/homebrew/bin/mpv bun run dev:desktop
+# Homebrew libmpv is picked up automatically
+brew install mpv
+bun run dev:desktop
+
+# or point at a specific engine
+PLEXY_LIBMPV=/path/to/libmpv.2.dylib bun run dev:desktop
 ```
 
-`bun run dev:desktop` starts the local backend, so native playback works
-against it. Outside the desktop app the bridge is absent and the browser player
-is used.
+`bun run build:main` compiles the native module with the system toolchain (no
+node-gyp, no Electron rebuild). Outside the desktop app the bridge is absent and
+the browser player is used.
 
 ## Packaging
 
-Native playback is required at build time. Packaging fails when no engine is
-configured, so desktop releases cannot silently ship with browser-only playback.
+Packaging requires a libmpv build. `scripts/bundle-libmpv.ts` copies libmpv and
+its non-system dylib closure into `dist/bin/mpv-libs`, rewrites install names to
+`@loader_path`, and ad-hoc signs the result; `after-pack-mpv.cjs` copies it into
+`Contents/Resources/bin/mpv-libs` and re-signs it inside the bundle.
 
-1. Pin an engine in `scripts/mpv-manifest.json` (`url` + `sha256`) **or** set
-   `PLEXY_MPV_PATH` to a local binary when building.
-2. `bun run package:mac` copies it to `dist/bin/mpv`, records
-   `dist/bin/mpv.version`, copies sibling dylibs to `dist/bin/mpv-libs`, and
-   rpath-fixes the binary best-effort.
-3. `scripts/after-pack-mpv.cjs` (electron-builder `afterPack`) copies the engine
-   into `Contents/Resources/bin` before DMG/ZIP artifacts are produced.
+1. Set `PLEXY_LIBMPV_SOURCE` to a `libmpv.2.dylib`, **or** install mpv with
+   Homebrew (the default search path).
+2. `bun run package:mac` builds the desktop shell and native module, bundles
+   libmpv, and packages the app.
+3. The renderer loads `Resources/bin/mpv-libs/libmpv.2.dylib`; in development it
+   falls back to `dist/bin/mpv-libs` and Homebrew paths.
 
-Downloads are refused without a checksum. The manifest currently pins the
-official mpv 0.42.0 macOS 15+ arm64 CI build. It arrives as a zip containing an
-`mpv.app`; the build extracts the nested archive, copies the engine's `lib/`
-and Vulkan ICD files, and signs them for the app bundle. Document any engine
-change in `scripts/mpv-manifest.json` and keep its license notices with the
-build.
-
-The macOS workflow caches `.build/mpv`, so the verified archive is downloaded
-once per manifest revision.
+The mpv CLI remains bundled for the server's media inspection; the player itself
+never spawns it. Keep engine changes documented and include the required license
+notices with the build.
 
 ## Checks
 
 ```bash
-bun test apps/desktop/tests          # relay + manager (fake mpv)
+bun test apps/desktop/tests          # manager (fake engine) + relay
 bun test apps/server/tests/native-playback.test.ts
 bun run typecheck
 ```
 
 Manual checks that need real media and a display: H.264/AAC MP4, H.264 MKV,
-HEVC MKV, multiple audio tracks, SRT/ASS/PGS subtitles, seek/resume, local and
-authenticated remote servers, rapid title changes, mpv window close, app quit,
-and a packaged app with no Homebrew mpv present.
+HEVC MKV, multiple audio tracks, SRT/ASS/PGS subtitles, seek/resume, audio and
+caption menus, fullscreen, local and authenticated remote servers, rapid title
+changes, leaving the player mid-playback, and a packaged app with no Homebrew
+mpv present.
