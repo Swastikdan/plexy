@@ -20,8 +20,8 @@ export function BackButton({
       aria-label={label}
       title="Back"
       className={cx(
-        "inline-flex h-8 w-8 shrink-0 items-center justify-center text-muted transition-[background-color,color,transform] duration-150",
-        "hover:text-foreground active:scale-95",
+        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-[background-color,color,transform] duration-150",
+        "hover:bg-surface-secondary hover:text-foreground active:scale-95",
         "focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2",
         className,
       )}

@@ -259,12 +259,6 @@ export function LibraryFolderForm({
                 point it at the top of a collection, not at one title.
               </p>
             </div>
-            {type && (
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface-secondary px-3 py-1 text-xs font-semibold text-foreground">
-                {type === "movies" ? <Film size={13} /> : type === "tv" ? <Tv size={13} /> : <Sparkles size={13} />}
-                {TYPE_LABEL[type]}
-              </span>
-            )}
           </header>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.85fr)]">

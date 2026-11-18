@@ -1,4 +1,8 @@
-/// Horizontal row of posters with arrow paging and smooth scrolling.
+/// Horizontal shelf with arrow paging and smooth scrolling.
+///
+/// The header belongs to the page; the shelf itself stays edge-to-edge and can
+/// be paged with two quiet circular buttons that appear only when there is more
+/// to see.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Poster } from "./poster";
@@ -7,20 +11,20 @@ import type { ItemCard } from "../client";
 
 export function Row({
   title,
-  subtitle,
   items,
   action,
   directPlay = false,
   wide = false,
+  id,
 }: {
   title: string;
-  subtitle?: string;
   items: ItemCard[];
   action?: ReactNode;
   /** Cards with a file open the player immediately instead of the detail page. */
   directPlay?: boolean;
   /** Landscape backdrop cards (Continue watching / Next up) instead of posters. */
   wide?: boolean;
+  id?: string;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollEdges, setScrollEdges] = useState({ left: false, right: false });
@@ -61,41 +65,22 @@ export function Row({
   };
 
   return (
-    <section className="group/row relative min-w-0 py-2">
-      <div className="mb-3 flex items-end justify-between gap-4 px-3">
+    <section id={id} className="group/row relative min-w-0 scroll-mt-24 py-2">
+      <div className="mb-3.5 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="font-sans text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+          <h2 className="font-sans text-[17px] font-bold tracking-[-0.025em] text-foreground sm:text-[19px]">
             {title}
           </h2>
-          {subtitle && (
-            <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>
-          )}
         </div>
         {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
       </div>
 
-      <div className="relative">
-        {/* Left scroll chevron button */}
-        {scrollEdges.left && <button
-          aria-label="Scroll left"
-          onClick={() => page(-1)}
-          className={cx(
-            "absolute left-0 top-0 bottom-0 z-30 flex w-16 items-center justify-start pl-1",
-            "bg-gradient-to-r from-background via-background/80 to-transparent text-muted",
-            "transition-[opacity,color] duration-150",
-            "opacity-0 hover:text-foreground group-hover/row:opacity-100 disabled:pointer-events-none",
-            "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-foreground",
-          )}
-        >
-          <ChevronLeft size={20} />
-        </button>}
-
+      <div className="relative -mx-1">
         <div
           ref={scroller}
-          className="scroll-row flex gap-3 overflow-x-auto px-3 py-2"
+          className="scroll-row flex items-start gap-3 overflow-x-auto px-1 py-1.5 sm:gap-3.5"
         >
-        {items
-          .map((item) => (
+          {items.map((item) => (
             <Poster
               key={item.id}
               item={item}
@@ -104,27 +89,44 @@ export function Row({
               className={cx(
                 "shrink-0",
                 wide
-                  ? "aspect-video h-36 sm:h-44 md:h-52"
-                  : "aspect-[2/3] h-48 sm:h-56 md:h-64",
+                  ? "aspect-video h-[7.5rem] sm:h-[9rem] md:h-[10.5rem] lg:h-[11.5rem]"
+                  : "aspect-[2/3] h-[11.5rem] sm:h-[13rem] md:h-[14.5rem] lg:h-[16rem]",
               )}
             />
           ))}
         </div>
 
-        {/* Right scroll chevron button */}
-        {scrollEdges.right && <button
-          aria-label="Scroll right"
-          onClick={() => page(1)}
-          className={cx(
-            "absolute right-0 top-0 bottom-0 z-30 flex w-16 items-center justify-end pr-1",
-            "bg-gradient-to-l from-background via-background/80 to-transparent text-muted",
-            "transition-[opacity,color] duration-150",
-            "opacity-0 hover:text-foreground group-hover/row:opacity-100 disabled:pointer-events-none",
-            "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-foreground",
-          )}
-        >
-          <ChevronRight size={20} />
-        </button>}
+        {scrollEdges.left && (
+          <button
+            type="button"
+            aria-label="Scroll left"
+            onClick={() => page(-1)}
+            className={cx(
+              "absolute -left-2 top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
+              "border border-border bg-background/85 text-foreground shadow-lg backdrop-blur-md",
+              "opacity-0 transition-[opacity,transform,background-color] duration-200 group-hover/row:opacity-100 hover:bg-surface-tertiary active:scale-90",
+              "focus-visible:opacity-100",
+            )}
+          >
+            <ChevronLeft size={17} />
+          </button>
+        )}
+
+        {scrollEdges.right && (
+          <button
+            type="button"
+            aria-label="Scroll right"
+            onClick={() => page(1)}
+            className={cx(
+              "absolute -right-2 top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full",
+              "border border-border bg-background/85 text-foreground shadow-lg backdrop-blur-md",
+              "opacity-0 transition-[opacity,transform,background-color] duration-200 group-hover/row:opacity-100 hover:bg-surface-tertiary active:scale-90",
+              "focus-visible:opacity-100",
+            )}
+          >
+            <ChevronRight size={17} />
+          </button>
+        )}
       </div>
     </section>
   );

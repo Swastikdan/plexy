@@ -45,14 +45,14 @@
          sits blank. Colours mirror HeroUI's canvas in both themes. -->
     <style>
       html[data-theme="light"] {
-        --boot-background: oklch(0.9702 0 0);
-        --boot-foreground: oklch(0.2103 0.0059 285.89);
+        --boot-background: #f5f5f5;
+        --boot-foreground: #18181b;
         --boot-track: rgba(0, 0, 0, 0.08);
         --boot-ring: rgba(0, 0, 0, 0.45);
       }
       html[data-theme="dark"] {
-        --boot-background: oklch(12% 0.005 285.823);
-        --boot-foreground: oklch(0.9911 0 0);
+        --boot-background: #060607;
+        --boot-foreground: #fcfcfc;
         --boot-track: rgba(255, 255, 255, 0.08);
         --boot-ring: rgba(255, 255, 255, 0.55);
       }
@@ -65,8 +65,8 @@
         align-items: center;
         justify-content: center;
         gap: 22px;
-        background: var(--boot-background, oklch(12% 0.005 285.823));
-        color: var(--boot-foreground, oklch(0.9911 0 0));
+        background: var(--boot-background, #060607);
+        color: var(--boot-foreground, #fcfcfc);
         font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         opacity: 1;
         transition: opacity 200ms ease;

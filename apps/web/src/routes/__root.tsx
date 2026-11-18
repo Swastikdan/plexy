@@ -1,5 +1,5 @@
-/// App root: every page sits behind the server connection gate, and the top /
-/// bottom navigation wraps every page except the player and server connection.
+/// App root: every page sits behind the server connection gate, and the app
+/// chrome (top bar and mobile bar) wraps every page except the player.
 import { createRootRoute, Outlet, useMatchRoute, useRouterState } from "@tanstack/react-router";
 import { TopNav } from "../components/topnav";
 import { BottomNav } from "../components/bottomnav";
@@ -20,14 +20,27 @@ function Shell() {
 
   return (
     <ServerGate>
-      {chrome && <TopNav />}
-      <div className={chrome ? "pb-20 sm:pb-0" : ""}>
-        {/* Keyed by pathname so each route gets one quiet entrance. */}
-        <div key={pathname} className="page-enter">
-          <Outlet />
+      <a href="#app-content" className="skip-link">
+        Skip to content
+      </a>
+      {chrome ? (
+        <div className="app-main">
+          <TopNav />
+          <div id="app-content" tabIndex={-1} className="pb-20 outline-none lg:pb-0">
+            {/* Keyed by pathname so each route gets one quiet entrance. */}
+            <div key={pathname} className="page-enter">
+              <Outlet />
+            </div>
+          </div>
+          <BottomNav />
         </div>
-      </div>
-      {chrome && <BottomNav />}
+      ) : (
+        <div id="app-content" tabIndex={-1} className="app-main outline-none">
+          <div key={pathname} className="page-enter">
+            <Outlet />
+          </div>
+        </div>
+      )}
     </ServerGate>
   );
 }

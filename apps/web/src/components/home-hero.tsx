@@ -1,22 +1,45 @@
-/// Home billboard. The best-rated title gets one cinematic, full-width card
-/// so the desktop home has a clear focal point instead of starting with a row.
+/// Home featured carousel.
+///
+/// A full-bleed hero image carries each slide: the TMDB title mark (or the
+/// title itself when no logo exists), the facts, the synopsis, and the two
+/// actions a viewer reaches for. Slides advance on their own, pause whenever
+/// the pointer or keyboard is on the carousel, and can be stopped. The frame
+/// height is fixed, so changing slides never moves the shelves below.
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Clock3, Info, Play, Star } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, Info, Pause, Play, Star } from "lucide-react";
 import { artworkUrl } from "../lib/artwork-url";
+import { cx } from "../lib/cx";
+import { useStoredFlag } from "../lib/use-stored-flag";
 import type { ItemCard } from "../client";
 
-export function HomeHero({ item }: { item: ItemCard }) {
+const ADVANCE_MS = 7000;
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduced(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  return reduced;
+}
+
+function slidePlayback(item: ItemCard) {
+  const watch = item.playWatch ?? item.watch;
+  const resuming = (watch?.percent ?? 0) > 0 && !watch?.played;
+  const fileId = item.playFileId ?? item.fileId ?? null;
+  return { resuming, fileId, canPlay: fileId != null };
+}
+
+function HeroSlide({ item }: { item: ItemCard }) {
   const navigate = useNavigate();
   const backdrop = artworkUrl(item.backdrop ?? item.poster);
-  // A series hero resumes an episode, so its progress lives on that episode
-  // rather than on the series row.
-  const watch = item.playWatch ?? item.watch;
-  const percent = Math.min(100, Math.max(0, watch?.percent ?? 0));
-  const resuming = percent > 0 && !watch?.played;
-  // A series hero plays an episode, not the series row itself, so the server
-  // resolves the file: the last watched episode, else the first one.
-  const playFileId = item.playFileId ?? item.fileId ?? null;
-  const canPlay = playFileId != null;
+  const logo = artworkUrl(item.logo);
+  const { resuming, fileId, canPlay } = slidePlayback(item);
+  const [inWatchlist, toggleWatchlist] = useStoredFlag(`plexy:watchlist:${item.id}`);
 
   const play = () => {
     if (!canPlay) {
@@ -25,13 +48,23 @@ export function HomeHero({ item }: { item: ItemCard }) {
     }
     void navigate({
       to: "/watch/$fileId",
-      params: { fileId: String(playFileId) },
+      params: { fileId: String(fileId) },
       state: { playerFromTitle: true },
     });
   };
 
+  const actionLabel = !canPlay
+    ? "View title"
+    : resuming
+      ? item.playSubtitle
+        ? `Resume ${item.playSubtitle}`
+        : "Resume"
+      : item.playSubtitle
+        ? `Play ${item.playSubtitle}`
+        : "Play";
+
   return (
-    <section className="relative isolate overflow-hidden rounded-3xl border border-border/70 bg-surface shadow-sm">
+    <article className="relative h-full w-full shrink-0 overflow-hidden">
       {backdrop ? (
         <img
           src={backdrop}
@@ -39,111 +72,208 @@ export function HomeHero({ item }: { item: ItemCard }) {
           fetchPriority="high"
           loading="eager"
           decoding="async"
-          className="hero-media absolute inset-0 h-full w-full object-cover object-[center_28%]"
+          className="hero-media absolute inset-0 h-full w-full object-cover object-[center_26%]"
         />
       ) : (
         <div
           aria-hidden
-          className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_22%,transparent),transparent_65%)]"
+          className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_30%,transparent),transparent_64%)]"
         />
       )}
 
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-black/5"
-      />
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/10 to-transparent"
-      />
+      <div aria-hidden className="hero-scrim" />
 
-      <div className="relative z-10 flex min-h-[380px] flex-col justify-end gap-3.5 p-5 sm:min-h-[460px] sm:p-8 lg:min-h-[520px] lg:p-10">
-        {item.logo ? (
-          <img
-            src={item.logo}
-            alt={item.name}
-            className="max-h-14 max-w-[260px] object-contain object-left drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] sm:max-h-20 sm:max-w-[340px]"
-          />
-        ) : (
-          <h1 className="max-w-2xl font-sans text-3xl font-black tracking-tight text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] sm:text-4xl lg:text-5xl">
-            {item.name}
-          </h1>
-        )}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] font-medium text-white/80">
-          {item.year && <span>{item.year}</span>}
-          {item.rating != null && (
-            <span className="inline-flex items-center gap-1">
-              <Star size={11} fill="currentColor" className="text-warning" />
-              {item.rating.toFixed(1)}
-            </span>
-          )}
-          {item.runtime != null && item.runtime > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Clock3 size={11} />
-              {item.runtime} min
-            </span>
-          )}
-          {item.genres.length > 0 && (
-            <span className="text-white/65">{item.genres.slice(0, 3).join(" · ")}</span>
-          )}
-        </div>
-
-        {item.overview && (
-          <p className="max-w-xl text-xs leading-relaxed text-white/80 line-clamp-3 sm:text-sm">
-            {item.overview}
-          </p>
-        )}
-
-        <div className="mt-1 flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={play}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-xs font-semibold text-black shadow-lg transition-[background-color,transform] duration-150 hover:bg-white/90 active:scale-[0.97] sm:h-11 sm:px-5 sm:text-sm"
-          >
-            {canPlay ? <Play size={15} fill="currentColor" /> : <Info size={15} />}
-            {!canPlay
-              ? "View title"
-              : resuming
-                ? `Resume ${formatTime(watch?.position ?? 0)}`
-                : item.playSubtitle
-                  ? `Play ${item.playSubtitle}`
-                  : "Play"}
-          </button>
-          {canPlay && (
-            <Link
-              to="/title/$itemId"
-              params={{ itemId: item.publicId }}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-md transition-[background-color,transform] duration-150 hover:bg-white/20 active:scale-[0.97] sm:h-11 sm:px-5 sm:text-sm"
-            >
-              <Info size={15} />
-              More info
-            </Link>
-          )}
-        </div>
-
-        {percent > 0 && (
-          <div className="mt-2 max-w-[280px]">
-            <div className="h-1 overflow-hidden rounded-full bg-white/20" aria-hidden>
-              <div
-                className="h-full origin-left rounded-full bg-accent transition-transform duration-300 ease-out"
-                style={{ transform: `scaleX(${percent / 100})` }}
+      <div className="relative z-10 mx-auto flex h-full max-w-[var(--app-max)] flex-col justify-end px-5 pb-20 pt-20 sm:px-8 sm:pb-24 lg:px-12 lg:pb-28">
+        <div className="hero-copy min-w-0 max-w-[44rem]">
+          {logo ? (
+            <>
+              <h1 className="sr-only">{item.name}</h1>
+              <img
+                src={logo}
+                alt=""
+                className="mb-5 max-h-[4.5rem] max-w-[15rem] object-contain object-left drop-shadow-[0_4px_30px_rgba(0,0,0,0.55)] sm:max-h-[6.5rem] sm:max-w-[23rem] lg:max-h-[7.5rem] lg:max-w-[28rem]"
               />
-            </div>
-            <p className="mt-1.5 text-[10px] font-medium text-white/65">
-              {percent >= 95 ? "Finished" : `${Math.round(percent)}% watched`}
-            </p>
+            </>
+          ) : (
+            <h1 className="hero-title mb-4 max-w-[16ch] font-sans text-[2.4rem] text-white sm:text-5xl lg:text-[3.8rem]">
+              {item.name}
+            </h1>
+          )}
+
+          <div className="hero-meta">
+            {item.year && <span>{item.year}</span>}
+            {item.rating != null && (
+              <>
+                <span className="meta-dot" aria-hidden />
+                <span className="inline-flex items-center gap-1">
+                  <Star size={11} fill="currentColor" className="text-[#f0c56a]" aria-hidden />
+                  <strong>{item.rating.toFixed(1)}</strong>
+                </span>
+              </>
+            )}
+            {item.runtime != null && item.runtime > 0 && (
+              <>
+                <span className="meta-dot" aria-hidden />
+                <span>{item.runtime} min</span>
+              </>
+            )}
+            {item.genres.length > 0 && (
+              <>
+                <span className="meta-dot" aria-hidden />
+                <span className="text-white/60">{item.genres.slice(0, 3).join(" · ")}</span>
+              </>
+            )}
+            <span className="meta-dot" aria-hidden />
+            <span>{item.kind === "series" ? "Series" : "Film"}</span>
           </div>
-        )}
+
+          {item.overview && (
+            <p className="mt-3 max-w-[38rem] text-[12.5px] leading-relaxed text-white/75 line-clamp-2 sm:mt-4 sm:text-sm sm:line-clamp-3">
+              {item.overview}
+            </p>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <button type="button" onClick={play} className="hero-primary">
+              {canPlay ? <Play size={15} fill="currentColor" aria-hidden /> : <Info size={15} aria-hidden />}
+              {actionLabel}
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleWatchlist}
+              aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+              title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+              data-selected={inWatchlist || undefined}
+              className="hero-icon"
+            >
+              <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
+            </button>
+
+            <Link to="/title/$itemId" params={{ itemId: item.publicId }} className="hero-secondary">
+              <Info size={15} aria-hidden />
+              Details
+            </Link>
+          </div>
+        </div>
       </div>
-    </section>
+    </article>
   );
 }
 
-function formatTime(seconds: number): string {
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
+export function HomeHero({ items }: { items: ItemCard[] }) {
+  const count = items.length;
+  const reducedMotion = usePrefersReducedMotion();
+  const [active, setActive] = useState(0);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
+
+  useEffect(() => {
+    if (active >= count) setActive(0);
+  }, [active, count]);
+
+  const paused = hovered || focused || userPaused || reducedMotion;
+
+  useEffect(() => {
+    if (count < 2 || paused) return;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      setActive((index) => (index + 1) % count);
+    }, ADVANCE_MS);
+    return () => window.clearInterval(timer);
+  }, [active, count, paused]);
+
+  if (!count) return null;
+
+  const step = (direction: -1 | 1) =>
+    setActive((index) => (index + direction + count) % count);
+
+  return (
+    <section
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Featured titles"
+      data-paused={paused || undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node) || !event.currentTarget.contains(next)) setFocused(false);
+      }}
+      className="hero-shell hero-carousel relative h-[clamp(28rem,60vh,42rem)] select-none"
+    >
+      <h1 className="sr-only">{items[active]?.name ?? "Featured titles"}</h1>
+
+      <div
+        className="flex h-full transition-transform duration-700 ease-out"
+        style={{ transform: `translateX(-${active * 100}%)` }}
+        aria-live={paused ? "polite" : "off"}
+      >
+        {items.map((item, index) => (
+          <div
+            key={item.publicId}
+            className="relative h-full w-full shrink-0"
+            aria-hidden={index !== active}
+            inert={index !== active}
+          >
+            <HeroSlide item={item} />
+          </div>
+        ))}
+      </div>
+
+      {count > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            aria-label="Previous featured title"
+            className="absolute left-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white/80 backdrop-blur-md transition-[background-color,color,transform] duration-200 hover:bg-black/55 hover:text-white active:scale-95 sm:flex"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            aria-label="Next featured title"
+            className="absolute right-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white/80 backdrop-blur-md transition-[background-color,color,transform] duration-200 hover:bg-black/55 hover:text-white active:scale-95 sm:flex"
+          >
+            <ChevronRight size={20} />
+          </button>
+
+          <div className="absolute inset-x-5 bottom-4 z-20 flex items-center gap-1.5 sm:inset-x-8 sm:bottom-5">
+            {!reducedMotion && (
+              <button
+                type="button"
+                onClick={() => setUserPaused((value) => !value)}
+                aria-label={userPaused ? "Start featured carousel" : "Pause featured carousel"}
+                title={userPaused ? "Play" : "Pause"}
+                className="mr-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/75 backdrop-blur-md transition-[background-color,color,transform] duration-150 hover:bg-black/55 hover:text-white active:scale-95"
+              >
+                {userPaused ? <Play size={11} fill="currentColor" aria-hidden /> : <Pause size={11} fill="currentColor" aria-hidden />}
+              </button>
+            )}
+            {items.map((item, index) => (
+              <button
+                key={item.publicId}
+                type="button"
+                onClick={() => setActive(index)}
+                aria-label={`Show ${item.name}, slide ${index + 1} of ${count}`}
+                aria-current={index === active ? "true" : undefined}
+                className="group/dot flex h-6 items-center justify-center px-1"
+              >
+                <span
+                  className={cx(
+                    "block h-1.5 rounded-full transition-[width,background-color] duration-300",
+                    index === active ? "w-7 bg-white" : "w-2.5 bg-white/35 group-hover/dot:bg-white/65",
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
 }

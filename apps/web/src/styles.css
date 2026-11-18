@@ -1,12 +1,12 @@
-/* Plexy — HeroUI v3 theme.
+/* Plexy — HeroUI v3.
  *
- * HeroUI is the only source of colour, radius, shadow, and typography.
- * There is no bespoke palette and no compatibility layer: every screen uses
- * HeroUI tokens directly.
+ * HeroUI's built-in light and dark themes are the only source of colour,
+ * radius, shadow, and typography. There is no bespoke palette, no shell
+ * palette, and no compatibility layer: every screen uses HeroUI tokens
+ * directly.
  *
- * Only two values are overridden:
- *   --font-sans     Archivo, to match the native app
- *   --field-radius  HeroUI Native's taller input radius
+ * Only the brand font, the taller native field radius, and the field
+ * fill/border (for contrast on surface cards) are adjusted.
  *
  * Corners follow HeroUI's radii everywhere, matching the native app; there is
  * no per-shell geometry override.
@@ -197,12 +197,18 @@
   /* HeroUI Native keeps inputs slightly taller than buttons. */
   --field-radius: calc(var(--radius) * 1.75);
 
-  /* Fields sit on cards, so a plain surface fill disappeared against the card
-   * in both themes. A secondary fill and a hairline border keep every input,
-   * select, and search field legible without leaving HeroUI's palette. */
+  /* Fields sit on surface cards, so a plain surface fill disappears against
+   * the card in both themes. A secondary fill and a hairline border keep every
+   * input legible while staying inside HeroUI's palette. */
   --field-background: var(--surface-secondary);
   --field-border: var(--border);
   --field-border-width: 1px;
+
+  /* Shared page geometry. The header uses the same height on every route, so
+   * switching between the brand and a back button never moves the page. */
+  --app-gutter: clamp(1rem, 2.4vw, 2.75rem);
+  --app-max: 106rem;
+  --app-topbar-height: 4rem;
 
   /* Motion: one strong ease-out for entrances and one for on-screen travel.
    * HeroUI exposes the individual curves; these aliases keep our own CSS from
@@ -214,14 +220,428 @@
   --row-inset: calc(var(--spacing) * 3);
 }
 
-/* Dark theme redefines surface tokens; repeat the field aliases so they resolve
-   against the dark surfaces instead of the light defaults. */
-[data-theme="dark"] {
-  --field-background: var(--surface-secondary);
-  --field-border: var(--border);
-  --field-border-width: 1px;
+.skip-link {
+  position: fixed;
+  left: 0.75rem;
+  top: 0.75rem;
+  z-index: 100;
+  border-radius: calc(var(--radius) * 0.8);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: var(--overlay-shadow);
+  transform: translateY(-200%);
+  transition: transform 160ms var(--ease-out);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
+/* --- App frame ---------------------------------------------------------- */
+
+.app-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+
+.app-main {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-page {
+  width: 100%;
+  max-width: var(--app-max);
+  margin-inline: auto;
+  padding-inline: var(--app-gutter);
+}
+
+/* --- Navigation --------------------------------------------------------- */
+
+.side-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  border-radius: calc(var(--radius) * 0.8);
+  padding: 0.56rem 0.65rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition:
+    color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+.side-link:hover {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--surface-secondary) 72%, transparent);
+}
+
+.side-link[data-active="true"] {
+  color: var(--foreground);
+  background: var(--surface-secondary);
+}
+
+.side-link[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: -0.65rem;
+  top: 50%;
+  height: 1.15rem;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+
+.side-link[data-active="true"] svg {
+  color: var(--accent);
+}
+
+/* --- Shared surfaces ---------------------------------------------------- */
+
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface);
+}
+
+.panel-quiet {
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  border-radius: calc(var(--radius) * 1.7);
+  background: color-mix(in oklab, var(--surface) 58%, transparent);
+}
+
+.panel-inset {
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  border-radius: calc(var(--radius) * 1.4);
+  background: color-mix(in oklab, var(--surface-secondary) 42%, transparent);
+}
+
+.lift {
+  transition:
+    transform 220ms var(--ease-out),
+    border-color 220ms var(--ease-out),
+    background-color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.press {
+  transition: transform 140ms var(--ease-out);
+}
+.press:active {
+  transform: scale(0.975);
+}
+
+.media-card {
+  border: 1px solid color-mix(in oklab, var(--border) 74%, transparent);
+  background: var(--surface);
+  transition:
+    transform 240ms var(--ease-out),
+    border-color 240ms var(--ease-out),
+    box-shadow 240ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .media-card:hover {
+    border-color: color-mix(in oklab, var(--foreground) 22%, transparent);
+    box-shadow: 0 20px 40px -30px rgba(0, 0, 0, 0.75);
+    transform: translateY(-3px);
+  }
+}
+
+.media-card[data-open="true"] {
+  border-color: color-mix(in oklab, var(--foreground) 24%, transparent);
+  transform: translateY(-3px);
+}
+
+.media-card .media-art {
+  transition: transform 500ms var(--ease-out), filter 300ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .media-card:hover .media-art {
+    transform: scale(1.035);
+  }
+}
+
+.media-card[data-open="true"] .media-art {
+  transform: scale(1.035);
+}
+
+/* Overflow menus are a pointer affordance: touch devices keep the artwork
+ * clean and use the title page for the same actions. */
+.card-overflow {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .media-card .card-overflow {
+    display: flex;
+    opacity: 0;
+    transition: opacity 150ms var(--ease-out);
+  }
+  .media-card:hover .card-overflow,
+  .media-card:focus-within .card-overflow,
+  .media-card[data-open="true"] .card-overflow {
+    opacity: 1;
+  }
+}
+
+.progress-track {
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 14%, transparent);
+}
+
+.progress-fill {
+  height: 100%;
+  transform-origin: left;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: transform 600ms var(--ease-out);
+}
+
+.glass {
+  background: color-mix(in oklab, var(--background) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.hairline {
+  border-color: var(--border);
+}
+
+.rule-top {
+  border-top: 1px solid var(--border);
+}
+
+.hero-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+  border-radius: calc(var(--radius) * 3);
+  background: #0b0d12;
+  color: #f7f5ef;
+}
+
+.hero-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0%, transparent 28%, rgba(4, 5, 8, 0.2) 58%, rgba(4, 5, 8, 0.92) 100%),
+    linear-gradient(90deg, rgba(4, 5, 8, 0.86) 0%, rgba(4, 5, 8, 0.64) 40%, rgba(4, 5, 8, 0.1) 76%);
+}
+
+.hero-shell[data-scrim="soft"]::after {
+  background:
+    linear-gradient(180deg, transparent 18%, rgba(4, 5, 8, 0.2) 56%, rgba(4, 5, 8, 0.9) 100%),
+    linear-gradient(90deg, rgba(4, 5, 8, 0.72) 0%, rgba(4, 5, 8, 0.24) 52%, transparent 78%);
+}
+
+/* The carousel keeps its scrim inside each slide: the sliding track creates a
+ * stacking context, so a section-level overlay would paint over the copy. */
+.hero-carousel::after {
+  content: none;
+}
+
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0%, transparent 28%, rgba(4, 5, 8, 0.2) 58%, rgba(4, 5, 8, 0.92) 100%),
+    linear-gradient(90deg, rgba(4, 5, 8, 0.86) 0%, rgba(4, 5, 8, 0.64) 40%, rgba(4, 5, 8, 0.1) 76%);
+}
+
+.hero-copy > * {
+  animation: hero-copy-in 700ms var(--ease-out) both;
+}
+.hero-copy > *:nth-child(2) { animation-delay: 60ms; }
+.hero-copy > *:nth-child(3) { animation-delay: 120ms; }
+.hero-copy > *:nth-child(4) { animation-delay: 180ms; }
+.hero-copy > *:nth-child(5) { animation-delay: 240ms; }
+
+.hero-title {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 0.94;
+  text-wrap: balance;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(247, 245, 239, 0.72);
+}
+
+.hero-meta .meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(247, 245, 239, 0.36);
+}
+
+.hero-meta strong {
+  color: #f7f5ef;
+  font-weight: 600;
+}
+
+/* Buttons render on the art in both themes, so they keep their own paper/ink
+ * pair instead of the page surface tokens. */
+.hero-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  height: 2.75rem;
+  border-radius: calc(var(--radius) * 1.4);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  padding-inline: 1.1rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  box-shadow: 0 12px 30px -16px color-mix(in oklab, var(--accent) 70%, transparent);
+  transition: background-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.hero-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.hero-primary:active { transform: scale(0.975); }
+
+.hero-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  height: 2.75rem;
+  border-radius: calc(var(--radius) * 0.9);
+  border: 1px solid rgba(247, 245, 239, 0.24);
+  background: rgba(247, 245, 239, 0.08);
+  color: #f7f5ef;
+  padding-inline: 1.05rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.hero-secondary:hover { background: rgba(247, 245, 239, 0.16); border-color: rgba(247, 245, 239, 0.36); }
+.hero-secondary:active { transform: scale(0.975); }
+
+.hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(247, 245, 239, 0.2);
+  background: rgba(247, 245, 239, 0.07);
+  color: rgba(247, 245, 239, 0.9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.hero-icon:hover { background: rgba(247, 245, 239, 0.15); color: #ffffff; }
+.hero-icon:active { transform: scale(0.94); }
+.hero-icon[data-selected="true"] { background: rgba(247, 245, 239, 0.9); color: #0b0d12; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface-secondary) 78%, transparent);
+  padding: 0.18rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Skeleton shimmer, used while a screen resolves */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--surface-secondary) 80%, transparent);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 6%, transparent), transparent);
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* Filter / segmented pill row used on library and settings screens */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: calc(var(--radius) * 1.2);
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface-secondary) 55%, transparent);
+  padding: 3px;
+}
+.segmented button,
+.segmented a {
+  border-radius: calc(var(--radius) * 0.9);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), transform 140ms var(--ease-out);
+}
+.segmented button:hover,
+.segmented a:hover { color: var(--foreground); }
+.segmented button:active,
+.segmented a:active { transform: scale(0.97); }
+.segmented [aria-current="page"],
+.segmented [data-active="true"] {
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+@keyframes hero-copy-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px); }
@@ -755,4 +1175,19 @@
 
 .switch .switch__content {
   width: 100%;
+}
+
+/* Compact switches sit inside a settings row and keep their own width. */
+.switch.switch--compact,
+.switch.switch--compact .switch__content {
+  width: auto;
+}
+/*
+ * Embedded desktop playback: libmpv draws beneath the web contents view, so the
+ * player route (and only the player route) lets the window and page be
+ * transparent over the video surface.
+ */
+html.plexy-native-video,
+html.plexy-native-video body {
+  background: transparent !important;
 }

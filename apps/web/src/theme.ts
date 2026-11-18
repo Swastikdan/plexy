@@ -9,7 +9,8 @@ export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "plexy.theme";
 
-/** Canvas colour for each theme, mirrored by the pre-paint script. */
+/** Canvas colour for each theme, mirrored by the pre-paint script and the
+ * boot splash. These are HeroUI's built-in canvases, not a custom palette. */
 const THEME_COLOR: Record<ResolvedTheme, string> = {
   light: "#f5f5f5",
   dark: "#060607",

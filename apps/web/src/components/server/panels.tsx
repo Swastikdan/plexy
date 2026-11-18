@@ -26,6 +26,7 @@ import {
   Server,
   FileText,
   X,
+  Library as LibraryIcon,
 } from "lucide-react";
 import { api, type LibraryItem, type ReviewEntry } from "../../client";
 import { getApiBase, hasServerOverride } from "../../server-config";
@@ -73,48 +74,113 @@ export function LibrariesPanel() {
     return <p className={`text-sm ${ERROR_TEXT}`}>Administrative tools work only on the machine running Plexy.</p>;
   }
 
+  const scanRunning = status.data?.scan?.status === "running";
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Active Libraries</h2>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="font-sans text-lg font-bold tracking-[-0.03em] text-foreground">
+            On this server
+          </h2>
+          <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted">
+            Every folder Plexy watches. A rescan looks for new, moved, and removed files without touching your originals.
+          </p>
+        </div>
         <Link to="/add-library">
-          <Button variant="secondary" className="h-8 text-xs font-medium">
-            + Add Library
+          <Button className="h-9 px-3.5 text-[11px] font-semibold">
+            <Folder size={13} />
+            Add library
           </Button>
         </Link>
       </div>
+
       {isLoading && !data && <PageLoader />}
-      {data?.map((lib) => (
-        <div key={lib.id} className="flex items-center gap-4 rounded-2xl border border-border bg-surface px-5 py-4">
-          <div className="min-w-0 flex-1">
-            <p className="font-display font-semibold">{lib.name}</p>
-            <p className="mt-0.5 truncate text-[13px] text-muted">{lib.paths.join(", ")}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-4 text-[13px]">
-            <span className="tabular-nums"><span className="text-foreground">{lib.counts.items}</span> <span className="text-muted">matched</span></span>
-            {lib.counts.review > 0 && (
-              <span className="tabular-nums"><span className="text-warning">{lib.counts.review}</span> <span className="text-muted">review</span></span>
-            )}
-            {lib.counts.unmatched > 0 && (
-              <span className="tabular-nums"><span className="text-muted">{lib.counts.unmatched}</span> unmatched</span>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <IconButton label={`Edit ${lib.name}`} onClick={() => setEditing(lib)}>
-              <Pencil size={15} />
-            </IconButton>
-            <IconButton label={`Rescan ${lib.name}`} onClick={() => void rescan(lib.id)} disabled={scanning != null}>
-              <ScanLine size={15} className={scanning === lib.id ? "animate-pulse" : ""} />
-            </IconButton>
-            <IconButton label={`Remove ${lib.name}`} onClick={() => { if (window.confirm(`Remove ${lib.name}? Library records go with it.`)) remove.mutate(lib.id); }}>
-              <Trash2 size={15} />
-            </IconButton>
-          </div>
+
+      {data && data.length > 0 && (
+        <div className="panel overflow-hidden">
+          <ul className="divide-y divide-border/50">
+            {data.map((lib) => (
+              <li key={lib.id} className="group flex flex-wrap items-center gap-3 px-4 py-3.5 transition-colors hover:bg-surface-secondary/35 sm:flex-nowrap sm:px-5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-foreground">
+                  <LibraryIcon size={15} aria-hidden />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-[12px] font-semibold text-foreground">{lib.name}</p>
+                    {scanning === lib.id && (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-muted">
+                        <RotateCw size={10} className="animate-spin" /> Scanning
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate font-mono text-[9.5px] text-muted/80" title={lib.paths.join(", ")}>
+                    {lib.paths.join("  ·  ")}
+                  </p>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-5 text-right">
+                  <div>
+                    <p className="text-[12px] font-semibold tabular-nums text-foreground">{lib.counts.items.toLocaleString()}</p>
+                    <p className="text-[9px] uppercase tracking-[0.1em] text-muted/70">titles</p>
+                  </div>
+                  {lib.counts.review > 0 && (
+                    <div>
+                      <p className="text-[12px] font-semibold tabular-nums text-warning-soft-foreground">{lib.counts.review}</p>
+                      <p className="text-[9px] uppercase tracking-[0.1em] text-muted/70">review</p>
+                    </div>
+                  )}
+                  {lib.counts.unmatched > 0 && (
+                    <div>
+                      <p className="text-[12px] font-semibold tabular-nums text-muted">{lib.counts.unmatched}</p>
+                      <p className="text-[9px] uppercase tracking-[0.1em] text-muted/70">unmatched</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                  <IconButton label={`Edit ${lib.name}`} onClick={() => setEditing(lib)}>
+                    <Pencil size={14} />
+                  </IconButton>
+                  <IconButton label={`Rescan ${lib.name}`} onClick={() => void rescan(lib.id)} disabled={scanning != null || scanRunning}>
+                    <ScanLine size={14} className={scanning === lib.id ? "animate-pulse" : ""} />
+                  </IconButton>
+                  <IconButton
+                    label={`Remove ${lib.name}`}
+                    onClick={() => { if (window.confirm(`Remove ${lib.name}? Library records go with it.`)) remove.mutate(lib.id); }}
+                  >
+                    <Trash2 size={14} />
+                  </IconButton>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
-      ))}
-      {data?.length === 0 && (
-        <p className="text-sm text-muted">No libraries yet. Use “Add Library” to choose a media type and folders.</p>
       )}
+
+      {data?.length === 0 && (
+        <div className="panel flex flex-col items-start gap-2 px-5 py-7">
+          <Folder size={20} className="text-muted" />
+          <p className="text-[13px] font-semibold text-foreground">No libraries yet</p>
+          <p className="max-w-md text-[11px] leading-relaxed text-muted">
+            Choose a media type, point Plexy at its folders, and the catalog builds in the background.
+          </p>
+          <Link to="/add-library" className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-secondary px-2.5 py-1.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary">
+            <Folder size={12} /> Add your first library
+          </Link>
+        </div>
+      )}
+
+      {remove.isError && (
+        <p role="alert" className={`text-[11px] ${ERROR_TEXT}`}>{remove.error.message}</p>
+      )}
+
+      <div className="rounded-xl border border-border/60 bg-surface/45 px-4 py-3 text-[10.5px] leading-relaxed text-muted">
+        Library records live in Plexy's own database. Removing a library forgets its catalog entries; it never deletes the
+        files on disk.
+      </div>
+
       <Modal isOpen={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
         <Modal.Backdrop>
           <Modal.Container>
@@ -307,13 +373,13 @@ export function MatchesPanel() {
 
 function MatchBadge({ status }: { status: string }) {
   const style = status === "matched"
-    ? "border-success/30 bg-success/10 text-success-soft-foreground"
+    ? "text-success-soft-foreground"
     : status === "review"
-      ? "border-warning/30 bg-warning/10 text-warning-soft-foreground"
-      : "border-border bg-surface-secondary text-muted";
+      ? "text-warning-soft-foreground"
+      : "text-muted";
   const label = status === "matched" ? "Matched" : status === "review" ? "Needs review" : "Unmatched";
   return (
-    <span className={cx("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", style)}>
+    <span className={cx("text-[9px] font-semibold uppercase tracking-[0.08em]", style)}>
       {label}
     </span>
   );

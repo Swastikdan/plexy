@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ChevronRight, Server } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronRight } from "lucide-react";
 import { accountRequest, type AccountUser, type SetupState } from "../auth";
 import { api } from "../client";
 import { queries } from "../queries";
@@ -61,16 +61,7 @@ function SetupRoute() {
     <main className="mx-auto min-h-dvh max-w-6xl px-4 py-8 sm:px-8 lg:py-14">
       <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-14">
         <aside className="min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground">
-              <Server size={18} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-muted">Plexy first run</p>
-              <p className="font-sans text-sm font-bold tracking-tight text-foreground">Server setup</p>
-            </div>
-          </div>
-          <h1 className="mt-6 font-sans text-3xl font-bold tracking-tight text-foreground">
+          <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">
             Set up your server
           </h1>
           <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
@@ -366,39 +357,10 @@ function OwnerStep() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <main className="mx-auto grid min-h-dvh max-w-5xl items-center gap-10 px-5 py-12 lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)]">
-      <section className="hidden lg:block">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground">
-            <Server size={18} />
-          </div>
-          <p className="font-sans text-sm font-bold tracking-tight text-foreground">Plexy Server</p>
-        </div>
-        <h1 className="mt-8 max-w-md font-sans text-4xl font-bold tracking-tight text-foreground">
-          Your media, on your machine.
-        </h1>
-        <p className="mt-4 max-w-md text-sm leading-relaxed text-muted">
-          Plexy reads the folders you already own, matches them with posters
-          and metadata, and streams them to your devices without a cloud account.
-        </p>
-        <ul className="mt-7 space-y-3">
-          {[
-            "One owner account controls the server, users, and libraries.",
-            "Every other device pairs with a short code.",
-            "Your files, watch progress, and artwork stay local.",
-          ].map((line) => (
-            <li key={line} className="flex items-start gap-2.5 text-sm text-muted">
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-foreground" />
-              <span className="leading-relaxed">{line}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mx-auto w-full max-w-md">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md items-center px-5 py-12">
+      <section className="mx-auto w-full">
         <header>
-          <p className="text-xs font-semibold text-muted">Plexy Server / First launch</p>
-          <h1 className="mt-2 font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             Create your owner account
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted">

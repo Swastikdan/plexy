@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Accessibility,
+  Activity,
   AlertCircle,
   Captions,
   Check,
@@ -14,10 +16,12 @@ import {
   LogOut,
   Monitor,
   Moon,
+  Palette,
   RefreshCcw,
   ShieldCheck,
   Smartphone,
   Sun,
+  UserRound,
   Volume2,
 } from "lucide-react";
 import { Button, Input, ListBox, Select, Switch } from "@heroui/react";
@@ -43,6 +47,7 @@ import {
 } from "../../lib/playback-preferences";
 import { cx } from "../../lib/cx";
 import { ProfilePhotoEditor } from "../profile-photo";
+import { SettingsSection, SettingsToggleRow } from "./section";
 import type { ThemePreference } from "../../theme";
 
 interface MeResponse {
@@ -78,13 +83,12 @@ export function AppearancePanel() {
   const { preference, setPreference } = useTheme();
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <h2 className="text-sm font-semibold text-foreground">Theme</h2>
-        <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">
-          Saved on this device only. Your phone can follow the system while the
-          desktop app stays dark.
-        </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <SettingsSection
+        icon={Palette}
+        title="Theme"
+        description="Saved on this device only. Your phone can follow the system while the desktop app stays dark."
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
           {THEME_CHOICES.map((choice) => {
             const Icon = choice.icon;
             const selected = preference === choice.value;
@@ -95,35 +99,38 @@ export function AppearancePanel() {
                 aria-pressed={selected}
                 onClick={() => setPreference(choice.value)}
                 className={cx(
-                  "group relative flex flex-col items-start gap-3 rounded-2xl border p-4 text-left transition-[border-color,background-color,transform] duration-150 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-2",
+                  "group relative flex flex-col items-start gap-3 overflow-hidden rounded-xl border p-3 text-left transition-[border-color,background-color,transform] duration-150 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2",
                   selected
-                    ? "border-foreground/30 bg-surface-secondary"
+                    ? "border-accent/55 bg-surface-secondary/70"
                     : "border-border bg-surface hover:border-foreground/20 hover:bg-surface-secondary/50",
                 )}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-background text-foreground">
-                  <Icon size={17} />
+                <span className="flex w-full items-center justify-between gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-background text-foreground">
+                    <Icon size={14} aria-hidden />
+                  </span>
+                  {selected && (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                      <Check size={11} strokeWidth={3} aria-hidden />
+                    </span>
+                  )}
                 </span>
                 <span>
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                    {choice.label}
-                    {selected && <Check size={13} className="text-foreground" />}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] text-muted">{choice.hint}</span>
+                  <span className="block text-[12px] font-semibold text-foreground">{choice.label}</span>
+                  <span className="mt-0.5 block text-[10px] text-muted">{choice.hint}</span>
                 </span>
                 <ThemeSwatch mode={choice.value} />
               </button>
             );
           })}
         </div>
-      </section>
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <h2 className="text-sm font-semibold text-foreground">Accessibility</h2>
-        <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">
-          Plexy follows your operating system's reduced-motion setting. Page
-          transitions and hover physics collapse to simple fades when it is on.
-        </p>
-      </section>
+      </SettingsSection>
+
+      <SettingsSection
+        icon={Accessibility}
+        title="Accessibility"
+        description="Plexy follows your operating system's reduced-motion setting. Page transitions and hover physics collapse to simple fades when it is on. Every control keeps a visible keyboard focus ring in both themes."
+      />
     </div>
   );
 }
@@ -133,14 +140,14 @@ function ThemeSwatch({ mode }: { mode: ThemePreference }) {
     <span
       aria-hidden
       className={cx(
-        "mt-auto flex h-12 w-full items-end gap-1 overflow-hidden rounded-lg border border-border/70 p-2",
-        mode === "dark" ? "bg-[#0b0b0c]" : mode === "light" ? "bg-[#f4f4f5]" : "bg-[linear-gradient(90deg,#f4f4f5_50%,#0b0b0c_50%)]",
+        "mt-auto flex h-12 w-full items-end gap-1 overflow-hidden rounded-md border border-border/70 p-2",
+        mode === "dark" ? "bg-[#060607]" : mode === "light" ? "bg-[#f5f5f5]" : "bg-[linear-gradient(90deg,#f5f5f5_50%,#060607_50%)]",
       )}
     >
-      <span className={cx("h-full w-2 rounded-sm", mode === "light" ? "bg-zinc-300" : "bg-zinc-700")} />
-      <span className={cx("h-3 w-2 rounded-sm", mode === "light" ? "bg-zinc-400" : "bg-zinc-500")} />
-      <span className={cx("h-5 w-2 rounded-sm", mode === "light" ? "bg-zinc-300" : "bg-zinc-700")} />
-      <span className={cx("ml-auto h-6 w-6 rounded-full", mode === "light" ? "bg-zinc-400" : "bg-zinc-600")} />
+      <span className={cx("h-full w-2 rounded-sm", mode === "light" ? "bg-[#eaeaeb]" : "bg-[#232325]")} />
+      <span className={cx("h-3 w-2 rounded-sm", mode === "light" ? "bg-[#efeff0]" : "bg-[#262728]")} />
+      <span className={cx("h-5 w-2 rounded-sm", mode === "light" ? "bg-[#eaeaeb]" : "bg-[#18181b]")} />
+      <span className="ml-auto h-6 w-6 rounded-full bg-[#0485f7]" />
     </span>
   );
 }
@@ -173,25 +180,23 @@ export function AccountPanel({ admin }: { admin: boolean }) {
   const user = me.data?.user;
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Account</h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted">
-              Your sign-in details for this Plexy server.
-            </p>
-          </div>
-          {admin && (
+      <SettingsSection
+        icon={UserRound}
+        title="Account"
+        description="Your sign-in details for this Plexy server."
+        action={
+          admin ? (
             <Link
               to="/settings"
               search={{ tab: "users" }}
-              className="inline-flex h-8 items-center rounded-lg border border-border bg-surface-secondary px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
+              className="inline-flex h-8 items-center rounded-lg border border-border bg-surface-secondary px-2.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
             >
               Manage users
             </Link>
-          )}
-        </div>
-        <dl className="mt-4 grid gap-x-6 gap-y-3 border-t border-border/60 pt-4 sm:grid-cols-2">
+          ) : undefined
+        }
+      >
+        <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
           <Detail label="Username" value={user?.username ?? "…"} />
           <Detail label="Role" value={user?.role === "admin" ? "Administrator" : "User"} />
           <Detail label="This device" value={me.data?.device.name ?? "…"} />
@@ -204,18 +209,17 @@ export function AccountPanel({ admin }: { admin: boolean }) {
             }
           />
         </dl>
-      </section>
+      </SettingsSection>
 
       <ProfilePhotoEditor user={user} />
 
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <h2 className="text-sm font-semibold text-foreground">Change password</h2>
-        <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">
-          Changing your password signs out your other devices and invalidates
-          pairing codes. You stay signed in here.
-        </p>
+      <SettingsSection
+        icon={KeyRound}
+        title="Change password"
+        description="Changing your password signs out your other devices and invalidates pairing codes. You stay signed in here."
+      >
         <form
-          className="mt-4 max-w-md space-y-3"
+          className="max-w-md space-y-3.5"
           onSubmit={(event) => {
             event.preventDefault();
             void changePassword();
@@ -244,39 +248,40 @@ export function AccountPanel({ admin }: { admin: boolean }) {
             />
           </Field>
           {error && (
-            <p role="alert" className="flex items-start gap-2 text-xs leading-relaxed text-danger-soft-foreground">
+            <p role="alert" className="flex items-start gap-2 text-[11px] leading-relaxed text-danger-soft-foreground">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               {error}
             </p>
           )}
           <div className="flex justify-end pt-1">
-            <Button type="submit" isDisabled={busy} className="h-9 px-4 text-xs font-semibold">
+            <Button type="submit" isDisabled={busy} className="h-9 px-4 text-[11px] font-semibold">
               {busy ? "Changing…" : "Change password"}
             </Button>
           </div>
         </form>
-      </section>
+      </SettingsSection>
 
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Sign out</h2>
-            <p className="mt-1 max-w-md text-xs leading-relaxed text-muted">
-              Ends this session on this device. Other paired devices stay signed in.
-            </p>
-          </div>
+      <SettingsSection
+        icon={LogOut}
+        title="Sign out"
+        description="Ends this session on this device. Other paired devices stay signed in."
+        action={
           <Button
             variant="secondary"
             onPress={() => {
               void logout().then(() => window.location.assign("/"));
             }}
-            className="h-9 shrink-0 px-3 text-xs font-semibold"
+            className="h-9 shrink-0 px-3 text-[11px] font-semibold"
           >
-            <LogOut size={14} />
+            <LogOut size={13} />
             Sign out
           </Button>
-        </div>
-      </section>
+        }
+      >
+        <p className="text-[11px] leading-relaxed text-muted">
+          Plexy will ask for the account password the next time this device connects.
+        </p>
+      </SettingsSection>
     </div>
   );
 }
@@ -323,54 +328,44 @@ export function DevicesPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-secondary text-foreground">
-              <KeyRound size={16} />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-foreground">Pair a device</h2>
-              <p className="mt-1 text-xs leading-relaxed text-muted">
-                Create a six-digit code and enter it on the other device. It
-                expires after ten minutes and works once.
-              </p>
-            </div>
-          </div>
-
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <SettingsSection
+          icon={KeyRound}
+          title="Pair a device"
+          description="Create a six-digit code and enter it on the other device. It expires after ten minutes and works once."
+        >
           {pairing ? (
-            <div className="page-enter mt-4 rounded-2xl border border-border bg-surface-secondary/50 p-4">
+            <div className="page-enter mb-4 rounded-xl border border-border bg-surface-secondary/50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="select-all font-mono text-3xl font-semibold tracking-[0.24em] tabular-nums text-foreground">
+                <p className="select-all font-mono text-[1.8rem] font-semibold leading-none tracking-[0.22em] tabular-nums text-foreground">
                   {pairing.code}
                 </p>
                 <button
                   type="button"
                   onClick={copy}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
                 >
-                  {copied ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
+                  {copied ? <Check size={12} className="text-success-soft-foreground" /> : <Copy size={12} />}
                   {copied ? "Copied" : "Copy"}
                 </button>
               </div>
-              <p className="mt-2 text-[11px] text-muted">
-                Expires {formatPairingExpiry(pairing.expiresAt)}. Generating another
-                code cancels this one.
+              <p className="mt-2 text-[10px] text-muted">
+                Expires {formatPairingExpiry(pairing.expiresAt)}. Generating another code cancels this one.
               </p>
             </div>
           ) : null}
 
           {error && (
-            <p role="alert" className="mt-3 text-xs text-danger-soft-foreground">
+            <p role="alert" className="mb-3 text-[10.5px] text-danger-soft-foreground">
               {error}
             </p>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               isDisabled={busy}
               onPress={() => void mint()}
-              className="h-9 px-4 text-xs font-semibold"
+              className="h-9 px-4 text-[11px] font-semibold"
             >
               {busy ? "Creating…" : pairing ? "Create a new code" : "Create pairing code"}
             </Button>
@@ -378,60 +373,51 @@ export function DevicesPanel() {
               <button
                 type="button"
                 onClick={() => setPairing(null)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-muted transition-colors hover:text-foreground"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground"
               >
-                <RefreshCcw size={13} />
+                <RefreshCcw size={12} />
                 Hide
               </button>
             )}
           </div>
-        </section>
+        </SettingsSection>
 
-        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-          <h2 className="text-sm font-semibold text-foreground">This device</h2>
-          <p className="mt-1 text-xs leading-relaxed text-muted">
-            Everything below belongs to your account on this server.
-          </p>
-          <dl className="mt-4 space-y-3">
+        <SettingsSection
+          icon={Laptop}
+          title="This device"
+          description="Everything below belongs to your account on this server."
+        >
+          <dl className="space-y-3">
             <Detail label="Name" value={me.data?.device.name ?? "…"} icon={Laptop} />
             <Detail label="Last seen" value={formatPairingExpiry(me.data?.device.lastSeen)} />
             <Detail label="Address" value={me.data?.device.lastIp ?? "Not reported"} mono />
           </dl>
-        </section>
+        </SettingsSection>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-border bg-surface">
-        <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Paired devices</h2>
-            <p className="mt-0.5 text-xs text-muted">
-              {active.length} device{active.length === 1 ? "" : "s"} signed in to your account.
-            </p>
-          </div>
-        </header>
-        <ul className="divide-y divide-border/60">
+      <SettingsSection
+        icon={Smartphone}
+        title="Paired devices"
+        description={`${active.length} device${active.length === 1 ? "" : "s"} signed in to your account.`}
+        flush
+      >
+        <ul className="divide-y divide-border/50">
           {(devices.data ?? []).map((device) => {
             const current = device.id === currentDeviceId;
             return (
               <li key={device.id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-surface-secondary text-muted">
-                  {device.name.toLowerCase().includes("phone") ? <Smartphone size={15} /> : <Laptop size={15} />}
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-muted">
+                  {device.name.toLowerCase().includes("phone") ? <Smartphone size={14} /> : <Laptop size={14} />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+                  <p className="flex flex-wrap items-center gap-2 text-[11.5px] font-semibold text-foreground">
                     <span className="truncate">{device.name}</span>
-                    {current && (
-                      <span className="rounded-full border border-border bg-surface-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted">
-                        This device
-                      </span>
-                    )}
+                    {current && <span className="text-[9.5px] font-medium text-muted">This device</span>}
                     {device.revoked && (
-                      <span className="rounded-full border border-danger/25 bg-danger/10 px-1.5 py-0.5 text-[10px] font-semibold text-danger-soft-foreground">
-                        Revoked
-                      </span>
+                      <span className="text-[9px] font-semibold text-danger-soft-foreground">Revoked</span>
                     )}
                   </p>
-                  <p className="mt-0.5 truncate text-[11px] text-muted">
+                  <p className="mt-0.5 truncate text-[10px] text-muted">
                     {device.revoked
                       ? "No longer signed in"
                       : device.lastSeen
@@ -448,7 +434,7 @@ export function DevicesPanel() {
                         queryClient.invalidateQueries({ queryKey: ["my-devices"] }),
                       )
                     }
-                    className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                    className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[10px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
                   >
                     Remove
                   </button>
@@ -464,7 +450,7 @@ export function DevicesPanel() {
                         })
                         .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not revoke the device."));
                     }}
-                    className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground"
+                    className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[10px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground"
                   >
                     Sign out
                   </button>
@@ -473,30 +459,21 @@ export function DevicesPanel() {
             );
           })}
           {!devices.isLoading && active.length === 0 && (
-            <li className="px-4 py-6 text-sm text-muted sm:px-5">No paired devices yet.</li>
+            <li className="px-4 py-6 text-[11px] text-muted sm:px-5">No paired devices yet.</li>
           )}
         </ul>
-      </section>
+      </SettingsSection>
 
       {certificate.data?.fingerprint && (
-        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-secondary text-foreground">
-              <ShieldCheck size={16} />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-foreground">Server certificate</h2>
-              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
-                Compare this fingerprint before trusting the server on another
-                device. Browsers still need their own certificate trust step
-                for the local HTTPS address.
-              </p>
-              <p className="mt-3 select-all break-all rounded-lg border border-border bg-surface-secondary/50 p-3 font-mono text-[11px] text-foreground">
-                {certificate.data.fingerprint}
-              </p>
-            </div>
-          </div>
-        </section>
+        <SettingsSection
+          icon={ShieldCheck}
+          title="Server certificate"
+          description="Compare this fingerprint before trusting the server on another device. Browsers still need their own certificate trust step for the local HTTPS address."
+        >
+          <p className="select-all break-all rounded-lg border border-border bg-surface-secondary/50 p-3 font-mono text-[10px] text-foreground">
+            {certificate.data.fingerprint}
+          </p>
+        </SettingsSection>
       )}
     </div>
   );
@@ -525,45 +502,43 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-secondary text-foreground">
-            <Captions size={16} />
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Subtitles</h2>
-            <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">
-              Applied when playback starts on this device. You can still switch
-              tracks inside the player.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-border/70 bg-surface-secondary/40 p-3.5">
-            <Switch
-              size="sm"
-              isSelected={prefs.autoSubtitles}
-              onChange={(selected) => update({ autoSubtitles: selected })}
-              className="w-full"
+      <SettingsSection
+        icon={Captions}
+        title="Subtitles"
+        description="Applied when playback starts on this device. You can still switch tracks inside the player."
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="panel-inset p-3.5">
+            <SettingsToggleRow
+              label="Turn on subtitles"
+              description="Pick a matching track automatically when the file has one."
             >
-              <Switch.Content className="flex w-full items-center justify-between gap-4">
-                <span className="text-xs font-semibold text-foreground">Turn on subtitles</span>
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
-              </Switch.Content>
-            </Switch>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-              Pick a matching track automatically when the file has one.
-            </p>
+              <Switch
+                size="sm"
+                aria-label="Turn on subtitles"
+                className="switch--compact"
+                isSelected={prefs.autoSubtitles}
+                onChange={(selected) => update({ autoSubtitles: selected })}
+              >
+                <Switch.Content>
+                  <span className="sr-only">Turn on subtitles</span>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Content>
+              </Switch>
+            </SettingsToggleRow>
           </div>
-          <div className="rounded-xl border border-border/70 bg-surface-secondary/40 p-3.5">
-            <span className="block text-xs font-semibold text-foreground">Preferred subtitle language</span>
+          <div className="panel-inset p-3.5">
+            <span className="block text-[11.5px] font-semibold text-foreground">Preferred subtitle language</span>
+            <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
+              Used for the automatic pick when a file has several tracks.
+            </p>
             <Select
               aria-label="Preferred subtitle language"
               selectedKey={prefs.subtitleLanguage}
               onSelectionChange={(key) => update({ subtitleLanguage: String(key) })}
-              className="mt-2 w-full"
+              className="mt-2.5 w-full"
             >
               <Select.Trigger>
                 <Select.Value />
@@ -582,23 +557,15 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
             </Select>
           </div>
         </div>
-      </section>
+      </SettingsSection>
 
       {admin && (
-        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-secondary text-foreground">
-              <Volume2 size={16} />
-            </span>
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Audio language</h2>
-              <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">
-                Server-wide default for every viewer. Individual devices can
-                still change the audio track in the player.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 max-w-sm">
+        <SettingsSection
+          icon={Volume2}
+          title="Audio language"
+          description="Server-wide default for every viewer. Individual devices can still change the audio track in the player."
+        >
+          <div className="max-w-sm">
             <Select
               aria-label="Preferred audio language"
               selectedKey={settings.data?.settings.preferredAudioLanguage ?? "en"}
@@ -622,39 +589,42 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
               </Select.Popover>
             </Select>
             {saveError && (
-              <p role="alert" className="mt-2 text-xs text-danger-soft-foreground">
+              <p role="alert" className="mt-2 text-[10.5px] text-danger-soft-foreground">
                 {saveError}
               </p>
             )}
           </div>
-        </section>
+        </SettingsSection>
       )}
 
-      <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-        <h2 className="text-sm font-semibold text-foreground">Playback diagnostics</h2>
-        <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">
-          Shares startup, rebuffer, and error details from this device with the
-          server. The server keeps the latest 100 events in memory.
-        </p>
-        <div className="mt-3">
+      <SettingsSection
+        icon={Activity}
+        title="Playback diagnostics"
+        description="Shares startup, rebuffer, and error details from this device with the server. The server keeps the latest 100 events in memory."
+      >
+        <SettingsToggleRow
+          label="Share playback diagnostics"
+          description="Helps trace a title that stutters or fails to start on this device."
+        >
           <Switch
             size="sm"
+            aria-label="Share playback diagnostics"
+            className="switch--compact"
             isSelected={diagnostics}
             onChange={(enabled) => {
               setDiagnostics(enabled);
               setPlaybackDiagnosticsEnabled(enabled);
             }}
-            className="w-full"
           >
-            <Switch.Content className="flex w-full items-center justify-between gap-4">
-              <span className="text-xs font-semibold text-foreground">Share playback diagnostics</span>
+            <Switch.Content>
+              <span className="sr-only">Share playback diagnostics</span>
               <Switch.Control>
                 <Switch.Thumb />
               </Switch.Control>
             </Switch.Content>
           </Switch>
-        </div>
-      </section>
+        </SettingsToggleRow>
+      </SettingsSection>
     </div>
   );
 }

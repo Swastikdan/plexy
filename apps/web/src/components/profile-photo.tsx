@@ -89,13 +89,13 @@ export function ProfilePhotoEditor({ user }: { user?: AccountUser }) {
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+    <section className="panel p-4 sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
-          <UserAvatar user={user} size={64} className="rounded-2xl" />
+          <UserAvatar user={user} size={56} className="rounded-2xl" />
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-foreground">Profile photo</h2>
-            <p className="mt-1 max-w-md text-xs leading-relaxed text-muted">
+            <h2 className="text-[12.5px] font-bold tracking-[-0.01em] text-foreground">Profile photo</h2>
+            <p className="mt-1 max-w-md text-[10.5px] leading-relaxed text-muted">
               Shown in the header, settings, and user lists. Images are cropped
               to a square and compressed on this device before upload.
             </p>
@@ -113,7 +113,7 @@ export function ProfilePhotoEditor({ user }: { user?: AccountUser }) {
             variant="secondary"
             isDisabled={busy}
             onPress={() => inputRef.current?.click()}
-            className="h-9 px-3 text-xs font-semibold"
+            className="h-9 px-3 text-[11px] font-semibold"
           >
             <Camera size={14} />
             {busy ? "Saving…" : user?.avatar ? "Change photo" : "Upload photo"}
@@ -123,7 +123,7 @@ export function ProfilePhotoEditor({ user }: { user?: AccountUser }) {
               variant="ghost"
               isDisabled={busy}
               onPress={() => void save(null)}
-              className="h-9 px-3 text-xs font-semibold text-muted"
+              className="h-9 px-3 text-[11px] font-semibold text-muted"
             >
               <Trash2 size={14} />
               Remove

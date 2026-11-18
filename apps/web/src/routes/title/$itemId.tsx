@@ -1,4 +1,5 @@
-/// Title Detail (PRD 10.3): movie & series detail, seasons, episodes, trailer, playability specs, cast & fix match.
+/// Title Detail (PRD 10.3): movie & series detail, seasons, episodes, trailer,
+/// playability specs, cast & fix match.
 import { useState, useEffect } from "react";
 import { createFileRoute, useParams, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -11,28 +12,24 @@ import {
   RotateCw,
   RotateCcw,
   Sparkles,
-  PlayCircle,
   ArrowLeft,
   Trash2,
-  Eye,
   Bookmark,
   Star,
-  FolderPlus,
   MoreHorizontal,
-  BookOpen,
-  ListVideo,
+  ChevronRight,
   Users,
   HardDrive,
 } from "lucide-react";
 import { queries } from "../../queries";
 import { nativeBridge } from "../../lib/native-playback";
 import { api, probeBrowserCaps, type TitleDetail } from "../../client";
-import { Button, Dropdown, ListBox, Modal, Select } from "@heroui/react";
+import { Button, Dropdown, Modal } from "@heroui/react";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
-import { PlayerEngineChip } from "../../components/player-engine-chip";
+import { Page } from "../../components/page";
+import { State } from "../../components/state";
 import { cx } from "../../lib/cx";
-import { PageLoader } from "../../components/page-loader";
 import { artworkUrl } from "../../lib/artwork-url";
 import { useStoredFlag } from "../../lib/use-stored-flag";
 
@@ -56,28 +53,6 @@ function episodeDisplayTitle(name: string, episodeNumber: number): string {
   return `Episode ${episodeNumber}`;
 }
 
-function formatTime(secs: number): string {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = Math.floor(secs % 60);
-  const hh = String(h).padStart(2, "0");
-  const mm = String(m).padStart(2, "0");
-  const ss = String(s).padStart(2, "0");
-  return `${hh}:${mm}:${ss}`;
-}
-
-function formatDate(dateStr?: string | null, year?: number | null): string {
-  if (dateStr) {
-    try {
-      const d = new Date(dateStr);
-      if (!isNaN(d.getTime())) {
-        return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-      }
-    } catch {}
-  }
-  return year ? String(year) : "";
-}
-
 function TitleRoute() {
   const { itemId } = useParams({ from: Route.id });
   const queryId = /^\d+$/.test(itemId) ? Number(itemId) : itemId;
@@ -85,32 +60,38 @@ function TitleRoute() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-6 sm:px-8">
-        <PageLoader />
-      </main>
+      <Page>
+        <div className="space-y-6">
+          <div className="skeleton h-[clamp(24rem,56vh,40rem)] rounded-[calc(var(--radius)*3)]" />
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="skeleton h-72 rounded-[calc(var(--radius)*2)]" />
+            <div className="skeleton h-52 rounded-[calc(var(--radius)*2)]" />
+          </div>
+        </div>
+      </Page>
     );
   }
 
   if (isError || !data) {
     return (
-      <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-16 sm:px-8">
-        <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-          <h2 className="font-display text-xl font-bold text-foreground">Title not found</h2>
-          <p className="text-sm text-muted">The requested title could not be loaded from Plexy.</p>
-          <Link to="/">
-            <Button className="mt-4">
-              Back to Home
-            </Button>
-          </Link>
-        </div>
-      </main>
+      <Page>
+        <State
+          title="Title not found"
+          body="The requested title could not be loaded from Plexy."
+          action={
+            <Link to="/">
+              <Button>Back to Home</Button>
+            </Link>
+          }
+        />
+      </Page>
     );
   }
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-2 sm:px-8">
+    <Page className="pt-3 sm:pt-4">
       <DetailView detail={data} queryId={queryId} onRefresh={() => refetch()} />
-    </main>
+    </Page>
   );
 }
 
@@ -136,9 +117,7 @@ function DetailView({
     ? seasons
     : [{ id: 1, number: 1, name: "Season 1", poster: null }];
 
-  const [selectedSeason, setSelectedSeason] = useState<number>(
-    seasonList[0].number,
-  );
+  const [selectedSeason, setSelectedSeason] = useState<number>(seasonList[0].number);
   const [castExpanded, setCastExpanded] = useState(false);
 
   useEffect(() => {
@@ -146,7 +125,6 @@ function DetailView({
       setSelectedSeason(seasonList[0].number);
     }
   }, [seasonList, selectedSeason]);
-
 
   // Watch state mutations. `setWatched` can mark *and* unmark; clearing removes
   // the row so the title drops out of Continue Watching entirely.
@@ -166,7 +144,6 @@ function DetailView({
     onSuccess: invalidateWatch,
   });
 
-  // Metadata refresh mutation
   const refreshMutation = useMutation({
     mutationFn: () => api.refreshItem(item.id),
     onSuccess: () => {
@@ -182,7 +159,6 @@ function DetailView({
       await navigate({ to: "/" });
     },
   });
-
 
   const filteredEpisodes = episodes
     ? episodes.filter((ep) => {
@@ -201,32 +177,16 @@ function DetailView({
   const isPlayed = !!activeWatch?.played;
   const resumePos = activeWatch?.position ?? 0;
   const hasResume = resumePos > 15 && !isPlayed;
-  const watchPercent = Math.min(100, Math.max(0, activeWatch?.percent ?? 0));
-
   const [inWatchlist, toggleWatchlist] = useStoredFlag(`plexy:watchlist:${item.id}`);
   const [isFavorite, toggleFavorite] = useStoredFlag(`plexy:favorite:${item.id}`);
 
   const displayRuntime = activeEpisode?.runtime || metadata?.runtime || null;
-  const displayDate = formatDate((activeEpisode as any)?.airDate, item.year);
   const displayCert = metadata?.certification || null;
-  const displayGenres = metadata?.genres.slice(0, 3).join(", ");
-  const displayOverview = activeEpisode?.overview || metadata?.overview || item.overview || null;
-
+  const displayGenres = (metadata?.genres ?? []).slice(0, 3);
+  // The hero describes the title, not whichever episode happens to be next.
+  const displayOverview = metadata?.overview || item.overview || activeEpisode?.overview || null;
   const rating = item.rating ?? metadata?.rating ?? null;
-  const tmdbScore = rating == null ? null : Math.round(rating * 10);
 
-  const resolutionBadge = file?.height
-    ? file.height >= 2160
-      ? "4K"
-      : file.height >= 1080
-        ? "1080p"
-        : file.height >= 720
-          ? "720p"
-          : "SD"
-    : "1080p";
-
-  // Warm the player manifest (and therefore the stream) as soon as the pointer
-  // lands on a play control, so the navigation has nothing left to wait for.
   const prefetchPlay = (fileId: number | null | undefined) => {
     if (!fileId || !BROWSER_CAPS) return;
     void queryClient.prefetchQuery(nativeBridge() ? queries.playNative(fileId) : queries.play(fileId, BROWSER_CAPS));
@@ -248,12 +208,19 @@ function DetailView({
     }
   };
 
+  const activeEpisodeTitle = activeEpisode
+    ? episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)
+    : null;
+  const activeEpisodeLabel = activeEpisode
+    ? `Season ${activeEpisode.seasonNumber ?? selectedSeason}, Episode ${activeEpisode.episodeNumber ?? 1}`
+    : null;
+
   return (
     <div className="staggered space-y-8">
-      <section className="relative isolate min-h-[540px] sm:min-h-[620px] lg:h-[min(76vh,860px)] overflow-hidden rounded-3xl bg-surface flex flex-col justify-end border border-border/50 shadow-sm">
+      <section className="hero-shell flex min-h-[30rem] flex-col sm:min-h-[34rem] lg:min-h-[35rem]">
         <img
           src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
-          alt={item.name}
+          alt=""
           fetchPriority="high"
           loading="eager"
           decoding="async"
@@ -263,344 +230,255 @@ function DetailView({
           }}
         />
 
-        <div
-          className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/35 via-38% to-transparent dark:from-background dark:via-background/90 dark:via-40% pointer-events-none"
-          aria-hidden
-        />
-        <div
-          className="absolute inset-0 hidden sm:block bg-gradient-to-r from-background/92 via-background/55 via-42% to-transparent dark:from-background/95 dark:via-background/70 dark:via-50% pointer-events-none"
-          aria-hidden
-        />
-        {/* Light theme keeps the artwork visible, so the mark and controls get
-            their own dark scrim instead of a white veil over a white logo. */}
-        <div
-          className="pointer-events-none absolute inset-y-0 left-0 w-[430px] max-w-[70%] bg-gradient-to-r from-black/60 via-black/25 to-transparent dark:hidden"
-          aria-hidden
-        />
-
-        <div className="relative z-10 w-full p-5 sm:p-8 lg:p-12">
-          {item.kind === "episode" && item.parentId && (
-            <Link
-              to="/title/$itemId"
-              params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
-              className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-surface/85 backdrop-blur-md border border-border px-3.5 py-1 text-xs font-semibold text-foreground transition-[background-color,transform] duration-150 hover:bg-surface-secondary active:scale-95 shadow-xs"
-            >
-              <ArrowLeft size={13} />
-              Back to {item.parentTitle || "Series"}
-            </Link>
-          )}
-
-          {unmatched && item.kind !== "episode" && (
-            <div className="mb-5 flex items-center gap-3 rounded-xl border border-warning/25 bg-warning/8 px-4 py-2 text-sm text-warning-soft-foreground">
-              <Sparkles size={16} className="shrink-0" />
-              <span className="text-xs sm:text-sm">
-                Not identified yet{matchReason ? `: ${matchReason}` : ""}.
-              </span>
-              <Button
-                variant="secondary"
-                onPress={() => setFixMatchOpen(true)}
-                className="ml-auto h-7 px-3 text-xs font-semibold"
+        <div className="relative z-10 flex flex-1 flex-col justify-between gap-8 p-5 sm:p-8 lg:p-11">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {item.kind === "episode" && item.parentId && (
+              <Link
+                to="/title/$itemId"
+                params={{ itemId: item.parentPublicId ?? String(item.parentId) }}
+                className="hero-secondary h-8 px-3 text-[11px]"
               >
-                Fix Match
-              </Button>
-            </div>
-          )}
+                <ArrowLeft size={12} aria-hidden />
+                Back to {item.parentTitle || "Series"}
+              </Link>
+            )}
+            {unmatched && item.kind !== "episode" && (
+              <div className="flex items-center gap-3 rounded-lg border border-[#e8bd6a]/30 bg-[#e8bd6a]/10 px-3 py-1.5 text-[11px] text-[#f0d7a1] backdrop-blur-md">
+                <Sparkles size={13} className="shrink-0" aria-hidden />
+                <span>
+                  Not identified yet{matchReason ? `: ${matchReason}` : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFixMatchOpen(true)}
+                  className="ml-auto rounded border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white transition-colors hover:bg-white/20"
+                >
+                  Fix match
+                </button>
+              </div>
+            )}
+          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr] gap-6 sm:gap-10 items-end">
-            <div className="flex flex-col space-y-4 sm:space-y-5">
+          <div className="flex items-end gap-6 lg:gap-8">
+            <div className="hero-copy min-w-0 flex-1">
               {logo ? (
-                <img
-                  src={logo}
-                  alt={item.name}
-                  className="max-h-16 sm:max-h-24 max-w-[240px] sm:max-w-[300px] object-contain object-left drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] dark:drop-shadow-md"
-                />
+                <>
+                  <h1 className="sr-only">{item.name}</h1>
+                  <img
+                    src={logo}
+                    alt=""
+                    className="mb-4 max-h-16 max-w-[280px] object-contain object-left drop-shadow-[0_4px_30px_rgba(0,0,0,0.55)] sm:max-h-24 sm:max-w-[380px]"
+                  />
+                </>
               ) : (
-                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)]">
+                <h1 className="hero-title mb-3 max-w-[18ch] font-sans text-[2.4rem] text-white sm:text-5xl lg:text-[3.8rem]">
                   {item.name}
                 </h1>
               )}
 
-              {(file || (item.kind === "series" && episodes && episodes.length > 0)) && (
+              {item.kind === "series" && activeEpisode && (
+                <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-white/65">
+                  <span aria-hidden className="h-1 w-1 rounded-full bg-[var(--accent)]" />
+                  <span className="text-white/45">Up next</span>
+                  <span className="text-white/80">{activeEpisodeLabel}</span>
+                  <span aria-hidden className="text-white/25">·</span>
+                  <span className="text-white/80">{activeEpisodeTitle}</span>
+                </p>
+              )}
+
+              <div className="hero-meta">
+                {item.year && <span>{item.year}</span>}
+                {displayRuntime != null && (
+                  <>
+                    <span className="meta-dot" aria-hidden />
+                    <span>{displayRuntime} min</span>
+                  </>
+                )}
+                {displayCert && (
+                  <>
+                    <span className="meta-dot" aria-hidden />
+                    <span>{displayCert}</span>
+                  </>
+                )}
+                {displayGenres.length > 0 && (
+                  <>
+                    <span className="meta-dot" aria-hidden />
+                    <span className="text-white/55">{displayGenres.join(" · ")}</span>
+                  </>
+                )}
+                <span className="meta-dot" aria-hidden />
+                <span>{item.kind === "series" ? "Series" : "Film"}</span>
+              </div>
+
+              {rating != null && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="flex items-center gap-0.5" aria-hidden>
+                    {[0, 1, 2, 3, 4].map((index) => (
+                      <Star
+                        key={index}
+                        size={15}
+                        strokeWidth={1.4}
+                        fill={index < Math.round((rating / 10) * 5) ? "currentColor" : "none"}
+                        className={index < Math.round((rating / 10) * 5) ? "text-[#f0c56a]" : "text-white/35"}
+                      />
+                    ))}
+                  </span>
+                  <span className="text-[11px] font-medium text-white/65">
+                    Average rating <strong className="font-semibold text-white">{(rating / 2).toFixed(1)}</strong> / 5
+                  </span>
+                </div>
+              )}
+
+              {displayOverview && (
+                <p className="mt-4 max-w-[42rem] text-[13px] leading-relaxed text-white/75 line-clamp-3 sm:text-sm">
+                  {displayOverview}
+                </p>
+              )}
+
+              <div className="mt-5 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={handlePrimaryPlay}
                   onPointerEnter={() => prefetchPlay(primaryFileId)}
                   onFocus={() => prefetchPlay(primaryFileId)}
-                  className={cx(
-                    "group relative overflow-hidden inline-flex items-center justify-center rounded-xl h-11 w-full max-w-[280px] sm:max-w-[300px] select-none",
-                    "font-semibold transition-[background-color,color,transform] duration-150 ease-out shadow-md active:scale-[0.98]",
-                    hasResume
-                      ? "bg-surface-secondary hover:bg-surface-tertiary text-foreground border border-border"
-                      : isPlayed
-                        ? "bg-surface hover:bg-surface-secondary text-foreground border border-border"
-                        : "bg-foreground hover:bg-foreground/90 text-background",
-                  )}
+                  disabled={!primaryFileId}
+                  className="hero-primary disabled:opacity-60"
                 >
-                  {hasResume ? (
-                    <>
-                      <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
-                        <Play size={15} fill="currentColor" />
-                        <span>Resume {formatTime(resumePos)}</span>
-                      </span>
-                      {/* A slim progress bar reads cleanly in both themes; the
-                          old full-height fill looked like a broken black pill
-                          against the light surface. */}
-                      <span
-                        aria-hidden
-                        className="pointer-events-none absolute inset-x-2.5 bottom-1.5 h-0.5 overflow-hidden rounded-full bg-foreground/15"
-                      >
-                        <span
-                          className="block h-full origin-left rounded-full bg-accent transition-transform duration-300 ease-out"
-                          style={{ transform: `scaleX(${Math.max(2, watchPercent) / 100})` }}
-                        />
-                      </span>
-                    </>
-                  ) : isPlayed ? (
-                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
-                      <RotateCcw size={15} />
-                      <span>Watch again</span>
-                    </span>
-                  ) : (
-                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-background">
-                      <Play size={15} fill="currentColor" />
-                      <span>Play</span>
-                    </span>
-                  )}
+                  {hasResume ? <Play size={15} fill="currentColor" aria-hidden /> : isPlayed ? <RotateCcw size={15} aria-hidden /> : <Play size={15} fill="currentColor" aria-hidden />}
+                  {hasResume ? "Resume" : isPlayed ? "Watch again" : "Play"}
                 </button>
-              )}
 
-              <div className="flex items-center gap-2">
-                <Button
-                  isIconOnly
-                  variant="ghost"
-                  onPress={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
-                  isDisabled={watchMutation.isPending || clearWatchMutation.isPending}
-                  aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
-                  className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs transition-[background-color,color,transform] duration-150"
-                >
-                  {isPlayed ? <CheckCircle2 size={16} className="text-accent" /> : <Eye size={16} />}
-                </Button>
-
-                <Button
-                  isIconOnly
-                  variant="ghost"
-                  onPress={toggleWatchlist}
-                  aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
-                  className={cx(
-                    "rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs",
-                    inWatchlist && "text-accent bg-surface-secondary",
-                  )}
-                >
-                  <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
-                </Button>
-
-                <Button
-                  isIconOnly
-                  variant="ghost"
-                  onPress={toggleFavorite}
-                  aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                  className={cx(
-                    "rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs",
-                    isFavorite && "text-warning bg-surface-secondary",
-                  )}
-                >
-                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
-                </Button>
-
-                {trailer ? (
-                  <Button
-                    isIconOnly
-                    variant="ghost"
-                    onPress={() => setTrailerOpen(true)}
-                    aria-label="Watch trailer"
-                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs transition-[background-color,color,transform] duration-150"
-                  >
-                    <Video size={16} />
-                  </Button>
-                ) : (
-                  <Button
-                    isIconOnly
-                    variant="ghost"
-                    aria-label="Collection"
-                    className="rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md hover:bg-surface-secondary shadow-2xs transition-[background-color,color,transform] duration-150"
-                  >
-                    <FolderPlus size={16} />
-                  </Button>
+                {trailer && (
+                  <button type="button" onClick={() => setTrailerOpen(true)} className="hero-secondary">
+                    <Video size={15} aria-hidden />
+                    Trailer
+                  </button>
                 )}
 
-                <Dropdown>
-                  <Dropdown.Trigger
-                    aria-label="More options"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface/80 text-foreground backdrop-blur-md transition-[background-color,transform] duration-150 hover:bg-surface-secondary active:scale-95 shadow-2xs"
+                <div className="ml-1 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => watchMutation.mutate({ itemId: activeEpisode?.id ?? item.id, played: !isPlayed })}
+                    disabled={watchMutation.isPending || clearWatchMutation.isPending}
+                    aria-label={isPlayed ? "Mark as unwatched" : "Mark as watched"}
+                    title={isPlayed ? "Mark as unwatched" : "Mark as watched"}
+                    data-selected={isPlayed || undefined}
+                    className="hero-icon"
                   >
-                    <MoreHorizontal size={16} />
-                  </Dropdown.Trigger>
-                  <Dropdown.Popover placement="bottom start">
-                    <Dropdown.Menu
-                      onAction={(key) => {
-                        if (key === "fix-match") setFixMatchOpen(true);
-                        else if (key === "refresh") refreshMutation.mutate();
-                        else if (key === "clear-watch") clearWatchMutation.mutate(item.id);
-                        else if (key === "delete") setDeleteOpen(true);
-                      }}
-                    >
-                      {item.kind !== "episode" && (
-                        <Dropdown.Item id="fix-match" textValue="Fix TMDB match">
-                          <Wrench size={14} className="shrink-0 text-muted" />
-                          <span>Fix TMDB match</span>
-                        </Dropdown.Item>
-                      )}
-                      <Dropdown.Item
-                        id="refresh"
-                        textValue="Refresh metadata"
-                        isDisabled={refreshMutation.isPending || unmatched}
+                    {isPlayed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleWatchlist}
+                    aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+                    title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
+                    data-selected={inWatchlist || undefined}
+                    className="hero-icon"
+                  >
+                    <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleFavorite}
+                    aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                    title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                    data-selected={isFavorite || undefined}
+                    className="hero-icon"
+                  >
+                    <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
+                  </button>
+
+                  <Dropdown>
+                    <Dropdown.Trigger aria-label="More options" className="hero-icon">
+                      <MoreHorizontal size={16} />
+                    </Dropdown.Trigger>
+                    <Dropdown.Popover placement="bottom start">
+                      <Dropdown.Menu
+                        onAction={(key) => {
+                          if (key === "fix-match") setFixMatchOpen(true);
+                          else if (key === "refresh") refreshMutation.mutate();
+                          else if (key === "clear-watch") clearWatchMutation.mutate(item.id);
+                          else if (key === "delete") setDeleteOpen(true);
+                        }}
                       >
-                        <RotateCw size={14} className={cx("shrink-0 text-muted", refreshMutation.isPending && "animate-spin")} />
-                        <span>Refresh metadata</span>
-                      </Dropdown.Item>
-                      {item.watch && (
+                        {item.kind !== "episode" && (
+                          <Dropdown.Item id="fix-match" textValue="Fix TMDB match">
+                            <Wrench size={14} className="shrink-0 text-muted" />
+                            <span>Fix TMDB match</span>
+                          </Dropdown.Item>
+                        )}
                         <Dropdown.Item
-                          id="clear-watch"
-                          textValue="Clear watch progress"
-                          isDisabled={clearWatchMutation.isPending}
+                          id="refresh"
+                          textValue="Refresh metadata"
+                          isDisabled={refreshMutation.isPending || unmatched}
                         >
-                          <Trash2 size={14} className="shrink-0 text-danger-soft-foreground" />
-                          <span>Clear watch progress</span>
+                          <RotateCw size={14} className={cx("shrink-0 text-muted", refreshMutation.isPending && "animate-spin")} />
+                          <span>Refresh metadata</span>
                         </Dropdown.Item>
-                      )}
-                      <Dropdown.Section>
-                        <Dropdown.Item
-                          id="delete"
-                          textValue="Remove title and files"
-                          className="text-danger-soft-foreground"
-                        >
-                          <Trash2 size={14} className="shrink-0" />
-                          <span>Remove title and files</span>
-                        </Dropdown.Item>
-                      </Dropdown.Section>
-                    </Dropdown.Menu>
-                  </Dropdown.Popover>
-                </Dropdown>
-              </div>
-
-              <PlayerEngineChip />
-            </div>
-
-            <div className="flex flex-col justify-end space-y-3 pb-1">
-              <h2 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-foreground drop-shadow-sm">
-                {item.kind === "series" && activeEpisode ? (
-                  <>
-                    {episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)}
-                  </>
-                ) : (
-                  metadata?.tagline || item.name
-                )}
-              </h2>
-
-              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs text-muted">
-                {item.kind === "series" && activeEpisode && (
-                  <span className="font-semibold text-foreground">
-                    Episode {activeEpisode.episodeNumber ?? 1}
-                  </span>
-                )}
-                {displayRuntime && (
-                  <span className="font-medium text-foreground/85">{displayRuntime} min</span>
-                )}
-                {displayDate && (
-                  <span className="text-muted">{displayDate}</span>
-                )}
-                {displayCert && (
-                  <span className="rounded-md border border-border bg-surface-secondary/70 px-1.5 py-0.5 text-[10px] font-bold text-foreground">
-                    {displayCert}
-                  </span>
-                )}
-                <span className="rounded-md border border-border bg-surface-secondary/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-foreground">
-                  {resolutionBadge}
-                </span>
-                {displayGenres && (
-                  <span className="text-muted">{displayGenres}</span>
-                )}
-              </div>
-
-              {displayOverview && (
-                <p className="max-w-2xl text-xs sm:text-sm leading-relaxed text-muted line-clamp-3 sm:line-clamp-4">
-                  {displayOverview}
-                </p>
-              )}
-
-              {/* TMDB user score, the only rating the server actually stores. */}
-              {tmdbScore !== null && (
-                <div className="flex items-center gap-1.5 font-bold text-xs" title="TMDB User Score">
-                  <span className="rounded-xs bg-[#01b4e4] px-1 py-0.5 text-[9px] font-black uppercase text-black leading-none">
-                    TMDB
-                  </span>
-                  <span className="text-foreground font-semibold tabular-nums">{tmdbScore}%</span>
+                        {item.watch && (
+                          <Dropdown.Item
+                            id="clear-watch"
+                            textValue="Clear watch progress"
+                            isDisabled={clearWatchMutation.isPending}
+                          >
+                            <Trash2 size={14} className="shrink-0 text-danger-soft-foreground" />
+                            <span>Clear watch progress</span>
+                          </Dropdown.Item>
+                        )}
+                        <Dropdown.Section>
+                          <Dropdown.Item id="delete" textValue="Remove title and files" className="text-danger-soft-foreground">
+                            <Trash2 size={14} className="shrink-0" />
+                            <span>Remove title and files</span>
+                          </Dropdown.Item>
+                        </Dropdown.Section>
+                      </Dropdown.Menu>
+                    </Dropdown.Popover>
+                  </Dropdown>
                 </div>
+              </div>
+
+              {refreshMutation.isError && (
+                <p className="mt-3 text-xs text-[#f0a8a8]">{refreshMutation.error.message}</p>
+              )}
+              {refreshMutation.isSuccess && (
+                <p className="mt-3 text-xs text-[#a9dfb5]">Metadata refreshed from TMDB.</p>
               )}
             </div>
           </div>
-
-          {refreshMutation.isError && (
-            <p className="mt-2.5 text-xs text-danger-soft-foreground">{refreshMutation.error.message}</p>
-          )}
-          {refreshMutation.isSuccess && (
-            <p className="mt-2.5 text-xs text-success-soft-foreground">Metadata refreshed from TMDB.</p>
-          )}
         </div>
       </section>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-10">
+      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_20.5rem] xl:gap-10">
         <div className="min-w-0 space-y-8">
-          {displayOverview && (
-            <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-              <SectionHeading icon={BookOpen} title="Synopsis" />
-              <p className="mt-4 max-w-[75ch] text-sm leading-relaxed text-muted sm:text-base">
-                {displayOverview}
-              </p>
-            </section>
-          )}
-
-          {/* Series: seasons & episodes (PRD 10.3) */}
           {item.kind === "series" && (
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <SectionHeading
-                  icon={ListVideo}
-                  title="Episodes"
-                  hint={`${filteredEpisodes.length} ${filteredEpisodes.length === 1 ? "episode" : "episodes"}`}
-                />
+            <section className="panel overflow-hidden">
+              <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 px-4 py-3.5 sm:px-5">
+                <h2 className="font-sans text-lg font-bold tracking-[-0.03em] text-foreground">
+                  Episodes
+                </h2>
 
                 {seasonList.length > 1 && (
-                  <Select
-                    aria-label="Season"
-                    selectedKey={String(selectedSeason)}
-                    onSelectionChange={(key) => setSelectedSeason(Number(key))}
-                    className="min-w-40"
-                  >
-                    <Select.Trigger>
-                      <Select.Value />
-                      <Select.Indicator />
-                    </Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        {seasonList.map((s) => (
-                          <ListBox.Item
-                            key={s.number}
-                            id={String(s.number)}
-                            textValue={s.name || `Season ${s.number}`}
-                          >
-                            {s.name || `Season ${s.number}`}
-                            <ListBox.ItemIndicator />
-                          </ListBox.Item>
-                        ))}
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
+                  <div className="segmented max-w-full overflow-x-auto" role="group" aria-label="Season">
+                    {seasonList.map((season) => (
+                      <button
+                        key={season.number}
+                        type="button"
+                        aria-pressed={season.number === selectedSeason}
+                        data-active={season.number === selectedSeason || undefined}
+                        onClick={() => setSelectedSeason(season.number)}
+                        className="shrink-0 whitespace-nowrap"
+                      >
+                        {season.name || `Season ${season.number}`}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </div>
+              </header>
 
               {filteredEpisodes.length > 0 ? (
-                <div className="space-y-2.5">
+                <div className="divide-y divide-border/50 px-2 py-1 sm:px-3">
                   {filteredEpisodes.map((ep, idx) => {
                     const epNum = ep.episodeNumber ?? idx + 1;
                     const displayTitle = episodeDisplayTitle(ep.name, epNum);
@@ -608,7 +486,7 @@ function DetailView({
                     const played = !!ep.watch?.played;
                     const hasWatch = !!ep.watch;
                     const seasonNum = ep.seasonNumber ?? selectedSeason;
-                    const badge = `S${seasonNum}E${epNum}`;
+                    const isNext = activeEpisode?.id === ep.id && !played;
 
                     return (
                       <div
@@ -617,94 +495,67 @@ function DetailView({
                         data-poster={ep.poster ?? undefined}
                         data-backdrop={ep.backdrop ?? undefined}
                         className={cx(
-                          "group relative flex w-full items-center justify-between gap-2.5 rounded-xl border bg-surface p-2 sm:p-2.5 sm:gap-3.5",
-                          "transition-[background-color,border-color,transform] duration-150 ease-out hover:border-border hover:bg-surface-tertiary/80 active:scale-[0.99]",
-                          played ? "border-border/40 opacity-80 hover:opacity-100" : "border-border/70",
+                          "group relative flex w-full items-center gap-2 rounded-lg py-1.5 pl-1 pr-1 transition-colors duration-150 sm:gap-3 sm:pl-2",
+                          isNext ? "bg-surface-secondary/55" : "hover:bg-surface-secondary/40",
                         )}
                       >
+                        {isNext && <span aria-hidden className="absolute inset-y-2 left-0 w-[2px] rounded-full bg-accent" />}
+
                         <button
                           type="button"
                           onPointerEnter={() => prefetchPlay(targetFileId)}
                           onFocus={() => prefetchPlay(targetFileId)}
                           onClick={() => {
+                            if (!targetFileId) return;
                             navigate({
                               to: "/watch/$fileId",
                               params: { fileId: String(targetFileId) },
                               state: { playerFromTitle: true },
                             });
                           }}
-                          className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3.5 text-left focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 rounded-lg"
+                          aria-label={played ? `Play ${displayTitle} again` : `Play ${displayTitle}`}
+                          className="relative aspect-video w-[7.5rem] shrink-0 overflow-hidden rounded-md border border-border/50 bg-surface-secondary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 min-[420px]:w-32 sm:w-36"
                         >
-                          <div className="hidden sm:flex w-6 shrink-0 justify-center font-display text-xs font-semibold tabular-nums text-muted/70 transition-colors group-hover:text-foreground">
-                            {String(epNum).padStart(2, "0")}
-                          </div>
+                          {ep.poster || ep.backdrop ? (
+                            <img
+                              src={artworkUrl(ep.poster ?? ep.backdrop) ?? ""}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="zoom-on-hover-strong h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-muted">
+                              <Play size={16} aria-hidden />
+                            </div>
+                          )}
 
-                          <div className="relative aspect-video w-24 min-[400px]:w-32 sm:w-40 md:w-44 shrink-0 overflow-hidden rounded-lg bg-surface-secondary border border-border/50">
-                            {ep.poster || ep.backdrop ? (
-                              <img
-                                src={artworkUrl(ep.poster ?? ep.backdrop) ?? ""}
-                                alt={displayTitle}
-                                loading="lazy"
-                                decoding="async"
-                                className="zoom-on-hover-strong h-full w-full object-cover"
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-black shadow-md">
+                              <Play size={13} className="ml-0.5" fill="currentColor" />
+                            </span>
+                          </span>
+
+                          {ep.watch && ep.watch.percent > 0 && (
+                            <span className="absolute inset-x-0 bottom-0 h-[3px] bg-black/55" aria-hidden>
+                              <span
+                                className="block h-full bg-accent"
+                                style={{ width: `${Math.min(100, Math.max(2, ep.watch.percent))}%` }}
                               />
-                            ) : (
-                              <div className="flex h-full w-full flex-col items-center justify-center p-2 font-display text-[10px] text-muted text-center bg-gradient-to-t from-black/60 to-transparent">
-                                <span className="line-clamp-2">{displayTitle}</span>
-                              </div>
-                            )}
-
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-2xs transition-opacity duration-150 group-hover:opacity-100">
-                              <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white text-black shadow-md transition-transform duration-150 group-hover:scale-105 active:scale-95">
-                                <Play size={14} className="ml-0.5" fill="currentColor" />
-                              </div>
-                            </div>
-
-                            {ep.runtime && (
-                              <div className="absolute bottom-1 right-1 rounded-md bg-black/80 px-1 py-0.2 text-[9px] font-semibold text-white/90">
-                                {ep.runtime}m
-                              </div>
-                            )}
-
-                            {ep.watch && ep.watch.percent > 0 && (
-                              <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden">
-                                <div
-                                  className="h-full bg-accent"
-                                  style={{ width: `${Math.min(100, Math.max(2, ep.watch.percent))}%` }}
-                                />
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="min-w-0 flex-1 py-0.5">
-                            <div className="flex items-center gap-2">
-                              <h3 className="truncate text-xs sm:text-sm font-semibold text-foreground transition-colors group-hover:text-foreground">
-                                {displayTitle}
-                              </h3>
-                              {ep.runtime && (
-                                <span className="hidden sm:inline-block shrink-0 text-[11px] font-medium text-muted/80">
-                                  · {ep.runtime} min
-                                </span>
-                              )}
-                            </div>
-
-                            {ep.overview ? (
-                              <p className="mt-1 line-clamp-1 min-[420px]:line-clamp-2 text-[11px] sm:text-xs leading-relaxed text-muted">
-                                {ep.overview}
-                              </p>
-                            ) : (
-                              <p className="mt-1 text-[11px] text-muted/60 italic">
-                                No description available.
-                              </p>
-                            )}
-
-                            <div className="mt-1 text-[11px] font-medium text-muted">
-                              Episode {epNum}
-                            </div>
-                          </div>
+                            </span>
+                          )}
                         </button>
 
-                        <div className="flex shrink-0 items-center gap-0.5 pr-1">
+                        <div className="min-w-0 flex-1 py-0.5">
+                          <h3 className={cx("truncate text-[12.5px] font-semibold text-foreground sm:text-[13.5px]", played && "text-foreground/65")}>
+                            {displayTitle}
+                          </h3>
+                          <p className="mt-1 text-[10.5px] text-muted">
+                            Season {seasonNum}, Episode {epNum}
+                          </p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-0.5 self-center pr-0.5">
                           <button
                             type="button"
                             onClick={() => watchMutation.mutate({ itemId: ep.id, played: !played })}
@@ -712,13 +563,13 @@ function DetailView({
                             aria-label={played ? `Mark ${displayTitle} unwatched` : `Mark ${displayTitle} watched`}
                             title={played ? "Mark unwatched" : "Mark watched"}
                             className={cx(
-                              "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-95 disabled:opacity-50",
+                              "inline-flex h-8 w-8 items-center justify-center rounded-md transition-[background-color,color,transform] duration-150 active:scale-95 disabled:opacity-50",
                               played
-                                ? "text-muted hover:bg-accent/10"
-                                : "text-muted hover:text-foreground hover:bg-surface-secondary",
+                                ? "text-accent hover:bg-accent/10"
+                                : "text-muted/60 hover:bg-surface-secondary hover:text-foreground",
                             )}
                           >
-                            {played ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                            {played ? <CheckCircle2 size={15} /> : <Circle size={15} />}
                           </button>
                           {hasWatch && (
                             <button
@@ -727,9 +578,9 @@ function DetailView({
                               disabled={clearWatchMutation.isPending}
                               aria-label={`Remove progress for ${displayTitle}`}
                               title="Remove progress"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-[background-color,color,transform] duration-150 hover:bg-danger/10 hover:text-danger-soft-foreground active:scale-95 disabled:opacity-50"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted/60 transition-[background-color,color,transform] duration-150 hover:bg-danger/10 hover:text-danger-soft-foreground active:scale-95 disabled:opacity-50"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           )}
                         </div>
@@ -738,140 +589,103 @@ function DetailView({
                   })}
                 </div>
               ) : (
-                <p className="py-4 text-sm text-muted">
+                <p className="px-5 py-8 text-sm text-muted">
                   No individual episode records indexed for this season yet.
                 </p>
               )}
-            </div>
+            </section>
           )}
 
         </div>
 
-        {(cast?.length || file) && (
+        {(cast?.length || (item.kind !== "series" && file)) && (
           <aside className="h-fit space-y-5">
             {cast && cast.length > 0 && (
-              <section className="space-y-4 rounded-2xl border border-border bg-surface p-5 sm:p-6">
-                <SectionHeading
-                  icon={Users}
-                  title="Top cast"
-                  action={
-                    cast.length > 6 ? (
-                      <button
-                        onClick={() => setCastExpanded((v) => !v)}
-                        className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
-                      >
-                        {castExpanded ? "Show less" : `View all (${cast.length})`}
-                      </button>
-                    ) : undefined
-                  }
-                />
+            <section className="panel overflow-hidden">
+              <header className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
+                <div className="flex items-center gap-2">
+                  <Users size={13} className="text-muted" aria-hidden />
+                  <h2 className="text-[12px] font-bold uppercase tracking-[0.14em] text-foreground">Top cast</h2>
+                </div>
+                {cast.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setCastExpanded((v) => !v)}
+                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                  >
+                    {castExpanded ? "Show less" : `View all (${cast.length})`}
+                  </button>
+                )}
+              </header>
 
-                <div className="grid grid-cols-1 gap-2.5">
-                  {(castExpanded ? cast : cast.slice(0, 6)).map((c) => (
+              <ul className="p-1.5">
+                {(castExpanded ? cast : cast.slice(0, 6)).map((c) => (
+                  <li key={c.id}>
                     <Link
-                      key={c.id}
                       to="/person/$personId"
                       params={{ personId: String(c.id) }}
-                      className="flex min-w-0 items-center gap-3 rounded-xl border border-border/60 bg-background/50 p-2.5 transition-colors hover:border-border hover:bg-surface-secondary"
+                      className="group flex min-w-0 items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-surface-secondary/60"
                     >
-                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-surface-secondary">
+                      <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md bg-surface-secondary">
                         {c.photo ? (
                           <img
                             src={artworkUrl(c.photo) ?? ""}
-                            alt={c.name}
+                            alt=""
                             loading="lazy"
                             className="h-full w-full object-cover"
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-muted">
+                          <div className="flex h-full w-full items-center justify-center text-[11px] font-bold text-muted">
                             {c.name[0]}
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0 inline-block align-top">
-                        <p className="truncate text-xs font-semibold text-foreground">{c.name}</p>
-                        {c.character && (
-                          <p className="truncate text-[11px] text-muted">{c.character}</p>
-                        )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[11.5px] font-semibold text-foreground">{c.name}</p>
+                        {c.character && <p className="truncate text-[10px] text-muted">{c.character}</p>}
                       </div>
+                      <ChevronRight size={12} className="shrink-0 text-muted/0 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-muted/70" />
                     </Link>
-                  ))}
-                </div>
-              </section>
-            )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
-            {file && <section className="h-fit space-y-6 rounded-2xl border border-border bg-surface p-5 sm:p-6">
-            <div>
-              <SectionHeading icon={HardDrive} title="Media details" />
-              <dl className="mt-4 space-y-2.5 text-xs">
+          {item.kind !== "series" && file && (
+            <section className="panel p-4 sm:p-5">
+              <div className="flex items-center gap-2">
+                <HardDrive size={13} className="text-muted" aria-hidden />
+                <h2 className="text-[12px] font-bold uppercase tracking-[0.14em] text-foreground">Details</h2>
+              </div>
+
+              <dl className="mt-3 divide-y divide-border/55 text-[11.5px]">
                 {file.width && file.height && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted">Resolution</dt>
-                    <dd className="font-medium text-foreground">
-                      {file.height >= 2160
-                        ? "4K UHD"
-                        : file.height >= 1080
-                          ? "1080p FHD"
-                          : `${file.width}×${file.height}`}
-                    </dd>
-                  </div>
+                  <DetailRow
+                    label="Resolution"
+                    value={file.height >= 2160 ? "4K UHD" : file.height >= 1080 ? "1080p" : `${file.width}×${file.height}`}
+                  />
                 )}
-
                 {file.videoCodec && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted">Video Codec</dt>
-                    <dd className="font-medium uppercase text-foreground">
-                      {file.videoCodec} {file.videoProfile ? `(${file.videoProfile})` : ""}
-                    </dd>
-                  </div>
+                  <DetailRow label="Video" value={`${file.videoCodec.toUpperCase()}${file.videoProfile ? ` · ${file.videoProfile}` : ""}`} />
                 )}
-
-                {file.container && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted">Container</dt>
-                    <dd className="font-medium uppercase text-foreground">{file.container}</dd>
-                  </div>
-                )}
-
+                {file.container && <DetailRow label="Container" value={file.container.toUpperCase()} />}
                 {file.audio && file.audio.length > 0 && (
-                  <div className="flex items-baseline justify-between gap-6">
-                    <dt className="shrink-0 text-muted">Audio</dt>
-                    <dd className="text-right font-medium text-foreground">
-                      {file.audio
-                        .map((a) => [a.codec.toUpperCase(), a.language].filter(Boolean).join(" · "))
-                        .join(", ")}
-                    </dd>
-                  </div>
+                  <DetailRow
+                    label="Audio"
+                    value={file.audio.map((a) => [a.codec.toUpperCase(), a.language].filter(Boolean).join(" · ")).join(", ")}
+                  />
                 )}
-
-                {file.subtitleCount > 0 && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted">Subtitles</dt>
-                    <dd className="font-medium text-foreground">{file.subtitleCount} tracks</dd>
-                  </div>
-                )}
-
-                {file.size > 0 && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted">File Size</dt>
-                    <dd className="font-medium tabular-nums text-foreground">
-                      {(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB
-                    </dd>
-                  </div>
-                )}
-
-                {file.duration && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted">Duration</dt>
-                    <dd className="font-medium tabular-nums text-foreground">{Math.round(file.duration / 60)} min</dd>
-                  </div>
-                )}
+                {file.subtitleCount ? <DetailRow label="Subtitles" value={`${file.subtitleCount} tracks`} /> : null}
+                {file.size ? <DetailRow label="File size" value={`${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`} /> : null}
+                {file.duration ? <DetailRow label="Duration" value={`${Math.round(file.duration / 60)} min`} /> : null}
               </dl>
-            </div>
-            </section>}
+            </section>
+          )}
           </aside>
         )}
       </div>
+
       <TrailerModal
         open={trailerOpen}
         onOpenChange={setTrailerOpen}
@@ -906,18 +720,10 @@ function DetailView({
                 )}
               </Modal.Body>
               <Modal.Footer className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onPress={() => setDeleteOpen(false)}
-                  isDisabled={deleteMutation.isPending}
-                >
+                <Button variant="ghost" onPress={() => setDeleteOpen(false)} isDisabled={deleteMutation.isPending}>
                   Cancel
                 </Button>
-                <Button
-                  variant="danger"
-                  onPress={() => deleteMutation.mutate()}
-                  isDisabled={deleteMutation.isPending}
-                >
+                <Button variant="danger" onPress={() => deleteMutation.mutate()} isDisabled={deleteMutation.isPending}>
                   {deleteMutation.isPending ? "Removing…" : "Remove title and files"}
                 </Button>
               </Modal.Footer>
@@ -929,29 +735,11 @@ function DetailView({
   );
 }
 
-function SectionHeading({
-  icon: Icon,
-  title,
-  hint,
-  action,
-}: {
-  icon: typeof BookOpen;
-  title: string;
-  hint?: string;
-  action?: React.ReactNode;
-}) {
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-muted">
-          <Icon size={15} />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-        </div>
-      </div>
-      {action}
+    <div className="flex items-baseline justify-between gap-4 py-2">
+      <dt className="shrink-0 text-muted">{label}</dt>
+      <dd className="text-right font-medium text-foreground">{value}</dd>
     </div>
   );
 }

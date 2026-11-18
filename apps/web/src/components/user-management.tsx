@@ -20,7 +20,6 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
-  Users as UsersIcon,
   X,
 } from "lucide-react";
 import { PageLoader } from "./page-loader";
@@ -52,11 +51,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 font-display text-base font-bold text-foreground">
-            <UsersIcon size={17} className="text-muted" />
-            Users
-          </h2>
-          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted">
+          <p className="mt-1.5 max-w-2xl text-[11px] leading-relaxed text-muted">
             People who can sign in to this Plexy server. New accounts start with
             no library access; administrators always have full access. Everyone
             pairs their own devices from Settings.
@@ -65,7 +60,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
         <Button
           variant="primary"
           onPress={() => setCreating(true)}
-          className="shrink-0 self-start"
+          className="h-9 shrink-0 self-start px-3.5 text-[11px] font-semibold"
         >
           <UserPlus size={15} />
           New user
@@ -81,7 +76,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
       {users.isLoading && !users.data ? (
         <PageLoader label="Loading users" className="min-h-[24vh]" />
       ) : users.data?.users.length ? (
-        <ul className="overflow-hidden rounded-2xl border border-border/70 bg-surface shadow-sm">
+        <ul className="panel overflow-hidden">
           {users.data.users.map((user) => (
             <UserRow
               key={`${user.id}:${user.disabled}:${user.role}:${user.maxAge}:${user.blockUnrated}`}
@@ -93,7 +88,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
         </ul>
       ) : (
         !users.isError && (
-          <p className="rounded-2xl border border-border/70 bg-surface px-4 py-6 text-center text-sm text-muted">
+          <p className="panel px-4 py-6 text-center text-[11px] text-muted">
             No accounts yet. Create the first one to let someone sign in.
           </p>
         )
@@ -115,14 +110,8 @@ function Users({ currentUserId }: { currentUserId: number }) {
 /** Role and restriction badges, shared by the roster and the editor header. */
 function RoleBadge({ role }: { role: AccountUser["role"] }) {
   return (
-    <span
-      className={
-        role === "admin"
-          ? "inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent-soft-foreground"
-          : "inline-flex items-center rounded-full border border-border/70 bg-surface-secondary px-2 py-0.5 text-[11px] font-semibold text-muted"
-      }
-    >
-      {role === "admin" && <ShieldCheck size={11} />}
+    <span className="inline-flex items-center gap-1 text-[9.5px] font-medium text-muted">
+      {role === "admin" && <ShieldCheck size={10} aria-hidden />}
       {role === "admin" ? "Administrator" : "User"}
     </span>
   );
@@ -146,22 +135,18 @@ function UserRow({
       <UserAvatar user={user} size={36} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-semibold text-foreground">
+          <span className="truncate text-[12px] font-semibold text-foreground">
             {user.username}
           </span>
           {isSelf && (
-            <span className="rounded-full border border-border/70 bg-surface-secondary px-2 py-0.5 text-[11px] font-semibold text-muted">
-              You
-            </span>
+            <span className="text-[9.5px] font-medium text-muted">You</span>
           )}
           <RoleBadge role={user.role} />
           {user.disabled && (
-            <span className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger-soft-foreground">
-              Disabled
-            </span>
+            <span className="text-[9.5px] font-semibold text-danger-soft-foreground">Disabled</span>
           )}
         </div>
-        <p className="mt-1 truncate text-xs text-muted">
+        <p className="mt-0.5 truncate text-[10.5px] text-muted">
           {user.disabled ? "Cannot sign in until re-enabled" : restriction}
         </p>
       </div>
@@ -169,7 +154,7 @@ function UserRow({
         variant="secondary"
         size="sm"
         onPress={onManage}
-        className="ml-auto shrink-0"
+        className="ml-auto h-8 shrink-0 px-2.5 text-[10.5px] font-semibold"
       >
         <Pencil size={13} />
         Manage
@@ -374,9 +359,7 @@ function EditUserDialog({
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <RoleBadge role={settings.role} />
                     {settings.disabled && (
-                      <span className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger-soft-foreground">
-                        Disabled
-                      </span>
+                      <span className="text-[9.5px] font-semibold text-danger-soft-foreground">Disabled</span>
                     )}
                   </div>
                 </div>

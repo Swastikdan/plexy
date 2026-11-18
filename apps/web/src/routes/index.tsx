@@ -1,26 +1,71 @@
 import { getSignedInUser } from "../auth";
-/// Home: a featured billboard followed by horizontally scrolling library rows.
-import { useEffect } from "react";
+/// Home: one featured carousel, then the shelves that matter.
+import { useEffect, useMemo } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, FolderPlus, Plus } from "lucide-react";
 import { queries } from "../queries";
 import { Row } from "../components/row";
 import { HomeHero } from "../components/home-hero";
 import { Button } from "@heroui/react";
-import { PageLoader } from "../components/page-loader";
+import { Page } from "../components/page";
+import { State } from "../components/state";
+import type { ItemCard } from "../client";
 
-const ROW_META: Record<string, { subtitle: string; viewAll?: "movies" | "tv" }> = {
-  continue: { subtitle: "Pick up where you left off" },
-  next: { subtitle: "The next episode waiting for you" },
-  "recent-movies": { subtitle: "Fresh in your movie library", viewAll: "movies" },
-  "recent-shows": { subtitle: "Newly added series", viewAll: "tv" },
+const ROW_META: Record<string, { viewAll?: "movies" | "tv" }> = {
+  "recent-movies": { viewAll: "movies" },
+  "recent-shows": { viewAll: "tv" },
 };
+
+function HomeSkeleton() {
+  return (
+    <Page className="pt-4 sm:pt-5">
+      <div className="space-y-9">
+        <div className="skeleton h-[clamp(28rem,62vh,44rem)] rounded-[calc(var(--radius)*3)]" />
+        {[0, 1].map((row) => (
+          <div key={row} className="space-y-4">
+            <div className="skeleton h-5 w-44 rounded-md" />
+            <div className="flex gap-3.5 overflow-hidden">
+              {[0, 1, 2, 3, 4, 5, 6].map((card) => (
+                <div key={card} className="skeleton aspect-[2/3] h-[13rem] shrink-0 rounded-[calc(var(--radius)*1.35)]" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Page>
+  );
+}
 
 function HomeRoute() {
   const navigate = useNavigate();
   const status = useQuery(queries.serverStatus());
   const { data, isLoading, isError } = useQuery(queries.home());
+
+  // The server's featured title leads the carousel; recent movies and shows
+  // fill the remaining slides. Episodes and continue-watching entries stay in
+  // their own rows, and a title only appears once.
+  const featuredItems = useMemo(() => {
+    if (!data) return [] as ItemCard[];
+    const list: ItemCard[] = [];
+    const seen = new Set<string>();
+    const add = (item: ItemCard) => {
+      if (item.kind !== "movie" && item.kind !== "series") return;
+      if (seen.has(item.publicId)) return;
+      seen.add(item.publicId);
+      list.push(item);
+    };
+    if (data.featured) add(data.featured);
+    for (const row of data.rows) {
+      if (row.key === "continue" || row.key === "next") continue;
+      for (const item of row.items) {
+        add(item);
+        if (list.length >= 6) break;
+      }
+      if (list.length >= 6) break;
+    }
+    return list;
+  }, [data]);
 
   useEffect(() => {
     if (status.data && !status.data.setupComplete && status.data.adminAvailable) {
@@ -29,25 +74,24 @@ function HomeRoute() {
   }, [status.data, navigate]);
 
   if (status.isLoading || (status.data && !status.data.setupComplete && status.data.adminAvailable) || isLoading) {
-    return (
-      <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 sm:px-8">
-        <PageLoader />
-      </main>
-    );
+    return <HomeSkeleton />;
   }
   if (isError) {
     return (
-      <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 pt-12 sm:px-8">
-        <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-          <h2 className="font-sans text-xl font-bold text-foreground">Home failed to load</h2>
-          <p className="text-sm text-muted">The server didn't answer. Is Plexy running?</p>
-          <Link to="/connect">
-            <Button className="mt-4">
-              Choose a server
-            </Button>
-          </Link>
-        </div>
-      </main>
+      <Page>
+        <State
+          icon={FolderPlus}
+          title="Home failed to load"
+          body="The server didn't answer. Is Plexy running?"
+          action={
+            <Link to="/connect">
+              <Button>
+                Choose a server
+              </Button>
+            </Link>
+          }
+        />
+      </Page>
     );
   }
   if (!data) return null;
@@ -57,17 +101,18 @@ function HomeRoute() {
   const administrator = getSignedInUser()?.role === "admin";
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1500px] px-4 pb-24 sm:px-8">
+    <Page className="pt-4 sm:pt-5">
       {empty ? (
         <div className="mx-auto flex min-h-[64vh] max-w-lg flex-col items-center justify-center gap-4 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-surface text-muted shadow-sm">
-            <Plus size={28} />
+          <div className="relative mb-1 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-surface text-muted">
+            <Plus size={26} strokeWidth={1.6} aria-hidden />
+            <span aria-hidden className="absolute -right-1.5 -top-1.5 h-3 w-3 rounded-full bg-accent" />
           </div>
           <div>
-            <h2 className="font-sans text-2xl font-bold tracking-tight text-foreground">
+            <h2 className="font-sans text-2xl font-extrabold tracking-[-0.04em] text-foreground">
               {administrator ? "Your library is ready" : "No titles shared yet"}
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted">
+            <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-muted">
               {administrator
                 ? "Add a movie or TV folder and Plexy will organize your media with posters, metadata, and watch progress."
                 : "Your administrator can share libraries, folders, or individual titles with your account."}
@@ -75,22 +120,23 @@ function HomeRoute() {
           </div>
           {administrator && (
             <Link to="/add-library">
-              <Button className="mt-1 h-10 px-6 text-sm font-semibold">
-                Add a Library
+              <Button className="mt-1 h-10 px-5 text-sm font-semibold">
+                Add a library
               </Button>
             </Link>
           )}
         </div>
       ) : (
-        <div className="staggered space-y-7 pb-6 pt-4 sm:space-y-8 sm:pt-6">
-          {data.featured && <HomeHero item={data.featured} />}
+        <div className="staggered space-y-8 pb-8 sm:space-y-9">
+          {featuredItems.length > 0 && <HomeHero items={featuredItems} />}
+
           {rows.map((row) => {
             const meta = ROW_META[row.key];
             return (
               <Row
                 key={row.key}
+                id={row.key === "continue" ? "continue-watching" : undefined}
                 title={row.title}
-                subtitle={meta?.subtitle}
                 items={row.items}
                 directPlay={row.key === "continue" || row.key === "next"}
                 wide={row.key === "continue" || row.key === "next"}
@@ -99,12 +145,13 @@ function HomeRoute() {
                     <Link
                       to="/library/$kind"
                       params={{ kind: meta.viewAll }}
-                      className="group inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                      className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
                     >
                       See all
                       <ArrowRight
-                        size={13}
+                        size={12}
                         className="transition-transform duration-150 group-hover:translate-x-0.5"
+                        aria-hidden
                       />
                     </Link>
                   ) : undefined
@@ -114,7 +161,7 @@ function HomeRoute() {
           })}
         </div>
       )}
-    </main>
+    </Page>
   );
 }
 

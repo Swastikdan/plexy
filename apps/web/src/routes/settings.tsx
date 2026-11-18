@@ -18,6 +18,7 @@ import { accountRequest, getSignedInUser, type AccountUser, type AuthDevice } fr
 import { getClientRuntime } from "../runtime-config";
 import { queries } from "../queries";
 import { cx } from "../lib/cx";
+import { Page } from "../components/page";
 import { OverviewPanel } from "../components/settings/overview";
 import {
   AccountPanel,
@@ -121,29 +122,10 @@ function SettingsRoute() {
   const meta = TAB_META[effectiveTab];
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1400px] px-4 pb-24 pt-6 sm:px-8 sm:pt-8 lg:pb-16">
-      <header className="flex flex-wrap items-end justify-between gap-4 pb-6">
-        <div className="min-w-0">
-          <h1 className="font-sans text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Settings
-          </h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">
-            Your account and every server control in one place.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-semibold text-muted sm:inline-flex">
-            <span
-              aria-hidden
-              className={cx("h-1.5 w-1.5 rounded-full", status.data ? "bg-success" : "bg-warning")}
-            />
-            {status.data ? `Server v${status.data.version}` : "Connecting"}
-          </span>
-        </div>
-      </header>
-
+    <Page className="pt-4 sm:pt-6">
       {/* Mobile section switcher */}
-      <div className="-mx-4 mb-5 overflow-x-auto px-4 pb-1 lg:hidden">
+      <div className="relative -mx-4 mb-6 lg:hidden">
+        <div className="overflow-x-auto px-4 pb-1">
         <nav className="flex min-w-max items-center gap-1 rounded-xl border border-border bg-surface p-1" aria-label="Settings sections">
           {[...PERSONAL_TABS, ...(admin ? SERVER_TABS : [])].map((entry) => {
             const Icon = entry.icon;
@@ -155,35 +137,38 @@ function SettingsRoute() {
                 search={{ tab: entry.key }}
                 aria-current={active ? "page" : undefined}
                 className={cx(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
                   active
                     ? "bg-foreground text-background"
                     : "text-muted hover:bg-surface-secondary hover:text-foreground",
                 )}
               >
-                <Icon size={13} />
+                <Icon size={12} />
                 {entry.label}
               </Link>
             );
           })}
         </nav>
+        </div>
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent" />
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
+      <div className="grid gap-8 lg:grid-cols-[13.5rem_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[14.5rem_minmax(0,1fr)] xl:gap-12">
         <aside className="hidden lg:block">
-          <nav className="sticky top-24 space-y-6" aria-label="Settings sections">
+          <nav className="sticky top-[5.75rem] space-y-7" aria-label="Settings sections">
             <NavGroup title="Your account" items={PERSONAL_TABS} active={effectiveTab} />
             {admin && <NavGroup title="Server" items={SERVER_TABS} active={effectiveTab} />}
           </nav>
         </aside>
 
         <section key={effectiveTab} className="page-enter min-w-0" aria-label={meta.title}>
-          <header className="mb-5 border-b border-border pb-4">
-            <p className="text-[11px] font-semibold text-muted">{meta.group}</p>
-            <h2 className="mt-0.5 font-sans text-lg font-bold tracking-tight text-foreground sm:text-xl">
-              {meta.title}
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">{meta.description}</p>
+          <header className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
+            <div className="min-w-0">
+              <h2 className="font-sans text-xl font-bold tracking-[-0.03em] text-foreground sm:text-2xl">
+                {meta.title}
+              </h2>
+              <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted sm:text-[13px]">{meta.description}</p>
+            </div>
           </header>
 
           {effectiveTab === "overview" && <OverviewPanel admin={admin} />}
@@ -197,7 +182,7 @@ function SettingsRoute() {
           {effectiveTab === "server" && <ServerPreferencesPanel />}
         </section>
       </div>
-    </main>
+    </Page>
   );
 }
 
@@ -212,8 +197,8 @@ function NavGroup({
 }) {
   return (
     <div>
-      <p className="px-2 text-[11px] font-semibold text-muted">{title}</p>
-      <ul className="mt-2 space-y-0.5">
+      <p className="eyebrow px-2 pb-1.5">{title}</p>
+      <ul className="space-y-0.5">
         {items.map((entry) => {
           const Icon = entry.icon;
           const selected = active === entry.key;
@@ -223,14 +208,10 @@ function NavGroup({
                 to="/settings"
                 search={{ tab: entry.key }}
                 aria-current={selected ? "page" : undefined}
-                className={cx(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
-                  selected
-                    ? "bg-surface-secondary text-foreground"
-                    : "text-muted hover:bg-surface-secondary/60 hover:text-foreground",
-                )}
+                data-active={selected || undefined}
+                className="side-link"
               >
-                <Icon size={15} className={selected ? "text-foreground" : "text-muted"} />
+                <Icon size={15} strokeWidth={1.9} className={selected ? "" : "text-muted"} />
                 {entry.label}
               </Link>
             </li>

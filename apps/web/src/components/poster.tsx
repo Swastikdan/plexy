@@ -1,12 +1,20 @@
-/// Poster card with a title label and an optional wide-card hover overlay.
+/// Poster / wide episode card.
 ///
-/// Optional `showKind` pins a small type chip (movie / series / episode) at the
-/// top of the artwork, and hovering any poster quietly prefetches its detail
-/// page so opening a title is instant.
+/// One card language for the whole catalogue: a framed still, a quiet title
+/// line, progress where it matters, and a menu that only appears when asked.
 import { useRef, useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Film, MonitorPlay, Tv, MoreVertical, Play, Info, CheckCircle2, XCircle, Star } from "lucide-react";
+import {
+  CheckCircle2,
+  Film,
+  Info,
+  MoreVertical,
+  Play,
+  Star,
+  Tv,
+  XCircle,
+} from "lucide-react";
 import { Dropdown } from "@heroui/react";
 import { api, probeBrowserCaps, type ItemCard } from "../client";
 import { queries } from "../queries";
@@ -27,55 +35,29 @@ export interface PosterItem {
   rating?: number | null;
   fileId?: number | null;
   watch?: ItemCard["watch"] | null;
+  parentTitle?: string | null;
 }
 
-function KindChip({ kind }: { kind?: string }) {
-  if (kind === "episode") {
-    return (
-      <span
-        className="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white/80"
-        aria-hidden
-      >
-        <MonitorPlay size={10} />
-        Episode
-      </span>
-    );
-  }
-  const isSeries = kind === "series";
-  return (
-    <span
-      className="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white/80"
-      aria-hidden
-    >
-      {isSeries ? <Tv size={10} /> : <Film size={10} />}
-      {isSeries ? "Series" : "Film"}
-    </span>
-  );
+function stripEpisodePrefix(name: string): string {
+  return name.replace(/^S\d+E\d+\s*[·:\-–—]\s*/i, "").trim() || name;
 }
 
 export function Poster({
   item,
   className,
   wide = false,
-  showKind = false,
   directPlay = false,
 }: {
   item: PosterItem;
   className?: string;
   wide?: boolean;
-  showKind?: boolean;
   directPlay?: boolean;
 }) {
   const imgSrc = artworkUrl(wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop);
-  const showTitleBelow = !wide || item.kind === "series";
+  const showTitleBelow = !wide;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canPlayDirect = directPlay && item.fileId != null;
-
-  // While the options menu is open we keep the card in its zoomed state, so
-  // the portaled menu's anchor rect never moves — otherwise leaving the card
-  // with the mouse would shrink the card under the open menu and drag the
-  // menu along with it (bad layout shift).
   const [menuOpen, setMenuOpen] = useState(false);
 
   const updateWatch = (request: Promise<unknown>) => {
@@ -86,7 +68,6 @@ export function Poster({
     }).catch(() => {});
   };
 
-  // Quiet prefetch with hover dwell delay (100ms) so rapid scrolling doesn't flood the network
   const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startPrefetch = () => {
@@ -119,161 +100,152 @@ export function Poster({
     ? ({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } } as const)
     : ({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } } as const);
 
+  const episodeTitle = item.kind === "episode" ? stripEpisodePrefix(item.name) : item.name;
+  const primaryTitle = item.kind === "episode" ? item.parentTitle ?? episodeTitle : item.name;
+  const secondaryTitle = item.kind === "episode" && item.parentTitle ? episodeTitle : null;
+  const percent = Math.min(100, Math.max(0, item.watch?.percent ?? 0));
+
   return (
     <div
       className={cx(
-        "min-w-0 overflow-hidden rounded-lg",
+        "group/card min-w-0 shrink-0",
         !wide && "inline-block align-top",
         wide && "flex flex-col",
-        className,
       )}
     >
       <div
         data-open={menuOpen || undefined}
+        data-kind={wide ? "wide" : "poster"}
         className={cx(
-          "poster-frame group relative block h-full overflow-hidden rounded-lg",
-          "bg-surface border border-border/40",
-          "hover:z-20 hover:border-separator",
-          "focus-within:ring-2 focus-within:ring-white/20",
-          // Freeze the zoom while the menu is open (covers hover-out), and stay
-          // above neighboring cards even when the pointer isn't on us.
-          menuOpen && "z-30 border-separator",
+          "media-card group relative block h-full overflow-hidden",
+          "focus-within:ring-2 focus-within:ring-accent/60 focus-within:ring-offset-2 focus-within:ring-offset-background",
+          wide ? "rounded-xl" : "rounded-[calc(var(--radius)*1.35)]",
+          menuOpen && "z-30",
           className,
         )}
       >
-      <Link
-        {...destination}
-        onPointerEnter={startPrefetch}
-        onPointerLeave={cancelPrefetch}
-        onFocus={startPrefetch}
-        onBlur={cancelPrefetch}
-        onContextMenu={(e) => e.preventDefault()}
-        className="absolute inset-0 z-0 outline-none"
-        aria-label={item.name}
-      />
-
-      {showKind && <KindChip kind={item.kind} />}
-      {item.rating != null && !wide && (
-        <span
-          className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-warning"
-          aria-label={`Rated ${item.rating.toFixed(1)} out of 10`}
-        >
-          <Star size={10} fill="currentColor" />
-          {item.rating.toFixed(1)}
-        </span>
-      )}
-      {imgSrc ? (
-        <img
-          src={imgSrc}
-          alt={item.name}
-          loading="lazy"
-          decoding="async"
-          className="h-full w-full object-cover transition-transform duration-300 ease-out pointer-events-none"
+        <Link
+          {...destination}
+          onPointerEnter={startPrefetch}
+          onPointerLeave={cancelPrefetch}
+          onFocus={startPrefetch}
+          onBlur={cancelPrefetch}
+          onContextMenu={(e) => e.preventDefault()}
+          className="absolute inset-0 z-0 outline-none"
+          aria-label={wide && item.kind === "episode" ? `${primaryTitle}, ${episodeTitle}` : item.name}
         />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-surface-secondary text-muted pointer-events-none">
-          {item.kind === "series" ? <Tv size={24} /> : <Film size={24} />}
-        </div>
-      )}
 
-      {/* Landscape cards retain the title treatment; poster cards identify
-          themselves below the artwork instead of covering it with a Details icon. */}
-      {wide && (
-        <div className="pointer-events-none absolute inset-0" aria-hidden>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
-          <div className="absolute bottom-0 left-0 right-0 p-3">
-            <p className="truncate text-xs font-semibold text-white">{item.name}</p>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-white/70">
-              {item.year && <span>{item.year}</span>}
-              {item.rating != null && <span className="text-warning">★ {item.rating.toFixed(1)}</span>}
+        {imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={item.name}
+            loading="lazy"
+            decoding="async"
+            className="media-art h-full w-full object-cover pointer-events-none"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-surface-secondary text-muted pointer-events-none">
+            {item.kind === "series" ? <Tv size={24} /> : <Film size={24} />}
+          </div>
+        )}
+
+        {/* Wide cards carry their own caption on the art. */}
+        {wide && (
+          <div className="pointer-events-none absolute inset-0" aria-hidden>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 p-3 sm:p-3.5">
+              <p className="truncate text-[12.5px] font-semibold text-white">{primaryTitle}</p>
+              {secondaryTitle && (
+                <p className="mt-0.5 truncate text-[10px] text-white/55">{secondaryTitle}</p>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Watch progress for continuing titles */}
-      {item.watch && item.watch.percent > 0 && (
-        <div
-          className="absolute inset-x-0 bottom-0 h-1 bg-black/60 overflow-hidden pointer-events-none z-10"
-          aria-hidden
-        >
-          <div
-            className="h-full origin-left bg-accent transition-transform duration-300 ease-out"
-            style={{ transform: `scaleX(${Math.min(100, Math.max(2, item.watch.percent)) / 100})` }}
-          />
-        </div>
-      )}
+        {percent > 0 && (
+          <div className="absolute inset-x-0 bottom-0 z-10 h-[3px] bg-black/55" aria-hidden>
+            <div
+              className="h-full origin-left bg-accent transition-transform duration-500 ease-out"
+              style={{ transform: `scaleX(${Math.max(2, percent) / 100})` }}
+            />
+          </div>
+        )}
 
-      {/* More Options Menu for Continue Watching cards */}
-      {wide && (
-        <div
-          className={cx(
-            "absolute right-2 top-2 z-20 transition-opacity",
-            menuOpen
-              ? "opacity-100"
-              : "opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100",
-          )}
-        >
-          <Dropdown isOpen={menuOpen} onOpenChange={setMenuOpen}>
-            <Dropdown.Trigger
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              aria-label={`Options for ${item.name}`}
-              className="flex size-7 items-center justify-center rounded-md border border-white/20 bg-black/75 text-white/90 shadow-lg backdrop-blur-md transition-[background-color,color,transform] duration-150 hover:bg-black/95 hover:text-white active:scale-95"
-            >
-              <MoreVertical size={13} />
-            </Dropdown.Trigger>
-            <Dropdown.Popover placement="bottom end">
-              <Dropdown.Menu
-                onAction={(key) => {
-                  if (key === "resume" && item.fileId != null) {
-                    void navigate({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } });
-                  } else if (key === "details") {
-                    void navigate({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } });
-                  } else if (key === "watched") {
-                    updateWatch(api.setWatched(item.id, true));
-                  } else if (key === "remove") {
-                    updateWatch(api.clearWatch(item.id));
-                  }
+        {wide && (
+          <div className="card-overflow absolute right-2 top-2 z-20">
+            <Dropdown isOpen={menuOpen} onOpenChange={setMenuOpen}>
+              <Dropdown.Trigger
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                 }}
+                aria-label={`Options for ${item.name}`}
+                className="flex size-7 items-center justify-center rounded-md border border-white/20 bg-black/65 text-white/85 backdrop-blur-md transition-[background-color,color,transform] duration-150 hover:bg-black/90 hover:text-white active:scale-95"
               >
-                {canPlayDirect && (
-                  <Dropdown.Item id="resume" textValue="Resume playback">
-                    <Play size={13} className="shrink-0 text-muted" />
-                    <span>Resume playback</span>
+                <MoreVertical size={13} />
+              </Dropdown.Trigger>
+              <Dropdown.Popover placement="bottom end" shouldFlip={false}>
+                <Dropdown.Menu
+                  onAction={(key) => {
+                    if (key === "resume" && item.fileId != null) {
+                      void navigate({ to: "/watch/$fileId", params: { fileId: String(item.fileId) } });
+                    } else if (key === "details") {
+                      void navigate({ to: "/title/$itemId", params: { itemId: item.publicId ?? String(item.id) } });
+                    } else if (key === "watched") {
+                      updateWatch(api.setWatched(item.id, true));
+                    } else if (key === "remove") {
+                      updateWatch(api.clearWatch(item.id));
+                    }
+                  }}
+                >
+                  {canPlayDirect && (
+                    <Dropdown.Item id="resume" textValue="Resume playback">
+                      <Play size={13} className="shrink-0 text-muted" />
+                      <span>Resume playback</span>
+                    </Dropdown.Item>
+                  )}
+                  <Dropdown.Item id="details" textValue="View details">
+                    <Info size={13} className="shrink-0 text-muted" />
+                    <span>View details</span>
                   </Dropdown.Item>
-                )}
-                <Dropdown.Item id="details" textValue="View Details">
-                  <Info size={13} className="shrink-0 text-muted" />
-                  <span>View Details</span>
-                </Dropdown.Item>
-                <Dropdown.Item id="watched" textValue="Mark as Watched">
-                  <CheckCircle2 size={13} className="shrink-0 text-success-soft-foreground" />
-                  <span>Mark as Watched</span>
-                </Dropdown.Item>
-                <Dropdown.Section>
-                  <Dropdown.Item
-                    id="remove"
-                    textValue="Remove from Continue Watching"
-                    className="text-danger-soft-foreground"
-                  >
-                    <XCircle size={13} className="shrink-0" />
-                    <span>Remove from Continue Watching</span>
+                  <Dropdown.Item id="watched" textValue="Mark as watched">
+                    <CheckCircle2 size={13} className="shrink-0 text-success-soft-foreground" />
+                    <span>Mark as watched</span>
                   </Dropdown.Item>
-                </Dropdown.Section>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
-        </div>
-      )}
+                  <Dropdown.Section>
+                    <Dropdown.Item
+                      id="remove"
+                      textValue="Remove from Continue watching"
+                      className="text-danger-soft-foreground"
+                    >
+                      <XCircle size={13} className="shrink-0" />
+                      <span>Remove from Continue watching</span>
+                    </Dropdown.Item>
+                  </Dropdown.Section>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
+          </div>
+        )}
       </div>
+
       {showTitleBelow && (
-        <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-foreground" title={item.name}>
-          {item.name}
-        </p>
+        <div className="pt-2.5">
+          <p className="line-clamp-1 text-[12.5px] font-semibold leading-snug tracking-[-0.01em] text-foreground" title={item.name}>
+            {item.name}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted">
+            {item.year && <span>{item.year}</span>}
+            {item.year && item.rating != null && <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted/50" />}
+            {item.rating != null && (
+              <span className="inline-flex items-center gap-0.5 tabular-nums">
+                <Star size={8} fill="currentColor" className="text-[#e0b258]" aria-hidden />
+                {item.rating.toFixed(1)}
+              </span>
+            )}
+          </p>
+        </div>
       )}
     </div>
   );
