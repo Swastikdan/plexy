@@ -26,6 +26,7 @@ runs:
         path: node_modules/node-av/binary
         key: ffmpeg-${{ inputs.platform }}-v1-${{ hashFiles('bun.lock', 'scripts/install-ffmpeg.mjs') }}
     - name: Ensure FFmpeg runtime is installed
+      shell: bash
       run: node scripts/install-ffmpeg.mjs
     - uses: actions/download-artifact@v8
       with:
@@ -34,6 +35,7 @@ runs:
     - shell: bash
       run: bun run turbo run assemble:server --filter=@plexy/server
     - name: Smoke test backend
+      shell: bash
       run: |
         ./dist/server/ffmpeg -version
         ./dist/server/plexy-server --version
@@ -43,4 +45,4 @@ runs:
       with:
         name: plexy-server-${{ inputs.platform }}
         path: dist/plexy-server-*.tar.gz
-        if-no-files-found: warn
+        if-no-files-found: error
