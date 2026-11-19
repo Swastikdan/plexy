@@ -13,7 +13,7 @@ const {
 } = process.env;
 const api = "https://circleci.com/api/v2";
 
-async function circle(path, body) {
+async function circle(path, body, { allowNotFound = false } = {}) {
   const headers = { "Circle-Token": CIRCLE_TOKEN };
   if (body) headers["Content-Type"] = "application/json";
   const response = await fetch(api + path, {
@@ -22,23 +22,27 @@ async function circle(path, body) {
     body: body && JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
+  if (response.status === 404 && allowNotFound) return null;
   if (!response.ok) throw new Error(`CircleCI API returned HTTP ${response.status} for ${path}`);
   return response.json();
 }
 
 async function waitForWorkflow(id) {
-  const deadline = Date.now() + 80 * 60_000;
+  const started = Date.now();
+  const deadline = started + 80 * 60_000;
   while (Date.now() < deadline) {
-    const { items } = await circle(`/pipeline/${id}/workflow`);
-    const workflow = items.find(({ name }) => name === "macos-release");
+    // An accepted trigger may not be visible to the pipeline read API yet.
+    const options = { allowNotFound: Date.now() - started < 2 * 60_000 };
+    const workflows = await circle(`/pipeline/${id}/workflow`, undefined, options);
+    const workflow = workflows?.items.find(({ name }) => name === "macos-release");
     if (workflow?.status === "success") return workflow.id;
     if (workflow && !["running", "created", "queued"].includes(workflow.status)) {
       throw new Error(`CircleCI macOS workflow ended with status ${workflow.status}`);
     }
     if (!workflow) {
-      const { state, errors } = await circle(`/pipeline/${id}`);
-      if (state === "errored" || errors?.length) {
-        throw new Error(`CircleCI rejected the pipeline: ${JSON.stringify(errors)}`);
+      const run = await circle(`/pipeline/${id}`, undefined, options);
+      if (run?.state === "errored" || run?.errors?.length) {
+        throw new Error(`CircleCI rejected the pipeline: ${JSON.stringify(run.errors)}`);
       }
     }
     await delay(15_000);
