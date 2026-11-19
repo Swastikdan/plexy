@@ -1,0 +1,57 @@
+name: macOS package worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        required: true
+        type: string
+      target:
+        required: true
+        type: choice
+        options: [desktop, backend]
+      contents:
+        required: true
+        type: choice
+        options: [bundle, binary]
+      build_number:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 70
+    env:
+      MACOS_TARGET: ${{ inputs.target }}
+      BACKEND_CONTENTS: ${{ inputs.contents }}
+      PLEXY_BUILD_NUMBER: ${{ inputs.build_number }}
+      PLEXY_RELEASE_VERSION: ${{ inputs.version }}
+      SKIP_FFMPEG: "true"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: bun install --frozen-lockfile
+      - run: bash scripts/package-macos.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-package
+          path: release-macos/
+          if-no-files-found: error
+          retention-days: 2

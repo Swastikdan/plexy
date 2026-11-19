@@ -11,6 +11,7 @@ const {
   GITHUB_SHA,
   MACOS_TARGET,
   PLEXY_BUILD_NUMBER,
+  PLEXY_RELEASE_VERSION,
   BACKEND_CONTENTS = "bundle",
 } = process.env;
 const api = "https://circleci.com/api/v2";
@@ -101,6 +102,7 @@ const { id } = await circle(`${project}/pipeline/run`, {
     "macos-target": MACOS_TARGET,
     "release-sha": GITHUB_SHA,
     "build-number": PLEXY_BUILD_NUMBER,
+    "release-version": PLEXY_RELEASE_VERSION,
     "backend-contents": BACKEND_CONTENTS,
   },
 });

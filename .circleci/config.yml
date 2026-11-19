@@ -12,6 +12,9 @@ parameters:
   build-number:
     type: string
     default: ""
+  release-version:
+    type: string
+    default: ""
   backend-contents:
     type: enum
     enum: [bundle, binary]
@@ -29,6 +32,7 @@ jobs:
       SKIP_FFMPEG: "true"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       RELEASE_SHA: << pipeline.parameters.release-sha >>
+      PLEXY_RELEASE_VERSION: << pipeline.parameters.release-version >>
       PLEXY_BUILD_NUMBER: << pipeline.parameters.build-number >>
       BACKEND_CONTENTS: << pipeline.parameters.backend-contents >>
       MACOS_TARGET: << pipeline.parameters.macos-target >>

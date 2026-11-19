@@ -18,6 +18,7 @@ export async function fetchUpdateJson(url: string, options: {
   signal?: AbortSignal;
   timeoutMs?: number;
   retryDelayMs?: number;
+  retries?: number;
   headers?: HeadersInit;
 } = {}): Promise<{ status: number; data: unknown; link?: string | null }> {
   const request = options.request ?? fetch;
@@ -57,7 +58,7 @@ export async function fetchUpdateJson(url: string, options: {
           if (response.status === 404) return { status: 404, data: null };
           if (!response.ok) {
             const message = response.status === 403 || response.status === 429
-              ? `GitHub is limiting update requests (HTTP ${response.status}). Please try again later.`
+              ? `The update server is limiting requests (HTTP ${response.status}). Please try again later.`
               : `Update check failed (HTTP ${response.status}).`;
             throw new UpdateRequestError(message, response.status);
           }
@@ -70,7 +71,7 @@ export async function fetchUpdateJson(url: string, options: {
       if (options.signal?.aborted) throw error;
       const retryable = timedOut || error instanceof TypeError ||
         (error instanceof UpdateRequestError && error.status != null && [408, 500, 502, 503, 504].includes(error.status));
-      if (attempt >= 1 || !retryable) throw timedOut ? new UpdateTimeoutError() : error;
+      if (attempt >= (options.retries ?? 1) || !retryable) throw timedOut ? new UpdateTimeoutError() : error;
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", cancel);

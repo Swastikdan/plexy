@@ -8,7 +8,7 @@ for asset in "$@"; do
   test -s "$asset"
 done
 
-version="$(node -p "require('./package.json').version")"
+version="${PLEXY_RELEASE_VERSION:?Missing release version}"
 tag="v${version}-build.${PLEXY_BUILD_NUMBER:?Missing reserved Plexy build number}"
 flags=()
 if [[ "$version" == *-beta.* ]]; then

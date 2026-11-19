@@ -18,7 +18,7 @@ case "${MACOS_TARGET:?}" in
     node scripts/install-ffmpeg.mjs
     bun run build:desktop
     app="dist/mac/mac-arm64/Plexy Beta.app"
-    expected="$(node -p "require('./package.json').version")"
+    expected="${PLEXY_RELEASE_VERSION:?Missing release version}"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$expected"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$PLEXY_BUILD_NUMBER"
     codesign --verify --deep --strict --verbose=2 "$app"

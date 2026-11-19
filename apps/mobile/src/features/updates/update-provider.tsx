@@ -1,4 +1,4 @@
-import { fetchUpdateJson, UpdateRequestError } from "@/features/settings/lib/update-request";
+import { UpdateRequestError } from "@/features/settings/lib/update-request";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { usePathname } from "expo-router";
 import * as ExpoUpdates from "expo-updates";
@@ -10,7 +10,7 @@ import { Button } from "@/shared/ui/button";
 import { Loading } from "@/shared/ui/loading";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { checkForUpdate, downloadAndInstallUpdate, getInstalledAppInfo, openUnknownAppsSettings, type AppInfo, type UpdateInfo } from "@/features/settings/lib/app-updater";
-import { isUpdateRequired, manifestUpdate, mergeMobilePolicy, MOBILE_POLICY_URL, parseMobileManifest, type MobileUpdateManifest } from "@/features/settings/lib/mobile-update-manifest";
+import { isUpdateRequired, manifestUpdate, mergeMobilePolicy, fetchMobilePolicy, parseMobileManifest, type MobileUpdateManifest } from "@/features/settings/lib/mobile-update-manifest";
 
 const POLICY_KEY = "plexy.mobile-update-policy.v1";
 const DISMISSED_KEY = "plexy.mobile-update-dismissed.v1";
@@ -74,14 +74,14 @@ function useUpdateCoordinator() {
       setAppInfo(installed);
       const [apk, ota] = await Promise.allSettled([
         (async () => {
-          const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal: controller.signal });
-          if (response.status === 404) {
+          const incoming = await fetchMobilePolicy(controller.signal);
+          if (!incoming) {
             if (policyRef.current) throw new UpdateRequestError("The update policy is temporarily unavailable (HTTP 404). Please retry.", 404);
             const legacy = await checkForUpdate(installed, controller.signal);
             if (alive.current) setLegacyUpdate(legacy);
             return legacy;
           }
-          const merged = mergeMobilePolicy(policyRef.current, parseMobileManifest(response.data));
+          const merged = mergeMobilePolicy(policyRef.current, incoming);
           if (!alive.current) return null;
           policyRef.current = merged;
           setPolicy(merged);

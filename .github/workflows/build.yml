@@ -27,8 +27,13 @@ on:
       macos_runner:
         description: "Hosted runner for macOS targets"
         type: choice
-        options: [github, circleci]
-        default: github
+        options: [auto, github, circleci]
+        default: auto
+      version_bump:
+        description: "Desktop and general release version increment"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
       release_notes:
         description: "Optional release highlights"
         type: string
@@ -69,6 +74,7 @@ jobs:
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     outputs:
       build_number: ${{ steps.reserve.outputs.build_number }}
+      version: ${{ steps.reserve.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -78,15 +84,18 @@ jobs:
         id: reserve
         env:
           GH_TOKEN: ${{ github.token }}
+          PLEXY_VERSION_BUMP: ${{ inputs.version_bump }}
           HAS_TARGET: ${{ inputs.desktop || inputs.linux_backend || inputs.macos_backend || inputs.android }}
         run: |
           if [[ "$HAS_TARGET" != true ]]; then
             echo "::error::Select at least one release target."
             exit 1
           fi
-          build_number="$(bun scripts/release-refs.ts)"
-          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
-          echo "### Plexy build $build_number" >> "$GITHUB_STEP_SUMMARY"
+          reservation="$(bun scripts/release-refs.ts)"
+          version="$(jq -er .version <<< "$reservation")"
+          build_number="$(jq -er .buildNumber <<< "$reservation")"
+          printf 'version=%s\nbuild_number=%s\n' "$version" "$build_number" >> "$GITHUB_OUTPUT"
+          echo "### Plexy $version (build $build_number)" >> "$GITHUB_STEP_SUMMARY"
 
   checks:
     name: Tests and type checks
@@ -180,6 +189,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_TMDB_TOKEN: ${{ secrets.TMDB_TOKEN || secrets.EXPO_PUBLIC_TMDB_TOKEN || secrets.TMDB_ACCESS_TOKEN || secrets.VITE_PUBLIC_TMDB_ACCESS_TOKEN }}
           PLEXY_EXPO_PROJECT_ID: ${{ vars.PLEXY_EXPO_PROJECT_ID }}
+          EXPO_PUBLIC_PLEXY_UPDATE_ORIGIN: ${{ vars.PLEXY_UPDATE_ORIGIN }}
           PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
           PLEXY_FORCE_APK: ${{ inputs.mobile_force_apk || (inputs.mobile_update_type != '' && inputs.mobile_update_type != 'optional') || (inputs.mobile_version_bump != '' && inputs.mobile_version_bump != 'patch') }}
 
@@ -233,6 +243,7 @@ jobs:
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN || secrets.EXPO_PUBLIC_TMDB_TOKEN || secrets.TMDB_ACCESS_TOKEN || secrets.VITE_PUBLIC_TMDB_ACCESS_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           PLEXY_EXPO_PROJECT_ID: ${{ vars.PLEXY_EXPO_PROJECT_ID }}
+          EXPO_PUBLIC_PLEXY_UPDATE_ORIGIN: ${{ vars.PLEXY_UPDATE_ORIGIN }}
           PLEXY_UPDATE_TYPE: ${{ inputs.mobile_update_type }}
           PLEXY_VERSION_BUMP: ${{ inputs.mobile_version_bump }}
           PLEXY_ANDROID_ARCHITECTURES: arm64-v8a
@@ -266,7 +277,10 @@ jobs:
   macos:
     name: macOS package (${{ matrix.target }})
     needs: [plan, checks]
-    runs-on: ${{ inputs.macos_runner == 'circleci' && 'ubuntu-24.04' || 'macos-26' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: write
     timeout-minutes: 90
     if: inputs.desktop || inputs.macos_backend
     strategy:
@@ -276,32 +290,37 @@ jobs:
     env:
       MACOS_TARGET: ${{ matrix.target }}
       PLEXY_BUILD_NUMBER: ${{ needs.plan.outputs.build_number }}
+      PLEXY_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
       BACKEND_CONTENTS: ${{ inputs.backend_contents }}
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        if: inputs.macos_runner == 'github'
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/setup-node@v7
-        if: inputs.macos_runner == 'github'
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-      - name: Build on GitHub's macOS runner
-        if: inputs.macos_runner == 'github'
+      - name: Queue and monitor GitHub macOS worker
+        id: worker
+        if: inputs.macos_runner != 'circleci'
         env:
-          SKIP_FFMPEG: "true"
-        run: |
-          bun install --frozen-lockfile
-          bash scripts/package-macos.sh
+          GH_TOKEN: ${{ github.token }}
+          MACOS_RUNNER: ${{ inputs.macos_runner }}
+        run: node scripts/github-macos.mjs
+      - uses: actions/download-artifact@v8
+        if: steps.worker.outputs.provider == 'github'
+        with:
+          name: macos-package
+          path: release-macos
+          run-id: ${{ steps.worker.outputs.run_id }}
+          github-token: ${{ github.token }}
       - name: Build on CircleCI and download artifacts
-        if: inputs.macos_runner == 'circleci'
+        if: inputs.macos_runner == 'circleci' || steps.worker.outputs.provider == 'circleci'
         env:
           CIRCLE_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
           CIRCLECI_PROJECT_SLUG: ${{ vars.CIRCLECI_PROJECT_SLUG }}
           CIRCLECI_PIPELINE_DEFINITION_ID: ${{ vars.CIRCLECI_PIPELINE_DEFINITION_ID }}
         run: node scripts/circleci-macos.mjs
+      - name: Cancel GitHub worker if this release was cancelled
+        if: cancelled() && steps.worker.outputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKER_RUN_ID: ${{ steps.worker.outputs.run_id }}
+        run: gh run cancel "$WORKER_RUN_ID"
       - name: Attach macOS assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -357,6 +376,7 @@ jobs:
           path: release
 
       - name: Publish mobile version and startup update policy
+        id: mobile-release
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -385,10 +405,21 @@ jobs:
               gh release create mobile-latest --title "Plexy Mobile update policy" --notes "Stable mobile startup update policy." --latest=false
             fi
             gh release upload mobile-latest release/mobile-update.json --clobber
+            echo "mirror=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mirror the latest Android APK to R2
+        if: steps.mobile-release.outputs.mirror == 'true' && vars.PLEXY_UPDATE_R2_BUCKET != '' && vars.PLEXY_UPDATE_ORIGIN != ''
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PLEXY_UPDATE_R2_BUCKET: ${{ vars.PLEXY_UPDATE_R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PLEXY_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLEXY_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: bash scripts/mirror-android-update.sh release/mobile-update.json
+
       - name: Create update checksums
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.mobile-release.outcome == 'success' }}
         shell: bash
         run: |
           mkdir -p release
@@ -400,17 +431,18 @@ jobs:
           fi
 
       - name: Create or update release
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.mobile-release.outcome == 'success' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PLEXY_BUILD_NUMBER: ${{ needs.plan.outputs.build_number }}
+          PLEXY_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
           RELEASE_HIGHLIGHTS: ${{ inputs.release_notes }}
           BACKEND_CONTENTS: ${{ inputs.backend_contents }}
         run: |
           set -euo pipefail
 
-          version="$(node -p "require('./package.json').version")"
+          version="$PLEXY_RELEASE_VERSION"
           tag="v${version}-build.${PLEXY_BUILD_NUMBER}"
           if [[ "$version" == *-beta.* ]]; then
             release_title="Plexy Beta ${tag}"

@@ -39,6 +39,14 @@ async function latestRelease(): Promise<Release> {
 
 async function installedTag(): Promise<string> {
   const appVersion = app.getVersion();
+  let packagedTag = appVersion;
+  if (app.isPackaged) {
+    try {
+      const pkg = JSON.parse(await readFile(path.join(app.getAppPath(), "package.json"), "utf8"));
+      const build = String(pkg.plexyBuildNumber ?? "");
+      if (/^[1-9]\d*$/.test(build)) packagedTag = `${appVersion}-build.${build}`;
+    } catch { /* Older bundles have no embedded build number. */ }
+  }
   try {
     const state = JSON.parse(
       await readFile(
@@ -52,14 +60,14 @@ async function installedTag(): Promise<string> {
     if (
       typeof state.tag === "string" &&
       versionFromTag(state.tag) &&
-      compareReleaseTags(state.tag, appVersion) >= 0
+      compareReleaseTags(state.tag, packagedTag) >= 0
     ) {
       return state.tag;
     }
   } catch {
     /* Older/manual installs have no update marker. */
   }
-  return appVersion;
+  return packagedTag;
 }
 
 function installedAppPath(): string {

@@ -115,7 +115,8 @@ Open [Actions → Build & Release](https://github.com/Swastikdan/plexy/actions/w
 - **Desktop** builds the web UI and server executable it embeds, then publishes the macOS DMG and ZIP.
 - **Backend** defaults to a self-contained archive with the executable, web UI, migrations, and FFmpeg. Select **binary** for an archive containing only the executable, then supply its runtime files separately. Select either or both backend platforms.
 - **Android** publishes an OTA update when compatible and otherwise builds an APK. Select **Force APK** to request a new installable build.
-- **macOS runner** defaults to GitHub Actions. Select **CircleCI** if GitHub runner capacity delays the build. **Release highlights** adds your notes to the GitHub release.
+- **macOS runner** defaults to **auto**. Each macOS target starts on GitHub Actions. If its worker is still queued after five minutes, the release waits for GitHub to confirm cancellation and then uses CircleCI for that target. Select **github** or **circleci** to use one provider only.
+- **Release version increment** defaults to **patch**. For example, `1.0.8` becomes `1.0.9`. Select **minor** for a feature release or **major** for a breaking release. **Release highlights** adds your notes to GitHub.
 
 For example, to publish just the two backend executables:
 
@@ -124,7 +125,13 @@ gh workflow run build.yml --ref main \
   -F linux_backend=true -F macos_backend=true -f backend_contents=binary
 ```
 
-Desktop packages keep the root package's semantic version and use a shared numeric build number. Local desktop and Android packaging use your authenticated `gh` session to reserve versions in this repository, and hosted packaging uses the same Git tags. The Android APK keeps its own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds. Publishing creates release pages only once an artifact is ready.
+The desktop app, its package filenames, and the general release tag use the version selected by the workflow. A local desktop package uses the higher of the root package's version and the latest general release tag. Local desktop and Android packaging use your authenticated `gh` session to reserve numbers in this repository, and hosted packaging uses the same Git tags. Android APKs keep their own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds.
+
+### Android download mirror
+
+To serve the latest installer and update manifest from Cloudflare R2, connect an HTTPS custom domain to a dedicated R2 bucket. In GitHub Actions set the variables `PLEXY_UPDATE_ORIGIN` (the HTTPS origin) and `PLEXY_UPDATE_R2_BUCKET` (the bucket name). Set the secrets `CLOUDFLARE_ACCOUNT_ID`, `PLEXY_R2_ACCESS_KEY_ID`, and `PLEXY_R2_SECRET_ACCESS_KEY` with a bucket-scoped R2 credential.
+
+The next **Force APK** release uploads the APK first, then the manifest, and removes older Android APKs from the bucket. GitHub Releases keeps the full history. The Android app tries R2 first for the current manifest and installer, and falls back to GitHub. It checks the APK size and SHA-256 before opening the installer.
 
 ## Running the server
 
@@ -142,4 +149,4 @@ In desktop **Settings** (or the connection screen), **Run local server** starts/
 
 ## CI and releases
 
-The workflow rebuilds only what changed (mobile / backend+desktop / desktop / all for shared contracts, lockfile, or workflow changes; docs-only builds nothing). Manual dispatch: `mobile`, `desktop`, `backend`, `all`. The frontend builds once and feeds backend + desktop jobs. Backend archives ship for Linux x64 and macOS ARM64; Android APKs use `versionCode = 50000 + build number`, preview APKs keep the repo test signature while EAS production uses release signing. macOS releases are ad-hoc signed — on first launch use **System Settings → Privacy & Security → Open Anyway**; the desktop updater verifies checksums before installing.
+Release builds use the targets selected in GitHub Actions. Preview APKs use the repo test signature and EAS production uses release signing. macOS releases are ad-hoc signed. On first launch use **System Settings → Privacy & Security → Open Anyway**. The desktop updater verifies checksums before installing.

@@ -50,4 +50,34 @@ export async function reserveBuildNumber(sha: string, run = github) {
   throw new Error("Could not reserve a build number after 10 concurrent allocations");
 }
 
-if (import.meta.main) console.log(await reserveBuildNumber(await releaseCommit()));
+function compareVersions(a: string, b: string) {
+  const left = a.split(".").map(Number);
+  const right = b.split(".").map(Number);
+  return left[0]! - right[0]! || left[1]! - right[1]! || left[2]! - right[2]!;
+}
+
+export function releaseVersion(source: string, tags: string[], bump?: string) {
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(source)) {
+    throw new Error("The release version must be a stable major.minor.patch version");
+  }
+  const latest = tags.flatMap((tag) => {
+    const version = tag.match(/^v(\d+\.\d+\.\d+)(?:-build\.\d+)?$/)?.[1];
+    return version ? [version] : [];
+  }).sort(compareVersions).at(-1);
+  if (!latest || compareVersions(source, latest) > 0) return source;
+  if (!bump) return latest;
+  const [major, minor, patch] = latest.split(".").map(Number) as [number, number, number];
+  switch (bump) {
+    case "patch": return `${major}.${minor}.${patch + 1}`;
+    case "minor": return `${major}.${minor + 1}.0`;
+    case "major": return `${major + 1}.0.0`;
+    default: throw new Error(`Unsupported release version increment: ${bump}`);
+  }
+}
+
+if (import.meta.main) {
+  const source = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version;
+  const version = releaseVersion(source, await listTagRefs("v"), process.env.PLEXY_VERSION_BUMP || "patch");
+  const buildNumber = await reserveBuildNumber(await releaseCommit());
+  console.log(JSON.stringify({ version, buildNumber }));
+}

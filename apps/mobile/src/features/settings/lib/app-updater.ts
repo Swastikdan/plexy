@@ -34,6 +34,7 @@ export interface UpdateInfo {
   releaseNotes: string;
   publishedAt: string;
   apkUrl: string;
+  mirrorApkUrl?: string;
   apkName: string;
   apkSize: number;
   buildNumber?: number;
@@ -96,36 +97,48 @@ export async function downloadAndInstallUpdate(
   const temporaryUri = `${localUri}.part`;
   const cached = await FileSystem.getInfoAsync(localUri);
   onProgress?.(0);
-  if (!cached.exists || !isCompleteApk(cached.size, update.apkSize)) {
-    await FileSystem.deleteAsync(localUri, { idempotent: true });
-    await FileSystem.deleteAsync(temporaryUri, { idempotent: true });
-    try {
-      const download = FileSystem.createDownloadResumable(
-        update.apkUrl,
-        temporaryUri,
-        { headers: { "User-Agent": "Plexy-App", Accept: "application/octet-stream" } },
-        (progress) => {
-          const total = progress.totalBytesExpectedToWrite > 0
-            ? progress.totalBytesExpectedToWrite : update.apkSize;
-          if (total > 0)
-            onProgress?.(Math.min(99, Math.max(0, Math.round(progress.totalBytesWritten / total * 100))));
-        },
-      );
-      const result = await download.downloadAsync();
-      const file = await FileSystem.getInfoAsync(temporaryUri);
-      validateApkDownload(result?.status, file.exists ? file.size : 0, update.apkSize);
-      await FileSystem.moveAsync({ from: temporaryUri, to: localUri });
-    } catch (error) {
-      await FileSystem.deleteAsync(temporaryUri, { idempotent: true }).catch(() => {});
-      throw error;
-    }
-  }
-  if (update.sha256) {
-    const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, await new File(localUri).bytes());
+  const verifyChecksum = async (uri: string) => {
+    if (!update.sha256) return;
+    const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, await new File(uri).bytes());
     const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-    if (actual.toLowerCase() !== update.sha256.toLowerCase()) {
-      await FileSystem.deleteAsync(localUri, { idempotent: true });
-      throw Error("Update verification failed. Please download the update again.");
+    if (actual.toLowerCase() !== update.sha256.toLowerCase()) throw Error("Update verification failed.");
+  };
+
+  let ready = false;
+  if (cached.exists && isCompleteApk(cached.size, update.apkSize)) {
+    try {
+      await verifyChecksum(localUri);
+      ready = true;
+    } catch { /* Download a clean copy if a cached file is corrupt. */ }
+  }
+  if (!ready) {
+    await FileSystem.deleteAsync(localUri, { idempotent: true });
+    const sources = update.mirrorApkUrl && update.sha256 ? [update.mirrorApkUrl, update.apkUrl] : [update.apkUrl];
+    for (const url of sources) {
+      await FileSystem.deleteAsync(temporaryUri, { idempotent: true });
+      onProgress?.(0);
+      try {
+        const download = FileSystem.createDownloadResumable(
+          url,
+          temporaryUri,
+          { headers: { "User-Agent": "Plexy-App", Accept: "application/octet-stream" } },
+          (progress) => {
+            const total = progress.totalBytesExpectedToWrite > 0
+              ? progress.totalBytesExpectedToWrite : update.apkSize;
+            if (total > 0)
+              onProgress?.(Math.min(99, Math.max(0, Math.round(progress.totalBytesWritten / total * 100))));
+          },
+        );
+        const result = await download.downloadAsync();
+        const file = await FileSystem.getInfoAsync(temporaryUri);
+        validateApkDownload(result?.status, file.exists ? file.size : 0, update.apkSize);
+        await verifyChecksum(temporaryUri);
+        await FileSystem.moveAsync({ from: temporaryUri, to: localUri });
+        break;
+      } catch (error) {
+        await FileSystem.deleteAsync(temporaryUri, { idempotent: true }).catch(() => {});
+        if (url === update.apkUrl) throw error;
+      }
     }
   }
   onProgress?.(100);

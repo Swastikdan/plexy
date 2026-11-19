@@ -7,7 +7,7 @@ import { generateDmgBackground } from "./generate-dmg-background";
 import { bundleMpv } from "./bundle-mpv";
 import { bundleLibmpv } from "./bundle-libmpv";
 import { findFfmpeg } from "./find-ffmpeg";
-import { releaseCommit, reserveBuildNumber } from "./release-refs";
+import { listTagRefs, releaseCommit, releaseVersion, reserveBuildNumber } from "./release-refs";
 
 /**
  * dmg-builder mounts the image to author its `.DS_Store`. If a volume with the
@@ -50,6 +50,9 @@ async function buildDesktop() {
   const releasePackage = JSON.parse(
     await readFile(join(rootDir, "package.json"), "utf8"),
   ) as { version: string };
+
+  const version = process.env.PLEXY_RELEASE_VERSION || releaseVersion(releasePackage.version, await listTagRefs("v"));
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Invalid Plexy release version.");
 
   if (!existsSync(join(distDir, "web/index.html"))) {
     throw new Error("Missing built browser UI");
@@ -110,7 +113,7 @@ async function buildDesktop() {
   );
   detachStaleInstallerVolumes("Plexy Beta");
   execSync(
-    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${releasePackage.version} -c.buildVersion=${buildNumber} -c.afterPack="${join(rootDir, "scripts", "after-pack-mpv.cjs")}"`,
+    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${version} -c.extraMetadata.plexyBuildNumber=${buildNumber} -c.buildVersion=${buildNumber} -c.afterPack="${join(rootDir, "scripts", "after-pack-mpv.cjs")}"`,
     {
       stdio: "inherit",
       env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
@@ -135,11 +138,11 @@ async function buildDesktop() {
   console.log("\n========================================================");
   console.log("  Plexy Beta macOS Electron Build Complete!");
   console.log(
-    `  • macOS DMG Disk    : dist/mac/Plexy Beta-${releasePackage.version}-arm64.dmg`,
+    `  • macOS DMG Disk    : dist/mac/Plexy Beta-${version}-arm64.dmg`,
   );
   console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy Beta.app`);
   console.log(
-    `  • macOS ZIP Archive : dist/mac/Plexy Beta-${releasePackage.version}-arm64.zip`,
+    `  • macOS ZIP Archive : dist/mac/Plexy Beta-${version}-arm64.zip`,
   );
   console.log("========================================================\n");
 }

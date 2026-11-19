@@ -1,9 +1,35 @@
 import { encodeVersionCode } from "../../../shared/lib/build-version";
 import { compareSemver } from "./update-policy";
 import type { UpdateInfo } from "./app-updater";
+import { fetchUpdateJson } from "./update-request";
 
 export type UpdateType = "optional" | "feature" | "necessary";
 export const MOBILE_POLICY_URL = "https://github.com/Swastikdan/plexy/releases/download/mobile-latest/mobile-update.json";
+const configuredOrigin = process.env.EXPO_PUBLIC_PLEXY_UPDATE_ORIGIN;
+function mirrorOrigin(origin = configuredOrigin) {
+  if (!origin) return undefined;
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "https:" && !url.username && !url.password && url.href === url.origin + "/") return url.origin;
+  } catch { /* An invalid mirror setting should not block GitHub updates. */ }
+}
+
+export async function fetchMobilePolicy(signal?: AbortSignal, request: typeof fetch = fetch, origin = configuredOrigin) {
+  const mirror = mirrorOrigin(origin);
+  if (mirror) {
+    try {
+      const response = await fetchUpdateJson(`${mirror}/android/mobile-update.json`, {
+        signal, request, timeoutMs: 4_000, retries: 0,
+      });
+      if (response.status !== 404) return parseMobileManifest(response.data);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
+  const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal, request, timeoutMs: 8_000 });
+  return response.status === 404 ? null : parseMobileManifest(response.data);
+}
+
 export interface MobileUpdateManifest {
   schemaVersion: 1;
   platform: "android";
@@ -39,13 +65,15 @@ export function parseMobileManifest(value: unknown): MobileUpdateManifest {
   const url = new URL(data.apkUrl);
   if (url.origin !== "https://github.com" || url.search || url.hash ||
       url.pathname !== `/Swastikdan/plexy/releases/download/mobile-v${data.latestVersion}/${data.apkName}` ||
-      !/^Plexy-mobile-v\d+\.\d+\.\d+-Android\.apk$/.test(data.apkName))
+      data.apkName !== `Plexy-mobile-v${data.latestVersion}-Android.apk`)
     throw Error("The mobile update asset is not trusted.");
   return data;
 }
 export function manifestUpdate(policy: MobileUpdateManifest, version: string, versionCode: number): UpdateInfo | null {
   if (compareSemver(policy.latestVersion, version) <= 0 || policy.versionCode <= versionCode) return null;
+  const mirror = mirrorOrigin();
   return {
+    mirrorApkUrl: mirror ? `${mirror}/android/${encodeURIComponent(policy.apkName)}` : undefined,
     tagName: `mobile-v${policy.latestVersion}`, releaseName: policy.title,
     releaseNotes: policy.releaseNotes || policy.message, publishedAt: policy.publishedAt,
     apkUrl: policy.apkUrl, apkName: policy.apkName, apkSize: policy.apkSize,
