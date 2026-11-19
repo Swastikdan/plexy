@@ -1,7 +1,4 @@
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { useColors } from "@/shared/theme";
-import { Check } from "@/shared/ui/icons";
-import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 
@@ -18,19 +15,15 @@ export function SheetItem({
   onPress: () => void;
   preferred?: boolean;
 }) {
-  const colors = useColors();
-  const [, setFocused] = useState(false);
   return (
     <Pressable
       focusable={true}
       onPress={() => { triggerHaptic("selection"); onPress(); }}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       className={cn(
         "flex-row items-center justify-between px-5 py-4 border-b-[0.33px] border-border active:opacity-[0.75]",
-        selected && "bg-foreground/[0.06]",
+        selected && "bg-accent/15",
       )}
     >
       <Text
@@ -50,11 +43,6 @@ export function SheetItem({
           {hint}
         </Text>
       )}
-      {selected ? (
-        <View className="w-6 h-6 rounded-[12px] bg-foreground items-center justify-center">
-          <Check strokeWidth={2.5} size={15} color={colors.canvas} />
-        </View>
-      ) : null}
     </Pressable>
   );
 }

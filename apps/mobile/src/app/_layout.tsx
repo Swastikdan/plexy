@@ -33,6 +33,7 @@ export default function RootLayout() {
               name="player/[file-id]"
               options={{ animation: "none", gestureEnabled: false, contentStyle: { backgroundColor: "#000" } }}
             />
+            <Stack.Screen name="external-player" options={{ animation: "none", gestureEnabled: false, contentStyle: { backgroundColor: "#000" } }} />
             <Stack.Screen
               name="player/remote"
               options={{ animation: "none", gestureEnabled: false, contentStyle: { backgroundColor: "#000" } }}

@@ -1,5 +1,6 @@
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { Check, X } from "@/shared/ui/icons";
+import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
+import { X } from "@/shared/ui/icons";
 import type { AudioTrack, SubtitleTrack, VideoPlayer } from "expo-video";
 import React, { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
@@ -18,7 +19,6 @@ interface TrackRow {
 }
 
 function Row({ row }: { row: TrackRow }) {
-  const colors = useColors();
   return (
     <Pressable
       accessibilityRole="button"
@@ -26,7 +26,7 @@ function Row({ row }: { row: TrackRow }) {
       onPress={() => { triggerHaptic("selection"); row.onPress(); }}
       className={cn(
         "min-h-[52px] flex-row items-center justify-between rounded-[12px] px-4 py-2.5 active:bg-foreground/10",
-        row.selected && "bg-foreground/[0.08]",
+        row.selected && "bg-accent/15",
       )}
     >
       <View className="mr-3 flex-1">
@@ -48,9 +48,6 @@ function Row({ row }: { row: TrackRow }) {
           {row.label}
         </Text>
       </View>
-      {row.selected && (
-        <Check strokeWidth={2.5} size={15} color={colors.brand} />
-      )}
     </Pressable>
   );
 }
@@ -211,7 +208,7 @@ export function AudioPanel({
                   <Text className="text-[14px] font-bold text-foreground">Remember for this show</Text>
                   <Text className="text-[12px] text-foreground/55">Save your next language choice</Text>
                 </View>
-                {remember ? <Check size={15} strokeWidth={2.5} color={colors.brand} /> : null}
+                <CheckboxIndicator checked={remember} />
               </Pressable>
             ) : null}
             {showOverrideLabel ? (

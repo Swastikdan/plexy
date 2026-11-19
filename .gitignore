@@ -56,3 +56,7 @@ plexy-exact/
 .animation-plans/
 
 .turbo/
+.taste-skill/*
+skills/*
+docs/design/*
+docs/MEDIA_SERVER_FEATURE_RESEARCH.md

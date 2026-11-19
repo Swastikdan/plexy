@@ -3,7 +3,8 @@ import { cn } from "@/shared/lib/cn";
 import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { useColors } from "@/shared/theme";
 import { PosterImage } from "@/shared/ui/poster-image";
-import { Check, Globe, Play } from "@/shared/ui/icons";
+import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
+import { Eye, Globe, Play } from "@/shared/ui/icons";
 
 export interface EpisodeArtwork {
   uri: string;
@@ -55,20 +56,18 @@ export function EpisodeCardView({
       onLongPress={onLongPress}
       delayLongPress={LONG_PRESS_MS}
       disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={selecting ? { selected } : undefined}
+      accessibilityRole={selecting ? "checkbox" : "button"}
+      accessibilityState={selecting ? { checked: selected, disabled } : { disabled }}
       accessibilityLabel={
         accessibilityLabel ??
         `${title}${watched ? ", watched" : ""}${selecting ? (selected ? ", selected" : ", not selected") : ""}`
       }
-      className="flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80"
+      className={cn(
+        "flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80",
+        selecting && selected && "bg-accent/15",
+      )}
     >
-      <View
-        className={cn(
-          "aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface",
-          selected && "border-2 border-accent",
-        )}
-      >
+      <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
         {artwork?.uri ? (
           <PosterImage source={artwork} />
         ) : (
@@ -80,15 +79,8 @@ export function EpisodeCardView({
           </View>
         )}
         {selecting && (
-          <View
-            className={cn(
-              "absolute right-2 top-2 h-7 w-7 items-center justify-center rounded-full border-2",
-              selected
-                ? "border-accent bg-accent"
-                : "border-white/85 bg-black/45",
-            )}
-          >
-            {selected && <Check size={15} color="#fff" strokeWidth={3} />}
+          <View className="absolute right-2 top-2" pointerEvents="none">
+            <CheckboxIndicator checked={selected} onArtwork />
           </View>
         )}
         {duration && !selecting && (
@@ -140,13 +132,14 @@ export function EpisodeCardView({
                   watched && "border-accent/40 bg-accent/15",
                 )}
                 accessibilityRole="button"
+                accessibilityState={{ selected: watched }}
                 accessibilityLabel={
                   watched
                     ? "Mark episode as unwatched"
                     : "Mark episode as watched"
                 }
               >
-                <Check
+                <Eye
                   size={14}
                   color={watched ? colors.brand : colors.muted}
                   strokeWidth={watched ? 2.6 : 2}

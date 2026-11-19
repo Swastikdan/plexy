@@ -287,14 +287,7 @@ async function markers(record: LocalRecord) {
   }
 }
 async function deleteFile(uri: string): Promise<void> {
-  try {
-    const file = new File(uri);
-    if (file.exists) {
-      await file.delete();
-    }
-  } catch (err) {
-    console.warn("Could not delete file:", uri, err);
-  }
+  await new File(uri).delete();
 }
 export const localLibrary = new LocalLibrary({
   load: loadLibrary,
@@ -348,10 +341,12 @@ export const localApi = new LocalApi(
 // hydrated record). Invalidate at most once per window, on the trailing edge,
 // so screens refresh without a refetch storm that would freeze the UI.
 let invalidationTimer: ReturnType<typeof setTimeout> | null = null;
+let invalidatedLibraryVersion = localLibrary.version;
 localLibrary.subscribe(() => {
-  if (invalidationTimer != null) return;
+  if (invalidationTimer != null || localLibrary.version === invalidatedLibraryVersion) return;
   invalidationTimer = setTimeout(() => {
     invalidationTimer = null;
+    invalidatedLibraryVersion = localLibrary.version;
     clearLocalDetailCache();
     invalidateLocalResources();
   }, 800);

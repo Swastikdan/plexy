@@ -3,7 +3,7 @@ import { ScrollView, Text, View } from "react-native";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import {
-  Check,
+  Eye,
   ChevronDown,
   MoreHorizontal,
 } from "@/shared/ui/icons";
@@ -52,17 +52,16 @@ export function SeasonPicker({
                 {seasons.map((season) => {
                   const selected = season.number === active.number;
                   return (
-                    <Menu.Item key={season.number} className="min-h-12"
+                    <Menu.Item key={season.number} className={selected ? "min-h-12 bg-accent/15" : "min-h-12"}
                       accessibilityState={{ selected }}
                       onPress={() => {
                         triggerHaptic("selection");
                         if (!selected) onChange(season.number);
                       }}>
-                      <Menu.ItemTitle className="font-archivo-medium">{season.label}</Menu.ItemTitle>
+                      <Menu.ItemTitle className={selected ? "font-archivo-bold" : "font-archivo-medium"}>{season.label}</Menu.ItemTitle>
                       {season.count != null ? (
                         <Text className="text-muted">({season.count})</Text>
                       ) : null}
-                      {selected ? <Check size={18} color={colors.brand} /> : null}
                     </Menu.Item>
                   );
                 })}
@@ -83,7 +82,7 @@ export function SeasonPicker({
             <Menu.Overlay />
             <Menu.Content presentation="popover" align="end" offset={6} width={208} className="border border-border" style={{ backgroundColor: colors.elevated }}>
               <Menu.Item onPress={onMarkWatched} className="min-h-12">
-                <Check size={18} color={colors.ink} />
+                <Eye size={18} color={colors.ink} />
                 <Menu.ItemTitle className="font-archivo-medium">Mark as watched</Menu.ItemTitle>
               </Menu.Item>
             </Menu.Content>

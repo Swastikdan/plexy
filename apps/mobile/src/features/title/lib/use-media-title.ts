@@ -120,33 +120,23 @@ export function useMediaTitle(
     );
   }, [api, inputMediaType, inputTmdbId]);
 
-  const direct = useResource(
+  const resolvedLocalId = localId ?? localMatch?.publicId;
+  const local = useResource(
     (signal) =>
-      localId != null
-        ? api.detail(localId, signal).then((detail) => {
-            rememberLocalDetail(localId, detail);
+      resolvedLocalId != null
+        ? api.detail(resolvedLocalId, signal).then((detail) => {
+            rememberLocalDetail(resolvedLocalId, detail);
             return detail;
           })
         : Promise.resolve(null),
-    [api, localId],
-    "media-title-direct",
-    () => (localId != null ? peekLocalDetail(localId) : null),
-  );
-  const matchedId = localMatch?.publicId;
-  const matched = useResource(
-    (signal) =>
-      localId == null && matchedId
-        ? api.detail(matchedId, signal).then((detail) => {
-            rememberLocalDetail(matchedId, detail);
-            return detail;
-          })
-        : Promise.resolve(null),
-    [api, matchedId],
-    "media-title-match",
-    () => (matchedId ? peekLocalDetail(matchedId) : null),
+    [api, resolvedLocalId],
+    "media-title-local",
+    () => resolvedLocalId != null
+      ? peekLocalDetail(resolvedLocalId) ?? api.readDetail?.(resolvedLocalId)
+      : null,
   );
 
-  const localDetail = direct.value ?? matched.value ?? null;
+  const localDetail = local.value;
   const localMediaType: RemoteMediaType | null = localDetail
     ? localDetail.tmdbType === "tv" || localDetail.item.kind === "series"
       ? "tv"
@@ -175,22 +165,11 @@ export function useMediaTitle(
         : null,
   );
 
-  const localPending =
-    localId != null
-      ? direct.loading && !direct.value
-      : Boolean(localMatch) && matched.loading && !matched.value;
-  const loading = localDetail
-    ? false
-    : remoteInput
-      ? localPending || (remote.loading && !remote.value && !localMatch)
-      : localPending;
-  const error = localDetail
-    ? null
-    : remoteInput
-      ? (localMatch ? matched.error : null) ??
-        remote.error ??
-        (localMatch ? null : direct.error)
-      : direct.error ?? matched.error;
+  const localPending = resolvedLocalId != null && local.loading && !localDetail;
+  const loading = !localDetail && (
+    localPending || Boolean(remoteInput && remote.loading && !remote.value && !localMatch)
+  );
+  const error = localDetail ? null : local.error ?? remote.error;
 
   const detail = useMemo(() => {
     if (localDetail) return localDetail;
@@ -218,8 +197,7 @@ export function useMediaTitle(
     remoteLoading: remote.loading,
     error,
     retry: () => {
-      direct.retry();
-      matched.retry();
+      local.retry();
       remote.retry();
     },
   };

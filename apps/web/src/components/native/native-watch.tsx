@@ -210,8 +210,15 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
 
   useEffect(() => {
     if (!play.isError) return;
-    setError(play.error instanceof Error ? play.error.message : "Could not load this title.");
-    setStarting(false);
+    // A failed manifest can arrive just before mpv's first ready event (for
+    // example while a fresh session is still opening). Hold the fatal overlay
+    // briefly so a transient error never flashes over a player that is about
+    // to start; a real failure still surfaces.
+    const timer = window.setTimeout(() => {
+      setError(play.error instanceof Error ? play.error.message : "Could not load this title.");
+      setStarting(false);
+    }, 1200);
+    return () => window.clearTimeout(timer);
   }, [play.error, play.isError]);
 
   const invalidateProgress = useCallback(() => {

@@ -125,6 +125,7 @@ function BrowserWatchRoute() {
   const [playerMenu, setPlayerMenu] = useState<{ x: number; y: number } | null>(null);
   const [playbackStatsTick, setPlaybackStatsTick] = useState(0);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [showMediaError, setShowMediaError] = useState(false);
   const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryAttemptsRef = useRef(0);
@@ -229,6 +230,7 @@ function BrowserWatchRoute() {
     recoveryAttemptsRef.current = 0;
     recoveryTargetRef.current = null;
     setMediaRetryKey(0);
+    setShowMediaError(false);
     setKnownDuration(null);
     setShowNextPrompt(false);
     setActiveSkipSegment(null);
@@ -705,6 +707,7 @@ function BrowserWatchRoute() {
 
   const handleLoadedData = useCallback(() => {
     recoveryAttemptsRef.current = 0;
+    setShowMediaError(false);
     settlePendingRestart();
     if (!playbackStartedRef.current) {
       playbackStartedRef.current = true;
@@ -776,6 +779,11 @@ function BrowserWatchRoute() {
         mediaErrorCode: videoRef.current?.error?.code ?? undefined,
       }).catch(() => {});
     }
+    // The first error is normally a transient source failure that the recovery
+    // path remounts away from. Showing Video.js's dialog during that recovery
+    // produced a one-second "Playback unavailable" flash, so only surface it
+    // after recovery has genuinely run out of attempts.
+    setShowMediaError(recoveryAttemptsRef.current >= 2);
     recoverPlayback();
   }, [recoverPlayback]);
 
@@ -970,6 +978,7 @@ function BrowserWatchRoute() {
 
   const nextEpisode = play.data?.next ?? null;
   const preparation = play.data?.optimization ?? null;
+  const preparationActive = preparation?.status === "running" || preparation?.status === "queued";
   const preparationPercent = Math.round(Math.min(1, Math.max(0, preparation?.progress ?? 0)) * 100);
   const preparationRemaining = preparationEta(preparation?.etaSeconds);
   const preparationSpeed = preparation?.speed && preparation.speed > 0 ? preparation.speed : null;
@@ -1022,66 +1031,120 @@ function BrowserWatchRoute() {
       )}
       {/* Main Video View / Video.js 10 */}
       <div className="relative flex-1 flex items-center justify-center w-full h-full p-0">
-        {play.data?.path === "unsupported" ? (
+        {!play.data || play.isError || play.data.path === "unsupported" ? (
           <div className="w-full max-w-md p-6 text-center rounded-2xl bg-[#181818] border border-white/10 text-white z-20">
-            <p className="font-display text-lg font-bold">
-              {preparationHeadline(preparation?.mode, preparation?.status ?? "none")}
-            </p>
-            <p className="mt-2 text-sm text-ink-muted">{play.data.reason}</p>
-            {preparation?.status === "running" ? (
-              <div className="mt-5 text-left">
-                <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="text-ink-muted">
-                    {preparation.mode === "remux"
-                      ? "Repacking the video into MP4 — no re-encoding"
-                      : "Converting the tracks this browser cannot play"}
-                  </span>
-                  <span className="font-mono tabular-nums text-white">{preparationPercent}%</span>
-                </div>
-                <div
-                  className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10"
-                  role="progressbar"
-                  aria-label="Playback preparation progress"
-                  aria-valuenow={preparationPercent}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <div
-                    className="h-full origin-left rounded-full bg-[#E50914] transition-transform duration-500 ease-out"
-                    style={{ transform: `scaleX(${Math.max(2, preparationPercent) / 100})` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-ink-muted">
-                  {preparationRemaining ?? "Estimating time left…"}
-                  {preparationSpeed ? ` · ${preparationSpeed.toFixed(1)}× realtime` : ""}
+            {play.isError ? (
+              <>
+                <p className="font-display text-lg font-bold">Could not start playback</p>
+                <p className="mt-2 text-sm text-ink-muted">
+                  {play.error instanceof Error ? play.error.message : "The server did not return a playable stream."}
                 </p>
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => void play.refetch()}
+                    className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    onClick={leavePlayer}
+                    className="rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            ) : !play.data ? (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />
+                <p className="text-sm text-white/70">Opening…</p>
+                <button
+                  onClick={leavePlayer}
+                  className="mt-2 rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                >
+                  Back
+                </button>
               </div>
-            ) : preparation?.status === "queued" ? (
-              <p className="mt-4 text-sm text-ink-muted">
-                {preparation.queuePosition && preparation.queuePosition > 0
-                  ? `Starting now — position ${preparation.queuePosition} in the queue. Opened titles jump ahead.`
-                  : "Starting now. This copy is prepared once, then it plays instantly."}
-              </p>
+            ) : preparationActive || play.isFetching ? (
+              <>
+                <p className="font-display text-lg font-bold">Preparing for playback</p>
+                {preparation?.status === "running" ? (
+                  <div className="mt-5 text-left">
+                    <div className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="text-ink-muted">
+                        {preparation.mode === "remux"
+                          ? "Repacking the video into MP4 — no re-encoding"
+                          : "Converting the tracks this browser cannot play"}
+                      </span>
+                      <span className="font-mono tabular-nums text-white">{preparationPercent}%</span>
+                    </div>
+                    <div
+                      className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10"
+                      role="progressbar"
+                      aria-label="Playback preparation progress"
+                      aria-valuenow={preparationPercent}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className="h-full origin-left rounded-full bg-[#E50914] transition-transform duration-500 ease-out"
+                        style={{ transform: `scaleX(${Math.max(2, preparationPercent) / 100})` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-ink-muted">
+                      {preparationRemaining ?? "Estimating time left…"}
+                      {preparationSpeed ? ` · ${preparationSpeed.toFixed(1)}× realtime` : ""}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-5 flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />
+                    <p className="text-sm text-ink-muted">
+                      {preparation?.queuePosition && preparation.queuePosition > 0
+                        ? `Position ${preparation.queuePosition} in the queue. Opened titles jump ahead.`
+                        : "This copy is prepared once, then it plays instantly."}
+                    </p>
+                  </div>
+                )}
+                <button
+                  onClick={leavePlayer}
+                  className="mt-6 rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                >
+                  Back
+                </button>
+              </>
             ) : (
-              <p className="mt-4 text-sm text-ink-muted">
-                {preparation?.error ?? "This file cannot be prepared right now."}
-              </p>
+              <>
+                <p className="font-display text-lg font-bold">
+                  {preparationHeadline(preparation?.mode, preparation?.status ?? "none")}
+                </p>
+                <p className="mt-2 text-sm text-ink-muted">{play.data?.reason}</p>
+                <p className="mt-4 text-sm text-ink-muted">
+                  {preparation?.error ?? "This file cannot be prepared right now."}
+                </p>
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => void play.refetch()}
+                    className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    onClick={leavePlayer}
+                    className="rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
             )}
-            <p className="mt-4 text-xs text-white/45">
-              One-time setup. After this, the title starts and seeks instantly.
-            </p>
-            <button
-              onClick={leavePlayer}
-              className="mt-6 rounded-lg bg-[#E50914] px-5 py-2 text-sm font-semibold hover:bg-[#b80710] transition-colors"
-            >
-              Return Home
-            </button>
           </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <VideoPlayer>
               <VideoSkin
                 className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
+                showErrorDialog={showMediaError}
                 serverAudioTracks={play.data?.audioTracks}
                 selectedAudioIndex={selectedAudioIndex}
                 onSelectAudioTrack={handleSelectAudioTrack}

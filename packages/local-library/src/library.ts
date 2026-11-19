@@ -209,6 +209,9 @@ export class LocalLibrary {
   }
   private changed() {
     this.invalidate();
+    this.publish();
+  }
+  private publish() {
     for (const fn of this.listeners) fn();
   }
   private persist(): Promise<void> {
@@ -301,22 +304,54 @@ export class LocalLibrary {
     return this.deleteTitle(id, false);
   }
   async deleteTitle(id: number, removeFromStorage = false) {
-    const records = this.state.records.filter(r => r.id === id || r.card.parentId === id);
-    if (removeFromStorage && this.io.deleteFile) {
-      for (const r of records) {
-        try {
-          await this.io.deleteFile(r.file.uri);
-        } catch (e) {
-          console.warn("Failed to delete local file:", r.file.uri, e);
-        }
-      }
+    if (removeFromStorage) {
+      const ids = this.state.records.filter(r => r.id === id || r.card.parentId === id).map(r => r.id);
+      const result = await this.deleteFiles(ids);
+      if (result.failed) throw new Error(`${result.failed} video files couldn’t be deleted.`);
+      return;
     }
-    this.state.excluded = [...new Set([...(this.state.excluded || []), ...records.map(r => r.file.uri)])];
-    this.state.records = this.state.records.filter(r => !records.includes(r));
+    const records = this.state.records.filter(r => r.id === id || r.card.parentId === id);
+    this.forgetFiles(records);
     for (const [key, val] of Object.entries(this.state.series)) {
       if (val === id) delete this.state.series[key];
     }
-    await this.persist(); this.changed();
+    await this.persist();
+    this.changed();
+  }
+
+  private forgetFiles(records: LocalRecord[]) {
+    const ids = new Set(records.map(record => record.id));
+    this.state.excluded = [...new Set([...(this.state.excluded ?? []), ...records.map(record => record.file.uri)])];
+    this.state.records = this.state.records.filter(record => !ids.has(record.id));
+  }
+
+  async deleteFiles(ids: readonly number[]) {
+    while (this.active) await this.active;
+    const deleteFile = this.io.deleteFile;
+    if (!deleteFile) throw new Error("This device cannot delete these videos.");
+    const requested = new Set(ids);
+    const records = this.state.records.filter(record => requested.has(record.id));
+    const removed: LocalRecord[] = [];
+    let bytes = 0;
+    const operation = (async () => {
+      for (const record of records) {
+        try {
+          await deleteFile(record.file.uri);
+          removed.push(record);
+          bytes += record.file.size;
+        } catch {
+          // Keep failed file deletions in the library so they can be retried.
+        }
+      }
+      if (removed.length) {
+        this.forgetFiles(removed);
+        await this.persist();
+        this.changed();
+      }
+    })();
+    this.active = operation.finally(() => { this.active = null; });
+    await this.active;
+    return { deleted: removed.length, failed: requested.size - removed.length, bytes };
   }
   async identify(id: number, input: { kind: "movies" | "tv"; title: string; tmdbId?: number; season?: number; episode?: number }) {
     const selected = this.state.records.find(r => r.id === id || r.card.parentId === id);
@@ -447,11 +482,11 @@ export class LocalLibrary {
     this.scanProgress = { phase: "Reading folders", current: "", folders: 0, found: 0, added: 0 };
     this.scanning = true;
     this.issues = [];
-    this.changed();
+    this.publish();
     try {
       for (const root of roots) {
         this.scanProgress.current = root.name;
-        this.changed();
+        this.publish();
         let files: LocalFile[];
         try { files = walked?.get(root.uri) ?? await this.io.walk(root); }
         catch { root.unavailable = true; this.issues.push(`Cannot read ${root.name}. Grant folder access again; its saved library was kept.`); continue; }
@@ -467,8 +502,11 @@ export class LocalLibrary {
           this.state.records.push(...recovered);
           this.state.missingFiles = this.state.missingFiles?.filter(record => !ids.has(record.id));
         }
+        const recordsByFile = new Map<string, LocalRecord>();
         const seriesByDirectory = new Map<string, LocalRecord[]>();
         for (const record of this.state.records) {
+          const fileKey = localFileKey(record.file.uri);
+          if (!recordsByFile.has(fileKey)) recordsByFile.set(fileKey, record);
           if (record.root !== root.uri || !record.card.parentId || (!record.tmdbId && !record.manualIdentity)) continue;
           const { directory } = seriesLocation(record.file.relativePath);
           // Loose episodes in a general-purpose root can belong to different shows.
@@ -481,8 +519,9 @@ export class LocalLibrary {
         for (const file of files.filter(f => videos.test(f.name) && !excluded.has(localFileKey(f.uri)))) {
           this.scanProgress.found++;
           this.scanProgress.current = file.name;
-          this.changed();
-          let record = this.state.records.find(r => localFileKey(r.file.uri) === localFileKey(file.uri));
+          this.publish();
+          const fileKey = localFileKey(file.uri);
+          let record = recordsByFile.get(fileKey);
           const parsed = !record || (!record.manualIdentity && record.card.kind === "episode")
             ? parseLocalName(file.relativePath, root.kind)
             : null;
@@ -520,6 +559,7 @@ export class LocalLibrary {
               rating: null, runtime: null, genres: [], matchStatus: "unmatched", watch: null, isAnime,
             }};
             this.state.records.push(record);
+            recordsByFile.set(fileKey, record);
             this.scanProgress.added++;
           } else if (record && (record.file.uri !== file.uri || record.file.size !== file.size || record.file.modified !== file.modified)) {
             record.file = file;
@@ -556,14 +596,14 @@ export class LocalLibrary {
       for (const record of this.state.records.filter(r => !selected || selected.has(r.root))) {
         this.scanProgress.phase = "Matching titles";
         this.scanProgress.current = record.file.name;
-        this.changed();
+        this.publish();
         if (record.metadataVersion === 2 && record.discoveryVersion === 1 && Date.now() - record.metadataAt < 7 * 86400_000) continue;
         await this.hydrate(record);
       }
       if (this.metadataSettings.markersEnabled) for (const record of this.state.records.filter(r => !selected || selected.has(r.root))) {
         this.scanProgress.phase = "Checking episode markers";
         this.scanProgress.current = record.file.name;
-        this.changed();
+        this.publish();
         await this.getMarkers(record.id);
       }
     } finally { this.scanning = false; this.scanProgress.phase = "Finished"; this.scanProgress.current = ""; this.changed(); }
@@ -660,13 +700,29 @@ export class LocalLibrary {
     const episodes = episodeRecords
       ?.map((episode) => episode.card)
       .sort((a, b) => (a.seasonNumber! - b.seasonNumber!) || (a.episodeNumber! - b.episodeNumber!)) ?? null;
+    const knownSeasons = new Map(record.seasons?.map((season) => [season.number, season]));
+    for (const episode of episodeRecords ?? []) {
+      const number = episode.card.seasonNumber ?? 1;
+      if (knownSeasons.has(number)) continue;
+      const season = episode.seasons?.find((entry) => entry.number === number);
+      if (season) knownSeasons.set(number, season);
+    }
+    const seasons = episodes
+      ? [...new Set(episodes.map((episode) => episode.seasonNumber ?? 1))]
+          .sort((a, b) => a - b)
+          .map((number) => knownSeasons.get(number) ?? {
+            id: number,
+            number,
+            name: number === 0 ? "Specials" : `Season ${number}`,
+          })
+      : null;
     const card = isSeries
       ? series.get(id)!
       : { ...record.card, tmdbId: record.tmdbId ?? record.card.tmdbId ?? null, watchlist: Boolean(record.watchlist) };
     return { item: card, logo: record.logo || null, metadata: { overview: card.overview, tagline: record.tagline || null,
       runtime: card.runtime, rating: card.rating, certification: record.certification || null, genres: card.genres },
       cast: record.cast, trailer: record.trailer || null,
-      seasons: episodes ? [...new Set(episodes.map(e => e.seasonNumber ?? 1))].sort((a,b) => a-b).map(n => record.seasons?.find(s => s.number === n) || episodeRecords!.find(r => r.card.seasonNumber === n)?.seasons?.find(s => s.number === n) || { id: n, number: n, name: n === 0 ? "Specials" : `Season ${n}` }) : null,
+      seasons,
       episodes, file: isSeries ? null : { fileId: record.id, itemId: record.id, size: record.file.size,
         container: record.file.name.split(".").at(-1)!, duration: card.watch?.duration || null,
         width: null, height: /(?:2160p|4k|uhd)/i.test(record.file.name) ? 2160 : /1080p/i.test(record.file.name) ? 1080 : /720p/i.test(record.file.name) ? 720 : null, videoCodec: null, videoProfile: null, fps: null, hdr: null,

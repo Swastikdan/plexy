@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { LocalCatalog } from "@/core/library/catalog-api";
 import type { HybridEpisode } from "@/features/remote/lib/hybrid-episodes";
 import { EpisodeCardView } from "./episode-card-view";
@@ -29,9 +30,15 @@ export function HybridEpisodeCard({
   onLongPress?: () => void;
   onToggleWatched?: () => void;
 }) {
+  const artworkPath = episode.artwork;
+  const artwork = useMemo(
+    () => artworkPath ? api.image(artworkPath) : undefined,
+    [api, artworkPath],
+  );
+
   return (
     <EpisodeCardView
-      artwork={episode.artwork ? api.image(episode.artwork) : undefined}
+      artwork={artwork}
       title={episode.title}
       overview={episode.overview}
       episodeNumber={episode.number}

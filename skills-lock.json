@@ -5,7 +5,8 @@
       "source": "emilkowalski/skills",
       "sourceType": "github",
       "skillPath": "skills/animate-expo/SKILL.md",
-      "computedHash": "f221c9cfe03d9255ac3e2383bfb8b1481036142fe2fe9567403eb071d21092bb"
+      "computedHash": "f221c9cfe03d9255ac3e2383bfb8b1481036142fe2fe9567403eb071d21092bb",
+      "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c"
     },
     "design-taste-frontend": {
       "source": "Leonxlnx/taste-skill",
@@ -18,49 +19,57 @@
       "source": "elysiajs/skills",
       "sourceType": "github",
       "skillPath": "elysia/SKILL.md",
-      "computedHash": ""
+      "computedHash": "a6c0405d2b902e2fe6227d612812d376f5ebb568ea55ec28634f92abf16485c4",
+      "commit": "1466d85aa4f2a0fec91f71311e65bbfa91aa7dc5"
     },
     "expo-project-structure": {
       "source": "expo/skills",
       "sourceType": "github",
       "skillPath": "plugins/expo/skills/expo-project-structure/SKILL.md",
-      "computedHash": "cda1f6cd63eac4dda715e661a778126de168f9d2a4ffe9f1f33f9cec15cda2af"
+      "computedHash": "1d8d0089c3f367cda801f2b675d8df6b773806b62ffb8d88b390bed9f10fa607",
+      "commit": "85a340bc5374edb88e5d80be294e6f98c99c5c78"
     },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "skillPath": "skills/frontend-design/SKILL.md",
-      "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c"
+      "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
     },
     "logo-maker": {
       "source": "panel-ui/PanelUI",
       "sourceType": "github",
       "skillPath": "skills/logo-maker/SKILL.md",
-      "computedHash": "7c0726b1f9a2cba04b7f971fd03f2d87e4a4732194d90277c19ee4c04ec510ae"
+      "computedHash": "7c0726b1f9a2cba04b7f971fd03f2d87e4a4732194d90277c19ee4c04ec510ae",
+      "commit": "880bd3d0788c3905bb61201bf8913ffa4581d0f8"
     },
     "panelui": {
       "source": "panel-ui/PanelUI",
       "sourceType": "github",
       "skillPath": "skills/panelui/SKILL.md",
-      "computedHash": "cb68bdd334365dbb3e72bac8b0bfda465a61c2cf882374f31ad1cd9bbda65bf7"
+      "computedHash": "4e0be9b4ddee92468b1c34be68e586f0ec8f03e5df5be6a07bac50f07be98023",
+      "commit": "880bd3d0788c3905bb61201bf8913ffa4581d0f8"
     },
     "tvos-design-guidelines": {
       "source": "ehmo/platform-design-skills",
       "sourceType": "github",
       "skillPath": "skills/tvos/SKILL.md",
-      "computedHash": ""
+      "computedHash": "678a8da539378fefa08578781138888fa38db8a257880d851fb9c9ec048e385c",
+      "commit": "dc2be825d8b439caea78e9eaa8fb3ac23b0ff3e9"
     },
     "untangle-codebase": {
       "source": "caldoai/skills",
       "sourceType": "github",
       "skillPath": "skills/untangle-codebase/SKILL.md",
-      "computedHash": "73791c30d4da2e001bc095732771966338b764e2e7b57bb30a81439cff85aef4"
+      "computedHash": "73791c30d4da2e001bc095732771966338b764e2e7b57bb30a81439cff85aef4",
+      "commit": "d5b68dace378219890d821adb3685538e2c69b04"
     },
     "vercel-react-native-skills": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/react-native-skills/SKILL.md",
-      "computedHash": "4c160f1f4e623b989cadb71f42a0813be574d172acf5e32a6411c87f3e28c05a"
+      "computedHash": "4c160f1f4e623b989cadb71f42a0813be574d172acf5e32a6411c87f3e28c05a",
+      "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62"
     }
   }
 }

@@ -28,7 +28,6 @@ import {
   AlertCircle,
   Film,
   ArrowUpDown,
-  Check,
   ChevronDown,
   ChevronRight,
   X,
@@ -50,6 +49,7 @@ import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { certificationFor, fetchDetail } from "@/features/remote/lib/tmdb";
 import { parseRemotePublicId, remotePublicId, toItemCard } from "@/features/remote/lib/view";
+import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
 import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
 
 const genres = [
@@ -282,15 +282,21 @@ export function LibraryScreen({
         }
       />
 
+      <View className="flex-row flex-wrap gap-2 px-5 pb-2">
+        <Pressable accessibilityRole="button" onPress={() => router.push("/custom-collections")}
+          className="rounded-full border border-border px-4 py-2">
+          <Text className="font-archivo-medium text-foreground">Custom collections</Text>
+        </Pressable>
       {online ? (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push("/episode-calendar")}
-          className="self-start mx-5 mb-2 rounded-full border border-border px-4 py-2"
+          className="rounded-full border border-border px-4 py-2"
         >
           <Text className="font-archivo-medium text-foreground">Episode calendar</Text>
         </Pressable>
       ) : null}
+      </View>
       <TitleBrowser
         title={collection?.name ?? null}
         items={collection ? api.collectionItems(collection.id) : []}
@@ -566,7 +572,6 @@ function FilterRow({
   active: boolean;
   onPress: () => void;
 }) {
-  const colors = useColors();
   return (
     <Pressable
       accessibilityRole={role}
@@ -574,7 +579,7 @@ function FilterRow({
       onPress={onPress}
       className={cn(
         "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-        active ? "bg-foreground/[0.08]" : "active:bg-foreground/[0.06]",
+        active ? "bg-accent/15" : "active:bg-foreground/[0.06]",
       )}
     >
       <Text
@@ -585,9 +590,7 @@ function FilterRow({
       >
         {label}
       </Text>
-      {active && (
-        <Check size={19} color={colors.ink} strokeWidth={2.6} />
-      )}
+      {role === "checkbox" ? <CheckboxIndicator checked={active} /> : null}
     </Pressable>
   );
 }

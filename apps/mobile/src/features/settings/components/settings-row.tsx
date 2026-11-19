@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
-import { Check, ChevronRight, type NativeIcon } from "@/shared/ui/icons";
+import { ChevronRight, type NativeIcon } from "@/shared/ui/icons";
 
 export function SettingsRow({
   title,
@@ -40,7 +40,7 @@ export function SettingsRow({
       disabled={!onPress}
       className={cn(
         "min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5 active:bg-surface-hover",
-        selected && "bg-foreground/[0.06]",
+        selected && "bg-accent/15",
       )}
     >
       {Icon && (
@@ -51,8 +51,9 @@ export function SettingsRow({
       <View className="flex-1 gap-1">
         <Text
           className={cn(
-            "text-[15px] font-archivo-medium",
+            "text-[15px]",
             danger ? "text-danger" : "text-foreground",
+            selected ? "font-archivo-bold" : "font-archivo-medium",
           )}
         >
           {title}
@@ -64,9 +65,7 @@ export function SettingsRow({
         )}
       </View>
       {children ||
-        (selected ? (
-          <Check size={22} color={colors.ink} />
-        ) : navigation ? (
+        (navigation ? (
           <ChevronRight size={20} color={colors.muted} />
         ) : null)}
     </Pressable>

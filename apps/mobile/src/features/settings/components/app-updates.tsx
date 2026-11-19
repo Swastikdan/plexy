@@ -71,6 +71,7 @@ export function Updates() {
         disabled={!online || busy}
         onPress={() => void check()}
       />
+      {!online ? <Label>Connect to the internet to check for updates.</Label> : null}
       {update && (
         <>
           <Label>Available: {update.tagName}</Label>

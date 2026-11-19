@@ -1,3 +1,4 @@
+import { useCollectionAction } from "@/features/collections/use-collection-action";
 import { useCallback } from "react";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { triggerHaptic } from "@/shared/lib/haptics";
@@ -35,6 +36,7 @@ export function remoteTitleFromCard(item: ItemCard): RemoteTitle | null {
  */
 export function useRemoteTitleActions() {
   const showDialog = useAppDialog();
+  const addToCollection = useCollectionAction();
   const { save, isSaved } = useRemote();
   return useCallback(
     (
@@ -91,9 +93,14 @@ export function useRemoteTitleActions() {
           onPress: () =>
             void save(title).then(() => options.onChanged?.()),
         },
+        { text: "Add to collection", onPress: () => {
+          if (saved) addToCollection(item.publicId);
+          else void save(title).then(() => addToCollection(item.publicId)).catch(() =>
+            showDialog("Couldn’t save title", "Try adding the title again.", []));
+        } },
         hiddenTitleAction(showDialog, item, options.onChanged),
       ]);
     },
-    [isSaved, save, showDialog],
+    [addToCollection, isSaved, save, showDialog],
   );
 }

@@ -1,3 +1,5 @@
+import { useCastPlayback } from "./hooks/use-cast-playback";
+import { useSleepTimer, type PlaybackSleepTimer } from "./hooks/use-sleep-timer";
 import { useResource } from "@/core/resources/use-resource";
 import { updateNativePlayer } from "./lib/native-player";
 import { useEventCallback } from "@/shared/hooks/use-event-callback";
@@ -130,6 +132,9 @@ export function PlaybackScreen({
   next,
   onlineNext,
   onNextOnline,
+  externalSource,
+  addExternalToLibrary,
+  sharedSleepTimer,
 }: {
   initial: Playability;
   back: () => void;
@@ -137,6 +142,9 @@ export function PlaybackScreen({
   /** A missing next episode that should continue on the online source. */
   onlineNext?: { season: number; episode: number; title: string } | null;
   onNextOnline?: () => void;
+  externalSource?: string;
+  addExternalToLibrary?: () => void;
+  sharedSleepTimer?: PlaybackSleepTimer;
 }) {
   useKeepAwake();
   const { api, runtime, preferences, updatePreferences, progress } =
@@ -181,7 +189,7 @@ export function PlaybackScreen({
   const [resumeBackdropOpacity] = React.useState(() => new Animated.Value(0));
   const [resumeCardOpacity] = React.useState(() => new Animated.Value(0));
   const [resumeCardScale] = React.useState(() => new Animated.Value(0.94));
-  const skipResource = useResource(() => api.skips(manifest.fileId), [api, manifest.fileId]);
+  const skipResource = useResource(() => externalSource ? Promise.resolve(null) : api.skips(manifest.fileId), [api, manifest.fileId, externalSource]);
   const skips = skipResource.value;
   const [scrub, setScrub] = useState<number | null>(null);
   const [scrubCancelling, setScrubCancelling] = useState(false);
@@ -409,6 +417,50 @@ export function PlaybackScreen({
     },
     [api, manifest.itemId, progress],
   );
+  const castEnded = useRef(false);
+  const endCastSleepTimer = useRef<() => void>(() => {});
+  const cast = useCastPlayback(
+    (state, first) => {
+      if (first) {
+        castEnded.current = false;
+        player.pause();
+        setAutoNextCancelled(true);
+        setMessage("Playing on TV.");
+      }
+      currentPosition.current = state.position;
+      setPosition(state.position);
+      setPlaying(Boolean(state.playing));
+      if (state.finished) {
+        if (castEnded.current) return;
+        castEnded.current = true;
+        save(true, true);
+        endCastSleepTimer.current();
+        setEnded(true);
+      } else if (Date.now() - lastSaved.current > 5000) {
+        castEnded.current = false;
+        lastSaved.current = Date.now();
+        save();
+      }
+    },
+    () => {
+      updateNativePlayer(player, "currentTime", currentPosition.current);
+      setPlaying(false);
+      setMessage("Casting ended. Press play to continue here.");
+    },
+    setMessage,
+  );
+  const casting = cast.activeRef;
+  const sleepPaused = useRef(false);
+  const sleep = useSleepTimer(() => {
+    sleepPaused.current = true;
+    if (casting.current) cast.command("pause");
+    else player.pause();
+    setAutoNextCancelled(true);
+    save(false, true);
+    setMessage("Sleep timer ended.");
+  }, sharedSleepTimer);
+  const finishSleepTimer = sleep.finish;
+  useLayoutEffect(() => { endCastSleepTimer.current = finishSleepTimer; }, [finishSleepTimer]);
   const seekBurst = useRef({ seconds: 0, at: 0 });
   const seek = useEventCallback((seconds: number) => {
     const target = Math.max(
@@ -421,6 +473,10 @@ export function PlaybackScreen({
     setCountdown(10);
     setAutoNextCancelled(false);
     reveal();
+    if (casting.current) {
+      cast.command("seek", target);
+      return;
+    }
     pendingSeek.current = { target, until: Date.now() + 2500 };
     updateNativePlayer(player, "currentTime", target);
     currentPosition.current = target;
@@ -459,7 +515,7 @@ export function PlaybackScreen({
   useEffect(() => {
     const subs = [
       player.addListener("timeUpdate", (e) => {
-        if (!initialized.current) return;
+        if (!initialized.current || casting.current) return;
         const value = offset.current + e.currentTime;
         setBufferedPosition(Math.max(0, e.bufferedPosition));
         if (scrubRef.current != null) return;
@@ -474,6 +530,7 @@ export function PlaybackScreen({
         }
       }),
       player.addListener("playingChange", (e) => {
+        if (casting.current) return;
         setPlaying(e.isPlaying);
         if (!e.isPlaying) {
           endBoost();
@@ -512,10 +569,12 @@ export function PlaybackScreen({
         initialized.current = true;
         setEnded(false);
         updateNativePlayer(player, "playbackRate", preferencesRef.current.playbackRate);
-        player.play();
+        if (!sleepPaused.current) player.play();
       }),
       player.addListener("playToEnd", () => {
-        if (!initialized.current || currentPosition.current <= 10) return;
+        if (!initialized.current || casting.current) return;
+        finishSleepTimer();
+        if (currentPosition.current <= 10) return;
         save(true, true);
         setEnded(true);
         setVisible(true);
@@ -525,7 +584,7 @@ export function PlaybackScreen({
       save(false, true);
       subs.forEach((s) => s.remove());
     };
-  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost]);
+  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost, finishSleepTimer, casting]);
   const [previousChoice, setPreviousChoice] = useState(choice);
   if (previousChoice !== choice) {
     setPreviousChoice(choice);
@@ -540,7 +599,7 @@ export function PlaybackScreen({
     initialized.current = false;
     offset.current = 0;
     chosenStart.current = choice.start;
-    const uri = api.stream(manifest.fileId);
+    const uri = externalSource ?? api.stream(manifest.fileId);
     expectedUri.current = uri;
     void player
       .replaceAsync({
@@ -560,7 +619,7 @@ export function PlaybackScreen({
     return () => {
       live = false;
     };
-  }, [api, choice, manifest.fileId, manifest.title, manifest.subtitle, player, started]);
+  }, [api, choice, externalSource, manifest.fileId, manifest.title, manifest.subtitle, player, started]);
   useEffect(() => { autoSkipEnd.current = -1; }, [manifest.fileId]);
   const validatedSkips = React.useMemo(() => localSegments(skips ?? { intro: null, recap: null, outro: null }, duration || null), [skips, duration]);
   useEffect(() => {
@@ -602,10 +661,13 @@ export function PlaybackScreen({
     activeSkip?.[0] === "outro" &&
     scrub == null &&
     status !== "loading";
+  const canAutoNext = hasNextEpisode && (sleep.choice === "off" || !onlineNext);
   const creditsPills =
     creditsPhase &&
     preferences.autoNext &&
-    hasNextEpisode &&
+    sleep.choice !== "end" &&
+    !cast.active &&
+    canAutoNext &&
     !autoNextCancelled;
   const [previousCreditsPhase, setPreviousCreditsPhase] = useState(creditsPhase);
   if (previousCreditsPhase !== creditsPhase) {
@@ -617,7 +679,9 @@ export function PlaybackScreen({
       (!ended && !creditsPhase) ||
       !preferences.autoNext ||
       autoNextCancelled ||
-      !hasNextEpisode
+      sleep.choice === "end" ||
+      cast.active ||
+      !canAutoNext
     )
       return;
     const timer = setTimeout(() => {
@@ -630,7 +694,9 @@ export function PlaybackScreen({
     creditsPhase,
     preferences.autoNext,
     autoNextCancelled,
-    hasNextEpisode,
+    sleep.choice,
+    cast.active,
+    canAutoNext,
     countdown,
     playNextEpisode,
   ]);
@@ -676,9 +742,11 @@ export function PlaybackScreen({
     return () => sub.remove();
   }, [menu, speedPanel, audioPanel, exit, lockedRef, unlockScreen, setAudioPanel, setSpeedPanel, setMenu]);
   const togglePlay = () => {
+    sleepPaused.current = false;
     reveal();
     if (ended) seek(0);
-    if (player.playing) player.pause();
+    if (casting.current) cast.command(playing ? "pause" : "play");
+    else if (player.playing) player.pause();
     else player.play();
   };
   const previewTime = scrub ?? position;
@@ -974,14 +1042,14 @@ export function PlaybackScreen({
                 transform: [{ translateX: -100 }],
               }}
             >
-              <LocalThumbnail
+              {!externalSource && !cast.active ? <LocalThumbnail
                 key={manifest.fileId}
                 player={player}
                 time={scrub}
                 fileId={manifest.fileId}
                 width={200}
                 height={113}
-              />
+              /> : null}
               <View className="max-w-[260px] rounded-[6px] border border-white/20 bg-black/85 px-2 py-[3px]">
                 <Text
                   numberOfLines={1}
@@ -1294,6 +1362,19 @@ export function PlaybackScreen({
       )}
       <PlayerDrawer
         menu={menu}
+        sleep={sleep}
+        extraActions={[
+          ...(addExternalToLibrary ? [{ label: "Add to library", onPress: addExternalToLibrary }] : []),
+          ...(cast.available ? [cast.active
+            ? { label: "Stop casting", onPress: () => cast.command("stop") }
+            : { label: "Cast to TV", onPress: () => {
+              try {
+                cast.start(externalSource ?? api.stream(manifest.fileId), manifest.title ?? "Plexy", currentPosition.current);
+              } catch {
+                setMessage("This video couldn’t be opened for casting.");
+              }
+            } }] : []),
+        ]}
         setMenu={setMenu}
         sortedEpisodes={sortedEpisodes}
         reveal={reveal}
@@ -1336,8 +1417,8 @@ export function PlaybackScreen({
         subtitle={subtitle}
         serverTracks={manifest.tracks}
         nativeSubtitles={nativeSubtitles}
-        canAddSubtitleFile={Boolean(runtime.pickSubtitle)}
-        onSearchSubtitles={runtime.saveSubtitle ? () => {
+        canAddSubtitleFile={Boolean(!externalSource && runtime.pickSubtitle)}
+        onSearchSubtitles={!externalSource && runtime.saveSubtitle ? () => {
           setAudioPanel(false);
           setSubtitleSearch(true);
         } : undefined}

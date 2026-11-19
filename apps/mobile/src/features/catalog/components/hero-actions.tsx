@@ -7,7 +7,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { Check, Film, Play, Trash2 } from "@/shared/ui/icons";
+import { Eye, Film, Play, Trash2 } from "@/shared/ui/icons";
 import { playbackAction } from "@/features/catalog/lib/playback-action";
 export interface HeroActionsProps {
   item: ItemCard;
@@ -145,9 +145,10 @@ export function HeroActions({
           )}
           hitSlop={8}
           disabled={busy}
+          accessibilityState={{ selected: isWatched }}
           accessibilityLabel={isWatched ? "Mark Unwatched" : "Mark Watched"}
         >
-          <Check
+          <Eye
             size={18}
             color={isWatched ? colors.canvas : colors.ink}
             strokeWidth={isWatched ? 2.6 : 2}

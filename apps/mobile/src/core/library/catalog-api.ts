@@ -14,6 +14,7 @@ export abstract class LocalCatalog {
     abstract items(kind: "all" | "movie" | "series", offset?: number, sort?: string, signal?: AbortSignal, unwatched?: boolean, filters?: LibraryFilters): Promise<{
         items: ItemCard[];
     }>;
+    readDetail?(id: string | number): TitleDetail | null;
     abstract detail(id: string | number, signal?: AbortSignal): Promise<TitleDetail>;
     abstract deleteItem(id: string | number): Promise<{
         ok: boolean;

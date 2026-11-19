@@ -209,6 +209,13 @@ export class LocalApi extends LocalCatalog {
                 .map((r) => r.card),
         };
     }
+    override readDetail(id: string | number) {
+        try {
+            return this.library.detail(this.titleId(id));
+        } catch {
+            return null;
+        }
+    }
     override async detail(id: string | number, signal?: AbortSignal) {
         this.checkSignal(signal);
         return this.library.detail(this.titleId(id));

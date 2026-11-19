@@ -47,6 +47,7 @@ import GaugeIcon from "@hugeicons/core-free-icons/GaugeIcon";
 import GlobeIcon from "@hugeicons/core-free-icons/GlobeIcon";
 import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import Tv01Icon from "@hugeicons/core-free-icons/Tv01Icon";
+import ViewIcon from "@hugeicons/core-free-icons/ViewIcon";
 import ViewOffIcon from "@hugeicons/core-free-icons/ViewOffIcon";
 import VolumeHighIcon from "@hugeicons/core-free-icons/VolumeHighIcon";
 import VolumeOffIcon from "@hugeicons/core-free-icons/VolumeOffIcon";
@@ -124,6 +125,7 @@ export const Globe = glyph(GlobeIcon);
 export const MoreHorizontal = glyph(MoreHorizontalIcon);
 export const AlertCircle = glyph(AlertCircleIcon);
 export const WifiOff = glyph(WifiOff02Icon);
+export const Eye = glyph(ViewIcon);
 export const EyeOff = glyph(ViewOffIcon);
 
 /**

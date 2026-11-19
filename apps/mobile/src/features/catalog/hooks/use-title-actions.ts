@@ -1,3 +1,4 @@
+import { useCollectionAction } from "@/features/collections/use-collection-action";
 import {
   applyEpisodeAction,
   applyTitleAction,
@@ -27,6 +28,7 @@ export interface TitleActionOptions {
 export function useTitleActions() {
   const { api, progress } = useClient();
   const showDialog = useAppDialog();
+  const addToCollection = useCollectionAction();
   const working = useRef(false);
   const run = async (
     item: ItemCard,
@@ -113,6 +115,7 @@ export function useTitleActions() {
           ]
         : []),
       toggleWatched,
+      { text: "Add to collection", onPress: () => addToCollection(item.publicId) },
       hiddenTitleAction(
         showDialog,
         item,

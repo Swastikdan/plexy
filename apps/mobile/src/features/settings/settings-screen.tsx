@@ -161,6 +161,7 @@ export function SettingsScreen({
   const metadata = localLibrary.metadataSettings;
   const [picker, setPicker] = useState<{
     title: string;
+    description?: string;
     value: string;
     options: readonly [string, string][];
     onSelect: (value: string) => void;
@@ -171,6 +172,7 @@ export function SettingsScreen({
     options: [string, string][],
   ) => setPicker({
     title,
+    description: key === "posterSize" ? "Larger posters use more device storage." : undefined,
     value: metadata[key],
     options,
     onSelect: (value) => void action(() =>
@@ -250,7 +252,11 @@ export function SettingsScreen({
         subtitle={
           expandedFolder
             ? `${folderTitles.length} ${folderTitles.length === 1 ? "title" : "titles"} · ${folderRecords.length} files`
-            : undefined
+            : page === "family"
+              ? "Titles above the limit are hidden and blocked. Changes are PIN-protected."
+              : page === "folders"
+                ? "Videos stay in their original folders."
+                : undefined
         }
         title={
           expandedFolder
@@ -283,13 +289,10 @@ export function SettingsScreen({
           paddingHorizontal: 20,
           paddingTop: 4,
           paddingBottom: 36,
-          flexGrow: page === "hidden" || page === "family" ? 1 : undefined,
+          flexGrow: page === "hidden" ? 1 : undefined,
           gap: 14,
         }}
       >
-        {!online && (
-          <Notice message="Offline. Online playback and updates are unavailable. Saved local videos remain available in Local only or Hybrid mode." />
-        )}
         <Modal
           visible={!!picker}
           transparent
@@ -323,6 +326,11 @@ export function SettingsScreen({
                 </Pressable>
               </View>
               <ScrollView style={{ maxHeight: 420, flexShrink: 1 }}>
+                {picker?.description ? (
+                  <Text className="px-4 py-3 text-[13px] leading-5 font-archivo-regular text-muted">
+                    {picker.description}
+                  </Text>
+                ) : null}
                 {picker?.options.map(([value, title]) => (
                   <SettingsRow
                     key={value}
@@ -410,6 +418,10 @@ export function SettingsScreen({
                     : () => void action(() => localLibrary.scan())
                 }
               />
+              <SettingsRow navigation title="Storage"
+                subtitle="Review space used by local videos"
+                onPress={() => push("/storage")}
+              />
               <SettingsRow navigation title="Reconnect media"
                 subtitle="Restore access to folders or videos"
                 onPress={() => push("/library-recovery")}
@@ -481,6 +493,10 @@ export function SettingsScreen({
                 />
               </View>
               <SettingsRow
+                title="Metadata by TMDB"
+                subtitle="Plexy is not endorsed or certified by TMDB."
+              />
+              <SettingsRow
                 title="Open Source Licenses"
                 subtitle="Credits, copyright and license notices"
                 navigation
@@ -505,14 +521,6 @@ export function SettingsScreen({
                 }
               />
             </View>
-            {hasLocal && <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-              Videos stay in their original folders. Library data, artwork and
-              saved scrub previews stay on this device.
-            </Text>}
-            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-              This product uses the TMDB API but is not endorsed or certified by
-              TMDB.
-            </Text>
           </>
         )}
         {page === "playback" && (
@@ -531,7 +539,8 @@ export function SettingsScreen({
                     "Choose the interval for both directions and double taps.",
                     [
                       ...([5, 10, 15, 20, 30, 60] as const).map((value) => ({
-                        text: `${preferences.seekSeconds === value ? "✓ " : ""}${value} seconds`,
+                        text: `${value} seconds`,
+                        selected: preferences.seekSeconds === value,
                         onPress: () =>
                           updatePreferences({ seekSeconds: value }),
                       })),
@@ -782,7 +791,7 @@ export function SettingsScreen({
                     ? "Refreshing metadata & artwork…"
                     : "Refresh metadata & artwork"
                 }
-                subtitle="Apply these settings to your saved titles"
+                subtitle={online ? "Apply language, region and poster size to saved titles" : "Connect to the internet to refresh metadata"}
                 onPress={
                   !online || busy || localLibrary.scanning
                     ? undefined
@@ -820,17 +829,13 @@ export function SettingsScreen({
                 }
               />
             </View>
-            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-              Language, region and poster size apply on the next metadata
-              refresh. Larger posters use more storage.
-            </Text>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Intro, recap & credits
             </Text>
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow
                 title="Community skip markers"
-                subtitle="Look up timings from IntroDB and save on this device"
+                subtitle="Save intro, recap and credit timings from IntroDB for offline playback"
               >
                 <ToggleSwitch
                   accessibilityLabel="Enable community skip markers"
@@ -852,7 +857,7 @@ export function SettingsScreen({
                     : "Refresh markers now"
                 }
                 subtitle={
-                  markerStatus || `${markerCount} files have saved markers`
+                  markerStatus || (online ? `${markerCount} files have saved markers` : "Connect to the internet to refresh markers")
                 }
                 onPress={
                   !online || busy || !metadata.markersEnabled
@@ -879,13 +884,6 @@ export function SettingsScreen({
                 }
               />
             </View>
-            <Text className="mt-1 text-[12px] leading-[18px] font-archivo-regular text-muted">
-              When timings are available, the player offers Skip intro, Skip
-              recap or Skip credits. Saved markers work offline. Missing or
-              stale markers are checked during scans and playback; titles
-              without community timings play normally. Automatic skipping is
-              configured under Playback settings.
-            </Text>
           </>
         )}
         {page === "family" && <FamilySettings />}

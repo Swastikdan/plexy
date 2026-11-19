@@ -17,6 +17,8 @@ import { NeutralVideoControls } from './layout/controls';
 
 export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof Container>>, 'children'> {
   children?: ReactNode;
+  /** Render the built-in Video.js error dialog. Off while a retry is recovering. */
+  showErrorDialog?: boolean;
   renderPoster?: NonNullable<ComponentProps<typeof Poster>>['renderImage'];
   renderThumbnail?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['renderThumbnail'];
   onSeekDragStart?: () => void;
@@ -35,6 +37,7 @@ export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof C
 export function VideoSkin({
   children,
   className,
+  showErrorDialog = true,
   renderPoster,
   renderThumbnail,
   onSeekDragStart,
@@ -60,7 +63,7 @@ export function VideoSkin({
       {children}
       <Poster renderImage={renderPoster} />
       <BufferingIndicator />
-      <ErrorDialog />
+      {showErrorDialog && <ErrorDialog />}
       <Title />
 
       <NeutralVideoControls

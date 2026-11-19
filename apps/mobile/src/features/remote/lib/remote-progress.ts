@@ -289,7 +289,13 @@ export async function markRemotePlayed(
     played,
     updatedAt: now,
   });
-  if (seasons) {
+  if (!played) {
+    for (const entry of current) {
+      if (entry.mediaType === mediaType && entry.tmdbId === tmdbId && entry.episode != null) {
+        entries.push({ ...entry, position: 0, played: false, updatedAt: now });
+      }
+    }
+  } else if (seasons) {
     for (const group of seasons) {
       for (const episode of group.episodes) {
         const key = remoteEpisodeKey(mediaType, tmdbId, group.season, episode);

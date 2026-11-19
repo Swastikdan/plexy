@@ -57,51 +57,42 @@ const ALL_TABS: ReadonlySet<string> = new Set([
   ...SERVER_TABS.map((tab) => tab.key),
 ]);
 
-const TAB_META: Record<SettingsTab, { title: string; description: string; group: string }> = {
+const TAB_META: Record<SettingsTab, { title: string; group: string }> = {
   overview: {
     group: "Your account",
     title: "Overview",
-    description: "Your profile, catalog snapshot, and the controls you use most.",
   },
   account: {
     group: "Your account",
     title: "Account",
-    description: "Sign-in details, password, and the session on this device.",
   },
   playback: {
     group: "Your account",
     title: "Playback",
-    description: "Subtitle defaults, audio preferences, and diagnostics for this device.",
   },
   devices: {
     group: "Your account",
     title: "Devices",
-    description: "Pair a new phone, tablet, or TV and review the devices signed in to your account.",
   },
   appearance: {
     group: "Your account",
     title: "Appearance",
-    description: "Choose how Plexy looks on this device. The preference follows this profile, not the server.",
   },
   libraries: {
     group: "Server",
     title: "Libraries",
-    description: "Add media folders, rescan a collection, or change an existing library.",
   },
   matches: {
     group: "Server",
     title: "Fix matches",
-    description: "Correct a wrong poster or metadata match, or remap a title that Plexy could not identify.",
   },
   users: {
     group: "Server",
     title: "Users",
-    description: "Create accounts, set roles and maturity limits, and grant library access.",
   },
   server: {
     group: "Server",
     title: "Server",
-    description: "Metadata, network access, playback preparation, updates, and diagnostics.",
   },
 };
 
@@ -167,7 +158,6 @@ function SettingsRoute() {
               <h1 className="font-sans text-xl font-bold tracking-[-0.03em] text-foreground sm:text-2xl">
                 {meta.title}
               </h1>
-              <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted sm:text-[13px]">{meta.description}</p>
             </div>
           </header>
 

@@ -1,5 +1,5 @@
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { Check, X } from "@/shared/ui/icons";
+import { X } from "@/shared/ui/icons";
 import React from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useColors } from "@/shared/theme";
@@ -64,7 +64,7 @@ export function SpeedPanel({
                 onPress={() => { triggerHaptic("selection"); onSelect(value); }}
                 className={cn(
                   "h-12 shrink-0 flex-row items-center justify-between rounded-[12px] px-3.5 py-3 active:bg-foreground/10",
-                  active && "bg-foreground/[0.08]",
+                  active && "bg-accent/15",
                 )}
               >
                 <Text
@@ -77,9 +77,6 @@ export function SpeedPanel({
                 >
                   {value}×
                 </Text>
-                {active && (
-                  <Check strokeWidth={2.5} size={16} color={colors.brand} />
-                )}
               </Pressable>
             );
           })}

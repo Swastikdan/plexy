@@ -131,6 +131,15 @@ test("playback preserves explicitly watched series until a manual unwatch", asyn
   expect(isRemotePlayed("tv", 900, 1, 2)).toBe(false);
 });
 
+test("unwatching a series clears saved episodes even without catalog season data", async () => {
+  await markRemotePlayed("tv", 905, true, [{ season: 3, episodes: [1, 2] }]);
+  await markRemotePlayed("tv", 905, false);
+
+  expect(isRemotePlayed("tv", 905)).toBe(false);
+  expect(isRemotePlayed("tv", 905, 3, 2)).toBe(false);
+  expect(getRemoteProgress("tv", 905, 3, 2)?.position).toBe(0);
+});
+
 test("TV ticks without an episode cannot complete the whole series", () => {
   recordRemotePlayback(entry({ position: 1200, played: true }));
   expect(isRemotePlayed("tv", 900)).toBe(false);

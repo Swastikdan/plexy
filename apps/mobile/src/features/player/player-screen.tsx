@@ -1,3 +1,5 @@
+import { useState } from "react";
+import type { SleepTimer } from "./hooks/use-sleep-timer";
 import { usePlayerOrientation, markPlayerHandoff } from "./hooks/use-player-orientation";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
@@ -21,6 +23,7 @@ export function PlayerScreen({
   back: () => void;
   next: (id: number) => void;
 }) {
+  const [timer, setTimer] = useState<SleepTimer | null>(null);
   usePlayerOrientation(() => {});
   const router = useRouter();
   const { api, progress, preferences } = useClient();
@@ -105,6 +108,7 @@ export function PlayerScreen({
       <PlaybackScreen
         key={fileId}
         initial={resource.value}
+        sharedSleepTimer={{ timer, setTimer }}
         back={back}
         next={next}
         onlineNext={nextOnline}

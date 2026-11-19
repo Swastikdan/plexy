@@ -1,6 +1,7 @@
+import type { SleepChoice } from "../hooks/use-sleep-timer";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors , timeLabel, easings } from "@/shared/theme";
-import { X, Check , Film, Minus, Plus } from "@/shared/ui/icons";
+import { X, Eye, Film, Minus, Plus } from "@/shared/ui/icons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Animated,
@@ -40,6 +41,8 @@ interface PlayerDrawerProps {
   };
   subtitles: { position: number; setPosition: (position: number) => void };
   setPlaybackRate: (rate: number) => void;
+  sleep: { choice: SleepChoice; choose: (choice: SleepChoice) => void };
+  extraActions?: { label: string; onPress: () => void }[];
 }
 
 export function PlayerDrawer({
@@ -53,6 +56,8 @@ export function PlayerDrawer({
   picture,
   subtitles,
   setPlaybackRate,
+  sleep,
+  extraActions,
 }: PlayerDrawerProps) {
   const colors = useColors();
   const close = () => {
@@ -301,11 +306,12 @@ export function PlayerDrawer({
                             : "bg-foreground/[0.08]",
                         )}
                         accessibilityRole="button"
+                        accessibilityState={{ selected: isEpWatched }}
                         accessibilityLabel={
                           isEpWatched ? "Mark unwatched" : "Mark watched"
                         }
                       >
-                        <Check
+                        <Eye
                           strokeWidth={2.5}
                           size={16}
                           color={
@@ -340,6 +346,21 @@ export function PlayerDrawer({
                         },
                       }))}
                     />
+
+                    <SheetChips
+                      label="Sleep timer"
+                      options={([["off", "Off"], [15, "15 min"], [30, "30 min"], [60, "60 min"], ["end", "End of video"]] as const)
+                        .map(([choice, label]) => ({
+                          key: String(choice), label, active: sleep.choice === choice,
+                          onPress: () => sleep.choose(choice),
+                        }))}
+                    />
+                    {extraActions?.map((action) => (
+                      <Pressable key={action.label} accessibilityRole="button" className="mx-5 my-1 min-h-[48px] justify-center rounded-xl bg-surface px-4"
+                        onPress={() => { close(); action.onPress(); }}>
+                        <Text className="font-archivo-medium text-foreground">{action.label}</Text>
+                      </Pressable>
+                    ))}
 
                     <>
                       <SheetSection label="Subtitles" />

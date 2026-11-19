@@ -570,7 +570,7 @@ function OwnerStep() {
   const [busy, setBusy] = useState(false);
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10 sm:px-6">
-      <section className="w-full max-w-md">
+      <section className="w-full max-w-lg">
         <Link to="/" className="inline-flex items-center gap-2.5 px-1">
           <img src="/icon.svg" alt="" className="h-7 w-7" />
           <span className="font-sans text-[15px] font-extrabold tracking-[-0.03em] text-foreground">Plexy</span>

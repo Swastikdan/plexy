@@ -72,7 +72,7 @@ export function FamilySettings() {
   };
 
   return (
-    <View className="flex-1 gap-4">
+    <View className="gap-3">
       <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
         Maturity limit
       </Text>
@@ -80,7 +80,7 @@ export function FamilySettings() {
         <SettingsRow
           navigation
           title="Kids & family mode"
-          subtitle={familyLevelLabels[preferences.familyLevel]}
+          subtitle={`${familyLevelLabels[preferences.familyLevel]}\n${familyLevelDescriptions[preferences.familyLevel]}`}
           onPress={openLevels}
         />
         <SettingsRow
@@ -101,15 +101,6 @@ export function FamilySettings() {
           subtitle={familyRegionLabel(preferences.familyRegion)}
           onPress={openRegions}
         />
-      </View>
-
-      <View className="flex-1 items-center justify-center gap-2 px-4 py-6">
-        <Text className="text-center text-[14px] leading-5 font-archivo-medium text-foreground">
-          With Kids &amp; family mode on, everything in your library above the limit is hidden and blocked from playback.
-        </Text>
-        <Text className="text-center text-[13px] leading-[19px] font-archivo-regular text-muted">
-          {familyLevelDescriptions[preferences.familyLevel]} A 4-digit PIN protects changes.
-        </Text>
       </View>
 
       <PinDialog

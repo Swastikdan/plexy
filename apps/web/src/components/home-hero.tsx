@@ -55,10 +55,10 @@ function HeroSlide({ item }: { item: ItemCard }) {
   };
 
   const playLabel = !canPlay
-    ? `Open ${item.name}`
+    ? "Details"
     : resuming
-      ? `Continue watching ${item.name}`
-      : `Play ${item.name}`;
+      ? "Continue watching"
+      : "Play";
 
   return (
     <article className="relative h-full w-full shrink-0 overflow-hidden">
@@ -147,11 +147,12 @@ function HeroSlide({ item }: { item: ItemCard }) {
                 event.stopPropagation();
                 play();
               }}
-              aria-label={playLabel}
-              title={playLabel}
-              className="hero-icon"
+              aria-label={canPlay ? `${playLabel} ${item.name}` : `Details for ${item.name}`}
+              title={canPlay ? playLabel : "Details"}
+              className="hero-primary"
             >
-              <Play size={17} fill="currentColor" aria-hidden />
+              <Play size={15} fill="currentColor" aria-hidden />
+              {playLabel}
             </button>
 
             <button

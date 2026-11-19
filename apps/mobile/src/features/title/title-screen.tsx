@@ -1,3 +1,4 @@
+import { useCollectionAction } from "@/features/collections/use-collection-action";
 import { Menu } from "heroui-native/menu";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useIsFocused, useRouter } from "expo-router";
@@ -27,7 +28,9 @@ import { useColors, control } from "@/shared/theme";
 import {
   AlertCircle,
   ArrowLeft,
-  Check,
+  Eye,
+  ListVideo,
+  Minus,
   EyeOff,
   Film,
   Info,
@@ -49,7 +52,7 @@ import {
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
 import { TopFade } from "@/features/catalog/components/top-fade";
 import { playbackAction } from "@/features/catalog/lib/playback-action";
-import { applyEpisodeAction } from "@/features/catalog/lib/title-actions";
+import { applyEpisodeAction, applyTitleAction } from "@/features/catalog/lib/title-actions";
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import {
   isRemotePlayed,
@@ -65,7 +68,7 @@ import { useRecommendations } from "@/features/remote/lib/use-recommendations";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { lockPlayerLandscape } from "@/features/player/hooks/use-player-orientation";
-import { fetchSeason, peekSeason, type RemoteEpisode, type RemoteMediaType } from "@/features/remote/lib/tmdb";
+import { fetchSeason, peekSeason, type RemoteMediaType } from "@/features/remote/lib/tmdb";
 import {
   mergeEpisodes,
   mergeSeasons,
@@ -128,6 +131,7 @@ export function TitleScreen({
   const showDialog = useAppDialog();
   const colors = useColors();
   const titleActions = useTitleActions();
+  const addToCollection = useCollectionAction();
   const remoteActions = useRemoteTitleActions();
   const { api, progress, preferences } = useClient();
   const { save, isSaved } = useRemote();
@@ -185,6 +189,7 @@ export function TitleScreen({
     setWatchlistOverride(null);
   }
   const [overrideWatched, setOverrideWatched] = useState<boolean | null>(null);
+  const watchedBusy = useRef(false);
   const [episodesWatchedOverride, setEpisodesWatchedOverride] = useState<
     Record<number, boolean>
   >({});
@@ -193,16 +198,17 @@ export function TitleScreen({
     () => mergeSeasons(detail?.seasons ?? [], remoteDetail?.seasons ?? []),
     [detail?.seasons, remoteDetail?.seasons],
   );
-  const [previousSeasons, setPreviousSeasons] = useState(seasonOptions);
-  if (previousSeasons !== seasonOptions) {
-    setPreviousSeasons(seasonOptions);
-    if (
-      season != null &&
-      seasonOptions.length &&
-      !seasonOptions.some((entry) => entry.number === season)
-    )
-      setSeason(null);
-  }
+  const seasonPickerOptions = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const episode of detail?.episodes ?? []) {
+      const number = episode.seasonNumber ?? 1;
+      counts.set(number, (counts.get(number) ?? 0) + 1);
+    }
+    for (const season of remoteDetail?.seasons ?? []) {
+      counts.set(season.number, season.episodes);
+    }
+    return seasonOptions.map((option) => ({ ...option, count: counts.get(option.number) }));
+  }, [detail?.episodes, remoteDetail?.seasons, seasonOptions]);
   const defaultSeason = React.useMemo(() => {
     void remoteProgress;
     if (!seasonOptions.length) return null;
@@ -264,8 +270,9 @@ export function TitleScreen({
     seasonOptions,
     tmdbId,
   ]);
-  const selectedSeason =
-    season ?? defaultSeason ?? detail?.seasons?.[0]?.number ?? null;
+  const selectedSeason = season != null && seasonOptions.some((option) => option.number === season)
+    ? season
+    : defaultSeason ?? detail?.seasons?.[0]?.number ?? null;
   const selectedSeasonRemote = useResource(
     (signal) =>
       onlineEnabled && remoteMediaType === "tv" &&
@@ -305,6 +312,10 @@ export function TitleScreen({
       selectedSeasonRemote.value,
       selectedSeason,
     ],
+  );
+  const sortedSeasonEpisodes = useMemo(
+    () => episodeSort === "newest" ? [...mergedSeasonEpisodes].reverse() : mergedSeasonEpisodes,
+    [episodeSort, mergedSeasonEpisodes],
   );
   React.useEffect(() => {
     if (!remoteDetail) return;
@@ -418,7 +429,7 @@ export function TitleScreen({
   const isSeriesWatched =
     overrideWatched ??
     (media.isOffline
-      ? localSeriesWatched || remoteSeriesWatched
+      ? localSeriesWatched || (onlineEnabled && remoteSeriesWatched)
       : remoteSeriesWatched);
   const remoteSaved = remoteDetail ? isSaved(remoteDetail) : false;
   const watchlisted =
@@ -431,71 +442,33 @@ export function TitleScreen({
     null;
 
   async function watched() {
-    if (!item) return;
+    if (!item || watchedBusy.current) return;
+    watchedBusy.current = true;
     const nextPlayed = !isSeriesWatched;
-    setOverrideWatched(nextPlayed);
-    const newOverrides: Record<number, boolean> = {};
-    if (detail?.episodes) {
-      detail.episodes.forEach((ep) => {
-        newOverrides[ep.id] = nextPlayed;
-      });
-      setEpisodesWatchedOverride((prev) => ({ ...prev, ...newOverrides }));
-    }
     try {
       if (media.isOffline) {
-        await progress.flush(api);
-        if (nextPlayed) {
-          if (detail?.episodes) {
-            for (const ep of detail.episodes) {
-              const dur = ep.runtime ? ep.runtime * 60 : 3600;
-              await progress.record({
-                itemId: ep.id,
-                position: dur,
-                duration: dur,
-                played: true,
-                updatedAt: Date.now(),
-              });
-            }
-          }
-          await progress.record({
-            itemId: item.id,
-            position: 100,
-            duration: 100,
-            played: true,
-            updatedAt: Date.now(),
-          });
-        } else {
-          if (detail?.episodes) {
-            for (const ep of detail.episodes) {
-              await progress.forget(ep.id);
-              await api.watched(ep.id, false).catch(() => {});
-            }
-          }
-          await progress.forget(item.id);
-          await api.watched(item.id, false).catch(() => {});
-        }
-        if (nextPlayed) await api.watched(item.id, true);
+        await applyTitleAction(api, progress, item.id, nextPlayed ? "finished" : "remove");
       }
-      if (remoteMediaType && tmdbId) {
+      if (remoteMediaType && tmdbId && (onlineEnabled || remoteSeriesWatched)) {
         await markRemotePlayed(
           remoteMediaType,
           tmdbId,
           nextPlayed,
           remoteDetail?.seasons.map((season) => ({
             season: season.number,
-            episodes: Array.from(
-              { length: season.episodes },
-              (_, index) => index + 1,
-            ),
+            episodes: Array.from({ length: season.episodes }, (_, index) => index + 1),
           })),
         );
       }
-      await progress.flushLocal().catch(() => {});
+      setOverrideWatched(nextPlayed);
+      setEpisodesWatchedOverride(Object.fromEntries(
+        (detail?.episodes ?? []).map((episode) => [episode.id, nextPlayed]),
+      ));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not update watched state.");
+    } finally {
+      watchedBusy.current = false;
       media.retry();
-    } catch (e) {
-      setActionError(
-        e instanceof Error ? e.message : "Could not update watched state.",
-      );
     }
   }
   async function markSeasonWatched() {
@@ -1101,11 +1074,7 @@ export function TitleScreen({
     <View className="gap-[18px]">
       {seasonOptions.length > 0 ? (
         <SeasonPicker
-          seasons={seasonOptions.map((option) => ({
-            ...option,
-            count: remoteDetail?.seasons.find((entry) => entry.number === option.number)?.episodes ??
-              detail.episodes?.filter((episode) => episode.seasonNumber === option.number).length,
-          }))}
+          seasons={seasonPickerOptions}
           busy={seasonBusy}
           onMarkWatched={() => void markSeasonWatched()}
           value={selectedSeason ?? null}
@@ -1130,11 +1099,11 @@ export function TitleScreen({
             <Menu.Content presentation="popover" align="start" offset={6} width={184} className="border border-border" style={{ backgroundColor: colors.elevated }}>
               {(["oldest", "newest"] as const).map((order) => (
                 <Menu.Item key={order} accessibilityState={{ selected: episodeSort === order }}
-                  onPress={() => setEpisodeSort(order)} className="min-h-12">
-                  <Menu.ItemTitle className="font-archivo-medium">
+                  onPress={() => setEpisodeSort(order)}
+                  className={cn("min-h-12", episodeSort === order && "bg-accent/15")}>
+                  <Menu.ItemTitle className={episodeSort === order ? "font-archivo-bold" : "font-archivo-medium"}>
                     {order === "oldest" ? "Oldest first" : "Newest first"}
                   </Menu.ItemTitle>
-                  {episodeSort === order ? <Check size={18} color={colors.brand} /> : null}
                 </Menu.Item>
               ))}
             </Menu.Content>
@@ -1148,43 +1117,49 @@ export function TitleScreen({
             hitSlop={8}
             className="flex-row items-center gap-1.5 rounded-full bg-surface px-3 py-2 active:opacity-70"
           >
-            <Check size={13} color={colors.brand} strokeWidth={2.4} />
+            <ListVideo size={13} color={colors.brand} strokeWidth={2.4} />
             <Text className="font-archivo-bold text-[12px] text-accent">
               Select
             </Text>
           </Pressable>
         )}
       </View>
-      <SeasonPage
-        sort={episodeSort}
-        key={`${selectedSeason}:${episodeSort}`}
-        api={api}
-        detail={detail}
-        season={selectedSeason ?? 1}
-        remoteMediaType={remoteMediaType}
-        tmdbId={onlineEnabled ? tmdbId : null}
-        play={guardedPlay}
-        progress={progress}
-        overrides={episodesWatchedOverride}
-        onToggleWatched={toggleEpisodeWatched}
-        selecting={selectingEpisodes}
-        selectedIds={selectedEpisodes}
-        onToggleSelected={toggleEpisodeSelected}
-        onLongPressEpisode={openEpisodeActions}
-        onPlayRemote={playOnlineEpisode}
-        onToggleRemoteWatched={(
-          seasonNumber,
-          episodeNumber,
-          watchedState,
-        ) =>
-          void toggleRemoteEpisode(
+      {selectedSeasonRemote.error && (
+        <Notice message={selectedSeasonRemote.error} retry={selectedSeasonRemote.retry} />
+      )}
+      {onlineEnabled && remoteMediaType === "tv" && tmdbId != null &&
+      selectedSeasonRemote.loading && !selectedSeasonRemote.value && !mergedSeasonEpisodes.length ? (
+        <EpisodeListSkeleton count={5} />
+      ) : (
+        <SeasonEpisodes
+          key={`${selectedSeason}:${episodeSort}`}
+          api={api}
+          episodes={sortedSeasonEpisodes}
+          remoteMediaType={remoteMediaType}
+          tmdbId={onlineEnabled ? tmdbId : null}
+          play={guardedPlay}
+          progress={progress}
+          overrides={episodesWatchedOverride}
+          onToggleWatched={toggleEpisodeWatched}
+          selecting={selectingEpisodes}
+          selectedIds={selectedEpisodes}
+          onToggleSelected={toggleEpisodeSelected}
+          onLongPressEpisode={openEpisodeActions}
+          onPlayRemote={playOnlineEpisode}
+          onToggleRemoteWatched={(
             seasonNumber,
             episodeNumber,
             watchedState,
-          )
-        }
-        onLongPressRemoteEpisode={openRemoteEpisodeActions}
-      />
+          ) =>
+            void toggleRemoteEpisode(
+              seasonNumber,
+              episodeNumber,
+              watchedState,
+            )
+          }
+          onLongPressRemoteEpisode={openRemoteEpisodeActions}
+        />
+      )}
     </View>
   );
   const morePage = (
@@ -1270,7 +1245,7 @@ export function TitleScreen({
               )}
             >
               {watchlisted ? (
-                <Check size={17} color="#fff" strokeWidth={2.4} />
+                <Minus size={17} color="#fff" strokeWidth={2.4} />
               ) : (
                 <Plus size={17} color={colors.ink} strokeWidth={2.4} />
               )}
@@ -1402,7 +1377,7 @@ export function TitleScreen({
             }}
           />
           <TitleMenuAction
-            icon={Check}
+            icon={isSeriesWatched ? EyeOff : Eye}
             label={isSeriesWatched ? "Mark unwatched" : "Mark finished"}
             onPress={() => {
               void watched();
@@ -1411,7 +1386,7 @@ export function TitleScreen({
           />
           {!media.isOffline && remoteDetail && (
             <TitleMenuAction
-              icon={remoteSaved ? Check : Plus}
+              icon={remoteSaved ? Minus : Plus}
               label={remoteSaved ? "Remove from library" : "Add to library"}
               onPress={() => {
                 toggleSaved();
@@ -1419,6 +1394,12 @@ export function TitleScreen({
               }}
             />
           )}
+          {item && (media.isOffline || remoteSaved) ? (
+            <TitleMenuAction icon={Plus} label="Add to collection" onPress={() => {
+              setMenuOpen(false);
+              addToCollection(item.publicId);
+            }} />
+          ) : null}
           {item && (
             <TitleMenuAction
               destructive
@@ -1522,7 +1503,7 @@ export function TitleScreen({
                 selectedCount === 0 && "opacity-40",
               )}
             >
-              <Check size={18} color="#fff" strokeWidth={2.6} />
+              <Eye size={18} color="#fff" strokeWidth={2.6} />
               <Text className="font-archivo-bold text-[15px] text-white">
                 Mark as finished
               </Text>
@@ -1589,110 +1570,6 @@ export function TitleScreen({
         />
       )}
     </Animated.View>
-  );
-}
-
-function SeasonPage({
-  sort,
-  api,
-  detail,
-  season,
-  remoteMediaType,
-  tmdbId,
-  play,
-  progress,
-  overrides,
-  onToggleWatched,
-  selecting,
-  selectedIds,
-  onToggleSelected,
-  onLongPressEpisode,
-  onPlayRemote,
-  onToggleRemoteWatched,
-  onLongPressRemoteEpisode,
-}: {
-  sort: "oldest" | "newest";
-  api: LocalCatalog;
-  detail: TitleDetail;
-  season: number;
-  remoteMediaType: RemoteMediaType | null;
-  tmdbId: number | null;
-  play: (fileId: number) => void;
-  progress: ProgressQueue;
-  overrides: Record<number, boolean>;
-  onToggleWatched: (ep: ItemCard) => void;
-  selecting: boolean;
-  selectedIds: Set<number>;
-  onToggleSelected: (ep: ItemCard) => void;
-  onLongPressEpisode: (ep: ItemCard, watched: boolean) => void;
-  onPlayRemote: (season: number, episode: number) => void;
-  onToggleRemoteWatched: (
-    season: number,
-    episode: number,
-    watched: boolean,
-  ) => void;
-  onLongPressRemoteEpisode: (
-    season: number,
-    episode: number,
-    watched: boolean,
-  ) => void;
-}) {
-  const remoteSeason = useResource(
-    (signal) =>
-      remoteMediaType != null && tmdbId != null
-        ? fetchSeason(tmdbId, season, signal)
-        : Promise.resolve<RemoteEpisode[]>([]),
-    [remoteMediaType, tmdbId, season],
-    "media-season",
-    () =>
-      remoteMediaType != null && tmdbId != null
-        ? peekSeason(tmdbId, season)
-        : null,
-  );
-  const localEpisodes =
-    detail.episodes?.filter(
-      (episode) =>
-        !detail.seasons?.length || episode.seasonNumber === season,
-    ) ?? [];
-  const episodes = mergeEpisodes({
-    local: localEpisodes,
-    remote: remoteSeason.value ?? [],
-    season,
-    fallbackArtwork: detail.item.backdrop || detail.item.poster || null,
-  });
-  const loading =
-    remoteMediaType != null &&
-    tmdbId != null &&
-    remoteSeason.loading &&
-    !remoteSeason.value &&
-    episodes.length === 0;
-  return (
-    <View className="gap-[18px]">
-      {remoteSeason.error && (
-        <Notice message={remoteSeason.error} retry={remoteSeason.retry} />
-      )}
-      {loading ? (
-        <EpisodeListSkeleton count={5} />
-      ) : (
-        <SeasonEpisodes
-          episodes={sort === "newest" ? [...episodes].reverse() : episodes}
-          api={api}
-          play={play}
-          progress={progress}
-          overrides={overrides}
-          onToggleWatched={onToggleWatched}
-          selecting={selecting}
-          selectedIds={selectedIds}
-          onToggleSelected={onToggleSelected}
-          onLongPressEpisode={onLongPressEpisode}
-          onPlayRemote={onPlayRemote}
-          remoteMediaType={remoteMediaType}
-          tmdbId={tmdbId}
-          onToggleRemoteWatched={onToggleRemoteWatched}
-          onLongPressRemoteEpisode={onLongPressRemoteEpisode}
-        />
-      )}
-    </View>
   );
 }
 

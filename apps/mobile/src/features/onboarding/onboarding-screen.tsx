@@ -10,7 +10,7 @@ import { displayName, localLibrary } from "@/core/library/local-runtime";
 import { useColors } from "@/shared/theme";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Button } from "@/shared/ui/button";
-import { Check, ChevronLeft } from "@/shared/ui/icons";
+import { ChevronLeft } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 
 const descriptions: Record<AppMode, string> = {
@@ -108,7 +108,7 @@ export function OnboardingScreen({
                   <Text className="shrink font-archivo-medium text-[15px] text-foreground">
                     {folder.name || displayName(folder.uri)}
                   </Text>
-                  <Check size={18} color={colors.success} />
+                  <Text className="font-archivo-medium text-[12px] text-muted">Connected</Text>
                 </View>
               ))}
               <Button label={busy ? "Adding folder…" : "Add media folder"} disabled={busy} onPress={() => dialog("Add media folder", "What’s in this folder?", (["movies", "tv"] as const).map(kind => ({ text: kind === "tv" ? "TV shows" : "Movies", onPress: () => void pick(kind) })))} />

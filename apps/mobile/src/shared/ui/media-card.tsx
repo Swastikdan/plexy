@@ -7,7 +7,7 @@ import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { rememberTitlePreview } from "@/core/library/title-prefetch";
 import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { useColors } from "@/shared/theme";
-import { Film, Tv , Check, Globe } from "./icons";
+import { Film, Tv, Globe } from "./icons";
 import { PosterImage } from "./poster-image";
 import { Label } from "./text";
 
@@ -169,8 +169,8 @@ export function Card({
         )}
         <View className="absolute right-[7px] top-[7px] z-[3] flex-row items-center gap-1.5">
           {isWatched && (
-            <View className="h-5 w-5 items-center justify-center rounded-full bg-accent">
-              <Check size={10} color="#fff" strokeWidth={2.5} />
+            <View className="rounded-[4px] bg-accent px-1.5 py-0.5">
+              <Text className="font-archivo-bold text-[9px] text-white">Watched</Text>
             </View>
           )}
           <View className="rounded-[4px] border-[0.5px] border-white/[0.2] bg-black/[0.65] px-1.5 py-0.5">

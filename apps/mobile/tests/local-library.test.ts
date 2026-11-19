@@ -433,6 +433,12 @@ test("series menu actions clear pending playback, mark every episode finished an
   await applyTitleAction(api, queue, series.id, "finished");
   expect(f.library.cards()[0]!.watch?.played).toBe(true);
   expect(episodes.every(episode => f.library.record(episode.id).card.watch?.played)).toBe(true);
+  await applyTitleAction(api, queue, series.id, "remove");
+  await queue.flush(api);
+  const restored = new LocalLibrary(f.io);
+  await restored.restore();
+  expect(restored.detail(series.id).item.watch?.played).toBeFalsy();
+  expect(restored.detail(series.id).episodes?.every((episode) => episode.watch === null)).toBe(true);
   const deleted: string[] = [];
   f.io.deleteFile = async uri => { deleted.push(uri); };
   const expectedFiles = episodes.map(episode => f.library.record(episode.id).file.uri);
@@ -561,4 +567,19 @@ test("genre and runtime filters match across the complete catalog before paginat
   expect(filtered.items.map((card) => card.id)).toEqual([1]);
   const otherGenre = await api.items("all", 0, "added", undefined, false, { genre: "Drama" });
   expect(otherGenre.items).toHaveLength(0);
+});
+
+test("storage cleanup reports only files Android deleted and retains failures for retry", async () => {
+  const f = fixture();
+  const removable = file("Old Video.mp4", 90);
+  const locked = file("Read Only.mp4", 200);
+  f.files([removable, locked]);
+  f.io.deleteFile = async (uri) => {
+    if (uri === locked.uri) throw new Error("Read only");
+  };
+  await f.library.addRoot({ ...root });
+  const ids = f.library.state.records.map((record) => record.id);
+  expect(await f.library.deleteFiles(ids)).toEqual({ deleted: 1, failed: 1, bytes: 90 });
+  expect(f.library.state.records.map((record) => record.file.uri)).toEqual([locked.uri]);
+  expect(f.library.state.excluded).toEqual([removable.uri]);
 });

@@ -74,9 +74,6 @@ export function HiddenTitlesSettings() {
         }}
         style={{ alignSelf: "flex-start" }}
       />
-      <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
-        Restored titles return to Home, Search and Library.
-      </Text>
     </View>
   );
 }

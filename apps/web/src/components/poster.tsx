@@ -47,14 +47,21 @@ export function Poster({
   className,
   wide = false,
   directPlay = false,
+  caption = false,
+  overlayTitle = true,
 }: {
   item: PosterItem;
   className?: string;
   wide?: boolean;
   directPlay?: boolean;
+  /** Show the title/metadata below the card even for a wide card. */
+  caption?: boolean;
+  /** Draw the title over wide artwork; turn off when a caption sits below. */
+  overlayTitle?: boolean;
 }) {
   const imgSrc = artworkUrl(wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop);
-  const showTitleBelow = !wide;
+  const showTitleBelow = !wide || caption;
+  const showOverlay = wide && overlayTitle;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canPlayDirect = directPlay && item.fileId != null;
@@ -149,8 +156,8 @@ export function Poster({
           </div>
         )}
 
-        {/* Wide cards carry their own caption on the art. */}
-        {wide && (
+        {/* Wide cards carry their own caption on the art unless a caption sits below. */}
+        {showOverlay && (
           <div className="pointer-events-none absolute inset-0" aria-hidden>
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 p-3 sm:p-3.5">

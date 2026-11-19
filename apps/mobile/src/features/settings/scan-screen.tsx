@@ -29,7 +29,6 @@ export function ScanScreen() {
   }
   return <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 20, gap: 16 }}>
     <PageHeader title="Scan library" style={{ paddingHorizontal: 0 }} />
-    <Text className="text-muted text-[14px]">Rescan a folder, or scan all folders below.</Text>
     <View className="rounded-[18px] overflow-hidden bg-surface">
       {roots.map(root => <SettingsRow key={root.uri} title={root.name} subtitle={root.kind === "tv" ? "TV shows" : root.kind === "auto" ? "Movies & shows" : "Movies"}>
         <Pressable
