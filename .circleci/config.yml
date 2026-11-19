@@ -47,6 +47,7 @@ jobs:
             case "$MACOS_TARGET" in
               desktop)
                 if ! brew list --versions mpv >/dev/null; then
+                  brew update
                   # The image can have a prelinked certificate keg that blocks dependency installation.
                   if brew list --versions ca-certificates >/dev/null; then
                     brew unlink ca-certificates
