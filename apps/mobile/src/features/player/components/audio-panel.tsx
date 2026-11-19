@@ -73,6 +73,7 @@ export function AudioPanel({
   serverTracks,
   nativeSubtitles,
   canAddSubtitleFile,
+  onSearchSubtitles,
   canRememberShow,
   showOverrideLabel,
   onClearShowOverride,
@@ -88,6 +89,7 @@ export function AudioPanel({
   serverTracks: Playability["tracks"];
   nativeSubtitles: SubtitleTrack[];
   canAddSubtitleFile: boolean;
+  onSearchSubtitles?: () => void;
   canRememberShow: boolean;
   showOverrideLabel?: string;
   onClearShowOverride: () => void;
@@ -131,6 +133,17 @@ export function AudioPanel({
       onPress: () => pickSubtitle(`native:${track.id}`),
     })),
   ];
+  if (onSearchSubtitles) {
+    subtitleRows.push({
+      key: "search",
+      label: "Find subtitles online",
+      selected: false,
+      onPress: () => {
+        setRemember(false);
+        onSearchSubtitles();
+      },
+    });
+  }
   if (canAddSubtitleFile) {
     subtitleRows.push({
       key: "add",

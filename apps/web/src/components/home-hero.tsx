@@ -1,10 +1,11 @@
 /// Home featured carousel.
 ///
-/// A full-bleed hero image carries each slide: the TMDB title mark (or the
-/// title itself when no logo exists), the facts, the synopsis, and the two
-/// actions a viewer reaches for. Slides advance on their own, pause whenever
-/// the pointer or keyboard is on the carousel, and can be stopped. The frame
-/// height is fixed, so changing slides never moves the shelves below.
+/// A full-bleed banner carries each slide: the TMDB title mark (or the title
+/// itself when no logo exists), the facts, the synopsis, and the three icon
+/// actions a viewer reaches for. The artwork is part of the page rather than a
+/// card floating on it, the whole slide opens the title page, and the dots and
+/// arrows stay secondary. Slides advance on their own, pause whenever the
+/// pointer or keyboard is on the carousel, and can be stopped.
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bookmark, ChevronLeft, ChevronRight, Info, Pause, Play, Star } from "lucide-react";
@@ -53,15 +54,11 @@ function HeroSlide({ item }: { item: ItemCard }) {
     });
   };
 
-  const actionLabel = !canPlay
-    ? "View title"
+  const playLabel = !canPlay
+    ? `Open ${item.name}`
     : resuming
-      ? item.playSubtitle
-        ? `Resume ${item.playSubtitle}`
-        : "Resume"
-      : item.playSubtitle
-        ? `Play ${item.playSubtitle}`
-        : "Play";
+      ? `Continue watching ${item.name}`
+      : `Play ${item.name}`;
 
   return (
     <article className="relative h-full w-full shrink-0 overflow-hidden">
@@ -83,7 +80,16 @@ function HeroSlide({ item }: { item: ItemCard }) {
 
       <div aria-hidden className="hero-scrim" />
 
-      <div className="relative z-10 mx-auto flex h-full max-w-[var(--app-max)] flex-col justify-end px-5 pb-20 pt-20 sm:px-8 sm:pb-24 lg:px-12 lg:pb-28">
+      {/* The banner is the link. Text and artwork stay quiet; the three
+          controls sit above it and keep their own click targets. */}
+      <Link
+        to="/title/$itemId"
+        params={{ itemId: item.publicId }}
+        aria-label={`View ${item.name}`}
+        className="absolute inset-0 z-[2] rounded-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
+      />
+
+      <div className="pointer-events-none relative z-10 mx-auto flex h-full max-w-[var(--app-max)] flex-col justify-end px-[var(--app-gutter)] pb-20 pt-20 sm:pb-24 lg:pb-24">
         <div className="hero-copy min-w-0 max-w-[44rem]">
           {logo ? (
             <>
@@ -133,15 +139,28 @@ function HeroSlide({ item }: { item: ItemCard }) {
             </p>
           )}
 
-          <div className="mt-5 flex flex-wrap items-center gap-2.5">
-            <button type="button" onClick={play} className="hero-primary">
-              {canPlay ? <Play size={15} fill="currentColor" aria-hidden /> : <Info size={15} aria-hidden />}
-              {actionLabel}
+          <div className="pointer-events-auto mt-5 flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                play();
+              }}
+              aria-label={playLabel}
+              title={playLabel}
+              className="hero-icon"
+            >
+              <Play size={17} fill="currentColor" aria-hidden />
             </button>
 
             <button
               type="button"
-              onClick={toggleWatchlist}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleWatchlist();
+              }}
               aria-label={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
               title={inWatchlist ? "Remove from watchlist" : "Add to watchlist"}
               data-selected={inWatchlist || undefined}
@@ -150,10 +169,19 @@ function HeroSlide({ item }: { item: ItemCard }) {
               <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
             </button>
 
-            <Link to="/title/$itemId" params={{ itemId: item.publicId }} className="hero-secondary">
-              <Info size={15} aria-hidden />
-              Details
-            </Link>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void navigate({ to: "/title/$itemId", params: { itemId: item.publicId } });
+              }}
+              aria-label={`Details for ${item.name}`}
+              title="Details"
+              className="hero-icon"
+            >
+              <Info size={17} aria-hidden />
+            </button>
           </div>
         </div>
       </div>
@@ -202,19 +230,16 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
         const next = event.relatedTarget;
         if (!(next instanceof Node) || !event.currentTarget.contains(next)) setFocused(false);
       }}
-      className="hero-shell hero-carousel relative h-[clamp(28rem,60vh,42rem)] select-none"
+      className="hero-shell hero-shell--bleed hero-carousel relative h-[clamp(30rem,64vh,44rem)] select-none"
     >
-      <h1 className="sr-only">{items[active]?.name ?? "Featured titles"}</h1>
-
-      <div
-        className="flex h-full transition-transform duration-700 ease-out"
-        style={{ transform: `translateX(-${active * 100}%)` }}
-        aria-live={paused ? "polite" : "off"}
-      >
+      <div className="relative h-full" aria-live={paused ? "polite" : "off"}>
         {items.map((item, index) => (
           <div
             key={item.publicId}
-            className="relative h-full w-full shrink-0"
+            className={cx(
+              "absolute inset-0 h-full w-full transition-opacity duration-700 ease-out",
+              index === active ? "opacity-100" : "pointer-events-none opacity-0",
+            )}
             aria-hidden={index !== active}
             inert={index !== active}
           >
@@ -242,7 +267,7 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
             <ChevronRight size={20} />
           </button>
 
-          <div className="absolute inset-x-5 bottom-4 z-20 flex items-center gap-1.5 sm:inset-x-8 sm:bottom-5">
+          <div className="absolute inset-x-[var(--app-gutter)] bottom-7 z-20 flex items-center gap-1.5 sm:bottom-8">
             {!reducedMotion && (
               <button
                 type="button"

@@ -3,8 +3,9 @@ import { PlayerScreen } from "@/features/player/player-screen";
 import { useMediaNavigation } from "@/shared/navigation/use-media-navigation";
 import { Notice } from "@/shared/ui/notice";
 export default function PlayerRoute() {
-  const { "file-id": fileId } = useLocalSearchParams<{
+  const { "file-id": fileId, offline } = useLocalSearchParams<{
     "file-id": string;
+    offline?: string;
   }>();
   const { setParams } = useRouter();
   const { back } = useMediaNavigation();
@@ -14,6 +15,7 @@ export default function PlayerRoute() {
   return (
     <PlayerScreen
       fileId={id}
+      offlineOnly={offline === "1"}
       back={back}
       next={(next) =>
         setParams({ "file-id": String(next) })

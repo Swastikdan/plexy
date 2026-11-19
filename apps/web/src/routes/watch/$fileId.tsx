@@ -15,6 +15,7 @@ import { queries } from "../../queries";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
 import { subtitleTrackLabel } from "../../lib/subtitle-label";
+import { segmentAt, skipLabel, type SkipSegmentKind } from "../../lib/skip-segments";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
 import { NativeWatchPage } from "../../components/native/native-watch";
 import {
@@ -32,6 +33,27 @@ const HlsJsVideo = lazy(() =>
 
 const NEXT_SKIP_KEY = "plexy:next-episode-skips:v1";
 const SEGMENT_SKIP_KEY = "plexy:segment-skips:v1";
+
+function readSegmentSkips(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(SEGMENT_SKIP_KEY) ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function segmentSkipCount(series: string, kind: "intro" | "recap"): number {
+  if (typeof localStorage === "undefined") return 0;
+  return readSegmentSkips()[`${series}:${kind}`] ?? 0;
+}
+
+function rememberSegmentSkip(series: string, kind: "intro" | "recap" | "outro"): void {
+  if (typeof localStorage === "undefined") return;
+  const skips = readSegmentSkips();
+  const key = `${series}:${kind}`;
+  skips[key] = (skips[key] ?? 0) + 1;
+  localStorage.setItem(SEGMENT_SKIP_KEY, JSON.stringify(skips));
+}
 
 function diagnosticPlaybackPath(path: PlayPath | null): Exclude<PlayPath, "unsupported"> | undefined {
   return path && path !== "unsupported" ? path : undefined;
@@ -57,44 +79,6 @@ function rememberNextSkip(series: string): void {
   localStorage.setItem(NEXT_SKIP_KEY, JSON.stringify(skips));
 }
 
-function readSegmentSkips(): Record<string, number> {
-  try {
-    return JSON.parse(localStorage.getItem(SEGMENT_SKIP_KEY) ?? "{}") as Record<string, number>;
-  } catch {
-    return {};
-  }
-}
-
-function segmentSkipCount(series: string, kind: "intro" | "recap"): number {
-  if (typeof localStorage === "undefined") return 0;
-  return readSegmentSkips()[`${series}:${kind}`] ?? 0;
-}
-
-function rememberSegmentSkip(series: string, kind: "intro" | "recap" | "outro"): void {
-  if (typeof localStorage === "undefined") return;
-  const skips = readSegmentSkips();
-  const key = `${series}:${kind}`;
-  skips[key] = (skips[key] ?? 0) + 1;
-  localStorage.setItem(SEGMENT_SKIP_KEY, JSON.stringify(skips));
-}
-
-type SkipSegmentKind = "intro" | "recap" | "outro";
-
-function segmentAt(
-  markers: { intro?: { start: number; end: number } | null; recap?: { start: number; end: number } | null; outro?: { start: number; end: number } | null } | undefined,
-  time: number,
-): SkipSegmentKind | null {
-  if (!markers) return null;
-  for (const kind of ["intro", "recap", "outro"] as const) {
-    const marker = markers[kind];
-    if (marker && time >= marker.start && time < marker.end) return kind;
-  }
-  return null;
-}
-
-function skipLabel(kind: SkipSegmentKind): string {
-  return kind === "outro" ? "Skip ending" : `Skip ${kind}`;
-}
 
 /** "about 2 min left" for the preparation card; null when unknown. */
 function preparationEta(seconds: number | null | undefined): string | null {
@@ -1116,75 +1100,46 @@ function BrowserWatchRoute() {
                     fullscreen, so overlays outside it disappear in fullscreen. */}
                 <div
                   style={{ paddingLeft: needsMacOffset ? "88px" : undefined }}
-                  className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 bg-gradient-to-b from-black/85 via-black/25 to-transparent px-5 pb-10 pt-4 transition-opacity duration-300 ${
+                  className={`pointer-events-none absolute inset-x-0 top-0 z-40 bg-gradient-to-b from-black/85 via-black/35 to-transparent px-4 pb-12 pt-3 transition-opacity duration-300 sm:px-5 ${
                     controlsVisible ? "opacity-100" : "opacity-0"
                   }`}
                 >
-                  <button
-                    onClick={leavePlayer}
-                    aria-label="Back"
-                    className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-                      controlsVisible ? "pointer-events-auto" : "pointer-events-none"
-                    }`}
-                  >
-                    <ArrowLeft size={20} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPlaybackStats(true)}
-                    aria-label="Show playback stats"
-                    title="Stats for nerds"
-                    className={`pointer-events-auto ml-auto inline-flex h-10 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "pointer-events-none"}`}
-                  >
-                    <Activity size={16} />
-                    <span>Stats</span>
-                  </button>
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
+                    <button
+                      onClick={leavePlayer}
+                      aria-label="Back"
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+                        controlsVisible ? "pointer-events-auto" : "pointer-events-none"
+                      }`}
+                    >
+                      <ArrowLeft size={20} />
+                    </button>
 
-                </div>
-
-                {/* Bottom title: episode title with small Episode {number} below */}
-                {(play.data?.title || play.data?.subtitle) && (
-                  <div
-                    className={`pointer-events-none absolute inset-x-5 bottom-28 z-20 origin-bottom-left transition-opacity duration-300 media-2xl:bottom-20 ${
-                      controlsVisible ? "opacity-100" : "opacity-0"
-                    }`}
-                  >
-                    {(() => {
-                      const rawSub = play.data?.subtitle ?? "";
-                      const cleanSub = rawSub.replace(/^(?:S\d+E\d+|E\d+|\d+x\d+|Episode\s+\d+|Ep\.?\s*\d+)\s*[·\-:–—]\s*/i, "").trim();
-                      const epMatch = rawSub.match(/(?:Episode\s+(\d+)|E(\d+))/i);
-                      const epNum = epMatch ? (epMatch[1] || epMatch[2]) : null;
-                      const hasSub = Boolean(rawSub);
-                      const displayTitle = hasSub ? (cleanSub || play.data?.title) : play.data?.title;
-                      const bottomText = hasSub
-                        ? (epNum ? `Episode ${epNum}` : rawSub)
-                        : null;
-
-                      return (
-                        <>
-                          {displayTitle && (
-                            <p className="font-display text-xl font-bold text-white drop-shadow sm:text-2xl">
-                              {displayTitle}
-                            </p>
-                          )}
-                          {bottomText && (
-                            <p className="mt-0.5 text-xs font-medium text-white/70 drop-shadow">
-                              {bottomText}
-                            </p>
-                          )}
-                          <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/75 backdrop-blur-sm">
-                            Browser player
-                            {isNativeAvailable() && (
-                              <span className="font-normal normal-case text-white/50">
-                                · mpv available in the ⋯ menu
-                              </span>
-                            )}
+                    {(play.data?.title || play.data?.subtitle) && (
+                      <div className="min-w-0 px-2 pt-1.5 text-center">
+                        <p className="truncate font-display text-[13px] font-semibold leading-tight text-white drop-shadow sm:text-[15px]">
+                          {play.data?.title}
+                        </p>
+                        {play.data?.subtitle && (
+                          <p className="mt-0.5 truncate text-[10.5px] font-medium text-white/60 sm:text-[11.5px]">
+                            {play.data.subtitle.replace(/^(?:S\d+E\d+|E\d+|\d+x\d+)\s*[·\-:–—]\s*/i, "")}
                           </p>
-                        </>
-                      );
-                    })()}
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPlaybackStats(true)}
+                      aria-label="Show playback stats"
+                      title="Stats for nerds"
+                      className={`pointer-events-auto ml-auto inline-flex h-10 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "pointer-events-none"}`}
+                    >
+                      <Activity size={16} />
+                      <span className="hidden sm:inline">Stats</span>
+                    </button>
                   </div>
-                )}
+                </div>
 
                 {play.data?.nextFileId && showNextPrompt && !activeSkipSegment && (
                   <div className="pointer-events-none absolute bottom-24 right-6 z-40 flex flex-col items-end gap-2 sm:bottom-20 sm:right-8">
@@ -1192,7 +1147,6 @@ function BrowserWatchRoute() {
                       <div className="flex max-w-64 items-center gap-2 rounded-lg border border-white/15 bg-black/75 p-2 text-white shadow-xl backdrop-blur-md">
                         {nextEpisode.poster && <img src={nextEpisode.poster} alt="" className="h-10 w-16 rounded-sm object-cover" />}
                         <span className="min-w-0">
-                          <span className="block text-[10px] uppercase tracking-wider text-white/55">Up next</span>
                           <span className="block truncate text-xs font-semibold">{nextEpisode.subtitle}</span>
                         </span>
                       </div>

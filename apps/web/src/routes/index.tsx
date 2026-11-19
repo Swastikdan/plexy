@@ -101,7 +101,7 @@ function HomeRoute() {
   const administrator = getSignedInUser()?.role === "admin";
 
   return (
-    <Page className="pt-4 sm:pt-5">
+    <Page className="!pt-0">
       {empty ? (
         <div className="mx-auto flex min-h-[64vh] max-w-lg flex-col items-center justify-center gap-4 text-center">
           <div className="relative mb-1 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-surface text-muted">
@@ -130,35 +130,37 @@ function HomeRoute() {
         <div className="staggered space-y-8 pb-8 sm:space-y-9">
           {featuredItems.length > 0 && <HomeHero items={featuredItems} />}
 
-          {rows.map((row) => {
-            const meta = ROW_META[row.key];
-            return (
-              <Row
-                key={row.key}
-                id={row.key === "continue" ? "continue-watching" : undefined}
-                title={row.title}
-                items={row.items}
-                directPlay={row.key === "continue" || row.key === "next"}
-                wide={row.key === "continue" || row.key === "next"}
-                action={
-                  meta?.viewAll ? (
-                    <Link
-                      to="/library/$kind"
-                      params={{ kind: meta.viewAll }}
-                      className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
-                    >
-                      See all
-                      <ArrowRight
-                        size={12}
-                        className="transition-transform duration-150 group-hover:translate-x-0.5"
-                        aria-hidden
-                      />
-                    </Link>
-                  ) : undefined
-                }
-              />
-            );
-          })}
+          <div className="space-y-8 pt-6 sm:space-y-9 sm:pt-7">
+            {rows.map((row) => {
+              const meta = ROW_META[row.key];
+              return (
+                <Row
+                  key={row.key}
+                  id={row.key === "continue" ? "continue-watching" : undefined}
+                  title={row.title}
+                  items={row.items}
+                  directPlay={row.key === "continue" || row.key === "next"}
+                  wide={row.key === "continue" || row.key === "next"}
+                  action={
+                    meta?.viewAll ? (
+                      <Link
+                        to="/library/$kind"
+                        params={{ kind: meta.viewAll }}
+                        className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                      >
+                        See all
+                        <ArrowRight
+                          size={12}
+                          className="transition-transform duration-150 group-hover:translate-x-0.5"
+                          aria-hidden
+                        />
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              );
+            })}
+          </div>
         </div>
       )}
     </Page>

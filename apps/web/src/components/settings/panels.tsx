@@ -1,6 +1,10 @@
 /// Personal settings panels: appearance, account security, paired devices, and
 /// playback defaults. These follow the viewer across every screen and never
 /// assume administrator access.
+///
+/// Every panel is one column of the same `SettingsSection` building block, with
+/// one header rhythm and one control row. Wide screens get breathing room, not
+/// a different layout per page.
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,7 +26,6 @@ import {
   Smartphone,
   Sun,
   UserRound,
-  Volume2,
 } from "lucide-react";
 import { Button, Input, ListBox, Select, Switch } from "@heroui/react";
 import {
@@ -82,7 +85,7 @@ const LANGUAGE_OPTIONS = [
 export function AppearancePanel() {
   const { preference, setPreference } = useTheme();
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <SettingsSection
         icon={Palette}
         title="Theme"
@@ -117,7 +120,7 @@ export function AppearancePanel() {
                 </span>
                 <span>
                   <span className="block text-[12px] font-semibold text-foreground">{choice.label}</span>
-                  <span className="mt-0.5 block text-[10px] text-muted">{choice.hint}</span>
+                  <span className="mt-0.5 block text-[10.5px] text-muted">{choice.hint}</span>
                 </span>
                 <ThemeSwatch mode={choice.value} />
               </button>
@@ -129,8 +132,13 @@ export function AppearancePanel() {
       <SettingsSection
         icon={Accessibility}
         title="Accessibility"
-        description="Plexy follows your operating system's reduced-motion setting. Page transitions and hover physics collapse to simple fades when it is on. Every control keeps a visible keyboard focus ring in both themes."
-      />
+        description="Plexy follows your operating system's reduced-motion setting."
+      >
+        <p className="max-w-2xl text-[11.5px] leading-relaxed text-muted">
+          Page transitions and hover physics collapse to simple fades when reduced motion is on.
+          Every control keeps a visible keyboard focus ring in both themes.
+        </p>
+      </SettingsSection>
     </div>
   );
 }
@@ -179,7 +187,7 @@ export function AccountPanel({ admin }: { admin: boolean }) {
 
   const user = me.data?.user;
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <SettingsSection
         icon={UserRound}
         title="Account"
@@ -215,11 +223,11 @@ export function AccountPanel({ admin }: { admin: boolean }) {
 
       <SettingsSection
         icon={KeyRound}
-        title="Change password"
+        title="Password"
         description="Changing your password signs out your other devices and invalidates pairing codes. You stay signed in here."
       >
         <form
-          className="max-w-md space-y-3.5"
+          className="max-w-lg space-y-3.5"
           onSubmit={(event) => {
             event.preventDefault();
             void changePassword();
@@ -265,7 +273,11 @@ export function AccountPanel({ admin }: { admin: boolean }) {
         icon={LogOut}
         title="Sign out"
         description="Ends this session on this device. Other paired devices stay signed in."
-        action={
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <p className="max-w-xl text-[11.5px] leading-relaxed text-muted">
+            Plexy will ask for the account password the next time this device connects.
+          </p>
           <Button
             variant="secondary"
             onPress={() => {
@@ -276,11 +288,7 @@ export function AccountPanel({ admin }: { admin: boolean }) {
             <LogOut size={13} />
             Sign out
           </Button>
-        }
-      >
-        <p className="text-[11px] leading-relaxed text-muted">
-          Plexy will ask for the account password the next time this device connects.
-        </p>
+        </div>
       </SettingsSection>
     </div>
   );
@@ -327,73 +335,70 @@ export function DevicesPanel() {
   const active = (devices.data ?? []).filter((device) => !device.revoked);
 
   return (
-    <div className="space-y-5">
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <SettingsSection
-          icon={KeyRound}
-          title="Pair a device"
-          description="Create a six-digit code and enter it on the other device. It expires after ten minutes and works once."
-        >
-          {pairing ? (
-            <div className="page-enter mb-4 rounded-xl border border-border bg-surface-secondary/50 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="select-all font-mono text-[1.8rem] font-semibold leading-none tracking-[0.22em] tabular-nums text-foreground">
-                  {pairing.code}
-                </p>
-                <button
-                  type="button"
-                  onClick={copy}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
-                >
-                  {copied ? <Check size={12} className="text-success-soft-foreground" /> : <Copy size={12} />}
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <p className="mt-2 text-[10px] text-muted">
+    <div className="space-y-4">
+      <SettingsSection
+        icon={KeyRound}
+        title="Pair a device"
+        description="Create a six-digit code and enter it on the other device. It expires after ten minutes and works once."
+        action={
+          <Button
+            isDisabled={busy}
+            onPress={() => void mint()}
+            className="h-8 px-3 text-[10.5px] font-semibold"
+          >
+            {busy ? "Creating…" : pairing ? "New code" : "Create pairing code"}
+          </Button>
+        }
+      >
+        {pairing ? (
+          <div className="page-enter flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface-secondary/50 p-4">
+            <div className="min-w-0">
+              <p className="select-all font-mono text-[1.8rem] font-semibold leading-none tracking-[0.22em] tabular-nums text-foreground">
+                {pairing.code}
+              </p>
+              <p className="mt-2 text-[10.5px] text-muted">
                 Expires {formatPairingExpiry(pairing.expiresAt)}. Generating another code cancels this one.
               </p>
             </div>
-          ) : null}
-
-          {error && (
-            <p role="alert" className="mb-3 text-[10.5px] text-danger-soft-foreground">
-              {error}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              isDisabled={busy}
-              onPress={() => void mint()}
-              className="h-9 px-4 text-[11px] font-semibold"
-            >
-              {busy ? "Creating…" : pairing ? "Create a new code" : "Create pairing code"}
-            </Button>
-            {pairing && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={copy}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
+              >
+                {copied ? <Check size={12} className="text-success-soft-foreground" /> : <Copy size={12} />}
+                {copied ? "Copied" : "Copy"}
+              </button>
               <button
                 type="button"
                 onClick={() => setPairing(null)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground"
               >
                 <RefreshCcw size={12} />
                 Hide
               </button>
-            )}
+            </div>
           </div>
-        </SettingsSection>
+        ) : null}
 
-        <SettingsSection
-          icon={Laptop}
-          title="This device"
-          description="Everything below belongs to your account on this server."
-        >
-          <dl className="space-y-3">
-            <Detail label="Name" value={me.data?.device.name ?? "…"} icon={Laptop} />
-            <Detail label="Last seen" value={formatPairingExpiry(me.data?.device.lastSeen)} />
-            <Detail label="Address" value={me.data?.device.lastIp ?? "Not reported"} mono />
-          </dl>
-        </SettingsSection>
-      </div>
+        {error ? (
+          <p role="alert" className={cx("text-[10.5px] text-danger-soft-foreground", pairing && "mt-3")}>
+            {error}
+          </p>
+        ) : null}
+      </SettingsSection>
+
+      <SettingsSection
+        icon={Laptop}
+        title="This device"
+        description="Everything below belongs to your account on this server."
+      >
+        <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-3">
+          <Detail label="Name" value={me.data?.device.name ?? "…"} icon={Laptop} />
+          <Detail label="Last seen" value={formatPairingExpiry(me.data?.device.lastSeen)} />
+          <Detail label="Address" value={me.data?.device.lastIp ?? "Not reported"} mono />
+        </dl>
+      </SettingsSection>
 
       <SettingsSection
         icon={Smartphone}
@@ -405,7 +410,7 @@ export function DevicesPanel() {
           {(devices.data ?? []).map((device) => {
             const current = device.id === currentDeviceId;
             return (
-              <li key={device.id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
+              <li key={device.id} className="flex flex-wrap items-center gap-3 px-4 py-3.5 sm:px-5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-muted">
                   {device.name.toLowerCase().includes("phone") ? <Smartphone size={14} /> : <Laptop size={14} />}
                 </span>
@@ -417,7 +422,7 @@ export function DevicesPanel() {
                       <span className="text-[9px] font-semibold text-danger-soft-foreground">Revoked</span>
                     )}
                   </p>
-                  <p className="mt-0.5 truncate text-[10px] text-muted">
+                  <p className="mt-0.5 truncate text-[10.5px] text-muted">
                     {device.revoked
                       ? "No longer signed in"
                       : device.lastSeen
@@ -501,44 +506,45 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <SettingsSection
         icon={Captions}
         title="Subtitles"
         description="Applied when playback starts on this device. You can still switch tracks inside the player."
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="panel-inset p-3.5">
-            <SettingsToggleRow
-              label="Turn on subtitles"
-              description="Pick a matching track automatically when the file has one."
+        <div className="divide-y divide-border/60">
+          <SettingsToggleRow
+            label="Turn on subtitles"
+            description="Pick a matching track automatically when the file has one."
+          >
+            <Switch
+              size="sm"
+              aria-label="Turn on subtitles"
+              className="switch--compact"
+              isSelected={prefs.autoSubtitles}
+              onChange={(selected) => update({ autoSubtitles: selected })}
             >
-              <Switch
-                size="sm"
-                aria-label="Turn on subtitles"
-                className="switch--compact"
-                isSelected={prefs.autoSubtitles}
-                onChange={(selected) => update({ autoSubtitles: selected })}
-              >
-                <Switch.Content>
-                  <span className="sr-only">Turn on subtitles</span>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Content>
-              </Switch>
-            </SettingsToggleRow>
-          </div>
-          <div className="panel-inset p-3.5">
-            <span className="block text-[11.5px] font-semibold text-foreground">Preferred subtitle language</span>
-            <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
-              Used for the automatic pick when a file has several tracks.
-            </p>
+              <Switch.Content>
+                <span className="sr-only">Turn on subtitles</span>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+              </Switch.Content>
+            </Switch>
+          </SettingsToggleRow>
+
+          <div className="grid gap-3 pt-3.5 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-center">
+            <div className="min-w-0">
+              <p className="text-[11.5px] font-semibold text-foreground">Preferred subtitle language</p>
+              <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
+                Used for the automatic pick when a file has several tracks.
+              </p>
+            </div>
             <Select
               aria-label="Preferred subtitle language"
               selectedKey={prefs.subtitleLanguage}
               onSelectionChange={(key) => update({ subtitleLanguage: String(key) })}
-              className="mt-2.5 w-full"
+              className="w-full"
             >
               <Select.Trigger>
                 <Select.Value />
@@ -561,38 +567,43 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
 
       {admin && (
         <SettingsSection
-          icon={Volume2}
+          icon={Captions}
           title="Audio language"
           description="Server-wide default for every viewer. Individual devices can still change the audio track in the player."
         >
-          <div className="max-w-sm">
-            <Select
-              aria-label="Preferred audio language"
-              selectedKey={settings.data?.settings.preferredAudioLanguage ?? "en"}
-              isDisabled={!settings.data}
-              onSelectionChange={(key) => save({ preferredAudioLanguage: String(key) })}
-              className="w-full"
-            >
-              <Select.Trigger>
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
-                      {option.label}
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
-            {saveError && (
-              <p role="alert" className="mt-2 text-[10.5px] text-danger-soft-foreground">
-                {saveError}
-              </p>
-            )}
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-center">
+            <p className="text-[11.5px] text-muted">
+              New playback starts on this track unless the file only has one.
+            </p>
+            <div className="w-full">
+              <Select
+                aria-label="Preferred audio language"
+                selectedKey={settings.data?.settings.preferredAudioLanguage ?? "en"}
+                isDisabled={!settings.data}
+                onSelectionChange={(key) => save({ preferredAudioLanguage: String(key) })}
+                className="w-full"
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+                        {option.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              {saveError && (
+                <p role="alert" className="mt-2 text-[10.5px] text-danger-soft-foreground">
+                  {saveError}
+                </p>
+              )}
+            </div>
           </div>
         </SettingsSection>
       )}
@@ -642,11 +653,11 @@ function Detail({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="flex items-center gap-1.5 text-[11px] text-muted">
+      <dt className="flex items-center gap-1.5 text-[10.5px] font-medium text-muted">
         {Icon && <Icon size={11} />}
         {label}
       </dt>
-      <dd className={cx("mt-0.5 truncate text-xs font-medium text-foreground", mono && "font-mono text-[11px]")}>
+      <dd className={cx("mt-1 truncate text-[12px] font-medium text-foreground", mono && "font-mono text-[11px]")}>
         {value}
       </dd>
     </div>
@@ -664,9 +675,9 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="block text-xs font-medium text-muted">{label}</span>
+      <span className="block text-[11px] font-medium text-muted">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-muted">{hint}</span>}
+      {hint && <span className="block text-[10.5px] text-muted">{hint}</span>}
     </label>
   );
 }

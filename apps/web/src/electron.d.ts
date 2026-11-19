@@ -1,140 +1,20 @@
-export interface ElectronAPI {
-  isElectron: boolean;
-  localOnly?: boolean;
-  discoverServers: () => Promise<Array<{ id: string; name: string; url: string }>>;
-  platform: string;
-  selectFolder: () => Promise<string | null>;
-  openLogs: () => Promise<void>;
-  openDataDir: () => Promise<void>;
-  getVersion: () => Promise<string>;
-  checkForUpdates: () => Promise<DesktopUpdateStatus>;
-  installUpdate: () => Promise<void>;
-  onUpdateProgress: (callback: (progress: DesktopUpdateProgress) => void) => () => void;
-  getSystemUsage: () => Promise<DesktopSystemUsage>;
-  getLocalServerEnabled: () => Promise<boolean>;
-  setLocalServerEnabled: (enabled: boolean) => Promise<void>;
-  probeServer: (url: string) => Promise<{ version: string; setupComplete: boolean }>;
-  getServerUrl: () => Promise<string>;
-  setServerUrl: (url: string) => Promise<void>;
-  onNavigate: (callback: (route: string) => void) => () => void;
-  isFullScreen?: () => Promise<boolean>;
-  setFullScreen?: (value: boolean) => Promise<boolean>;
-  onFullScreenChange?: (callback: (isFullScreen: boolean) => void) => () => void;
-  /** Native mpv playback: absent in browsers and on unsupported platforms. */
-  nativePlayer?: NativePlayerBridge;
-}
+/// Window shape for the desktop shell. The contract itself is shared with the
+/// Electron main and preload processes in @plexy/desktop-bridge.
+import type { ElectronAPI } from "@plexy/desktop-bridge";
 
-export interface NativePlaybackInfo {
-  available: boolean;
-  platform: string;
-  engine: "bundled" | "system" | null;
-  version: string | null;
-  reason?: string;
-}
-
-export interface NativePlayRequest {
-  fileId: number;
-  serverUrl: string;
-  resumeSeconds?: number;
-  autoSubtitles?: boolean;
-  subtitleLanguage?: string;
-}
-
-export interface NativePlayResult {
-  sessionId: string;
-  fileId: number;
-  title: string | null;
-}
-
-export interface NativeCommandRequest {
-  sessionId: string;
-  action:
-    | "pause"
-    | "resume"
-    | "seek"
-    | "stop"
-    | "set-audio"
-    | "set-subtitle"
-    | "set-volume"
-    | "set-mute"
-    | "set-speed";
-  value?: number;
-}
-
-export interface NativeAudioTrack {
-  id: number;
-  title: string | null;
-  language: string | null;
-  default: boolean;
-  selected: boolean;
-  external?: boolean;
-}
-
-export interface NativePlaybackEvent {
-  sessionId: string;
-  fileId: number;
-  type:
-    | "ready"
-    | "time"
-    | "duration"
-    | "pause"
-    | "buffering"
-    | "ended"
-    | "error"
-    | "closed"
-    | "audio"
-    | "tracks"
-    | "volume"
-    | "speed"
-    | "fullscreen";
-  position?: number;
-  duration?: number;
-  paused?: boolean;
-  buffering?: boolean;
-  message?: string;
-  audioTracks?: NativeAudioTrack[];
-  subtitleTracks?: NativeAudioTrack[];
-  cachedSeconds?: number;
-  volume?: number;
-  muted?: boolean;
-  speed?: number;
-  fullscreen?: boolean;
-}
-
-export interface NativePlayerBridge {
-  info: () => Promise<NativePlaybackInfo>;
-  play: (request: NativePlayRequest) => Promise<NativePlayResult>;
-  command: (request: NativeCommandRequest) => Promise<{ ok: true }>;
-  stop: (request?: { sessionId?: string }) => Promise<{ ok: true }>;
-  onEvent: (callback: (event: NativePlaybackEvent) => void) => () => void;
-}
-
-export interface DesktopUpdateStatus {
-  supported: boolean;
-  currentVersion: string;
-  currentTag: string;
-  latestVersion?: string;
-  latestTag?: string;
-  updateAvailable: boolean;
-  currentIsNewer: boolean;
-  canInstall: boolean;
-  requiresAdministrator: boolean;
-  error?: string;
-}
-
-export interface DesktopUpdateProgress {
-  phase: "downloading" | "verifying" | "waiting-for-approval" | "installing";
-  downloadedBytes: number;
-  totalBytes: number | null;
-}
-
-export interface DesktopSystemUsage {
-  cpuPercent: number;
-  appMemoryBytes: number;
-  appGpuMemoryBytes: number;
-  systemMemoryTotalBytes: number;
-  systemMemoryFreeBytes: number;
-}
+export type {
+  DesktopSystemUsage,
+  ElectronAPI,
+  NativeAudioTrack,
+  NativeCommandRequest,
+  NativePlaybackEvent,
+  NativePlaybackInfo,
+  NativePlayRequest,
+  NativePlayResult,
+  NativePlayerBridge,
+  UpdateProgress as DesktopUpdateProgress,
+  UpdateStatus as DesktopUpdateStatus,
+} from "@plexy/desktop-bridge";
 
 declare global {
   interface Window {

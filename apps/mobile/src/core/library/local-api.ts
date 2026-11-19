@@ -1,3 +1,4 @@
+import { matchesLibraryFilters, type LibraryFilters } from "./library-filters";
 import type { Chapter } from "@plexy/api-client/types";
 import { LocalLibrary, type LocalRecord } from "@plexy/local-library/library";
 import {
@@ -178,7 +179,7 @@ export class LocalApi extends LocalCatalog {
             ].filter((r) => r.items.length),
         };
     }
-    override async items(kind: "all" | "movie" | "series", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false) {
+    override async items(kind: "all" | "movie" | "series", offset = 0, sort = "name", signal?: AbortSignal, unwatched = false, filters?: LibraryFilters) {
         this.checkSignal(signal);
         const cards = this.ensureCatalog();
         const key = `${kind}|${sort}|${unwatched}|${this.policyVersion}`;
@@ -192,7 +193,8 @@ export class LocalApi extends LocalCatalog {
                     : sort === "added" || sort === "recent" ? b.id - a.id : a.name.localeCompare(b.name));
             this.itemsCache.set(key, items);
         }
-        return { items: items.slice(offset, offset + 60) };
+        const matching = filters ? items.filter((item) => matchesLibraryFilters(item, filters)) : items;
+        return { items: matching.slice(offset, offset + 60) };
     }
     override async search(query: string, signal?: AbortSignal) {
         this.checkSignal(signal);

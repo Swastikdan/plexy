@@ -18,6 +18,7 @@ import { queries } from "../../queries";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
 import { nativeBridge } from "../../lib/native-playback";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
+import { segmentAt, skipLabel, type SkipSegmentKind } from "../../lib/skip-segments";
 import type { NativeAudioTrack, NativePlaybackEvent } from "../../electron";
 import type { ServerAudioTrack } from "../videojs/ui/audio-track-menu";
 import { BufferingIndicator } from "../videojs/ui/buffering-indicator";
@@ -28,8 +29,6 @@ import { VideoStatusIndicators } from "../videojs/video/display/status-indicator
 import { NeutralVideoControls } from "../videojs/video/layout/controls";
 import "../videojs/styles/video/neutral.css";
 import { MpvVideo } from "./mpv-video";
-
-type SkipSegment = { start: number; end: number } | null | undefined;
 
 /**
  * Arrow keys seek the embedded player. A tap seeks ±10s; holding accelerates
@@ -397,24 +396,13 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     /^(?:S\d+E\d+|E\d+|\d+x\d+|Episode\s+\d+|Ep\.?\s*\d+)\s*[·\-:–—]\s*/i,
     "",
   ).trim();
-  const episodeMatch = subtitleEp.match(/(?:Episode\s+(\d+)|E(\d+))/i);
-  const episodeNumber = episodeMatch ? episodeMatch[1] || episodeMatch[2] : null;
-  const primaryTitle = cleanSubtitle || title;
   const total = duration ?? manifest?.duration ?? null;
-  const activeSegment = useMemo((): { kind: "intro" | "recap" | "outro"; end: number } | null => {
+  const activeSegment = useMemo((): { kind: SkipSegmentKind; end: number } | null => {
     const data = skipSegments.data;
     if (!data?.enabled) return null;
-    const entries: Array<["intro" | "recap" | "outro", SkipSegment]> = [
-      ["intro", data.intro],
-      ["recap", data.recap],
-      ["outro", data.outro],
-    ];
-    for (const [kind, marker] of entries) {
-      if (marker && position >= marker.start && position < marker.end) {
-        return { kind, end: marker.end };
-      }
-    }
-    return null;
+    const kind = segmentAt(data, position);
+    const end = kind ? data[kind]?.end : undefined;
+    return kind && end != null ? { kind, end } : null;
   }, [position, skipSegments.data]);
 
   const showNextPrompt =
@@ -463,26 +451,31 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           {/* Top chrome lives inside the skin so it survives fullscreen. */}
           <div
             style={{ paddingLeft: needsMacOffset && !isFullscreen ? "88px" : undefined }}
-            className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start gap-3 bg-gradient-to-b from-black/85 via-black/25 to-transparent px-5 pb-10 pt-4 transition-opacity duration-300 ${
+            className={`pointer-events-none absolute inset-x-0 top-0 z-40 bg-gradient-to-b from-black/85 via-black/35 to-transparent px-4 pb-12 pt-3 transition-opacity duration-300 sm:px-5 ${
               controlsVisible ? "opacity-100" : "opacity-0"
             }`}
           >
-            <button
-              onClick={leave}
-              aria-label="Back"
-              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-                controlsVisible ? "pointer-events-auto" : "pointer-events-none"
-              }`}
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <div className="min-w-0 pt-0.5">
-              <p className="font-display truncate text-lg font-bold leading-tight">{primaryTitle}</p>
-              {(episodeNumber || subtitleEp) && (
-                <p className="mt-0.5 truncate text-xs font-medium text-white/70">
-                  {episodeNumber ? `Episode ${episodeNumber}` : subtitleEp}
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
+              <button
+                onClick={leave}
+                aria-label="Back"
+                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+                  controlsVisible ? "pointer-events-auto" : "pointer-events-none"
+                }`}
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <div className="min-w-0 px-2 pt-1.5 text-center">
+                <p className="truncate font-display text-[13px] font-semibold leading-tight drop-shadow sm:text-[15px]">
+                  {title}
                 </p>
-              )}
+                {(cleanSubtitle || subtitleEp) && (
+                  <p className="mt-0.5 truncate text-[10.5px] font-medium text-white/60 sm:text-[11.5px]">
+                    {cleanSubtitle || subtitleEp}
+                  </p>
+                )}
+              </div>
+              <span aria-hidden className="h-10 w-10" />
             </div>
           </div>
 
@@ -500,10 +493,10 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
               className={`pointer-events-auto absolute bottom-28 right-6 z-40 inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black shadow-xl transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:bottom-24 sm:right-8 ${
                 controlsVisible ? "opacity-100" : "opacity-0"
               }`}
-              aria-label={activeSegment.kind === "outro" ? "Skip ending" : `Skip ${activeSegment.kind}`}
+              aria-label={skipLabel(activeSegment.kind)}
             >
               <SkipForward size={17} />
-              {activeSegment.kind === "outro" ? "Skip ending" : `Skip ${activeSegment.kind}`}
+              {skipLabel(activeSegment.kind)}
             </button>
           )}
 

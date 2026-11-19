@@ -5,7 +5,7 @@ import {
   subtitleLanguageName,
   subtitleTrackDisplay,
 } from "../src/features/player/lib/subtitles";
-import { findLanguageTrack } from "../src/shared/lib/media-language";
+import { findLanguageTrack, subtitleFilenameLanguage } from "../src/shared/lib/media-language";
 
 test("subtitle language codes become readable names", () => {
   expect(subtitleLanguageName("eng")).toBe("English");
@@ -58,4 +58,10 @@ test("subtitle overrides, app defaults and file defaults work across track sourc
   expect(preferredSubtitleTrack(tracks, undefined, true, "")).toBe("sidecar");
   expect(preferredSubtitleTrack(tracks, "hi", false, "en")).toBeNull();
   expect(preferredSubtitleTrack(tracks, null, true, "en")).toBeNull();
+});
+
+test("reads language tags from imported and sidecar subtitle filenames", () => {
+  expect(subtitleFilenameLanguage("Movie.pt-BR.sdh.srt")).toBe("pt-br");
+  expect(subtitleFilenameLanguage("Movie.eng.forced.vtt")).toBe("eng");
+  expect(subtitleFilenameLanguage("Movie.srt")).toBeNull();
 });

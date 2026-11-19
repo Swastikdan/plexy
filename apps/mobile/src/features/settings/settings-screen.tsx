@@ -16,7 +16,6 @@ import {
   Text,
   View,
 } from "react-native";
-import type { LocalRoot } from "@plexy/local-library/library";
 import { useClient } from "@/core/client/client-provider";
 import {
   bundledMetadata,
@@ -68,7 +67,7 @@ export function SettingsScreen({
   const showDialog = useAppDialog();
   const colors = useColors();
   const online = useOnline();
-  const { push } = useRouter();
+  const { navigate, push } = useRouter();
   const [, update] = useState(0);
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState("");
@@ -135,7 +134,7 @@ export function SettingsScreen({
       setActiveAction("");
     }
   };
-  const pickFolder = async (kind: LocalRoot["kind"]) => {
+  const pickFolder = async (kind: "movies" | "tv") => {
     const folder = await Directory.pickDirectoryAsync();
     await localLibrary.addRoot({
       uri: folder.uri,
@@ -155,10 +154,6 @@ export function SettingsScreen({
         {
           text: "TV shows",
           onPress: () => void action(() => pickFolder("tv")),
-        },
-        {
-          text: "Anime",
-          onPress: () => void action(() => pickFolder("anime")),
         },
       ],
     );
@@ -288,6 +283,7 @@ export function SettingsScreen({
           paddingHorizontal: 20,
           paddingTop: 4,
           paddingBottom: 36,
+          flexGrow: page === "hidden" || page === "family" ? 1 : undefined,
           gap: 14,
         }}
       >
@@ -372,7 +368,7 @@ export function SettingsScreen({
                 subtitle={
                   hidden.length
                     ? `${hidden.length} ${hidden.length === 1 ? "title" : "titles"} hidden`
-                    : "Restore titles removed from browsing"
+                    : "Restore hidden titles"
                 }
                 icon={EyeOff}
                 onPress={() => push("/settings/hidden")}
@@ -388,7 +384,7 @@ export function SettingsScreen({
                 title="Library report"
                 subtitle={`${fileCount} files, ${review ? `${review} need attention` : "all titles identified"}`}
                 icon={Library}
-                onPress={() => push("/settings/report")}
+                onPress={() => navigate("/settings/report")}
               />
               <SettingsRow
                 navigation
@@ -413,6 +409,10 @@ export function SettingsScreen({
                     ? undefined
                     : () => void action(() => localLibrary.scan())
                 }
+              />
+              <SettingsRow navigation title="Reconnect media"
+                subtitle="Restore access to folders or videos"
+                onPress={() => push("/library-recovery")}
               />
             </View>
             {localLibrary.issues.map((issue) => (

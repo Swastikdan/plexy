@@ -16,6 +16,8 @@ import { useClient } from "@/core/client/client-provider";
 import { familyAllows } from "@/core/content/audience";
 import { useHiddenTitles } from "@/core/content/hidden-titles";
 import { isReleased } from "@/core/content/release";
+import { matchesLibraryFilters, type LibraryFilters } from "@/core/library/library-filters";
+import { useAppDialog } from "@/shared/ui/app-dialog";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { triggerHaptic } from "@/shared/lib/haptics";
@@ -46,9 +48,17 @@ import { useRemoteTitleActions, remoteTitleFromCard } from "@/features/remote/ho
 import { useRemoteProgress, remoteWatch } from "@/features/remote/lib/remote-progress";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
-import { certificationFor } from "@/features/remote/lib/tmdb";
-import { remotePublicId, toItemCard } from "@/features/remote/lib/view";
+import { certificationFor, fetchDetail } from "@/features/remote/lib/tmdb";
+import { parseRemotePublicId, remotePublicId, toItemCard } from "@/features/remote/lib/view";
 import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
+
+const genres = [
+  "Action", "Action & Adventure", "Adventure", "Animation", "Comedy", "Crime",
+  "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Kids",
+  "Music", "Mystery", "News", "Reality", "Romance", "Sci-Fi & Fantasy",
+  "Science Fiction", "Soap", "Talk", "Thriller", "TV Movie", "War",
+  "War & Politics", "Western",
+];
 
 export function LibraryScreen({
   open,
@@ -57,6 +67,7 @@ export function LibraryScreen({
   open: OpenTitle;
   play?: (fileId: number) => void;
 }) {
+  const showDialog = useAppDialog();
   const tabBoundary = usePagerGestureBoundary();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -72,6 +83,8 @@ export function LibraryScreen({
   type LibraryTab = "all" | "movie" | "series" | "collection";
   const [activeTab, setActiveTab] = useState<LibraryTab>("all");
   const [sort, setSort] = useState("added");
+  const [genre, setGenre] = useState<string>();
+  const [maxRuntime, setMaxRuntime] = useState<number>();
   const [unwatched, setUnwatched] = useState(false);
   const [offlineOnly, setOfflineOnly] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -140,10 +153,33 @@ export function LibraryScreen({
     preferences.familyLevel === "off" &&
     counts.movie + counts.series === 0 &&
     savedOnline.length === 0;
-  const visibleOnline = React.useMemo(
-    () => offlineOnly && preferences.mode === "hybrid" ? [] : savedOnline,
-    [offlineOnly, savedOnline, preferences.mode],
-  );
+  const hybrid = preferences.mode === "hybrid" && online;
+  const offlineFilter = hybrid && offlineOnly;
+  const remoteMetadata = useResource(async (signal) => {
+    if (offlineFilter || (!genre && !maxRuntime)) return null;
+    const queue = savedOnline.filter((item) => !unwatched || !item.watch?.played);
+    const details = new Map<string, ItemCard>();
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+      while (queue.length && !signal.aborted) {
+        const item = queue.shift()!;
+        const identity = parseRemotePublicId(item.publicId);
+        if (!identity) continue;
+        try {
+          const detail = await fetchDetail(identity.mediaType, identity.tmdbId, signal);
+          details.set(item.publicId, { ...item, genres: detail.genres, runtime: detail.runtime });
+        } catch {
+          // A saved title can still match with the metadata already on hand.
+        }
+      }
+    }));
+    return details;
+  }, [savedOnline, offlineFilter, Boolean(genre || maxRuntime), unwatched]);
+  const visibleOnline = offlineFilter ? [] : savedOnline
+    .filter((item) => !unwatched || !item.watch?.played)
+    .map((item) => {
+      const detail = remoteMetadata.value?.get(item.publicId);
+      return detail ? { ...item, genres: detail.genres, runtime: detail.runtime } : item;
+    });
   const savedOnlineFor = (tab: LibraryTab) => {
     if (tab === "all") return visibleOnline;
     if (tab === "movie") {
@@ -156,6 +192,12 @@ export function LibraryScreen({
   };
   const openAny: OpenTitle = (id) => {
     const publicId = String(id);
+    if (offlineFilter) {
+      if (!publicId.startsWith("remote:")) {
+        router.push({ pathname: "/item/[id]", params: { id: publicId, offline: "1" } });
+      }
+      return;
+    }
     const entry = saved.find(
       (candidate) =>
         remotePublicId(
@@ -207,6 +249,7 @@ export function LibraryScreen({
     ["rating", "Rating"],
   ];
   const sortLabel = FILTERS.find(([key]) => key === sort)?.[1] || "Name";
+  const filterCount = [genre, activeTab !== "series" && maxRuntime, unwatched, offlineFilter].filter(Boolean).length;
   return (
     <View className="flex-1 gap-0">
       <PageHeader
@@ -215,7 +258,7 @@ export function LibraryScreen({
           activeTab === "collection" ? undefined : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}${offlineOnly ? ", offline only" : ""}`}
+              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}${offlineFilter ? ", offline only" : ""}${genre ? `, ${genre}` : ""}${activeTab !== "series" && maxRuntime ? `, up to ${maxRuntime} minutes` : ""}`}
               onPress={() => {
                 triggerHaptic("light");
                 setSortOpen(true);
@@ -231,7 +274,7 @@ export function LibraryScreen({
                 className="font-archivo-medium text-[12.5px] text-foreground shrink"
                 numberOfLines={1}
               >
-                {sortLabel}
+                {filterCount ? `Filters (${filterCount})` : sortLabel}
               </Text>
               <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
             </Pressable>
@@ -239,6 +282,15 @@ export function LibraryScreen({
         }
       />
 
+      {online ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/episode-calendar")}
+          className="self-start mx-5 mb-2 rounded-full border border-border px-4 py-2"
+        >
+          <Text className="font-archivo-medium text-foreground">Episode calendar</Text>
+        </Pressable>
+      ) : null}
       <TitleBrowser
         title={collection?.name ?? null}
         items={collection ? api.collectionItems(collection.id) : []}
@@ -366,10 +418,13 @@ export function LibraryScreen({
             />
           ) : (
             <LibraryTitles
-              key={`${libraryTabs[index]}-${sort}-${unwatched}`}
+              key={`${libraryTabs[index]}-${sort}-${unwatched}-${genre}-${maxRuntime}`}
               tab={libraryTabs[index] as "all" | "movie" | "series"}
               sort={sort}
               unwatched={unwatched}
+              genre={genre}
+              maxRuntime={libraryTabs[index] === "series" ? undefined : maxRuntime}
+              loadingOnline={remoteMetadata.loading && !offlineFilter}
               open={openAny}
               play={play}
               onlineItems={savedOnlineFor(libraryTabs[index]!)}
@@ -415,6 +470,7 @@ export function LibraryScreen({
                 <X size={22} color={colors.ink} />
               </Pressable>
             </View>
+            <ScrollView style={{ maxHeight: 450 }} keyboardShouldPersistTaps="handled">
             {FILTERS.map(([key, label]) => (
               <FilterRow
                 key={key}
@@ -429,6 +485,35 @@ export function LibraryScreen({
               />
             ))}
             <FilterRow
+              label={genre ? `Genre · ${genre}` : "Genre · Any"}
+              role="checkbox"
+              active={Boolean(genre)}
+              onPress={() => {
+                setSortOpen(false);
+                showDialog("Genre", "Filter your library by genre.", [
+                  { text: "Any genre", onPress: () => setGenre(undefined) },
+                  ...genres.map((value) => ({ text: value, onPress: () => setGenre(value) })),
+                ]);
+              }}
+            />
+            {activeTab !== "series" ? (
+              <FilterRow
+                label={maxRuntime ? `Movie runtime · Up to ${maxRuntime} min` : "Movie runtime · Any"}
+                role="checkbox"
+                active={Boolean(maxRuntime)}
+                onPress={() => {
+                  setSortOpen(false);
+                  showDialog("Movie runtime", "Choose how much time you have.", [
+                    { text: "Any runtime", onPress: () => setMaxRuntime(undefined) },
+                    ...[60, 90, 120, 150].map((value) => ({
+                      text: `Up to ${value} minutes`,
+                      onPress: () => setMaxRuntime(value),
+                    })),
+                  ]);
+                }}
+              />
+            ) : null}
+            <FilterRow
               label="Unwatched only"
               role="checkbox"
               active={unwatched}
@@ -437,17 +522,26 @@ export function LibraryScreen({
                 reset(sort, !unwatched);
               }}
             />
-            {preferences.mode === "hybrid" && online && savedOnline.length > 0 && (
+            {hybrid && (
               <FilterRow
                 label="Offline only"
                 role="checkbox"
-                active={offlineOnly}
+                active={offlineFilter}
                 onPress={() => {
                   triggerHaptic("selection");
                   setOfflineOnly((value) => !value);
                 }}
               />
             )}
+            {(genre || maxRuntime || unwatched || offlineFilter) ? (
+              <Button label="Clear filters" onPress={() => {
+                setGenre(undefined);
+                setMaxRuntime(undefined);
+                setUnwatched(false);
+                setOfflineOnly(false);
+              }} />
+            ) : null}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -502,6 +596,9 @@ function LibraryTitles({
   tab,
   sort,
   unwatched,
+  genre,
+  maxRuntime,
+  loadingOnline,
   open,
   play,
   onlineItems = [],
@@ -511,6 +608,9 @@ function LibraryTitles({
   tab: "all" | "movie" | "series";
   sort: string;
   unwatched: boolean;
+  genre?: string;
+  maxRuntime?: number;
+  loadingOnline: boolean;
   open: OpenTitle;
   play?: (fileId: number) => void;
   onlineItems?: ItemCard[];
@@ -529,29 +629,34 @@ function LibraryTitles({
   const [more, setMore] = useState(false);
   const [moreError, setMoreError] = useState("");
   const [end, setEnd] = useState(false);
+  const filters: LibraryFilters | undefined = genre || maxRuntime ? { genre, maxRuntime } : undefined;
+  const filteredOnlineItems = React.useMemo(
+    () => onlineItems.filter((item) => matchesLibraryFilters(item, { genre, maxRuntime })),
+    [onlineItems, genre, maxRuntime],
+  );
   const data = useResource(
-    (signal) => api.items(tab, 0, sort, signal, unwatched),
-    [api, tab, sort, unwatched],
+    (signal) => api.items(tab, 0, sort, signal, unwatched, filters),
+    [api, tab, sort, unwatched, genre, maxRuntime],
   );
   const localItems = React.useMemo(
     () => [...(data.value?.items ?? []), ...extra],
     [data.value?.items, extra],
   );
   const items = React.useMemo(() => {
-    if (!onlineItems.length) return localItems;
-    if (!localItems.length) return onlineItems;
+    if (!filteredOnlineItems.length) return localItems;
+    if (!localItems.length) return filteredOnlineItems;
     const merged: ItemCard[] = [];
     let localIndex = 0;
     let onlineIndex = 0;
-    while (localIndex < localItems.length || onlineIndex < onlineItems.length) {
+    while (localIndex < localItems.length || onlineIndex < filteredOnlineItems.length) {
       for (let step = 0; step < 3 && localIndex < localItems.length; step += 1) {
         merged.push(localItems[localIndex++]!);
       }
-      if (onlineIndex < onlineItems.length)
-        merged.push(onlineItems[onlineIndex++]!);
+      if (onlineIndex < filteredOnlineItems.length)
+        merged.push(filteredOnlineItems[onlineIndex++]!);
     }
     return merged;
-  }, [localItems, onlineItems]);
+  }, [localItems, filteredOnlineItems]);
   const available = width - 0 - 40;
   const columns = Math.max(2, Math.floor(available / 150));
   const cardWidth = Math.floor(available / columns) - 10;
@@ -573,6 +678,7 @@ function LibraryTitles({
         sort,
         undefined,
         unwatched,
+        filters,
       );
       setExtra((prev) => [
         ...prev,
@@ -587,7 +693,7 @@ function LibraryTitles({
       setMore(false);
     }
   }
-  return data.loading ? (
+  return data.loading || (loadingOnline && !items.length) ? (
     <LibraryGridSkeleton />
   ) : data.error ? (
     <PageState

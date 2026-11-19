@@ -4,7 +4,6 @@ import { useHiddenTitles } from "@/core/content/hidden-titles";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Film } from "@/shared/ui/icons";
-import { Notice } from "@/shared/ui/notice";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { triggerHaptic } from "@/shared/lib/haptics";
 
@@ -15,11 +14,12 @@ export function HiddenTitlesSettings() {
 
   if (!hidden.length) {
     return (
-      <View className="gap-4">
-        <Notice message="No hidden titles. Long-press a title card (or open its menu) and choose “Remove this title” to hide it here." />
-        <Text className="text-[13px] leading-[20px] font-archivo-regular text-muted">
-          Hiding a title only removes it from browsing. Your files, watch
-          progress and saved online titles are kept.
+      <View className="flex-1 items-center justify-center gap-2 px-6 py-12">
+        <Text className="text-center text-[18px] font-archivo-bold text-foreground">
+          No hidden titles
+        </Text>
+        <Text className="text-center text-[14px] leading-5 font-archivo-regular text-muted">
+          To hide a title, choose “Remove this title” from its menu.
         </Text>
       </View>
     );
@@ -44,7 +44,7 @@ export function HiddenTitlesSettings() {
             </View>
             <View className="flex-1 gap-1">
               <Text
-                numberOfLines={1}
+                numberOfLines={2}
                 className="font-archivo-medium text-[15px] text-foreground"
               >
                 {entry.name}
@@ -75,8 +75,7 @@ export function HiddenTitlesSettings() {
         style={{ alignSelf: "flex-start" }}
       />
       <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
-        Restored titles appear again on Home, Search and Library on the next
-        refresh.
+        Restored titles return to Home, Search and Library.
       </Text>
     </View>
   );

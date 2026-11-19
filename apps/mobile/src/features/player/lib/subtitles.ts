@@ -1,9 +1,10 @@
 import {
+  cleanSubtitleName,
   findLanguageTrack,
   mediaLanguageName as subtitleLanguageName,
-} from "../../../shared/lib/media-language";
+} from "@plexy/media-text";
 
-export { subtitleLanguageName };
+export { cleanSubtitleName, subtitleLanguageName };
 
 export function preferredSubtitleTrack(
   tracks: readonly { key: string; language?: string | null; isDefault?: boolean }[],
@@ -100,25 +101,6 @@ export function subtitleText(cues: Cue[], time: number, offset = 0) {
     .map((cue) => cleanSubtitleText(cue.text))
     .filter((text) => text.length > 0)
     .join("\n");
-}
-
-const TECHNICAL_TOKENS = new Set([
-  "subrip", "srt", "vtt", "webvtt", "ass", "ssa", "mov_text", "text",
-  "default", "forced", "sdh", "cc", "embedded", "sidecar", "external",
-]);
-
-/** Remove codec/format clutter like `(subrip, Default)` from a track title. */
-export function cleanSubtitleName(title: string): string {
-  return title
-    .replace(/\s*\(([^)]*)\)/g, (whole, inner: string) => {
-      const tokens = inner.split(",").map((token) => token.trim().toLowerCase()).filter(Boolean);
-      return tokens.length > 0 && tokens.every((token) => TECHNICAL_TOKENS.has(token))
-        ? ""
-        : whole;
-    })
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s*[-–—]\s*$/, "")
-    .trim();
 }
 
 /** Primary label plus an optional language/default eyebrow for track menus. */

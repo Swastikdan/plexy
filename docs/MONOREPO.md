@@ -11,6 +11,8 @@ apps/
 packages/
   api-client/     HTTP wire contracts, browser capability probing, transport policy
   local-library/  Device-local catalog, scanning, metadata, and skip-marker logic
+  media-text/     Language names and subtitle labels shared by web and mobile
+  desktop-bridge/ Electron IPC contract shared by main, preload, and the web UI
   tsconfig/       Shared TypeScript presets
 ```
 
@@ -26,6 +28,7 @@ The arrow points one way. Concretely:
 - A package must never import from `apps/*`. Integration tests that exercise app adapters belong in the app's test directory.
 - `@plexy/api-client` depends on no workspace package. It must not import server, web, desktop, or mobile code.
 - `@plexy/local-library` depends on `@plexy/api-client` for wire types only.
+- `@plexy/media-text` and `@plexy/desktop-bridge` are dependency-free so web, mobile, and Electron can share them without pulling in a runtime.
 - Apps own the third-party packages they import. Runtime dependencies do not live in the root `package.json`.
 - The root `package.json` contains workspace tooling only: Bun, TypeScript, the build/release scripts, and the React type pins that keep a single React type graph across web and mobile.
 
@@ -37,6 +40,7 @@ The arrow points one way. Concretely:
 | `bun run --filter @plexy/<name> <script>` | Run one workspace package's script |
 | `bun run typecheck` | Typecheck server, web, desktop, shared packages, and root scripts |
 | `bun run typecheck:native` | Typecheck the Expo app |
+| `bun run test` | Run every non-E2E workspace suite |
 | `bun run test:packages` | Run shared-package tests |
 | `bun run test:native` | Run mobile and local-library tests |
 | `bun run build:web` | Build the shared browser frontend |
@@ -48,7 +52,11 @@ The arrow points one way. Concretely:
 
 ## Shared packages are source-only
 
-`@plexy/api-client` and `@plexy/local-library` export TypeScript source directly through `package.json` `exports`. There is no separate package build step. This keeps the dev loop fast and avoids stale `dist/` output, at the cost of requiring consumers to run a TypeScript-aware bundler or runtime (Vite, Bun, Metro).
+`@plexy/api-client`, `@plexy/local-library`, `@plexy/media-text`, and
+`@plexy/desktop-bridge` export TypeScript source directly through `package.json`
+`exports`. There is no separate package build step. This keeps the dev loop fast
+and avoids stale `dist/` output, at the cost of requiring consumers to run a
+TypeScript-aware bundler or runtime (Vite, Bun, Metro, Electron's Bun build).
 
 When adding a new subpath:
 

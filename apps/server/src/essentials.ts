@@ -10,6 +10,11 @@ export type LoopbackContext = {
   request: Request;
 };
 
+/** The JSON error shape every route returns. */
+export function apiError(message: string, status = 400): Response {
+  return Response.json({ error: message }, { status });
+}
+
 export function isLoopbackAddress(remote: string | null | undefined): boolean {
   if (!remote) return false;
   return remote === "127.0.0.1" || remote === "::1" || remote === "localhost"

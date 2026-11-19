@@ -1020,3 +1020,29 @@ export async function fetchCollection(
   }
   return filtered(await requestCollection(collectionId, signal));
 }
+
+export async function fetchEpisodeCalendar(
+  tmdbId: number,
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+) {
+  type Airing = { season_number: number; episode_number: number; air_date: string | null; name: string };
+  const show = await get<{
+    last_episode_to_air?: Airing | null;
+    next_episode_to_air?: Airing | null;
+  }>(`/tv/${tmdbId}`, signal);
+  const airings = [show.last_episode_to_air, show.next_episode_to_air].filter(
+    (episode) => episode != null,
+  );
+  const seasons = [...new Set(airings.map((episode) => episode.season_number))];
+  const known = new Map(airings.map((episode) => [
+    `${episode.season_number}:${episode.episode_number}`,
+    { season: episode.season_number, number: episode.episode_number, title: episode.name, airDate: episode.air_date },
+  ]));
+  await Promise.all(seasons.map(async (season) => {
+    const episodes = await fetchSeason(tmdbId, season, signal).catch(() => []);
+    for (const episode of episodes) known.set(`${season}:${episode.number}`, episode);
+  }));
+  return [...known.values()].filter((episode) => episode.airDate && episode.airDate >= from && episode.airDate <= to);
+}

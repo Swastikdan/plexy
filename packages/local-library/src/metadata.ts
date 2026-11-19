@@ -12,7 +12,7 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
   const tv = record.card.kind === "episode";
   const kind = tv ? "tv" : "movie";
   const parsed = parseLocalName(record.file.relativePath, tv ? "tv" : "movies");
-  const title = record.manualIdentity ? record.card.parentTitle || record.card.name : parsed.title;
+  const title = tv ? record.card.parentTitle || parsed.title : record.manualIdentity ? record.card.name : parsed.title;
   let id = record.tmdbId || (!record.manualIdentity ? parsed.explicitId : null);
   if (!id) {
     const query = new URLSearchParams({ query: title, include_adult: "false" });
@@ -60,7 +60,8 @@ export async function fetchMetadata(record: LocalRecord, io: MetadataIO): Promis
   const still = episode?.still_path ? await image(episode.still_path, "w780", record.card.kind === "episode" && record.metadataVersion === 2 ? record.card.backdrop : null) : null;
   const certification = tv ? data.content_ratings?.results?.find((r: any) => r.iso_3166_1 === settings.region)?.rating
     : data.release_dates?.results?.find((r: any) => r.iso_3166_1 === settings.region)?.release_dates?.find((r: any) => r.certification)?.certification;
-  return { card: { ...record.card, ...seriesMetadata,
+  const isAnime = record.isAnime || (data.original_language === "ja" && data.genres?.some((genre: { id: number }) => genre.id === 16)) || false;
+  return { isAnime, card: { ...record.card, ...seriesMetadata, isAnime,
     tmdbId: id!, name: episode?.name || seriesMetadata.name!, parentTitle: tv ? data.name : null,
     overview: episode?.overview || data.overview || null, rating: episode?.vote_average ?? data.vote_average ?? null,
     runtime: episode?.runtime ?? data.runtime ?? null, poster: still || poster, backdrop: still || backdrop, matchStatus: "matched" },

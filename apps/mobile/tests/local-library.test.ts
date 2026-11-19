@@ -202,6 +202,62 @@ test("manual identification preserves progress and season numbering across a ser
   expect(f.library.state.records[1]!.card.episodeNumber).toBe(3);
   expect(first.card.watch?.position).toBe(100);expect(f.library.cards()[0]!.name).toBe("Correct Show");
 });
+test("a new season inherits a manually identified series after restart", async () => {
+  const f = fixture();
+  const first = file("Season 1/01.mkv");
+  const second = file("Season 2/Episode 03.mkv");
+  f.files([first]);
+  await f.library.addRoot({ ...root, kind: "tv" });
+  const seriesId = f.library.cards()[0]!.id;
+  await f.library.identify(seriesId, { kind: "tv", title: "Correct Show", tmdbId: 42 });
+
+  const restored = new LocalLibrary(f.io);
+  await restored.restore();
+  f.files([first, second]);
+  const hydratedIds: (number | undefined)[] = [];
+  f.io.metadata = async (record) => {
+    if (record.file.uri === second.uri) hydratedIds.push(record.tmdbId);
+    return null;
+  };
+  await restored.scan();
+
+  expect(hydratedIds).toEqual([42]);
+  expect(restored.cards().map((card) => card.id)).toEqual([seriesId]);
+  expect(restored.detail(seriesId).episodes?.[1]).toMatchObject({
+    seasonNumber: 2,
+    episodeNumber: 3,
+    parentTitle: "Correct Show",
+  });
+});
+
+test("later seasons reuse the corrected match for the show folder", async () => {
+  const f = fixture();
+  const first = file("Lupin/Season 1/Lupin.S01E01.mkv");
+  const second = file("Lupin/Lupin Season 2/Disc 1/Episode 02.mkv");
+  const third = file("Lupin/Part 3/Lupin - 03.mkv");
+  const hydrated: { id: number | undefined; season: number | null | undefined }[] = [];
+  f.io.metadata = async (record) => {
+    hydrated.push({ id: record.tmdbId, season: record.card.seasonNumber });
+    const tmdbId = record.tmdbId ?? 90;
+    return { tmdbId, card: { ...record.card, tmdbId, matchStatus: "matched" } };
+  };
+  f.files([first, second]);
+  await f.library.addRoot({ ...root, kind: "tv" });
+  const firstRecord = f.library.state.records.find((record) => record.file.uri === first.uri)!;
+  await f.library.identify(firstRecord.id, { kind: "tv", title: "Lupin", tmdbId: 42 });
+  const correctedSeries = f.library.record(firstRecord.id).card.parentId!;
+
+  hydrated.length = 0;
+  f.files([first, second, third]);
+  await f.library.scan();
+
+  expect(hydrated).toContainEqual({ id: 42, season: 2 });
+  expect(hydrated).toContainEqual({ id: 42, season: 3 });
+  expect(f.library.cards().map((card) => card.id)).toEqual([correctedSeries]);
+  expect(f.library.detail(correctedSeries).episodes?.map((episode) => episode.episodeNumber))
+    .toEqual([1, 2, 3]);
+});
+
 test("a movie can be manually reclassified as a TV episode", async () => {
   const f=fixture();await f.library.addRoot(root);const id=f.library.cards()[0]!.id;
   await f.library.identify(id,{kind:"tv",title:"My Show",season:0,episode:2});
@@ -454,4 +510,55 @@ describe("auto folder detection", () => {
       "Show",
     ]);
   });
+});
+
+test("reconnects a moved folder and then a missing file without changing watch identity", async () => {
+  const fixtureData = fixture();
+  const { library } = fixtureData;
+  await library.addRoot({ ...root });
+  const id = library.state.records[0]!.id;
+  await library.progress(id, 90, 600);
+
+  const replacement = { uri: "content://replacement", name: "Moved movies" };
+  fixtureData.files([{ ...file("Other.mp4"), uri: "content://replacement/Other.mp4" }]);
+  await expect(library.reconnectRoot(root.uri, replacement)).rejects.toThrow("No existing videos match");
+  expect(library.record(id).root).toBe(root.uri);
+
+  const moved = { ...file(), uri: `${replacement.uri}/Arrival.2016.mp4` };
+  fixtureData.files([moved]);
+  await library.reconnectRoot(root.uri, replacement);
+  expect(library.record(id).file.uri).toBe(moved.uri);
+
+  fixtureData.files([]);
+  await library.scan();
+  expect(library.state.records).toHaveLength(0);
+  expect(library.state.missingFiles?.[0]?.id).toBe(id);
+  const restored = new LocalLibrary(fixtureData.io);
+  await restored.restore();
+  const picked = { ...file(), uri: "content://another/Arrival.2016.mp4" };
+  fixtureData.files([picked]);
+  await restored.reconnectFile(id, picked.uri, picked.name);
+  expect(restored.record(id).file.uri).toBe(picked.uri);
+  expect(restored.record(id).card.watch?.position).toBe(90);
+  expect(restored.state.missingFiles).toHaveLength(0);
+});
+
+test("genre and runtime filters match across the complete catalog before pagination", async () => {
+  const f = fixture();
+  f.files([
+    file("First Match.mp4"),
+    ...Array.from({ length: 62 }, (_, i) => file(`Other Movie ${i + 1900}.mp4`)),
+  ]);
+  await f.library.addRoot({ ...root });
+  for (const record of f.library.state.records) {
+    record.card.genres = ["Comedy"];
+    record.card.runtime = record.id === 1 ? 87 : 110;
+  }
+  const api = new LocalApi(f.library, async () => "", async () => []);
+  const plain = await api.items("all", 0, "added");
+  expect(plain.items.some((card) => card.id === 1)).toBe(false);
+  const filtered = await api.items("all", 0, "added", undefined, false, { genre: "Comedy", maxRuntime: 90 });
+  expect(filtered.items.map((card) => card.id)).toEqual([1]);
+  const otherGenre = await api.items("all", 0, "added", undefined, false, { genre: "Drama" });
+  expect(otherGenre.items).toHaveLength(0);
 });

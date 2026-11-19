@@ -1,3 +1,4 @@
+import type { LibraryFilters } from "./library-filters";
 import type { HomePayload, ItemCard, Playability, SkipSegments, TitleDetail, } from "@plexy/api-client/types";
 export type { HomePayload, ItemCard, Playability, SkipSegments, TitleDetail, Watch } from "@plexy/api-client/types";
 export interface TitleIdentity {
@@ -10,7 +11,7 @@ export interface TitleIdentity {
 /** In-process catalog contract. Implementations never connect to a Plexy server. */
 export abstract class LocalCatalog {
     abstract home(signal?: AbortSignal): Promise<HomePayload>;
-    abstract items(kind: "all" | "movie" | "series", offset?: number, sort?: string, signal?: AbortSignal, unwatched?: boolean): Promise<{
+    abstract items(kind: "all" | "movie" | "series", offset?: number, sort?: string, signal?: AbortSignal, unwatched?: boolean, filters?: LibraryFilters): Promise<{
         items: ItemCard[];
     }>;
     abstract detail(id: string | number, signal?: AbortSignal): Promise<TitleDetail>;

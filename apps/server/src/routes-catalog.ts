@@ -13,7 +13,7 @@ import { log } from "./logger";
 import { imageUrl } from "./tmdb";
 import { classifyPlayability, rowPlayabilityFacts } from "./playback";
 import { optimizationView } from "./optimize";
-import { denyIfNotLocal } from "./essentials";
+import { denyIfNotLocal, apiError } from "./essentials";
 import { getConfig } from "./config";
 import { removeOriginal } from "./trash";
 import type { ItemCard } from "@plexy/api-client";
@@ -172,7 +172,7 @@ function parseItemId(value: unknown): number | null {
 }
 
 function invalidItemId(): Response {
-  return Response.json({ error: "itemId must be a positive number" }, { status: 400 });
+  return apiError("itemId must be a positive number");
 }
 
 /**
@@ -392,7 +392,9 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
 
   /** Library grid with sort + filters (PRD 5.9, 10.2). */
   .get("/items", async ({ query, request }) => {
-    const where: string[] = [accessSql(request)];
+    // Browse surfaces list titles, not their episodes or season containers. An
+    // episode card only belongs in Continue watching, Next up, or search.
+    const where: string[] = [accessSql(request), "i.kind IN ('movie','series')"];
     const params: unknown[] = [];
     if (query.kind) { where.push("i.kind = ?"); params.push(query.kind); }
     if (query.year) { where.push("i.year = ?"); params.push(query.year); }
@@ -427,11 +429,11 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const row = legacyId != null
       ? q<Row>("SELECT * FROM items WHERE id = ?").get(legacyId)
       : q<Row>("SELECT * FROM items WHERE public_id = ?").get(params.id);
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!row) return apiError("Not found", 404);
     const id = Number(row.id);
 
     const [card] = await attachArt([row], request);
-    if (!card) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!card) return apiError("Not found", 404);
     const meta = q<Row>("SELECT * FROM item_metadata WHERE item_id = ?").get(id);
     const castRows = q<Row>(
       `SELECT p.id, p.name, p.profile_path, ip.character_name
@@ -539,12 +541,12 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
   .get("/people/:personId", async ({ params, request }) => {
     const personId = Number(params.personId);
     if (!Number.isFinite(personId)) {
-      return Response.json({ error: "Not found" }, { status: 404 });
+      return apiError("Not found", 404);
     }
     const person = q<Row>(
       "SELECT id, name, profile_path FROM people WHERE id = ?",
     ).get(personId);
-    if (!person) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!person) return apiError("Not found", 404);
 
     const rows = q<Row>(
       `SELECT DISTINCT i.* FROM items i
@@ -578,7 +580,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const itemId = parseItemId(ctx.params.id);
     if (itemId == null) return invalidItemId();
     const exists = q<{ id: number }, [number]>("SELECT id FROM items WHERE id=?").get(itemId);
-    if (!exists) return Response.json({ error: "Title not found" }, { status: 404 });
+    if (!exists) return apiError("Title not found", 404);
     const indexedFiles = q<{ id: number; path: string; size: number; mtime: number }>(
       `WITH RECURSIVE descendants(id) AS (
          SELECT ? UNION ALL SELECT i.id FROM items i JOIN descendants d ON i.parent_id=d.id
@@ -590,7 +592,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       const source = await stat(file.path).catch(() => null);
       if (!source?.isFile()) continue;
       if (source.size !== Number(file.size) || Math.floor(source.mtimeMs) !== Number(file.mtime)) {
-        return Response.json({ error: "A source file changed since it was indexed. Rescan the library before deleting this title." }, { status: 409 });
+        return apiError("A source file changed since it was indexed. Rescan the library before deleting this title.", 409);
       }
       existingFiles.push({ id: Number(file.id), path: file.path });
     }
@@ -600,11 +602,12 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
         await removeOriginal(file.path, cfg.moveOriginalsToTrash ? "system" : "permanent");
       }
     } catch {
-      return Response.json({
-        error: cfg.moveOriginalsToTrash
+      return apiError(
+        cfg.moveOriginalsToTrash
           ? "Could not move a source file to the recycle bin. The title remains in the catalog."
           : "Could not delete a source file. The title remains in the catalog.",
-      }, { status: 500 });
+        500,
+      );
     }
     db.exec("BEGIN");
     try {
@@ -691,7 +694,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const userId = requestUser(request)?.id ?? 0;
     const itemId = parseItemId(body.itemId);
     if (itemId == null) return invalidItemId();
-    if (!canAccessItem(requestUser(request), itemId)) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!canAccessItem(requestUser(request), itemId)) return apiError("Not found", 404);
     run(
       `INSERT INTO watch_state (user_id, item_id, position_seconds, duration_seconds, played, updated_at)
        VALUES (?, ?,?,?,?,datetime('now'))
@@ -719,7 +722,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const itemId = parseItemId(params.itemId);
     if (itemId == null) return invalidItemId();
     const item = q<{ id: number; kind: string }, [number]>("SELECT id, kind FROM items WHERE id = ?").get(itemId);
-    if (!item) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!item) return apiError("Not found", 404);
 
     const playedVal = body.played ? 1 : 0;
     run(

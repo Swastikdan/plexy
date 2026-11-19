@@ -8,7 +8,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const apiTarget = `http://127.0.0.1:${process.env.PLEXY_PORT ?? 8765}`;
+// One port drives the dev server, the API proxy, and native playback. Reading
+// PORT as a fallback keeps `PORT=9000 bun run dev` coherent: the backend reads
+// PORT, and before this the browser kept proxying :8765.
+const apiPort = process.env.PLEXY_PORT ?? process.env.PORT ?? "8765";
+const apiTarget = `http://127.0.0.1:${apiPort}`;
 
 // react-compiler-runtime (pulled in by @videojs/react) opens with a "use no
 // memo" directive that cannot survive a bundle boundary. Dependencies are already
@@ -57,11 +61,19 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Fail loudly instead of silently moving to :5174, which would break the
+    // native-player port check and every bookmark to the dev UI.
+    strictPort: true,
     proxy: {
       "^/api/": {
         target: apiTarget,
         changeOrigin: true,
       },
     },
+  },
+  // Expose the resolved backend port to the browser so native playback in the
+  // desktop shell can reach the same backend the proxy uses.
+  define: {
+    "import.meta.env.VITE_PLEXY_PORT": JSON.stringify(apiPort),
   },
 });

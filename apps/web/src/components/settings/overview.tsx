@@ -1,5 +1,9 @@
 /// Settings dashboard landing page: identity, catalog snapshot, device summary,
 /// and the actions people actually reach for.
+///
+/// Every block on this page uses the same panel radius, header padding, and
+/// label scale as the rest of Settings, so the dashboard reads as one surface
+/// rather than a collage.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -13,7 +17,6 @@ import {
   MonitorSmartphone,
   Plus,
   ScanLine,
-  Server,
   Sparkles,
   Tv,
 } from "lucide-react";
@@ -59,7 +62,7 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
   const scan = status.data?.scan;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <ProfileBanner
         me={me.data}
         admin={admin}
@@ -67,7 +70,7 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
         online={Boolean(status.data)}
       />
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[calc(var(--radius)*1.8)] border border-border bg-border xl:grid-cols-4">
+      <section className="panel grid grid-cols-2 gap-px overflow-hidden bg-border xl:grid-cols-4">
         <StatTile icon={Film} label="Movies" value={movieTitles.toLocaleString()} detail={`${movies.length} ${movies.length === 1 ? "library" : "libraries"}`} />
         <StatTile icon={Tv} label="TV shows" value={showTitles.toLocaleString()} detail={`${shows.length} ${shows.length === 1 ? "library" : "libraries"}`} />
         <StatTile
@@ -78,12 +81,12 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
           tone={needsReview > 0 ? "warning" : undefined}
         />
         <StatTile icon={MonitorSmartphone} label="Devices" value={String(activeDevices)} detail="signed in" />
-      </div>
+      </section>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.38fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <LibrarySnapshot libraries={libraryList} admin={admin} loading={libraries.isLoading} />
 
-        <div className="space-y-5">
+        <div className="space-y-4">
           <QuickActions admin={admin} />
           <ServerHealth admin={admin} />
         </div>
@@ -104,20 +107,14 @@ function ProfileBanner({
   online: boolean;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[calc(var(--radius)*2.4)] border border-border bg-surface p-5 sm:p-6">
+    <section className="panel relative overflow-hidden p-4 sm:p-5">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-2/3 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_16%,transparent),transparent_64%)]"
-      />
-      <img
-        src="/icon.svg"
-        alt=""
-        aria-hidden
-        className="pointer-events-none absolute -right-10 top-1/2 hidden h-48 w-48 -translate-y-1/2 rotate-[-8deg] opacity-[0.07] sm:block"
+        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_12%,transparent),transparent_68%)]"
       />
 
-      <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:gap-5">
-        <div className="flex min-w-0 items-center gap-4 xl:gap-5">
+      <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-5">
+        <div className="flex min-w-0 items-center gap-4">
           <Link
             to="/settings"
             search={{ tab: "account" }}
@@ -125,18 +122,18 @@ function ProfileBanner({
             title="Change profile photo"
             className="group/avatar relative shrink-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
-            <UserAvatar user={me?.user} size={58} className="rounded-2xl" />
+            <UserAvatar user={me?.user} size={54} className="rounded-2xl" />
             <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/50 text-white opacity-0 transition-opacity duration-150 group-hover/avatar:opacity-100 group-focus-visible/avatar:opacity-100">
-              <Camera size={16} />
+              <Camera size={15} />
             </span>
           </Link>
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate font-sans text-xl font-extrabold tracking-[-0.035em] text-foreground sm:text-2xl">
+              <h2 className="truncate font-sans text-xl font-extrabold tracking-[-0.035em] text-foreground">
                 {me?.user.username ?? "Your account"}
               </h2>
-              <span className="text-[10px] font-medium text-muted">
+              <span className="text-[10.5px] font-medium text-muted">
                 {me?.user.role === "admin" ? "Administrator" : "Viewer"}
               </span>
             </div>
@@ -154,11 +151,11 @@ function ProfileBanner({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 xl:ml-auto xl:shrink-0">
+        <div className="flex flex-wrap items-center gap-2 lg:ml-auto lg:shrink-0">
           <Link
             to="/settings"
             search={{ tab: "devices" }}
-            className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background/45 px-3 text-[11px] font-semibold text-foreground backdrop-blur-sm transition-[background-color,transform] duration-150 hover:bg-surface-secondary active:scale-[0.97] sm:max-w-[12rem] sm:flex-none xl:flex-none"
+            className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background/45 px-3 text-[11px] font-semibold text-foreground transition-[background-color,transform] duration-150 hover:bg-surface-secondary active:scale-[0.97] sm:flex-none"
           >
             <MonitorSmartphone size={13} />
             Pair a device
@@ -166,7 +163,7 @@ function ProfileBanner({
           {admin && (
             <Link
               to="/add-library"
-              className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] sm:max-w-[12rem] sm:flex-none xl:flex-none"
+              className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] sm:flex-none"
             >
               <Plus size={13} />
               Add library
@@ -197,15 +194,15 @@ function StatTile({
   tone?: "warning";
 }) {
   return (
-    <div className="bg-surface px-4 py-4 sm:px-5 sm:py-4.5">
+    <div className="bg-surface px-4 py-4 sm:px-5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-muted">{label}</span>
+        <span className="text-[10.5px] font-semibold text-muted">{label}</span>
         <Icon size={13} className="text-muted/50" aria-hidden />
       </div>
-      <p className="mt-2 font-sans text-[1.8rem] font-extrabold leading-none tracking-[-0.05em] text-foreground tabular-nums sm:text-[2rem]">
+      <p className="mt-2 font-sans text-[1.7rem] font-extrabold leading-none tracking-[-0.05em] text-foreground tabular-nums">
         {value}
       </p>
-      <p className={cx("mt-1.5 text-[10px]", tone === "warning" ? "font-medium text-warning-soft-foreground" : "text-muted")}>
+      <p className={cx("mt-1.5 text-[10.5px]", tone === "warning" ? "font-medium text-warning-soft-foreground" : "text-muted")}>
         {detail}
       </p>
     </div>
@@ -223,10 +220,8 @@ function LibrarySnapshot({
 }) {
   return (
     <section className="panel overflow-hidden">
-      <header className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5 sm:px-5">
-        <div>
-          <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Your libraries</h2>
-        </div>
+      <header className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5">
+        <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Your libraries</h2>
         {admin && (
           <Link
             to="/settings"
@@ -264,20 +259,20 @@ function LibrarySnapshot({
           )}
         </div>
       ) : (
-        <ul className="divide-y divide-border/50">
+        <ul className="divide-y divide-border/50 border-t border-border/70">
           {libraries.map((library) => {
             const Icon = TYPE_ICON[library.type] ?? Film;
             const review = library.counts.review ?? 0;
             return (
-              <li key={library.id} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-secondary/40 sm:px-5">
+              <li key={library.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-secondary/40 sm:px-5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-foreground">
                   <Icon size={14} aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-semibold text-foreground">{library.name}</p>
-                  <p className="mt-0.5 truncate text-[10px] text-muted">
+                  <p className="mt-0.5 truncate text-[10.5px] text-muted">
                     {TYPE_LABEL[library.type] ?? "Library"}
-                    <span className="px-1.5 text-muted/30">/</span>
+                    <span className="px-1.5 text-muted/30">·</span>
                     {library.paths.length} folder{library.paths.length === 1 ? "" : "s"}
                   </p>
                 </div>
@@ -311,10 +306,10 @@ function QuickActions({ admin }: { admin: boolean }) {
   ];
   return (
     <section className="panel overflow-hidden">
-      <header className="border-b border-border/70 px-4 py-3.5 sm:px-5">
+      <header className="px-4 py-3.5 sm:px-5">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Quick actions</h2>
       </header>
-      <ul>
+      <ul className="border-t border-border/70">
         {actions.map((action) => {
           const Icon = action.icon;
           return (
@@ -322,12 +317,12 @@ function QuickActions({ admin }: { admin: boolean }) {
               <Link
                 to={action.to}
                 search={action.search}
-                className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-secondary/45 sm:px-5"
+                className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-secondary/45 sm:px-5"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-muted transition-colors group-hover:text-foreground">
                   <Icon size={14} aria-hidden />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-foreground">{action.label}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">{action.label}</span>
                 <ChevronRight size={13} className="shrink-0 text-muted/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted" />
               </Link>
             </li>
@@ -345,12 +340,12 @@ function ServerHealth({ admin }: { admin: boolean }) {
     <section className="panel p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Server health</h2>
-        <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-muted">
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-muted">
           <span aria-hidden className={cx("h-1.5 w-1.5 rounded-full", data ? "bg-[var(--success)]" : "bg-[var(--warning)]")} />
           {data ? "Online" : "Connecting"}
         </span>
       </div>
-      <dl className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-3">
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3.5">
         <HealthItem label="Version" value={data?.version ? `v${data.version}` : "…"} />
         <HealthItem label="Uptime" value={data?.uptimeSeconds != null ? formatUptime(data.uptimeSeconds) : "…"} />
         <HealthItem label="Address" value={data?.bind ? `${data.bind}:${data.port}` : "…"} mono />
@@ -373,8 +368,8 @@ function ServerHealth({ admin }: { admin: boolean }) {
 function HealthItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted/70">{label}</dt>
-      <dd className={cx("mt-0.5 truncate text-[11px] font-medium text-foreground", mono && "font-mono text-[10px]")}>
+      <dt className="text-[10px] font-medium text-muted">{label}</dt>
+      <dd className={cx("mt-1 truncate text-[11.5px] font-medium text-foreground", mono && "font-mono text-[10.5px]")}>
         {value}
       </dd>
     </div>

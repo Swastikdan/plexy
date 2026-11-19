@@ -24,6 +24,7 @@
     "@hugeicons/react-native": "^1.0.16",
     "@plexy/api-client": "workspace:*",
     "@plexy/local-library": "workspace:*",
+    "@plexy/media-text": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "12.0.1",
     "expo": "~57.0.33",

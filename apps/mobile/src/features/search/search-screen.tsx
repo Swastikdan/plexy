@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { useClient } from "@/core/client/client-provider";
+import { usePlayCard } from "@/shared/hooks/use-play-card";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
@@ -120,29 +121,7 @@ export function SearchScreen({
         : Promise.resolve({ titles: [], episodes: [] }),
     [api, debounced],
   );
-  const handlePlay = React.useCallback(
-    (item: ItemCard) => {
-      if (item.fileId && play) {
-        play(item.fileId);
-        return;
-      }
-      void api
-        .detail(item.publicId)
-        .then((d) => {
-          const fid =
-            d.file?.fileId ||
-            d.episodes?.find((e) => e.fileId && !e.watch?.played)?.fileId ||
-            d.episodes?.find((e) => e.fileId)?.fileId;
-          if (fid && play) {
-            play(fid);
-          } else {
-            open(item.publicId);
-          }
-        })
-        .catch(() => open(item.publicId));
-    },
-    [api, play, open],
-  );
+  const handlePlay = usePlayCard(play, open);
   // Responsive grid config for search results and the landing shelves.
   const available = width - 40;
   const cardWidth = Math.floor((available - 12) / 2);

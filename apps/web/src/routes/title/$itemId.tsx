@@ -208,13 +208,6 @@ function DetailView({
     }
   };
 
-  const activeEpisodeTitle = activeEpisode
-    ? episodeDisplayTitle(activeEpisode.name, activeEpisode.episodeNumber ?? 1)
-    : null;
-  const activeEpisodeLabel = activeEpisode
-    ? `Season ${activeEpisode.seasonNumber ?? selectedSeason}, Episode ${activeEpisode.episodeNumber ?? 1}`
-    : null;
-
   return (
     <div className="staggered space-y-8">
       <section className="hero-shell flex min-h-[30rem] flex-col sm:min-h-[34rem] lg:min-h-[35rem]">
@@ -274,16 +267,6 @@ function DetailView({
                 <h1 className="hero-title mb-3 max-w-[18ch] font-sans text-[2.4rem] text-white sm:text-5xl lg:text-[3.8rem]">
                   {item.name}
                 </h1>
-              )}
-
-              {item.kind === "series" && activeEpisode && (
-                <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-white/65">
-                  <span aria-hidden className="h-1 w-1 rounded-full bg-[var(--accent)]" />
-                  <span className="text-white/45">Up next</span>
-                  <span className="text-white/80">{activeEpisodeLabel}</span>
-                  <span aria-hidden className="text-white/25">·</span>
-                  <span className="text-white/80">{activeEpisodeTitle}</span>
-                </p>
               )}
 
               <div className="hero-meta">
@@ -605,7 +588,7 @@ function DetailView({
               <header className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
                 <div className="flex items-center gap-2">
                   <Users size={13} className="text-muted" aria-hidden />
-                  <h2 className="text-[12px] font-bold uppercase tracking-[0.14em] text-foreground">Top cast</h2>
+                  <h2 className="text-[12px] font-bold tracking-[-0.01em] text-foreground">Top cast</h2>
                 </div>
                 {cast.length > 6 && (
                   <button
@@ -656,7 +639,7 @@ function DetailView({
             <section className="panel p-4 sm:p-5">
               <div className="flex items-center gap-2">
                 <HardDrive size={13} className="text-muted" aria-hidden />
-                <h2 className="text-[12px] font-bold uppercase tracking-[0.14em] text-foreground">Details</h2>
+                <h2 className="text-[12px] font-bold tracking-[-0.01em] text-foreground">Details</h2>
               </div>
 
               <dl className="mt-3 divide-y divide-border/55 text-[11.5px]">

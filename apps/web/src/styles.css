@@ -310,10 +310,9 @@
 
 .eyebrow {
   font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
   color: var(--muted);
 }
 
@@ -448,6 +447,21 @@
   color: #f7f5ef;
 }
 
+/* Home banner: the artwork is part of the page rather than a card floating on
+ * it. It reaches the gutters and squares off its corners, so the shelves below
+ * sit on the same surface instead of under a separate box. */
+.hero-shell--bleed {
+  margin-inline: calc(var(--app-gutter) * -1);
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--background);
+}
+
+.hero-shell--bleed::before {
+  content: none;
+}
+
 .hero-shell::after {
   content: "";
   position: absolute;
@@ -562,8 +576,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 2.5rem;
-  width: 2.5rem;
+  height: 2.75rem;
+  width: 2.75rem;
   border-radius: 999px;
   border: 1px solid rgba(247, 245, 239, 0.2);
   background: rgba(247, 245, 239, 0.07);
@@ -648,35 +662,26 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Route change: a short, quiet fade-up so pages never snap in.
- * No fill mode: the transform is gone once the animation ends, so fixed
- * descendants are not trapped in a containing block. */
+/* Route changes commit the destination in one paint. The old fade-up made the
+ * home banner read as a flash on every navigation, so only a near-instant
+ * opacity settle remains. */
 @keyframes page-enter {
-  from { opacity: 0; transform: translateY(5px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.94; }
+  to   { opacity: 1; }
 }
 .page-enter {
-  animation: page-enter 220ms var(--ease-out);
+  animation: page-enter 140ms var(--ease-out);
 }
 
-/* Hero artwork drifts in at most a few pixels. It runs once, off the main
- * thread, and only transforms the image layer. */
-@keyframes hero-media-in {
-  from { transform: scale(1.035); }
-  to   { transform: scale(1); }
-}
-.hero-media {
-  animation: hero-media-in 1100ms var(--ease-out) both;
-}
-
-/* One orchestrated entrance: hero and rows rise on first paint */
+/* One orchestrated entrance: the hero copy rises on first paint. The artwork
+ * itself is already there — animating it made navigations flash. */
 .staggered > * {
-  animation: rise 420ms var(--ease-out) both;
+  animation: none;
 }
-.staggered > *:nth-child(2) { animation-delay: 45ms; }
-.staggered > *:nth-child(3) { animation-delay: 90ms; }
-.staggered > *:nth-child(4) { animation-delay: 135ms; }
-.staggered > *:nth-child(n+5) { animation-delay: 180ms; }
+
+.hero-media {
+  animation: none;
+}
 
 /* Poster hover is a pointer affordance, not a touch state. Keeping the
  * transform here (rather than on a Tailwind hover class) means touch devices

@@ -24,6 +24,32 @@ export function SkeletonBlock({
   return <Skeleton className={cn("rounded-lg", className)} style={style} />;
 }
 
+/** Poster card placeholder shared by every shelf and grid. */
+function PosterCardSkeleton({ width }: { width: number | `${number}%` }) {
+  return (
+    <View style={{ width }} className="gap-2">
+      <SkeletonBlock
+        style={{ width: "100%", aspectRatio: 2 / 3, borderRadius: 8 }}
+      />
+      <SkeletonBlock style={{ width: "55%", height: 11 }} />
+    </View>
+  );
+}
+
+/** One titled row of poster cards, used by Home and Search landings. */
+function PosterShelfSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <View className="gap-2">
+      <SkeletonBlock style={{ marginLeft: 20, width: 132, height: 16 }} />
+      <View className="flex-row gap-2.5 overflow-hidden px-5">
+        {Array.from({ length: count }, (_, card) => (
+          <PosterCardSkeleton key={card} width={150} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 /** The collapsible season-picker row on a series title page. */
 export function SeasonPickerSkeleton() {
   return (
@@ -147,24 +173,8 @@ export function HomeSkeleton() {
           </View>
         </View>
         {[0, 1, 2].map((row) => (
-          <View key={row} className="mb-5 mt-4 gap-2">
-            <SkeletonBlock
-              style={{ marginLeft: 20, width: 132, height: 16 }}
-            />
-            <View className="flex-row gap-2.5 overflow-hidden px-5">
-              {[0, 1, 2].map((card) => (
-                <View key={card} style={{ width: 150 }} className="gap-2">
-                  <SkeletonBlock
-                    style={{
-                      width: "100%",
-                      aspectRatio: 2 / 3,
-                      borderRadius: 8,
-                    }}
-                  />
-                  <SkeletonBlock style={{ width: "55%", height: 11 }} />
-                </View>
-              ))}
-            </View>
+          <View key={row} className="mb-5 mt-4">
+            <PosterShelfSkeleton />
           </View>
         ))}
       </ScrollView>
@@ -194,16 +204,7 @@ export function SearchResultRowsSkeleton({
           className={cn("flex-row gap-3", inset && "px-5")}
         >
           {[0, 1].map((card) => (
-            <View key={card} style={{ width: cardWidth }} className="gap-2">
-              <SkeletonBlock
-                style={{
-                  width: "100%",
-                  aspectRatio: 2 / 3,
-                  borderRadius: 8,
-                }}
-              />
-              <SkeletonBlock style={{ width: "55%", height: 11 }} />
-            </View>
+            <PosterCardSkeleton key={card} width={cardWidth} />
           ))}
         </View>
       ))}
@@ -226,25 +227,7 @@ export function SearchHomeSkeleton() {
   return (
     <View className="flex-1 gap-4 pt-2">
       {[0, 1].map((row) => (
-        <View key={row} className="gap-2">
-          <SkeletonBlock
-            style={{ marginLeft: 20, width: 132, height: 16 }}
-          />
-          <View className="flex-row gap-2.5 overflow-hidden px-5">
-            {[0, 1, 2].map((card) => (
-              <View key={card} style={{ width: 150 }} className="gap-2">
-                <SkeletonBlock
-                  style={{
-                    width: "100%",
-                    aspectRatio: 2 / 3,
-                    borderRadius: 8,
-                  }}
-                />
-                <SkeletonBlock style={{ width: "55%", height: 11 }} />
-              </View>
-            ))}
-          </View>
-        </View>
+        <PosterShelfSkeleton key={row} />
       ))}
     </View>
   );
@@ -262,12 +245,7 @@ export function LibraryGridSkeleton() {
       style={{ gap: 12 }}
     >
       {Array.from({ length: columns * 3 }, (_, index) => (
-        <View key={index} style={{ width: cardWidth }} className="gap-2">
-          <SkeletonBlock
-            style={{ width: "100%", aspectRatio: 2 / 3, borderRadius: 8 }}
-          />
-          <SkeletonBlock style={{ width: "55%", height: 11 }} />
-        </View>
+        <PosterCardSkeleton key={index} width={cardWidth} />
       ))}
     </View>
   );
@@ -288,12 +266,7 @@ function TitlePosterGridSkeleton() {
       style={{ columnGap: gap, rowGap: 18 }}
     >
       {Array.from({ length: columns * 2 }, (_, index) => (
-        <View key={index} style={{ width: cardWidth }} className="gap-2">
-          <SkeletonBlock
-            style={{ width: "100%", aspectRatio: 2 / 3, borderRadius: 8 }}
-          />
-          <SkeletonBlock style={{ width: "55%", height: 11 }} />
-        </View>
+        <PosterCardSkeleton key={index} width={cardWidth} />
       ))}
     </View>
   );

@@ -1,8 +1,8 @@
 import { useCallback } from "react";
-import { hideTitle } from "@/core/content/hidden-titles";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
+import { hiddenTitleAction } from "@/shared/ui/hidden-title-action";
 import { useRemote } from "../remote-provider";
 import {
   isRemotePlayed,
@@ -91,24 +91,7 @@ export function useRemoteTitleActions() {
           onPress: () =>
             void save(title).then(() => options.onChanged?.()),
         },
-        {
-          text: "Remove this title",
-          style: "destructive",
-          onPress: () =>
-            showDialog(
-              "Remove this title?",
-              "It will be hidden from Home, Search and Library. You can restore it later in Settings → Hidden titles.",
-              [
-                {
-                  text: "Remove",
-                  style: "destructive",
-                  onPress: () => {
-                    void hideTitle(item).then(() => options.onChanged?.());
-                  },
-                },
-              ],
-            ),
-        },
+        hiddenTitleAction(showDialog, item, options.onChanged),
       ]);
     },
     [isSaved, save, showDialog],

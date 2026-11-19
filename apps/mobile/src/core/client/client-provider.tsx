@@ -27,6 +27,7 @@ export interface MobileRuntimeBindings {
     refresh(): Promise<void>;
     needsSetup(): boolean;
     searchTitles(query: string, kind: "movies" | "tv"): Promise<TitleSearchResult[]>;
+    saveSubtitle?(fileId: number, name: string, language: string, text: string): Promise<import("@plexy/api-client/types").SubtitleTrack>;
     pickSubtitle?(fileId: number): Promise<import("@plexy/api-client/types").SubtitleTrack | null>;
     getAttentionCount(): number;
     getAttentionFingerprint(): string;
@@ -56,6 +57,13 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
     }), []);
     useEffect(() => {
         let live = true;
+        let loaded = false;
+        const scanConnectedFolders = () => {
+            const current = preferencesRef.current;
+            if (loaded && current.onboardingCompleted && current.mode !== "online" && !runtime.needsSetup()) {
+                void runtime.refresh().catch(() => {});
+            }
+        };
         void (async () => {
             const stored = await readJson<Partial<Preferences>>(PREFERENCE_KEY, {});
             const saved = {
@@ -82,13 +90,22 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
                 setPreferences(saved);
             await Promise.all([progress.restore(), loadHiddenTitles()]);
             await progress.flush(runtime.api);
-            if (live)
+            if (live) {
+                loaded = true;
                 setReady(true);
+                scanConnectedFolders();
+            }
         })().catch(() => {
             if (live)
                 setStorageError("Device storage could not be loaded. Restart the app before making changes.");
         });
-        const state = AppState.addEventListener("change", () => {
+        let wasBackgrounded = AppState.currentState === "background";
+        const state = AppState.addEventListener("change", (nextState) => {
+            if (nextState === "background") wasBackgrounded = true;
+            if (nextState === "active" && wasBackgrounded) {
+                wasBackgrounded = false;
+                scanConnectedFolders();
+            }
             void progress.flush(runtime.api).catch(() => { });
         });
         return () => {

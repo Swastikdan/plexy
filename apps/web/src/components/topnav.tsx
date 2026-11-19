@@ -25,7 +25,7 @@ function resolvePageTitle(
     return titleDataName || "";
   }
   if (pathname === "/library/movies") return "Movies";
-  if (pathname === "/library/tv" || pathname === "/library/series") return "TV Shows";
+  if (pathname === "/library/tv" || pathname === "/library/series") return "TV shows";
   if (pathname === "/library/all") return "Library";
   if (pathname.startsWith("/library/")) {
     const rawKind = pathname.replace("/library/", "");
@@ -40,10 +40,10 @@ function resolvePageTitle(
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/admin")) return "Settings";
   if (pathname.startsWith("/account")) return "Settings";
-  if (pathname.startsWith("/add-library")) return "Add media";
+  if (pathname.startsWith("/add-library")) return "Add a library";
   if (pathname.startsWith("/setup")) return "Setup";
   if (pathname.startsWith("/connect")) return "Server";
-  if (pathname.startsWith("/watch")) return titleDataName || "Now Playing";
+  if (pathname.startsWith("/watch")) return titleDataName || "Now playing";
   return "";
 }
 

@@ -8,7 +8,7 @@ export interface LocalFile {
   size: number;
   modified: number;
 }
-export interface LocalRoot { uri: string; name: string; kind: "movies" | "tv" | "anime" | "auto"; singleFile?: boolean }
+export interface LocalRoot { uri: string; name: string; kind: "movies" | "tv" | "anime" | "auto"; singleFile?: boolean; unavailable?: boolean }
 export interface LocalRecord {
   id: number;
   root: string;
@@ -44,6 +44,7 @@ export interface LocalState {
   nextId: number;
   roots: LocalRoot[];
   records: LocalRecord[];
+  missingFiles?: LocalRecord[];
   series: Record<string, number>;
   excluded?: string[];
   metadataSettings?: MetadataSettings;
@@ -66,6 +67,19 @@ export function localFileKey(uri: string) {
 }
 
 const videos = /\.(mkv|mp4|m4v|webm|avi|mov|ts)$/i;
+function seriesLocation(path: string) {
+  const folders = path.split("/").slice(0, -1);
+  for (let index = folders.length - 1; index >= 0; index--) {
+    const folder = folders[index]!;
+    const season = folder.match(/^(?:(.*?)[ ._-]+)?(?:season|part|series|s)[ ._-]*(\d{1,2})$/i);
+    if (season || /^specials$/i.test(folder)) {
+      const directory = folders.slice(0, index).join("/") || season?.[1]?.trim() || "";
+      return { directory, season: season ? Number(season[2]) : 0 };
+    }
+  }
+  return { directory: folders.join("/"), season: null };
+}
+
 export function parseLocalName(path: string, kind: LocalRoot["kind"]) {
   const parts = path.split("/");
   let stem = parts.at(-1)!.replace(/\.[^.]+$/, "");
@@ -77,31 +91,28 @@ export function parseLocalName(path: string, kind: LocalRoot["kind"]) {
   // Auto roots only accept an unambiguous episode marker: "E05", " - 05",
   // "_05" or "[05]". A plain space before a number is a movie title, not an
   // episode, so "The 100" stays a movie.
-  const autoEpisode = !standardEpisode && kind === "auto"
+  const autoEpisode = !standardEpisode && (kind === "auto" || kind === "tv")
     ? cleanStem.match(/(?:^|[ ._-])(?:e|ep|episode)[ ._-]?(\d{1,3})(?:v\d+)?(?:\b|[ ._(\[])/i)
       || cleanStem.match(/(?:\s-\s|_)(\d{1,3})(?:v\d+)?(?:\b|[ ._(\[])/)
       || cleanStem.match(/[\[(](\d{1,3})[\])]/)
     : null;
-  const seasonFolderMatch = parts.length > 1 ? parts.find(p => /^(?:season[ ._-]*|s)(\d{1,2})$/i.test(p))?.match(/^(?:season[ ._-]*|s)(\d{1,2})$/i) : null;
-  const rawNumberEpisode = (!standardEpisode && !animeEpisode && seasonFolderMatch) ? cleanStem.match(/^(\d{1,3})$/) : null;
+  const location = seriesLocation(path);
+  const seasonFolderEpisode = !standardEpisode && location.season != null
+    ? cleanStem.match(/(?:^|[ ._-])(?:episode|ep|e)[ ._-]*(\d{1,3})(?:v\d+)?\b/i)
+      || cleanStem.match(/^(\d{1,3})(?=$|\s+-)/)
+    : null;
   const autoNumberEpisode = kind === "auto" && !standardEpisode && !autoEpisode && parts.length > 1 ? cleanStem.match(/^(\d{1,3})$/) : null;
-  const episode = standardEpisode || (kind === "anime" ? animeEpisode : null) || autoEpisode || rawNumberEpisode || autoNumberEpisode;
+  const episode = standardEpisode || (kind === "anime" ? animeEpisode : null) || autoEpisode || seasonFolderEpisode || autoNumberEpisode;
   // An auto root is a series when the file or its folder structure says so;
   // everything else is treated as a movie.
-  const autoShow = kind === "auto" && (episode != null || seasonFolderMatch != null);
+  const autoShow = kind === "auto" && (episode != null || location.season != null);
   const showKind = kind === "tv" || kind === "anime" || autoShow;
 
-  const parentFolder = parts.length > 1 ? parts.at(-2)! : null;
-  const isSeasonFolder = (folder: string | null) =>
-    !!folder && /^(?:season[ ._-]*\d+|s\d+|specials)$/i.test(folder);
-  // The series name is the folder above the season folder when one exists.
-  const seriesFolder = parentFolder && !isSeasonFolder(parentFolder)
-    ? parentFolder
-    : parts.length > 2
-      ? parts.at(-3)!
-      : null;
-  const rawTarget = episode && !rawNumberEpisode && !autoNumberEpisode ? cleanStem.slice(0, episode.index ?? cleanStem.length) : cleanStem;
-  const raw = showKind ? seriesFolder || rawTarget : parts.length > 1 && !isSeasonFolder(parts.at(-2)!) ? parts.at(-2)! : rawTarget;
+  const seriesFolder = location.directory.split("/").at(-1);
+  const rawTarget = episode && !seasonFolderEpisode && !autoNumberEpisode
+    ? cleanStem.slice(0, episode.index ?? cleanStem.length)
+    : cleanStem;
+  const raw = (showKind ? seriesFolder : parts.at(-2)) || rawTarget;
 
   const explicitId = Number(path.match(/[[{]tmdb(?:id)?[=: -]*(\d+)[\]}]/i)?.[1])
     || Number(cleanStem.match(/[[{]tmdb(?:id)?[=: -]*(\d+)[\]}]/i)?.[1]) || null;
@@ -130,20 +141,16 @@ export function parseLocalName(path: string, kind: LocalRoot["kind"]) {
 
   const season = standardEpisode
     ? Number(standardEpisode[1])
-    : seasonFolderMatch
-      ? Number(seasonFolderMatch[1])
-      : showKind
-        ? 1
-        : null;
+    : showKind ? location.season ?? 1 : null;
 
   const epNumber = standardEpisode
     ? Number(standardEpisode[2])
-    : animeEpisode
-      ? Number(animeEpisode[1])
-      : autoEpisode
-        ? Number(autoEpisode[1])
-        : rawNumberEpisode
-          ? Number(rawNumberEpisode[1])
+    : seasonFolderEpisode
+      ? Number(seasonFolderEpisode[1])
+      : animeEpisode
+        ? Number(animeEpisode[1])
+        : autoEpisode
+          ? Number(autoEpisode[1])
           : autoNumberEpisode
             ? Number(autoNumberEpisode[1])
             : (kind === "tv" || autoShow)
@@ -349,11 +356,83 @@ export class LocalLibrary {
       this.changed();
     }
   }
+  async reconnectRoot(uri: string, replacement: Pick<LocalRoot, "uri" | "name">) {
+    while (this.active) await this.active;
+    const root = this.state.roots.find(entry => entry.uri === uri);
+    if (!root) throw new Error("This location is no longer in the library.");
+    if (replacement.uri !== uri && this.state.roots.some(entry => entry.uri === replacement.uri))
+      throw new Error("That location is already connected.");
+    const target = { ...root, ...replacement, unavailable: false };
+    const operation = (async () => {
+      const files = (await this.io.walk(target)).filter(file => videos.test(file.name));
+      const previous = [...this.state.records, ...(this.state.missingFiles ?? [])].filter(record => record.root === uri);
+      const byPath = new Map(files.map(file => [file.relativePath, file]));
+      const byUri = new Map(files.map(file => [localFileKey(file.uri), file]));
+      const matches = new Map<number, LocalFile>();
+      for (const record of previous) {
+        const exact = byUri.get(localFileKey(record.file.uri));
+        const moved = target.singleFile ? files[0] : byPath.get(record.file.relativePath);
+        if (exact) matches.set(record.id, exact);
+        else if (moved && (target.singleFile || record.file.size === moved.size))
+          matches.set(record.id, moved);
+      }
+      if (previous.length && !matches.size)
+        throw new Error("No existing videos match this location. Check the folder and try again.");
+      const matchedKeys = new Set([...matches.values()].map(file => localFileKey(file.uri)));
+      if (this.state.records.some(record => record.root !== uri && matchedKeys.has(localFileKey(record.file.uri)))) throw new Error("A replacement video is already connected elsewhere in your library.");
+
+      this.state.roots = this.state.roots.map(entry => entry.uri === uri ? target : entry);
+      this.state.records = this.state.records.filter(record => record.root !== uri);
+      this.state.missingFiles = this.state.missingFiles?.filter(record => record.root !== uri) ?? [];
+      for (const record of previous) {
+        const file = matches.get(record.id);
+        if (file) this.state.records.push({ ...record, root: target.uri, file });
+        else this.state.missingFiles.push({ ...record, root: target.uri });
+      }
+      if (uri !== target.uri) {
+        for (const [key, value] of Object.entries(this.state.series)) {
+          if (key.startsWith(uri + ":")) this.state.series[target.uri + key.slice(uri.length)] ??= value;
+        }
+      }
+      await this.persist();
+      this.changed();
+      await this.runScan([target.uri], new Map([[target.uri, files]]));
+    })();
+    this.active = operation.finally(() => { this.active = null; });
+    return this.active;
+  }
+  async reconnectFile(id: number, uri: string, name: string) {
+    while (this.active) await this.active;
+    const record = this.state.missingFiles?.find(entry => entry.id === id) ??
+      this.state.records.find(entry => entry.id === id);
+    if (!record) throw new Error("This video is no longer in the library.");
+    const oldRoot = this.state.roots.find(entry => entry.uri === record.root);
+    if (oldRoot?.singleFile) return this.reconnectRoot(oldRoot.uri, { uri, name });
+    const target: LocalRoot = { uri, name, kind: oldRoot?.kind ?? "auto", singleFile: true };
+    const operation = (async () => {
+      const key = localFileKey(uri);
+      if (this.state.roots.some(root => root.uri === uri) ||
+          this.state.records.some(entry => entry.id !== id && localFileKey(entry.file.uri) === key))
+        throw new Error("That video is already connected.");
+      const [file] = await this.io.walk(target);
+      if (!file || !videos.test(file.name)) throw new Error("Pick a video file.");
+      this.state.roots.push(target);
+      this.state.records = [...this.state.records.filter(entry => entry.id !== id), { ...record, root: uri, file }];
+      this.state.missingFiles = this.state.missingFiles?.filter(entry => entry.id !== id);
+      this.state.excluded = (this.state.excluded ?? []).filter(entry => localFileKey(entry) !== key);
+      if (localFileKey(record.file.uri) !== key) this.state.excluded.push(record.file.uri);
+      await this.persist();
+      this.changed();
+    })();
+    this.active = operation.finally(() => { this.active = null; });
+    return this.active;
+  }
   async removeRoot(uri: string) {
     // A scan operates on a stable root list. Wait before changing it.
     await this.active;
     this.state.roots = this.state.roots.filter(r => r.uri !== uri);
     this.state.records = this.state.records.filter(r => r.root !== uri);
+    this.state.missingFiles = this.state.missingFiles?.filter(r => r.root !== uri);
     await this.persist();
     this.changed();
   }
@@ -362,7 +441,7 @@ export class LocalLibrary {
     this.active = this.runScan(rootUris).finally(() => { this.active = null; });
     return this.active;
   }
-  private async runScan(rootUris?: string[]) {
+  private async runScan(rootUris?: string[], walked?: ReadonlyMap<string, LocalFile[]>) {
     const selected = rootUris ? new Set(rootUris) : null;
     const roots = this.state.roots.filter(root => !selected || selected.has(root.uri));
     this.scanProgress = { phase: "Reading folders", current: "", folders: 0, found: 0, added: 0 };
@@ -374,38 +453,102 @@ export class LocalLibrary {
         this.scanProgress.current = root.name;
         this.changed();
         let files: LocalFile[];
-        try { files = await this.io.walk(root); }
-        catch { this.issues.push(`Cannot read ${root.name}. Grant folder access again; its saved library was kept.`); continue; }
+        try { files = walked?.get(root.uri) ?? await this.io.walk(root); }
+        catch { root.unavailable = true; this.issues.push(`Cannot read ${root.name}. Grant folder access again; its saved library was kept.`); continue; }
+        delete root.unavailable;
         this.scanProgress.folders++;
         const seen = new Set(files.map(f => localFileKey(f.uri)));
         const excluded = new Set((this.state.excluded || []).map(localFileKey));
+        const recovered = (this.state.missingFiles ?? []).filter(record =>
+          record.root === root.uri && seen.has(localFileKey(record.file.uri)) && !excluded.has(localFileKey(record.file.uri))
+        );
+        if (recovered.length) {
+          const ids = new Set(recovered.map(record => record.id));
+          this.state.records.push(...recovered);
+          this.state.missingFiles = this.state.missingFiles?.filter(record => !ids.has(record.id));
+        }
+        const seriesByDirectory = new Map<string, LocalRecord[]>();
+        for (const record of this.state.records) {
+          if (record.root !== root.uri || !record.card.parentId || (!record.tmdbId && !record.manualIdentity)) continue;
+          const { directory } = seriesLocation(record.file.relativePath);
+          // Loose episodes in a general-purpose root can belong to different shows.
+          if (!directory && root.kind !== "tv" && root.kind !== "anime" &&
+              !record.file.relativePath.includes("/")) continue;
+          const siblings = seriesByDirectory.get(directory) ?? [];
+          siblings.push(record);
+          seriesByDirectory.set(directory, siblings);
+        }
         for (const file of files.filter(f => videos.test(f.name) && !excluded.has(localFileKey(f.uri)))) {
           this.scanProgress.found++;
           this.scanProgress.current = file.name;
           this.changed();
           let record = this.state.records.find(r => localFileKey(r.file.uri) === localFileKey(file.uri));
-          if (!record) {
+          const parsed = !record || (!record.manualIdentity && record.card.kind === "episode")
+            ? parseLocalName(file.relativePath, root.kind)
+            : null;
+          const location = parsed ? seriesLocation(file.relativePath) : null;
+          const siblings = location ? seriesByDirectory.get(location.directory) ?? [] : [];
+          const sameSeries = siblings.filter(sibling => {
+            if (parsed?.explicitId) return sibling.tmdbId === parsed.explicitId;
+            return file.relativePath.includes("/") ||
+              parseLocalName(sibling.file.relativePath, root.kind).title === parsed?.title;
+          });
+          // A manual correction wins over earlier automatic matches in this folder.
+          const manualMatches = sameSeries.filter(sibling => sibling.manualIdentity);
+          const matches = manualMatches.length ? manualMatches : sameSeries;
+          const candidate = matches[0];
+          const identity = candidate && matches.every(sibling =>
+            sibling.card.parentId === candidate.card.parentId && sibling.tmdbId === candidate.tmdbId
+          ) ? candidate : null;
+          if (!record && parsed) {
             const isAnime = root.kind === "anime";
-            const parsed = parseLocalName(file.relativePath, root.kind);
-            const isEpisode = parsed.episode != null || root.kind === "tv" || /(?:^|[ ._-])(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3})/i.test(file.name);
+            const isEpisode = parsed.episode != null || root.kind === "tv" || root.kind === "anime" || /(?:^|[ ._-])(?:s\d{1,2}[ ._-]*e\d{1,3}|\d{1,2}x\d{1,3})/i.test(file.name);
             const kind = isEpisode ? "tv" : "movies";
             const id = this.state.nextId++;
-            const seriesKey = `${root.uri}:${parsed.title.toLowerCase()}:${parsed.year ?? ""}`;
-            const parentId = kind === "tv" ? this.state.series[seriesKey] ??= this.state.nextId++ : null;
-            record = { id, root: root.uri, file, metadataAt: 0, cast: [], isAnime, card: {
+            const title = kind === "tv" && location?.season != null && !location.directory
+              ? root.name
+              : parsed.title;
+            const seriesKey = `${root.uri}:${title.toLowerCase()}:${parsed.year ?? ""}`;
+            const parentId = kind === "tv"
+              ? identity?.card.parentId ?? (this.state.series[seriesKey] ??= this.state.nextId++)
+              : null;
+            record = { id, root: root.uri, file, metadataAt: 0, cast: [], isAnime, tmdbId: parentId ? identity?.tmdbId : undefined, card: {
               id, publicId: `local-${id}`, kind: kind === "movies" ? "movie" : "episode",
-              name: parsed.title, year: parsed.year, seasonNumber: parsed.season, episodeNumber: parsed.episode,
+              name: title, year: parsed.year, seasonNumber: parsed.season, episodeNumber: parsed.episode,
               fileId: id, parentId, parentPublicId: parentId ? `local-${parentId}` : null,
-              parentTitle: parentId ? parsed.title : null, poster: null, backdrop: null, overview: null,
+              parentTitle: parentId ? identity?.card.parentTitle ?? title : null, poster: null, backdrop: null, overview: null,
               rating: null, runtime: null, genres: [], matchStatus: "unmatched", watch: null, isAnime,
             }};
             this.state.records.push(record);
             this.scanProgress.added++;
-          } else if (record.file.size !== file.size || record.file.modified !== file.modified) {
+          } else if (record && (record.file.uri !== file.uri || record.file.size !== file.size || record.file.modified !== file.modified)) {
             record.file = file;
           }
+          if (record?.card.kind === "episode" && parsed && identity &&
+              (!record.tmdbId || identity.manualIdentity) &&
+              (record.tmdbId !== identity.tmdbId || record.card.parentId !== identity.card.parentId)) {
+            record.tmdbId = identity.tmdbId;
+            record.identityRevision = (record.identityRevision || 0) + 1;
+            record.metadataAt = 0;
+            record.skipsAt = 0;
+            record.card = {
+              ...record.card,
+              parentId: identity.card.parentId,
+              parentPublicId: identity.card.parentPublicId,
+              parentTitle: identity.card.parentTitle,
+              seasonNumber: parsed.season,
+              episodeNumber: parsed.episode,
+              tmdbId: identity.tmdbId ?? null,
+              matchStatus: "unmatched",
+            };
+          }
         }
-        this.state.records = this.state.records.filter(r => r.root !== root.uri || seen.has(localFileKey(r.file.uri)));
+        const missing = this.state.records.filter(r => r.root === root.uri && !seen.has(localFileKey(r.file.uri)));
+        if (missing.length) {
+          const missingIds = new Set(missing.map(record => record.id));
+          this.state.missingFiles = [...(this.state.missingFiles ?? []), ...missing];
+          this.state.records = this.state.records.filter(record => !missingIds.has(record.id));
+        }
       }
       // Make newly discovered files playable before any internet request finishes.
       await this.persist();

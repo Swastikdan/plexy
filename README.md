@@ -58,7 +58,7 @@ Android (separate): Storage Access folders ──► local SQLite ──► expo
 | Web | React 19, Vite (singlefile), TanStack Router + Query, Video.js, Tailwind 4 + HeroUI |
 | Desktop | Electron 45 + electron-builder (macOS ARM64 DMG/ZIP, ad-hoc signed) |
 | Mobile | Expo 57 / React Native 0.86, expo-router, expo-video, expo-sqlite, Reanimated |
-| Shared | `packages/api-client` (HTTP contracts, capability probing, transport policy), `packages/local-library` (scan/match/metadata/skip logic), `packages/tsconfig` (presets) |
+| Shared | `packages/api-client` (HTTP contracts, capability probing, transport policy), `packages/local-library` (scan/match/metadata/skip logic), `packages/media-text` (language names and subtitle labels), `packages/desktop-bridge` (Electron IPC contract), `packages/tsconfig` (presets) |
 
 ```text
 apps/
@@ -69,6 +69,8 @@ apps/
 packages/
   api-client/     HTTP contracts, browser capability probing, transport policy
   local-library/  Device-local catalog, scanning, metadata, and skip-marker logic
+  media-text/     Language names and subtitle labels shared by web and mobile
+  desktop-bridge/ Electron IPC contract shared by main, preload, and the web UI
   tsconfig/       Shared TypeScript presets
 ```
 
@@ -80,18 +82,19 @@ Requires Bun 1.4.4, then `bun install`.
 
 | Command | Purpose |
 | --- | --- |
-| `bun run dev` | Backend + frontend dev servers |
-| `bun run dev:desktop` | Electron shell (build UI first, or set `VITE_DEV_SERVER_URL`) |
+| `bun run dev` | Backend + frontend dev servers (`PORT` moves both; the Vite proxy follows it) |
+| `bun run dev:desktop` | Electron shell (run `bun run dev` and set `VITE_DEV_SERVER_URL=http://localhost:5173`) |
 | `bun run dev:mobile` | Expo dev server |
 | `bun run android:mobile` | Generate and run the Android dev app |
 | `bun run typecheck` | Server, web, desktop, shared packages, root scripts |
 | `bun run typecheck:native` | Mobile types |
+| `bun run test` | Every non-E2E suite (server, desktop, mobile, shared packages) |
 | `bun run test:server` | Isolated backend tests |
 | `bun run test:desktop` | Desktop API proxy tests |
 | `bun run test:packages` | Shared-package tests |
 | `bun run test:native` | Local-library + mobile logic tests |
 
-Key docs: `docs/API.md` (auth, playback, download, HLS, subtitles, progress), `docs/PLAYBACK_PREPARATION.md` (remux/transcode, storage modes, replacement + Trash policy), `docs/MOBILE_LOCAL_LIBRARY.md` (offline catalog, TMDB/IntroDB caching, previews), `docs/native-playback.md`, `apps/mobile/README.md`.
+Key docs: `docs/API.md` (auth, playback, download, HLS, subtitles, progress), `docs/PLAYBACK_PREPARATION.md` (remux/transcode, storage modes, replacement + Trash policy), `docs/MOBILE_LOCAL_LIBRARY.md` (offline catalog, TMDB/IntroDB caching, previews), `docs/native-playback.md`, `docs/CODE_HEALTH.md` (build/dev layout and line budget), `apps/mobile/README.md`.
 
 ## Build
 

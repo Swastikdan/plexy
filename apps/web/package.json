@@ -17,6 +17,8 @@
     "@heroui/react": "3.2.7",
     "@heroui/styles": "3.2.7",
     "@plexy/api-client": "workspace:*",
+    "@plexy/desktop-bridge": "workspace:*",
+    "@plexy/media-text": "workspace:*",
     "@tanstack/react-query": "^5.104.5",
     "@tanstack/react-router": "^1.170.45",
     "@videojs/core": "10.2.0",

@@ -35,6 +35,7 @@ import { Button, Input, ListBox, Modal, SearchField, Select, Switch } from "@her
 import { cx } from "../../lib/cx";
 import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
 import { PageLoader } from "../../components/page-loader";
+import { SettingsSection } from "../../components/settings/section";
 import { LibraryFolderForm } from "../../components/library-folder-form";
 import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "../../electron";
 import { clearPrefetchCache, getPrefetchStats, type PrefetchStats } from "../../lib/asset-prefetch";
@@ -77,29 +78,25 @@ export function LibrariesPanel() {
   const scanRunning = status.data?.scan?.status === "running";
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h2 className="font-sans text-lg font-bold tracking-[-0.03em] text-foreground">
-            On this server
-          </h2>
-          <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted">
-            Every folder Plexy watches. A rescan looks for new, moved, and removed files without touching your originals.
-          </p>
-        </div>
-        <Link to="/add-library">
-          <Button className="h-9 px-3.5 text-[11px] font-semibold">
-            <Folder size={13} />
-            Add library
-          </Button>
-        </Link>
-      </div>
+    <div className="space-y-4">
+      <SettingsSection
+        icon={LibraryIcon}
+        title="On this server"
+        description="Every folder Plexy watches. A rescan looks for new, moved, and removed files without touching your originals."
+        flush
+        action={
+          <Link to="/add-library">
+            <Button className="h-8 px-3 text-[10.5px] font-semibold">
+              <Folder size={13} />
+              Add library
+            </Button>
+          </Link>
+        }
+      >
+        {isLoading && !data && <PageLoader className="min-h-[18vh]" />}
 
-      {isLoading && !data && <PageLoader />}
-
-      {data && data.length > 0 && (
-        <div className="panel overflow-hidden">
-          <ul className="divide-y divide-border/50">
+        {data && data.length > 0 && (
+          <ul className="divide-y divide-border/50 border-t border-border/70">
             {data.map((lib) => (
               <li key={lib.id} className="group flex flex-wrap items-center gap-3 px-4 py-3.5 transition-colors hover:bg-surface-secondary/35 sm:flex-nowrap sm:px-5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-foreground">
@@ -110,7 +107,7 @@ export function LibrariesPanel() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-[12px] font-semibold text-foreground">{lib.name}</p>
                     {scanning === lib.id && (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-muted">
+                      <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-muted">
                         <RotateCw size={10} className="animate-spin" /> Scanning
                       </span>
                     )}
@@ -123,18 +120,18 @@ export function LibrariesPanel() {
                 <div className="flex shrink-0 items-center gap-5 text-right">
                   <div>
                     <p className="text-[12px] font-semibold tabular-nums text-foreground">{lib.counts.items.toLocaleString()}</p>
-                    <p className="text-[9px] uppercase tracking-[0.1em] text-muted/70">titles</p>
+                    <p className="text-[9.5px] text-muted/70">titles</p>
                   </div>
                   {lib.counts.review > 0 && (
                     <div>
                       <p className="text-[12px] font-semibold tabular-nums text-warning-soft-foreground">{lib.counts.review}</p>
-                      <p className="text-[9px] uppercase tracking-[0.1em] text-muted/70">review</p>
+                      <p className="text-[9.5px] text-muted/70">review</p>
                     </div>
                   )}
                   {lib.counts.unmatched > 0 && (
                     <div>
                       <p className="text-[12px] font-semibold tabular-nums text-muted">{lib.counts.unmatched}</p>
-                      <p className="text-[9px] uppercase tracking-[0.1em] text-muted/70">unmatched</p>
+                      <p className="text-[9.5px] text-muted/70">unmatched</p>
                     </div>
                   )}
                 </div>
@@ -156,30 +153,30 @@ export function LibrariesPanel() {
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
 
-      {data?.length === 0 && (
-        <div className="panel flex flex-col items-start gap-2 px-5 py-7">
-          <Folder size={20} className="text-muted" />
-          <p className="text-[13px] font-semibold text-foreground">No libraries yet</p>
-          <p className="max-w-md text-[11px] leading-relaxed text-muted">
-            Choose a media type, point Plexy at its folders, and the catalog builds in the background.
-          </p>
-          <Link to="/add-library" className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-secondary px-2.5 py-1.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary">
-            <Folder size={12} /> Add your first library
-          </Link>
-        </div>
-      )}
+        {data?.length === 0 && (
+          <div className="flex flex-col items-start gap-2 border-t border-border/70 px-5 py-7">
+            <Folder size={20} className="text-muted" />
+            <p className="text-[13px] font-semibold text-foreground">No libraries yet</p>
+            <p className="max-w-md text-[11px] leading-relaxed text-muted">
+              Choose a media type, point Plexy at its folders, and the catalog builds in the background.
+            </p>
+            <Link to="/add-library" className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-secondary px-2.5 py-1.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary">
+              <Folder size={12} /> Add your first library
+            </Link>
+          </div>
+        )}
 
-      {remove.isError && (
-        <p role="alert" className={`text-[11px] ${ERROR_TEXT}`}>{remove.error.message}</p>
-      )}
+        {remove.isError && (
+          <p role="alert" className={`border-t border-border/70 px-5 py-3 text-[11px] ${ERROR_TEXT}`}>{remove.error.message}</p>
+        )}
 
-      <div className="rounded-xl border border-border/60 bg-surface/45 px-4 py-3 text-[10.5px] leading-relaxed text-muted">
-        Library records live in Plexy's own database. Removing a library forgets its catalog entries; it never deletes the
-        files on disk.
-      </div>
+        <p className="border-t border-border/70 px-4 py-3 text-[10.5px] leading-relaxed text-muted sm:px-5">
+          Library records live in Plexy's own database. Removing a library forgets its catalog entries; it never deletes the
+          files on disk.
+        </p>
+      </SettingsSection>
 
       <Modal isOpen={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
         <Modal.Backdrop>
@@ -379,7 +376,7 @@ function MatchBadge({ status }: { status: string }) {
       : "text-muted";
   const label = status === "matched" ? "Matched" : status === "review" ? "Needs review" : "Unmatched";
   return (
-    <span className={cx("text-[9px] font-semibold uppercase tracking-[0.08em]", style)}>
+    <span className={cx("text-[9.5px] font-semibold tracking-[0.01em]", style)}>
       {label}
     </span>
   );
@@ -504,7 +501,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 
       {!search.data && !search.isPending && entry.candidates.length > 0 && (
         <div>
-          <p className="text-xs uppercase tracking-[0.12em] text-muted">Auto candidates</p>
+          <p className="text-xs font-semibold text-muted">Auto candidates</p>
           <div className="mt-2 space-y-1">
             {entry.candidates.map((c) => (
               <button
@@ -859,7 +856,7 @@ export function ServerPreferencesPanel() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
-            <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
+            <span className="text-xs font-semibold text-muted tracking-[0.01em] block">
               LAN Access (Bind Address)
             </span>
             <p className="text-xs text-muted">Control whether phones, tablets and TVs on Wi-Fi can connect.</p>
@@ -892,7 +889,7 @@ export function ServerPreferencesPanel() {
           </div>
 
           <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-1.5">
-            <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
+            <span className="text-xs font-semibold text-muted tracking-[0.01em] block">
               Logging Verbosity
             </span>
             <p className="text-xs text-muted">Server port is {status.data?.port ?? s.port}. Adjust detail level for server logs.</p>
@@ -936,7 +933,7 @@ export function ServerPreferencesPanel() {
         ) : status.data?.bind === "0.0.0.0" ? (
           status.data.lanUrls?.length ? (
             <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-2">
-              <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
+              <span className="block text-xs font-semibold text-muted tracking-[0.01em]">
                 Remote server address for this network
               </span>
               <ul className="space-y-1.5">
@@ -980,7 +977,7 @@ export function ServerPreferencesPanel() {
 
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3.5 space-y-2">
           <div>
-            <span className="block text-xs font-semibold text-muted uppercase tracking-wider">
+            <span className="block text-xs font-semibold text-muted tracking-[0.01em]">
               Recent playback issues
             </span>
             <p className="mt-1 text-xs text-muted">
@@ -1590,15 +1587,15 @@ function OptimizerSettings() {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
-          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Prepared / Replaced</span>
+          <span className="text-[11px] font-semibold text-muted tracking-[0.01em] block">Prepared / Replaced</span>
           <p className="mt-1 text-lg font-bold text-foreground">{done} <span className="text-xs text-muted font-normal">/ {total}</span></p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
-          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Storage Used</span>
+          <span className="text-[11px] font-semibold text-muted tracking-[0.01em] block">Storage Used</span>
           <p className="mt-1 text-lg font-bold text-foreground">{cacheGb} <span className="text-xs text-muted font-normal">GB</span></p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface-secondary/60 p-3">
-          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider block">Status</span>
+          <span className="text-[11px] font-semibold text-muted tracking-[0.01em] block">Status</span>
           <p className="mt-1 text-sm font-semibold text-muted truncate">
             {data.manuallyPaused
               ? data.running ? "Stopping optimization…" : "Paused"
@@ -1838,7 +1835,7 @@ function OptimizerSettings() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-muted">{title}</h2>
+      <h2 className="font-display text-sm font-semibold tracking-[-0.01em] text-muted">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -2064,7 +2061,7 @@ function Logs() {
                 onClick={() => setLevel(l)}
                 aria-pressed={level === l}
                 className={cx(
-                  "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-[background-color,color,transform] duration-150 active:scale-95",
+                  "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold tracking-[0.01em] transition-[background-color,color,transform] duration-150 active:scale-95",
                   level === l
                     ? "bg-foreground text-background"
                     : "bg-surface-secondary text-muted hover:text-foreground hover:bg-surface-tertiary",
@@ -2108,7 +2105,7 @@ function Logs() {
       </div>
 
       <div className="rounded-2xl border border-border bg-surface-secondary shadow-inner font-mono overflow-hidden">
-        <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3.5 py-2.5 border-b border-border bg-surface-tertiary/40 text-[11px] font-semibold text-muted uppercase tracking-wider">
+        <div className="hidden sm:grid grid-cols-[76px_58px_110px_1fr] gap-3 px-3.5 py-2.5 border-b border-border bg-surface-tertiary/40 text-[11px] font-semibold text-muted tracking-[0.01em]">
           <span>Time</span>
           <span>Level</span>
           <span>Component</span>
@@ -2149,7 +2146,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
           {logTime(entry)}
         </span>
         <span className={cx(
-          "rounded-full px-1.5 py-0.2 text-center text-[10px] font-bold uppercase tracking-wide shrink-0",
+          "rounded-full px-1.5 py-0.2 text-center text-[10px] font-bold tracking-[0.01em] shrink-0",
           LEVEL_STYLE[entry.level] ?? "bg-surface-secondary text-muted",
         )}>
           {entry.level}
@@ -2175,7 +2172,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <span className={cx(
-              "rounded-full px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wide",
+              "rounded-full px-1.5 py-0.2 text-[9px] font-bold tracking-[0.01em]",
               LEVEL_STYLE[entry.level] ?? "bg-surface-secondary text-muted",
             )}>
               {entry.level}
@@ -2336,7 +2333,7 @@ function getTransferredBytes() {
 }
 
 function UsageMetric({ title, value, detail }: { title: string; value: string; detail: string }) {
-  return <div className="rounded-xl border border-border/70 bg-surface px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p><p className="mt-1 truncate text-sm font-semibold" title={value}>{value}</p><p className="mt-1 text-xs text-muted">{detail}</p></div>;
+  return <div className="rounded-xl border border-border/70 bg-surface px-4 py-3"><p className="text-[11px] font-semibold tracking-[0.01em] text-muted">{title}</p><p className="mt-1 truncate text-sm font-semibold" title={value}>{value}</p><p className="mt-1 text-xs text-muted">{detail}</p></div>;
 }
 
 function UsageGraph({ title, value, suffix = "%", maxValue = 100, history, detail }: { title: string; value: number; suffix?: string; maxValue?: number; history: number[]; detail?: string }) {
@@ -2344,7 +2341,7 @@ function UsageGraph({ title, value, suffix = "%", maxValue = 100, history, detai
   const scale = maxValue > 0 ? maxValue : 100;
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${(index / (points.length - 1)) * 100} ${36 - (Math.max(0, Math.min(scale, point)) / scale) * 30}`).join(" ");
   return <div className="overflow-hidden rounded-xl border border-border/70 bg-surface px-4 py-3">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p>{detail && <p className="mt-1 text-[11px] text-muted">{detail}</p>}</div><p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}{suffix}</p></div>
+    <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold tracking-[0.01em] text-muted">{title}</p>{detail && <p className="mt-1 text-[11px] text-muted">{detail}</p>}</div><p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}{suffix}</p></div>
     <svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={`${title} usage history`} className="mt-3 h-16 w-full text-muted">
       <path d="M 0 36 H 100 M 0 21 H 100 M 0 6 H 100" stroke="currentColor" strokeOpacity=".12" strokeWidth=".5" fill="none" />
       <path d={path} stroke="currentColor" strokeWidth="1.5" fill="none" vectorEffect="non-scaling-stroke" />

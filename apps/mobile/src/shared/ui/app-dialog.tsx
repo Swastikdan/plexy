@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/cn";
 type DialogAction = {
   text: string;
   style?: "cancel" | "destructive" | "default";
+  selected?: boolean;
   onPress?: () => void;
 };
 type ShowDialog = (title: string, message: string, actions: DialogAction[]) => void;
@@ -48,15 +49,16 @@ export function AppDialogProvider({ children }: PropsWithChildren) {
               <Text className="mb-2 text-[14px] leading-[21px] font-archivo-regular text-muted">{dialog?.message}</Text>
               {dialog?.actions.map((action, index) => (
                 <Pressable key={`${index}-${action.text}`} accessibilityRole="button"
+                  accessibilityState={{ selected: action.selected }}
                   onPress={() => {
                     close();
                     // Let the custom modal unmount before opening an OS picker.
                     if (action.onPress) setTimeout(action.onPress, 0);
                   }}
                   className={cn("min-h-[52px] justify-center rounded-full px-5 py-3 active:opacity-70",
-                    action.style === "destructive" ? "bg-danger/15" : "bg-default")}>
+                    action.selected ? "bg-foreground" : action.style === "destructive" ? "bg-danger/15" : "bg-default")}>
                   <Text className={cn("text-center text-[15px] font-archivo-medium",
-                    action.style === "destructive" ? "text-danger" : "text-default-foreground")}>
+                    action.selected ? "text-background" : action.style === "destructive" ? "text-danger" : "text-default-foreground")}>
                     {action.text}
                   </Text>
                 </Pressable>

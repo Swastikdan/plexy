@@ -3,7 +3,12 @@
 import { Menu } from '@videojs/react';
 import { Timer } from 'lucide-react';
 import { MenuChevron } from '@/components/videojs/ui/menu-chevron';
-import { cn } from '@/lib/resolve-class-name';
+import {
+  menuBackItemClass,
+  menuContentClass,
+  menuGlyphClass,
+  menuTriggerClass,
+} from '@/components/videojs/ui/menu-styles';
 
 export interface SubtitleSyncSubmenuProps extends Omit<Menu.RootProps, 'children'> {
   offset: number;
@@ -23,27 +28,11 @@ export function SubtitleSyncSubmenu({
   return (
     <Menu.Root {...props}>
       <Menu.Trigger
-        className={cn(
-          'group/menu-trigger-item',
-          'relative flex cursor-pointer select-none items-center gap-1.5 rounded-media-menu-item px-2 py-1.5 text-start whitespace-nowrap',
-          'focus-ring-media',
-          'media-highlighted:highlight-media',
-          'focus-visible:outline-media-ring focus-visible:outline-offset-2',
-          'text-shadow-media',
-          'transition-[background-color,color] duration-media-fast ease-in-out',
-          'media-anchored:duration-media-instant media-anchored:media-highlighted:duration-media-slow',
-          'justify-between tabular-nums text-inherit',
-          'aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
-          'media-anchored:data-highlighted:[anchor-name:--media-menu-item-highlight-anchor]',
-          'media-anchored:media-highlighted:bg-transparent'
-        )}
+        className={menuTriggerClass}
       >
         <Timer
           size={16}
-          className={cn(
-            'shrink-0 drop-shadow-media-icon text-media-muted-foreground',
-            'group-media-highlighted/menu-trigger-item:text-inherit'
-          )}
+          className={menuGlyphClass}
         />
         <span>Subtitle Sync</span>
         <span className={'ms-auto inline-flex min-w-0 items-center gap-1 ps-2'}>
@@ -53,38 +42,10 @@ export function SubtitleSyncSubmenu({
       </Menu.Trigger>
 
       <Menu.Content
-        className={cn(
-          '[anchor-scope:--media-menu-item-highlight-anchor]',
-          'media-anchored:before:anchor-media-highlight',
-          'media-transitioning:before:hidden',
-          'media-transitioning:[&_*]:before:hidden',
-          'media-anchored:has-data-[highlighted=]:before:duration-0',
-          'not-data-submenu:flex not-data-submenu:flex-col not-data-submenu:gap-0.5',
-          'not-data-submenu:data-child-open:blur-media-hidden',
-          'not-data-submenu:data-child-open:before:hidden',
-          'data-submenu:media-transitioning:pointer-events-none data-submenu:media-transitioning:overflow-hidden',
-          'data-submenu:media-transitioning:blur-media-hidden',
-          'absolute max-h-[inherit] overflow-auto overscroll-none outline-hidden',
-          'transition-[translate,filter] duration-media-menu ease-out',
-          'not-data-submenu:inset-x-1 not-data-submenu:top-1',
-          'not-data-submenu:data-child-open:-translate-x-full',
-          'not-data-submenu:data-child-open:rtl:translate-x-full',
-          'data-submenu:inset-x-0 data-submenu:top-0 data-submenu:z-10 data-submenu:max-h-[inherit] data-submenu:p-1',
-          'data-submenu:media-transitioning:translate-x-full data-submenu:media-transitioning:rtl:-translate-x-full'
-        )}
+        className={menuContentClass}
       >
         <Menu.Item
-          className={cn(
-            'group/menu-back-item',
-            'relative flex cursor-pointer select-none items-center gap-1.5 rounded-media-menu-item px-2 py-1.5 text-start whitespace-nowrap',
-            'focus-ring-media',
-            'media-highlighted:highlight-media',
-            'focus-visible:outline-media-ring focus-visible:outline-offset-2',
-            'text-shadow-media',
-            'transition-[background-color,color] duration-media-fast ease-in-out',
-            'media-anchored:duration-media-instant media-anchored:media-highlighted:duration-media-slow',
-            'mb-0.5 w-full'
-          )}
+          className={menuBackItemClass}
         >
           <MenuChevron back />
           <span>Subtitle Sync</span>

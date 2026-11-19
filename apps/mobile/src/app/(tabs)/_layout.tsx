@@ -132,7 +132,7 @@ export default function TabLayout() {
         <Tabs.Screen
           key={tab.name}
           name={tab.name}
-          options={{ title: tab.title }}
+          options={{ title: tab.title, popToTopOnBlur: tab.name === "settings" }}
         />
       ))}
     </Tabs>

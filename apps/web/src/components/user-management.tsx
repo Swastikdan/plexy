@@ -381,7 +381,7 @@ function EditUserDialog({
                 }}
               >
                 <fieldset className="space-y-3" disabled={busy}>
-                  <legend className="text-xs font-semibold uppercase tracking-wider text-muted">
+                  <legend className="text-xs font-semibold tracking-[0.01em] text-muted">
                     Account
                   </legend>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -445,7 +445,7 @@ function EditUserDialog({
                 </fieldset>
 
                 <fieldset className="space-y-3 border-t border-border/60 pt-5" disabled={busy}>
-                  <legend className="text-xs font-semibold uppercase tracking-wider text-muted">
+                  <legend className="text-xs font-semibold tracking-[0.01em] text-muted">
                     Playback restrictions
                   </legend>
                   <label className="block text-sm">
@@ -509,7 +509,7 @@ function EditUserDialog({
                 </fieldset>
 
                 <fieldset className="space-y-3 border-t border-border/60 pt-5" disabled={busy}>
-                  <legend className="text-xs font-semibold uppercase tracking-wider text-muted">
+                  <legend className="text-xs font-semibold tracking-[0.01em] text-muted">
                     Library access
                   </legend>
                   <p className="text-xs leading-relaxed text-muted">

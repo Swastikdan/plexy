@@ -8,12 +8,12 @@
   "scripts": {
     "build:main": "bun build.ts",
     "dev": "bun run build:main && electron .",
-    "package": "bun run build:main && electron-builder --publish never",
     "typecheck": "tsc --noEmit",
     "test": "cd ../.. && bun test apps/desktop/tests",
     "package:desktop": "cd ../.. && bun scripts/build-desktop.ts"
   },
   "dependencies": {
+    "@plexy/desktop-bridge": "workspace:*",
     "bonjour-service": "^1.4.4"
   },
   "devDependencies": {

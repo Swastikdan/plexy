@@ -45,6 +45,7 @@ import {
 import { timeLabel } from "@/shared/theme";
 import { Notice } from "@/shared/ui/notice";
 import { LocalThumbnail } from "./components/local-thumbnail";
+import { SubtitleSearch } from "./components/subtitle-search";
 import { AudioPanel } from "./components/audio-panel";
 import { BottomToolbar } from "./components/bottom-toolbar";
 import { PlayerControl } from "./components/player-control";
@@ -148,6 +149,7 @@ export function PlaybackScreen({
   const insets = useSafeAreaInsets();
   const win = useWindowDimensions();
   const reduceMotion = useReducedMotion();
+  const [subtitleSearch, setSubtitleSearch] = useState(false);
   const [manifest, setManifest] = useState(initial);
   const [choice, setChoice] = useState<SourceChoice>({
     path: initial.path,
@@ -1335,6 +1337,10 @@ export function PlaybackScreen({
         serverTracks={manifest.tracks}
         nativeSubtitles={nativeSubtitles}
         canAddSubtitleFile={Boolean(runtime.pickSubtitle)}
+        onSearchSubtitles={runtime.saveSubtitle ? () => {
+          setAudioPanel(false);
+          setSubtitleSearch(true);
+        } : undefined}
         canRememberShow={Boolean(showKey)}
         showOverrideLabel={showTracks && [
           showTracks.audioLanguage && `Audio · ${mediaLanguageName(showTracks.audioLanguage) ?? showTracks.audioLanguage}`,
@@ -1397,6 +1403,19 @@ export function PlaybackScreen({
             );
         }}
       />
+      {subtitleSearch && runtime.saveSubtitle ? (
+        <SubtitleSearch
+          file={manifest}
+          language={showTracks?.subtitleLanguage || preferences.subtitleLanguage}
+          close={() => setSubtitleSearch(false)}
+          save={async (result, content) => {
+            const track = await runtime.saveSubtitle!(manifest.fileId, result.name, result.language, content);
+            setManifest((current) => ({ ...current, tracks: [...(current.tracks ?? []), track] }));
+            pickSubtitle(track.track);
+            setSubtitleSearch(false);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

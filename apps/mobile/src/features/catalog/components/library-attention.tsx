@@ -7,7 +7,7 @@ import { useClient } from "@/core/client/client-provider";
 import { X } from "@/shared/ui/icons";
 export function LibraryAttention() {
   const colors = useColors();
-  const { push } = useRouter();
+  const { navigate } = useRouter();
   const segments = useSegments();
   const { runtime } = useClient();
   const [attention, setAttention] = useState({ count: 0, fingerprint: "" });
@@ -33,7 +33,7 @@ export function LibraryAttention() {
         className="min-h-[48px] flex-1 flex-row items-center gap-3"
         accessibilityRole="button"
         accessibilityLabel={`${attention.count} titles need attention. Open library report`}
-        onPress={() => { triggerHaptic("light"); push("/settings/report"); }}
+        onPress={() => { triggerHaptic("light"); navigate("/settings/report", { withAnchor: true }); }}
       >
         <Text className="flex-1 text-foreground">
           {attention.count} {attention.count === 1 ? "title needs" : "titles need"} attention

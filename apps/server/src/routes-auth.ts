@@ -26,11 +26,9 @@ import {
   sessionCookie,
   tokenFromRequest,
 } from "./auth";
-import { isDirectLoopbackContext, remoteAddress } from "./essentials";
+import { apiError, isDirectLoopbackContext, remoteAddress } from "./essentials";
 import { getServerId } from "./server-identity";
 
-const error = (message: string, status = 400) =>
-  Response.json({ error: message }, { status });
 const credentials = t.Object({
   username: t.String({ minLength: 3, maxLength: 40 }),
   password: t.String({ minLength: 1, maxLength: 128 }),
@@ -57,7 +55,7 @@ function result(request: Request, value: ReturnType<typeof createDevice>) {
 export const authRoutes = new Elysia({ prefix: "/api/auth" })
   .get("/setup", () => setupState())
   .get("/certificate", ({ request }) => {
-    if (!signedIn(request)) return error("Sign in first.", 401);
+    if (!signedIn(request)) return apiError("Sign in first.", 401);
     const info = certificateInfo();
     return info ? { fingerprint: info.fingerprint } : { fingerprint: null };
   })
@@ -65,16 +63,16 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     "/setup/owner",
     async (ctx) => {
       if (!isDirectLoopbackContext(ctx))
-        return error(
+        return apiError(
           "Create the owner account on the computer running Plexy.",
           403,
         );
       if (hasOwner())
-        return error("The owner account has already been created.", 409);
+        return apiError("The owner account has already been created.", 409);
       if (!pairingAllowed("owner-setup"))
-        return error("Too many attempts. Try again later.", 429);
+        return apiError("Too many attempts. Try again later.", 429);
       const invalid = validateCredentials(ctx.body.username, ctx.body.password);
-      if (invalid) return error(invalid);
+      if (invalid) return apiError(invalid);
       try {
         const user = await createUser(
           ctx.body.username,
@@ -92,7 +90,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
           ),
         );
       } catch {
-        return error(
+        return apiError(
           "The owner account could not be created or already exists.",
           409,
         );
@@ -104,9 +102,9 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     "/setup/progress",
     (ctx) => {
       if (!admin(ctx.request))
-        return error("Administrator access required.", 403);
+        return apiError("Administrator access required.", 403);
       if (setupState().setupComplete)
-        return error("Setup is already complete.", 409);
+        return apiError("Setup is already complete.", 409);
       run(
         "UPDATE server_setup SET step = MAX(step,?) WHERE id=1",
         ctx.body.step,
@@ -116,7 +114,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     { body: t.Object({ step: t.Integer({ minimum: 1, maximum: 4 }) }) },
   )
   .post("/setup/complete", ({ request }) => {
-    if (!admin(request)) return error("Administrator access required.", 403);
+    if (!admin(request)) return apiError("Administrator access required.", 403);
     run(
       "UPDATE server_setup SET completed_at=COALESCE(completed_at,datetime('now')), step=4 WHERE id=1",
     );
@@ -138,9 +136,9 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         !pairingAllowed("password-login", 120) ||
         !pairingAllowed(`login:${remoteAddress(ctx)}`)
       )
-        return error("Too many attempts. Wait a minute.", 429);
+        return apiError("Too many attempts. Wait a minute.", 429);
       const user = await loginUser(ctx.body.username, ctx.body.password);
-      if (!user) return error("Incorrect username or password.", 401);
+      if (!user) return apiError("Incorrect username or password.", 401);
       return result(
         ctx.request,
         createDevice(
@@ -153,7 +151,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     },
     { body: credentials },
   )
-  .post("/local", () => error("Sign in with your username and password.", 403))
+  .post("/local", () => apiError("Sign in with your username and password.", 403))
   .post(
     "/pair",
     (ctx) => {
@@ -161,7 +159,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         !pairingAllowed("pairing-global", 120) ||
         !pairingAllowed(`pair:${remoteAddress(ctx)}`)
       )
-        return error("Too many attempts. Wait a minute.", 429);
+        return apiError("Too many attempts. Wait a minute.", 429);
       const paired = redeemPairingCode(
         ctx.body.code,
         ctx.body.name || "Paired device",
@@ -170,7 +168,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       );
       return paired
         ? result(ctx.request, paired)
-        : error("The pairing code is invalid, expired, or already used.", 401);
+        : apiError("The pairing code is invalid, expired, or already used.", 401);
     },
     {
       body: t.Object({
@@ -183,14 +181,14 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     "/pairing-code",
     (ctx) => {
       const user = signedIn(ctx.request);
-      if (!user) return error("Sign in first.", 401);
+      if (!user) return apiError("Sign in first.", 401);
       if (!pairingAllowed(`mint:${user.id}`))
-        return error("Too many attempts. Wait a minute.", 429);
+        return apiError("Too many attempts. Wait a minute.", 429);
       if (ctx.body?.password) {
         return loginUser(user.username, ctx.body.password).then((confirmed) =>
           confirmed
             ? createPairingCode("New device", user.id)
-            : error("Incorrect password.", 401),
+            : apiError("Incorrect password.", 401),
         );
       }
       return createPairingCode("New device", user.id);
@@ -206,7 +204,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     );
   })
   .get("/admin/devices", ({ request }) => {
-    if (!admin(request)) return error("Administrator access required.", 403);
+    if (!admin(request)) return apiError("Administrator access required.", 403);
     const users = new Map(listUsers().map((user) => [user.id, user.username]));
     return {
       devices: listDevices().map((device) => ({
@@ -216,27 +214,27 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     };
   })
   .post("/admin/devices/:id/revoke", ({ request, params }) => {
-    if (!admin(request)) return error("Administrator access required.", 403);
+    if (!admin(request)) return apiError("Administrator access required.", 403);
     if (!revokeDevice(Number(params.id)))
-      return error("Unrevoked device not found.", 404);
+      return apiError("Unrevoked device not found.", 404);
     return { ok: true };
   })
   .delete("/admin/devices/:id", ({ request, params }) => {
-    if (!admin(request)) return error("Administrator access required.", 403);
+    if (!admin(request)) return apiError("Administrator access required.", 403);
     if (!removeRevokedDevice(Number(params.id)))
-      return error("Revoke the device before deleting its record.", 409);
+      return apiError("Revoke the device before deleting its record.", 409);
     return { ok: true };
   })
   .get("/devices", ({ request }) => {
     const user = signedIn(request);
-    if (!user) return error("Sign in first.", 401);
+    if (!user) return apiError("Sign in first.", 401);
     return {
       devices: listDevices().filter((device) => device.userId === user.id),
     };
   })
   .post("/devices/:id/revoke", ({ request, params }) => {
     const user = signedIn(request);
-    if (!user) return error("Sign in first.", 401);
+    if (!user) return apiError("Sign in first.", 401);
     run(
       "UPDATE auth_devices SET revoked=1 WHERE id=? AND user_id=?",
       Number(params.id),
@@ -246,7 +244,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
   })
   .delete("/devices/:id", ({ request, params }) => {
     const user = signedIn(request);
-    if (!user) return error("Sign in first.", 401);
+    if (!user) return apiError("Sign in first.", 401);
     run(
       "DELETE FROM auth_devices WHERE id=? AND user_id=? AND revoked=1",
       Number(params.id),
@@ -258,13 +256,13 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     "/password",
     async ({ request, body }) => {
       const user = signedIn(request);
-      if (!user) return error("Sign in first.", 401);
+      if (!user) return apiError("Sign in first.", 401);
       if (!pairingAllowed(`password:${user.id}`))
-        return error("Too many attempts. Wait a minute.", 429);
+        return apiError("Too many attempts. Wait a minute.", 429);
       const invalid = validateCredentials(user.username, body.newPassword);
-      if (invalid) return error(invalid);
+      if (invalid) return apiError(invalid);
       if (!(await loginUser(user.username, body.password)))
-        return error("Incorrect password.", 401);
+        return apiError("Incorrect password.", 401);
       const hash = await Bun.password.hash(body.newPassword, {
         algorithm: "argon2id",
         memoryCost: 65536,
@@ -290,15 +288,15 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     "/avatar",
     ({ request, body }) => {
       const user = signedIn(request);
-      if (!user) return error("Sign in first.", 401);
+      if (!user) return apiError("Sign in first.", 401);
       const avatar = body.avatar === "" ? null : body.avatar;
       if (avatar !== null) {
         // Accept only the raster formats the client produces. SVG is excluded
         // deliberately; profile art never needs vector input.
         if (!/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/]+=*$/i.test(avatar))
-          return error("Use a PNG, JPEG, WebP, or GIF image.");
+          return apiError("Use a PNG, JPEG, WebP, or GIF image.");
         if (avatar.length > 600_000)
-          return error("That profile photo is too large.", 413);
+          return apiError("That profile photo is too large.", 413);
       }
       run("UPDATE users SET avatar=? WHERE id=?", avatar, user.id);
       return { user: getUser(user.id) };
@@ -312,20 +310,20 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
   .get("/users", ({ request }) =>
     admin(request)
       ? { users: listUsers() }
-      : error("Administrator access required.", 403),
+      : apiError("Administrator access required.", 403),
   )
   .post(
     "/users",
     async ({ request, body }) => {
-      if (!admin(request)) return error("Administrator access required.", 403);
+      if (!admin(request)) return apiError("Administrator access required.", 403);
       const invalid = validateCredentials(body.username, body.password);
-      if (invalid) return error(invalid);
+      if (invalid) return apiError(invalid);
       try {
         return {
           user: await createUser(body.username, body.password, body.role),
         };
       } catch {
-        return error("That username is already taken.", 409);
+        return apiError("That username is already taken.", 409);
       }
     },
     {
@@ -340,11 +338,11 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     ({ request, params, body }) => {
       const actor = signedIn(request);
       if (actor?.role !== "admin")
-        return error("Administrator access required.", 403);
+        return apiError("Administrator access required.", 403);
       const id = Number(params.id);
-      if (!getUser(id)) return error("User not found.", 404);
+      if (!getUser(id)) return apiError("User not found.", 404);
       if (actor.id === id && (body.disabled || body.role !== "admin"))
-        return error(
+        return apiError(
           "You cannot disable or demote your own administrator account.",
         );
       db.transaction(() => {
@@ -377,13 +375,13 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
             "SELECT scope,target,allowed FROM access_rules WHERE user_id=?",
           ).all(Number(params.id)),
         }
-      : error("Administrator access required.", 403),
+      : apiError("Administrator access required.", 403),
   )
   .put(
     "/users/:id/rules",
     ({ request, params, body }) => {
-      if (!admin(request)) return error("Administrator access required.", 403);
-      if (!getUser(Number(params.id))) return error("User not found.", 404);
+      if (!admin(request)) return apiError("Administrator access required.", 403);
+      if (!getUser(Number(params.id))) return apiError("User not found.", 404);
       db.transaction(() => {
         run("DELETE FROM access_rules WHERE user_id=?", Number(params.id));
         for (const rule of body.rules)

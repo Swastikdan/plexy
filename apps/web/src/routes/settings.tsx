@@ -125,7 +125,7 @@ function SettingsRoute() {
     <Page className="pt-4 sm:pt-6">
       {/* Mobile section switcher */}
       <div className="relative -mx-4 mb-6 lg:hidden">
-        <div className="overflow-x-auto px-4 pb-1">
+        <div className="scroll-row overflow-x-auto px-4 pb-1">
         <nav className="flex min-w-max items-center gap-1 rounded-xl border border-border bg-surface p-1" aria-label="Settings sections">
           {[...PERSONAL_TABS, ...(admin ? SERVER_TABS : [])].map((entry) => {
             const Icon = entry.icon;
@@ -150,7 +150,7 @@ function SettingsRoute() {
           })}
         </nav>
         </div>
-        <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent" />
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background via-background/75 to-transparent" />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[13.5rem_minmax(0,1fr)] lg:gap-10 xl:grid-cols-[14.5rem_minmax(0,1fr)] xl:gap-12">
@@ -164,9 +164,9 @@ function SettingsRoute() {
         <section key={effectiveTab} className="page-enter min-w-0" aria-label={meta.title}>
           <header className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
             <div className="min-w-0">
-              <h2 className="font-sans text-xl font-bold tracking-[-0.03em] text-foreground sm:text-2xl">
+              <h1 className="font-sans text-xl font-bold tracking-[-0.03em] text-foreground sm:text-2xl">
                 {meta.title}
-              </h2>
+              </h1>
               <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted sm:text-[13px]">{meta.description}</p>
             </div>
           </header>

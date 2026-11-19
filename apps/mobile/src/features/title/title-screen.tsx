@@ -1,3 +1,4 @@
+import { Menu } from "heroui-native/menu";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useIsFocused, useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
@@ -109,6 +110,7 @@ function TitleBackButton({ onPress }: { onPress: () => void }) {
 
 export function TitleScreen({
   input,
+  offlineOnly = false,
   autoPlay = false,
   autoSeason = null,
   autoEpisode = null,
@@ -116,6 +118,7 @@ export function TitleScreen({
   play,
 }: {
   input: MediaTitleInput;
+  offlineOnly?: boolean;
   autoPlay?: boolean;
   autoSeason?: number | null;
   autoEpisode?: number | null;
@@ -131,7 +134,7 @@ export function TitleScreen({
   const remoteNavigation = useRemoteNavigation();
   const insets = useSafeAreaInsets();
   const onlineEnabled =
-    preferences.mode !== "local" && (preferences.source === "remote" || input.source === "remote");
+    !offlineOnly && preferences.mode !== "local" && (preferences.source === "remote" || input.source === "remote");
   const media = useMediaTitle(input, api, onlineEnabled);
   const detail = media.detail;
   const item = detail?.item ?? null;
@@ -164,7 +167,6 @@ export function TitleScreen({
   );
   const [episodeSort, setEpisodeSort] = useState<"oldest" | "newest">("oldest");
   const [seasonBusy, setSeasonBusy] = useState(false);
-  const [sortOpen, setSortOpen] = useState(false);
   const [season, setSeason] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("episodes");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -1114,29 +1116,30 @@ export function TitleScreen({
       ) : null}
 
       <View className="flex-row items-center justify-between">
-        <View className="z-10">
-          <Pressable accessibilityRole="button" accessibilityLabel="Sort episodes"
-            accessibilityState={{ expanded: sortOpen }}
-            onPress={() => setSortOpen(!sortOpen)} className="min-h-11 justify-center">
+        <Menu>
+          <Menu.Trigger
+            accessibilityLabel={`Sort episodes, ${episodeSort === "oldest" ? "oldest first" : "newest first"}`}
+            className="min-h-11 justify-center"
+          >
             <Text className="font-archivo-medium text-sm text-muted">
               Sort by: {episodeSort === "oldest" ? "Oldest first" : "Newest first"}
             </Text>
-          </Pressable>
-          {sortOpen && (
-            <View className="absolute left-0 top-12 z-20 w-48 rounded-2xl border border-border bg-surface p-2">
-              {(["newest", "oldest"] as const).map((order) => (
-                <Pressable key={order} accessibilityRole="button"
-                  accessibilityState={{ selected: episodeSort === order }}
-                  onPress={() => { setEpisodeSort(order); setSortOpen(false); }}
-                  className="min-h-12 justify-center px-3">
-                  <Text className="font-archivo-medium text-foreground">
-                    {order === "newest" ? "Newest first" : "Oldest first"}
-                  </Text>
-                </Pressable>
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Overlay />
+            <Menu.Content presentation="popover" align="start" offset={6} width={184} className="border border-border" style={{ backgroundColor: colors.elevated }}>
+              {(["oldest", "newest"] as const).map((order) => (
+                <Menu.Item key={order} accessibilityState={{ selected: episodeSort === order }}
+                  onPress={() => setEpisodeSort(order)} className="min-h-12">
+                  <Menu.ItemTitle className="font-archivo-medium">
+                    {order === "oldest" ? "Oldest first" : "Newest first"}
+                  </Menu.ItemTitle>
+                  {episodeSort === order ? <Check size={18} color={colors.brand} /> : null}
+                </Menu.Item>
               ))}
-            </View>
-          )}
-        </View>
+            </Menu.Content>
+          </Menu.Portal>
+        </Menu>
         {!selectingEpisodes && localSeasonEpisodes.length > 0 && (
           <Pressable
             accessibilityRole="button"
@@ -1152,7 +1155,6 @@ export function TitleScreen({
           </Pressable>
         )}
       </View>
-
       <SeasonPage
         sort={episodeSort}
         key={`${selectedSeason}:${episodeSort}`}
@@ -1160,7 +1162,7 @@ export function TitleScreen({
         detail={detail}
         season={selectedSeason ?? 1}
         remoteMediaType={remoteMediaType}
-        tmdbId={tmdbId}
+        tmdbId={onlineEnabled ? tmdbId : null}
         play={guardedPlay}
         progress={progress}
         overrides={episodesWatchedOverride}
@@ -1388,7 +1390,7 @@ export function TitleScreen({
       )}
       {menuOpen && (
         <View
-          className="absolute right-5 z-[101] w-[236px] gap-2 rounded-2xl border border-border bg-surface p-3"
+          className="absolute right-5 z-[101] w-[236px] gap-2 rounded-2xl border border-border bg-surface-secondary p-3"
           style={{ top: insets.top + 66 }}
         >
           <TitleMenuAction

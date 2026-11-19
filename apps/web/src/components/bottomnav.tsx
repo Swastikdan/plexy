@@ -80,7 +80,7 @@ export function BottomNav() {
                   />
                 )}
               </span>
-              <span className="text-[9px] font-semibold uppercase tracking-[0.12em]">
+              <span className="text-[9.5px] font-semibold tracking-[0.01em]">
                 {item.label}
               </span>
             </Link>

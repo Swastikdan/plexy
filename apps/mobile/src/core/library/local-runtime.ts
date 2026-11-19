@@ -12,6 +12,7 @@ type LocalRoot,
 import { fetchMetadata } from "@plexy/local-library/metadata";
 import { invalidateLocalResources } from "@/core/resources/use-resource";
 import { clearLocalDetailCache } from "@/core/library/title-prefetch";
+import { subtitleFilenameLanguage } from "@/shared/lib/media-language";
 import { connectivity } from "@/shared/lib/connectivity";
 import { readChapters } from "./chapters";
 import { loadLibrary,saveLibrary } from "./library-database";
@@ -329,7 +330,7 @@ async function subtitleTracks(fileId: number): Promise<SubtitleTrack[]> {
         track: f.uri,
         kind: "sidecar" as const,
         title: f.name,
-        language: f.name.match(/\.([a-z]{2,3})\.(?:srt|vtt)$/i)?.[1] || null,
+        language: subtitleFilenameLanguage(f.name),
       })),
   ];
 }
@@ -434,6 +435,21 @@ export const localRuntime = {
     requests.clear();
     await tmdb("/configuration", key);
   },
+  async saveSubtitle(fileId: number, name: string, language: string, text: string): Promise<SubtitleTrack> {
+    const directory = new Directory(Paths.document, "external-subtitles");
+    directory.create({ intermediates: true, idempotent: true });
+    const file = new File(directory, `${fileId}-online-${Date.now()}.srt`);
+    file.create();
+    try {
+      file.write(text);
+      const track: SubtitleTrack = { track: file.uri, kind: "sidecar", title: name, language };
+      await localLibrary.addSubtitle(fileId, track);
+      return track;
+    } catch (error) {
+      file.delete();
+      throw error;
+    }
+  },
   async pickSubtitle(fileId: number): Promise<SubtitleTrack | null> {
     const picked = await File.pickFileAsync({});
     if (picked.canceled) return null;
@@ -451,7 +467,7 @@ export const localRuntime = {
       track: destination.uri,
       kind: "sidecar",
       title: file.name,
-      language: null,
+      language: subtitleFilenameLanguage(file.name),
     };
     await localLibrary.addSubtitle(fileId, track);
     return track;

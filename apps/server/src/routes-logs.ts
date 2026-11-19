@@ -10,7 +10,7 @@ import { open, readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { subscribe, recentLogLines, log } from "./logger";
 import { crashDir } from "./crash";
-import { denyIfNotLocal } from "./essentials";
+import { denyIfNotLocal, apiError } from "./essentials";
 
 /** Read enough of the active log file for a useful tail, not just the ring. */
 const LOG_TAIL_BYTES = 2 * 1024 * 1024;
@@ -120,7 +120,7 @@ export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (denied) return denied;
     const id = params.id.replace(/[^\w.-]/g, ""); // no traversal
     if (!id.startsWith("crash-")) {
-      return Response.json({ error: "Not found" }, { status: 404 });
+      return apiError("Not found", 404);
     }
     try {
       const body = await readFile(join(crashDir(), `${id}.json`), "utf8");
@@ -131,7 +131,7 @@ export const logsRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
         },
       });
     } catch {
-      return Response.json({ error: "Not found" }, { status: 404 });
+      return apiError("Not found", 404);
     }
   });
 

@@ -14,6 +14,17 @@ import { existsSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { MediaRelay } from "./native-relay";
+import type {
+  NativeAudioTrack,
+  NativeCommandRequest,
+  NativePlaybackEvent,
+  NativePlaybackInfo,
+  NativePlayerAction,
+  NativePlayRequest,
+  NativePlayResult,
+} from "@plexy/desktop-bridge";
+
+export type { NativePlayerAction } from "@plexy/desktop-bridge";
 
 /**
  * Electron APIs are loaded lazily so the manager can be exercised with a fake
@@ -31,92 +42,6 @@ export interface NativeWindowSurface {
 }
 
 type ManifestFetch = (url: string, init: RequestInit) => Promise<Response>;
-
-export interface NativePlaybackInfo {
-  available: boolean;
-  platform: string;
-  engine: "bundled" | "system" | null;
-  version: string | null;
-  reason?: string;
-}
-
-export interface NativePlayRequest {
-  fileId: number;
-  serverUrl: string;
-  /** Origin of the trusted renderer frame; the server must belong to it. */
-  serverOrigin: string;
-  resumeSeconds?: number;
-  autoSubtitles?: boolean;
-  subtitleLanguage?: string;
-}
-
-export type NativePlayerAction =
-  | "pause"
-  | "resume"
-  | "seek"
-  | "stop"
-  | "set-audio"
-  | "set-subtitle"
-  | "set-volume"
-  | "set-mute"
-  | "set-speed";
-
-export interface NativeCommandRequest {
-  sessionId: string;
-  action: NativePlayerAction;
-  value?: number;
-}
-
-/**
- * A language track as mpv sees it. Audio and subtitle tracks share the shape so
- * the Plexy player can render the same menu for both.
- */
-export interface NativeAudioTrack {
-  id: number;
-  title: string | null;
-  language: string | null;
-  default: boolean;
-  selected: boolean;
-  /** External (sidecar) track rather than one embedded in the container. */
-  external?: boolean;
-}
-
-export interface NativePlaybackEvent {
-  sessionId: string;
-  fileId: number;
-  type:
-    | "ready"
-    | "time"
-    | "duration"
-    | "pause"
-    | "buffering"
-    | "ended"
-    | "error"
-    | "closed"
-    | "audio"
-    | "tracks"
-    | "volume"
-    | "speed";
-  position?: number;
-  duration?: number;
-  paused?: boolean;
-  buffering?: boolean;
-  message?: string;
-  audioTracks?: NativeAudioTrack[];
-  subtitleTracks?: NativeAudioTrack[];
-  /** Seconds of media mpv has cached ahead of the playhead. */
-  cachedSeconds?: number;
-  /** 0–100, mpv's own volume scale. */
-  volume?: number;
-  muted?: boolean;
-  speed?: number;
-}
-
-export interface NativePlayResult {
-  sessionId: string;
-  fileId: number;
-  title: string | null;
-}
 
 interface NativeTrack {
   track: string;

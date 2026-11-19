@@ -2,6 +2,7 @@ import { SwipePager, usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { PageHeader } from "@/shared/ui/page-header";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
+import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { useEffect,useMemo,useState } from "react";
 import {
@@ -24,6 +25,7 @@ import { IdentifyTitle } from "./components/identify-title";
 import { ReportAction } from "./components/report-action";
 
 export function LibraryReportScreen() {
+  const { dismissTo, push } = useRouter();
   const filterBoundary = usePagerGestureBoundary();
   const showDialog = useAppDialog();
   const colors = useColors();
@@ -64,7 +66,7 @@ export function LibraryReportScreen() {
     <View className="flex-1 bg-background">
           <View className="px-5 pt-4 pb-3 gap-3.5">
             <View className="flex-row items-center justify-between">
-              <PageHeader title="Library report" style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, flex: 1 }} />
+              <PageHeader title="Library report" onBack={() => dismissTo("/settings")} style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, flex: 1 }} />
               <ReportAction
                 label={busy ? "Adding…" : "+ Add"}
                 disabled={busy}
@@ -74,6 +76,7 @@ export function LibraryReportScreen() {
             <Text className="text-[14px] leading-[21px] font-archivo-regular text-muted">
               Manage videos and title matches.
             </Text>
+            <ReportAction label="Reconnect missing folders or files" onPress={() => push("/library-recovery")} />
             <ScrollView {...filterBoundary} horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" className="h-[46px] rounded-full border border-border bg-surface" contentContainerStyle={{ flexGrow: 1, padding: 3 }}>
               {filters.map((f) => (
                 <Pressable

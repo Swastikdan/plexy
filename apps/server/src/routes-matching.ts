@@ -7,7 +7,7 @@ import { basename, isAbsolute } from "node:path";
 import { Elysia, t } from "elysia";
 import { db, q, run, type Row } from "./db";
 import { log } from "./logger";
-import { denyIfNotLocal } from "./essentials";
+import { denyIfNotLocal, apiError } from "./essentials";
 import { search, detail, imageUrl, TmdbError } from "./tmdb";
 import { match, refineWithRuntime, type Candidate } from "./matcher";
 import { parsePath } from "./parse";
@@ -160,7 +160,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
       };
     } catch (err) {
       const e = err instanceof TmdbError ? err : new TmdbError(String(err), 502, "TMDB request failed");
-      return Response.json({ error: e.userMessage }, { status: 502 });
+      return apiError(e.userMessage, 502);
     }
   }, {
     body: t.Object({
@@ -189,7 +189,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
       };
     } catch (err) {
       const e = err instanceof TmdbError ? err : new TmdbError(String(err), 502, "TMDB request failed");
-      return Response.json({ error: e.userMessage }, { status: 502 });
+      return apiError(e.userMessage, 502);
     }
   })
 
@@ -202,17 +202,17 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
     if (denied) return denied;
     const itemId = Number(ctx.params.id);
     const row = q<Row>("SELECT * FROM items WHERE id = ?").get(itemId);
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!row) return apiError("Not found", 404);
 
     const type: "movie" | "tv" = ctx.body.type;
     if (row.kind === "episode") {
-      return Response.json({ error: "Cannot match individual episodes. Match the parent series instead." }, { status: 400 });
+      return apiError("Cannot match individual episodes. Match the parent series instead.");
     }
     if (row.kind === "movie" && type !== "movie") {
-      return Response.json({ error: "A movie cannot be matched as a TV show." }, { status: 400 });
+      return apiError("A movie cannot be matched as a TV show.");
     }
     if (row.kind === "series" && type !== "tv") {
-      return Response.json({ error: "A TV series cannot be matched as a movie." }, { status: 400 });
+      return apiError("A TV series cannot be matched as a movie.");
     }
     try {
       const full = await detail(type, ctx.body.tmdbId);
@@ -241,7 +241,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
       return { ok: true };
     } catch (err) {
       const e = err instanceof TmdbError ? err : new TmdbError(String(err), 502, "TMDB request failed");
-      return Response.json({ error: e.userMessage }, { status: 502 });
+      return apiError(e.userMessage, 502);
     }
   }, {
     body: t.Object({
@@ -255,8 +255,8 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     const row = q<Row>("SELECT * FROM items WHERE id = ?").get(Number(ctx.params.id));
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
-    if (!row.tmdb_id) return Response.json({ error: "Item is not matched yet" }, { status: 400 });
+    if (!row) return apiError("Not found", 404);
+    if (!row.tmdb_id) return apiError("Item is not matched yet");
     const { hydrateItemMetadata } = await import("./hydrate");
     await hydrateItemMetadata(Number(row.id), row.tmdb_type as "movie" | "tv", Number(row.tmdb_id));
     return { ok: true };

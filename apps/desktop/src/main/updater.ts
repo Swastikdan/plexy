@@ -12,31 +12,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import type { UpdateProgress, UpdateStatus } from "@plexy/desktop-bridge";
 
 const RELEASE_API =
   "https://api.github.com/repos/Swastikdan/plexy/releases?per_page=100";
 const PRODUCT_NAME = "Plexy Beta";
 const APP_BUNDLE_NAME = `${PRODUCT_NAME}.app`;
 const MAX_DOWNLOAD_BYTES = 2_000_000_000;
-
-export interface UpdateStatus {
-  supported: boolean;
-  currentVersion: string;
-  currentTag: string;
-  latestVersion?: string;
-  latestTag?: string;
-  updateAvailable: boolean;
-  currentIsNewer: boolean;
-  canInstall: boolean;
-  requiresAdministrator: boolean;
-  error?: string;
-}
-
-export type UpdateProgress = {
-  phase: "downloading" | "verifying" | "waiting-for-approval" | "installing";
-  downloadedBytes: number;
-  totalBytes: number | null;
-};
 
 async function latestRelease(): Promise<Release> {
   const response = await fetch(RELEASE_API, {

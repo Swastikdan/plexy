@@ -1,4 +1,8 @@
 /// Search (PRD 10.2): debounced typed results over the local catalog.
+///
+/// The field owns the width of the page, results fill it in a responsive grid,
+/// and the previous results stay visible while the next query resolves so the
+/// screen never flashes empty between keystrokes.
 import { useEffect, useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -8,7 +12,6 @@ import { queries } from "../queries";
 import { SearchResultCard } from "../components/search-result-card";
 import { Row } from "../components/row";
 import { Page } from "../components/page";
-import { PageLoader } from "../components/page-loader";
 import { State } from "@/components/state";
 
 function ResultSection({
@@ -22,13 +25,32 @@ function ResultSection({
 }) {
   if (count === 0) return null;
   return (
-    <section className="mt-7">
-      <div className="flex items-baseline gap-2 border-b border-border/70 pb-2">
-        <h2 className="text-[12px] font-bold uppercase tracking-[0.14em] text-foreground">{title}</h2>
-        <span className="text-[10px] tabular-nums text-muted">{count}</span>
+    <section className="pt-7 first:pt-5">
+      <div className="flex items-baseline gap-2 pb-3">
+        <h2 className="font-sans text-[15px] font-bold tracking-[-0.02em] text-foreground">{title}</h2>
+        <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[10.5px] font-semibold tabular-nums text-muted">
+          {count}
+        </span>
       </div>
-      <div className="mt-2.5 grid max-w-5xl gap-2">{children}</div>
+      <div className="grid gap-2.5 md:grid-cols-2 2xl:grid-cols-3">{children}</div>
     </section>
+  );
+}
+
+function SearchSkeleton() {
+  return (
+    <div className="grid gap-2.5 pt-6 md:grid-cols-2 2xl:grid-cols-3">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="flex items-center gap-4 rounded-xl border border-border/60 p-2.5">
+          <div className="skeleton aspect-video w-32 shrink-0 rounded-lg" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="skeleton h-2.5 w-24 rounded" />
+            <div className="skeleton h-3.5 w-3/5 rounded" />
+            <div className="skeleton h-2.5 w-4/5 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -44,11 +66,11 @@ function SearchRoute() {
   }, [initial]);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(q), 250);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebounced(q), 250);
+    return () => clearTimeout(timer);
   }, [q]);
 
-  const { data, isFetching } = useQuery(queries.search(debounced));
+  const { data, isFetching, isLoading } = useQuery(queries.search(debounced));
   const hasQuery = debounced.trim().length > 0;
   const titles = data?.titles ?? [];
   const episodes = data?.episodes ?? [];
@@ -61,9 +83,9 @@ function SearchRoute() {
   const recentRow = home.data?.rows.find((row) => row.key === "recent-shows" || row.key === "recent-movies");
 
   return (
-    <Page className="pt-4 sm:pt-5">
-      <div className="sticky top-[3.25rem] z-20 -mx-4 border-b border-border/70 bg-background/88 px-4 py-3 backdrop-blur-xl sm:-mx-8 sm:px-8 lg:top-[var(--app-topbar-height)]">
-        <div className="mx-auto flex max-w-5xl items-center gap-2">
+    <Page className="!pt-0">
+      <div className="sticky top-[3.25rem] z-20 -mx-[var(--app-gutter)] border-b border-border/70 bg-background/92 px-[var(--app-gutter)] py-3 backdrop-blur-xl md:top-[var(--app-topbar-height)]">
+        <div className="flex w-full items-center gap-3">
           <SearchField
             autoFocus
             value={q}
@@ -71,9 +93,12 @@ function SearchRoute() {
             aria-label="Search your films and shows"
             fullWidth
           >
-            <SearchField.Group>
+            <SearchField.Group className="h-12">
               <SearchField.SearchIcon />
-              <SearchField.Input placeholder="Search your films and shows…" />
+              <SearchField.Input
+                placeholder="Search your films and shows…"
+                className="text-[15px]"
+              />
               {isFetching ? (
                 <span
                   className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-separator border-t-accent"
@@ -97,8 +122,8 @@ function SearchRoute() {
                 <div className="skeleton h-3 w-52 rounded-md" />
               </div>
               <div className="flex gap-3 overflow-hidden">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="skeleton aspect-video h-[10.5rem] shrink-0 rounded-xl" />
+                {[0, 1, 2].map((index) => (
+                  <div key={index} className="skeleton aspect-video h-[10.5rem] shrink-0 rounded-xl" />
                 ))}
               </div>
             </div>
@@ -137,9 +162,8 @@ function SearchRoute() {
         </div>
       )}
 
-      {hasQuery && isFetching && !data && (
-        <PageLoader label="Searching" className="min-h-[36vh]" />
-      )}
+      {hasQuery && (isLoading || (isFetching && !data)) && <SearchSkeleton />}
+
       {hasQuery && data && count === 0 && (
         <State
           icon={Compass}
@@ -147,16 +171,17 @@ function SearchRoute() {
           body={`Nothing in your library matches ${debounced}. Try a shorter title or an actor's name.`}
         />
       )}
-      {data && count > 0 && (
-        <div className="max-w-5xl pt-5">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="font-sans text-base font-bold tracking-[-0.025em] text-foreground">
-              {count} {count === 1 ? "result" : "results"} for <span className="text-muted">“{debounced}”</span>
+
+      {hasQuery && data && count > 0 && (
+        <div className={isFetching ? "opacity-60 transition-opacity duration-150" : "transition-opacity duration-150"}>
+          <div className="flex flex-wrap items-baseline justify-between gap-3 pb-1 pt-5">
+            <h2 className="font-sans text-lg font-bold tracking-[-0.025em] text-foreground">
+              {count} {count === 1 ? "result" : "results"} for <span className="font-semibold text-muted">“{debounced}”</span>
             </h2>
-            {isFetching && <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted/60">Updating…</span>}
+            {isFetching && <span role="status" className="text-[11px] font-medium text-muted">Updating…</span>}
           </div>
 
-          <ResultSection title="Movies & Series" count={titles.length}>
+          <ResultSection title="Movies and series" count={titles.length}>
             {titles.map((item) => (
               <SearchResultCard key={`title-${item.id}`} item={item} />
             ))}

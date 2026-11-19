@@ -63,3 +63,20 @@ test("caches collection membership and key crew for local discovery", async () =
  expect(result.collection).toEqual({ id: 99, name: "Example Collection" });
  expect(result.cast?.find(p => p.name === "Director")?.character).toBe("Director");
 });
+
+
+test("recognizes Japanese animation from TMDB in an ordinary TV folder", async () => {
+  const { io } = fixture();
+  const request = io.request;
+  io.request = async (path) => {
+    const data = await request(path);
+    if (path.startsWith("/tv/42?")) {
+      return { ...data, original_language: "ja", genres: [{ id: 16, name: "Animation" }] };
+    }
+    return data;
+  };
+
+  const result = await fetchMetadata(record(true), io);
+  expect(result.isAnime).toBe(true);
+  expect(result.card?.isAnime).toBe(true);
+});

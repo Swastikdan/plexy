@@ -16,7 +16,7 @@ import { getConfig, save, redactedView } from "./config";
 import { setLogLevel, getLogLevel, log } from "./logger";
 import { APP_VERSION, crashDir } from "./crash";
 import { clearTmdbCache, testToken } from "./tmdb";
-import { denyIfNotLocal, isAdminContext } from "./essentials";
+import { denyIfNotLocal, isAdminContext, apiError } from "./essentials";
 import { tokenFromRequest, verifyToken } from "./auth";
 import { startScan, currentScan, onScanProgress } from "./scan";
 import { cancelOptimization, clearOptimizerCache, enqueueMissingOptimizations, optimizerStatus, pauseOptimizer, resumeOptimizer } from "./optimize";
@@ -224,11 +224,11 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const denied = denyIfNotLocal(ctx);
     if (denied) return denied;
     if (currentScan?.status === "running") {
-      return Response.json({ error: "Wait for the current library scan to finish before resetting Plexy data." }, { status: 409 });
+      return apiError("Wait for the current library scan to finish before resetting Plexy data.", 409);
     }
     const optimizer = await optimizerStatus();
     if (optimizer.running) {
-      return Response.json({ error: "Wait for media preparation to finish before resetting Plexy data." }, { status: 409 });
+      return apiError("Wait for media preparation to finish before resetting Plexy data.", 409);
     }
 
     pauseOptimizer("reset");
@@ -331,7 +331,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
         // If stat is restricted on special macOS folders, still attempt to list
       }
       if (!isDirectory) {
-        return Response.json({ error: `${target} is not a directory` }, { status: 400 });
+        return apiError(`${target} is not a directory`);
       }
       const entries = await listFolder(target);
       const parent = target.length > sep.length ? join(target, "..") : null;
@@ -444,12 +444,12 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (denied) return denied;
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      return Response.json({ error: "Invalid library id." }, { status: 400 });
+      return apiError("Invalid library id.");
     }
     const library = q<Row>("SELECT id FROM libraries WHERE id = ?").get(id);
-    if (!library) return Response.json({ error: "Library not found." }, { status: 404 });
+    if (!library) return apiError("Library not found.", 404);
     const name = body.name.trim();
-    if (!name) return Response.json({ error: "Enter a library name." }, { status: 400 });
+    if (!name) return apiError("Enter a library name.");
 
     const otherPaths = q<Row>("SELECT path FROM library_paths WHERE library_id != ?").all(id)
       .map((row) => String(row.path));
@@ -466,12 +466,12 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
         } catch {}
       }
       if (!exists) {
-        return Response.json({ error: `Path does not exist or is not a directory: ${current}` }, { status: 400 });
+        return apiError(`Path does not exist or is not a directory: ${current}`);
       }
       const overlap = otherPaths.find((existing) =>
         existing === current || current.startsWith(existing + sep) || existing.startsWith(current + sep));
       if (overlap) {
-        return Response.json({ error: `This path overlaps another library root (${overlap})` }, { status: 400 });
+        return apiError(`This path overlaps another library root (${overlap})`);
       }
       otherPaths.push(current);
       resolvedPaths.push(current);

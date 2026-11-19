@@ -17,6 +17,7 @@ import { requestUser } from "./auth";
 /// configured library (PRD 11). Prepared copies live in app data; the original
 /// media file is never modified.
 import { Elysia, t } from "elysia";
+import { apiError } from "./essentials";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { q, type Row } from "./db";
@@ -98,10 +99,10 @@ async function ensureFileProbed(row: Row): Promise<Row> {
  */
 async function serveOriginal(request: Request, fileId: number): Promise<Response> {
   const row = await openableFile(fileId);
-  if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+  if (!row) return apiError("File unavailable", 404);
   const path = String(row.path);
   const info = await stat(path).catch(() => null);
-  if (!info?.isFile()) return Response.json({ error: "File unavailable" }, { status: 404 });
+  if (!info?.isFile()) return apiError("File unavailable", 404);
   const response = await rangeResponse(
     request,
     Bun.file(path),
@@ -302,7 +303,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
    */
   .get("/play/:fileId", async (ctx) => {
     let row = getFile(Number(ctx.params.fileId));
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!row) return apiError("Not found", 404);
     row = await ensureFileProbed(row);
 
     // Native clients (the desktop app's mpv window) read the original bytes and
@@ -463,7 +464,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Playpath judgment for the current browser (kept for older clients). */
   .get("/playability/:fileId", async (ctx) => {
     let row = getFile(Number(ctx.params.fileId));
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!row) return apiError("Not found", 404);
     row = await ensureFileProbed(row);
     let verdict = classifyPlayability(rowPlayabilityFacts(row), parseCaps(ctx.query.caps));
 
@@ -488,7 +489,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Direct HTTP Range streaming; prefers the prepared fast-start copy. */
   .get("/stream/:fileId", async (ctx) => {
     const row = await openableFile(Number(ctx.params.fileId));
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    if (!row) return apiError("File unavailable", 404);
     // A non-zero audio selection is served from its own prepared copy; the
     // primary copy only carries the first track.
     const requestedAudio = ctx.query.audio;
@@ -510,7 +511,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     // Stale clients can request the direct URL even when the manifest says
     // preparation is required. Never send an MKV as video/mp4 in that case.
     if (!prepared && !isStreamableContainer(row.container == null ? null : String(row.container))) {
-      return Response.json({ error: "This file must finish preparation before playback." }, { status: 409 });
+      return apiError("This file must finish preparation before playback.", 409);
     }
     const servePath = prepared ?? path;
     const st = await stat(servePath);
@@ -545,7 +546,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** Authenticated download of the original file, untouched. */
   .get("/download/:fileId/info", async ({ params }) => {
     const row = await openableFile(Number(params.fileId));
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    if (!row) return apiError("File unavailable", 404);
     // Source downloads preserve every audio track and subtitle in the original.
     const info = await stat(String(row.path));
     return {
@@ -557,7 +558,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/download/:fileId", async (ctx) => {
     const fileId = Number(ctx.params.fileId);
     const row = await openableFile(fileId);
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    if (!row) return apiError("File unavailable", 404);
     const path = String(row.path);
 
     const info = await stat(path);
@@ -583,14 +584,14 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
 
   /** Legacy clients receive an explicit rejection instead of starting conversion. */
   .get("/stream/:fileId/remux", () => {
-    return Response.json({ error: "Live conversion is disabled. Prepare the file before playback." }, { status: 409 });
+    return apiError("Live conversion is disabled. Prepare the file before playback.", 409);
   }, {
     params: t.Object({ fileId: t.Numeric() }),
     query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
   })
 
   .get("/stream/:fileId/transcode", () => {
-    return Response.json({ error: "Live conversion is disabled. Prepare the file before playback." }, { status: 409 });
+    return apiError("Live conversion is disabled. Prepare the file before playback.", 409);
   }, {
     params: t.Object({ fileId: t.Numeric() }),
     query: t.Object({ start: t.Optional(t.Numeric()), audio: t.Optional(t.Numeric()) }),
@@ -605,7 +606,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .get("/images/:artworkId", async (ctx) => {
     const row = q<Row, [number]>("SELECT id, kind, source, url FROM artwork WHERE id = ?")
       .get(Number(ctx.params.artworkId));
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!row) return apiError("Not found", 404);
 
     const widthParam = ctx.query.w ? Number(ctx.query.w) : null;
     const defaultWidth = row.kind === "backdrop" ? 1600 : row.kind === "thumb" ? 300 : 500;
@@ -622,7 +623,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
           headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
         });
       } catch {
-        return Response.json({ error: "Not found" }, { status: 404 });
+        return apiError("Not found", 404);
       }
     }
 
@@ -660,7 +661,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const person = q<Row, [number]>("SELECT id, name, profile_path FROM people WHERE id = ?")
       .get(Number(ctx.params.personId));
     if (!person || !person.profile_path) {
-      return Response.json({ error: "Not found" }, { status: 404 });
+      return apiError("Not found", 404);
     }
 
     const widthParam = ctx.query.w ? Number(ctx.query.w) : null;
@@ -728,13 +729,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /** One cached trickplay frame or sprite sheet (JPEG). */
   .get("/trickplay/:fileId/:frame", async (ctx) => {
     const row = getFile(Number(ctx.params.fileId));
-    if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!row) return apiError("Not found", 404);
     const frameName = String(ctx.params.frame);
     if (!/^sprite_\d+\.jpe?g$/i.test(frameName) && !/^\d+\.jpe?g$/i.test(frameName)) {
-      return Response.json({ error: "Bad frame" }, { status: 400 });
+      return apiError("Bad frame");
     }
     const path = await trickplayFilePath(row, frameName);
-    if (!path) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!path) return apiError("Not found", 404);
     return new Response(Bun.file(path), {
       headers: {
         "Content-Type": "image/jpeg",
@@ -757,7 +758,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
    */
   .get("/subtitles/:fileId/:track", async (ctx) => {
     const row = getFile(Number(ctx.params.fileId));
-    if (!row) return Response.json({ error: "File unavailable" }, { status: 404 });
+    if (!row) return apiError("File unavailable", 404);
     // Decode once here; tolerate clients that already sent a decoded label.
     let track = ctx.params.track;
     try { track = decodeURIComponent(track); } catch { /* already decoded */ }
@@ -766,11 +767,11 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (track.startsWith("embedded-")) {
       const index = Number(track.slice("embedded-".length));
       if (!Number.isInteger(index) || index < 0) {
-        return Response.json({ error: "Bad track" }, { status: 400 });
+        return apiError("Bad track");
       }
       try {
         const file = await cachedEmbeddedSubtitle(row, index);
-        if (!file) return Response.json({ error: "Track is empty" }, { status: 404 });
+        if (!file) return apiError("Track is empty", 404);
         return new Response(Bun.file(file), {
           headers: {
             "Content-Type": "text/vtt; charset=utf-8",
@@ -781,7 +782,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
         log.warn("player", "embedded subtitle extraction failed", {
           fileId: ctx.params.fileId, message: err instanceof Error ? err.message : String(err),
         });
-        return Response.json({ error: "Subtitle extraction failed" }, { status: 500 });
+        return apiError("Subtitle extraction failed", 500);
       }
     }
 
@@ -790,7 +791,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const label = track.startsWith("sidecar-") ? track.slice("sidecar-".length) : track;
     const sidecars = await findSidecarSubtitles(row);
     const found = sidecars.find((entry) => entry.label.toLowerCase() === label.toLowerCase());
-    if (!found) return Response.json({ error: "No subtitle file with that name" }, { status: 404 });
+    if (!found) return apiError("No subtitle file with that name", 404);
 
     if (found.ext === "vtt") {
       return new Response(Bun.file(found.path), {

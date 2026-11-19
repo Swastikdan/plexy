@@ -1,4 +1,4 @@
-import { isDirectLoopbackContext } from "./essentials";
+import { apiError, isDirectLoopbackContext } from "./essentials";
 /// The Elysia application (PRD 4, 9).
 ///
 /// Assembles every route module plus the embedded SPA fallback so one process
@@ -157,7 +157,7 @@ export function buildApp(
       // Validation errors are client bugs; everything else we log loudly.
       if (code === "VALIDATION") {
         log.debug("http", "validation failed", { message: String(error) });
-        return Response.json({ error: "Invalid request." }, { status: 422 });
+        return apiError("Invalid request.", 422);
       }
       log.error("http", "request failed", {
         requestId: (request as Request & { __plexyRequestId?: string })
@@ -208,7 +208,7 @@ export function buildApp(
       "/*",
       options.ui === false || !browserUiEnabled()
         ? () =>
-            Response.json({ error: "Browser UI is disabled." }, { status: 404 })
+            apiError("Browser UI is disabled.", 404)
         : staticFallback,
     );
 
@@ -260,7 +260,7 @@ async function staticFallback({
 }): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/")) {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return apiError("Not found", 404);
   }
   const distDir = resolveDistDir();
   if (!existsSync(distDir)) {
@@ -297,5 +297,5 @@ async function staticFallback({
       },
     });
   }
-  return Response.json({ error: "Not found" }, { status: 404 });
+  return apiError("Not found", 404);
 }

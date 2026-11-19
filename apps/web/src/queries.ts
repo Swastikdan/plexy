@@ -137,6 +137,7 @@ export const queries = {
         return api.search(q);
       },
       enabled: q.trim().length > 0,
+      placeholderData: keepPreviousData,
     }),
 
   subtitles: (fileId: number) =>

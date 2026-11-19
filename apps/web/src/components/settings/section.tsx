@@ -2,7 +2,7 @@
 ///
 /// One header, one body inset, one hairline set: every panel in Settings reads
 /// as part of the same control room rather than a stack of unrelated cards.
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cx } from "../../lib/cx";
 
@@ -25,9 +25,10 @@ export function SettingsSection({
   bodyClassName?: string;
   flush?: boolean;
 }) {
+  const hasBody = Children.toArray(children).length > 0;
   return (
     <section className={cx("panel overflow-hidden", className)}>
-      <header className={cx("flex flex-wrap items-start justify-between gap-4 px-4 py-3.5 sm:px-5 sm:py-4", !flush && children !== undefined && "border-b border-border/70")}>
+      <header className={cx("flex flex-wrap items-start justify-between gap-4 px-4 py-3.5 sm:px-5 sm:py-4", !flush && hasBody && "border-b border-border/70")}>
         <div className="flex min-w-0 items-start gap-3">
           {Icon && (
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-muted">
@@ -43,7 +44,7 @@ export function SettingsSection({
         </div>
         {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
       </header>
-      {children !== undefined && (
+      {hasBody && (
         <div className={cx(flush ? "" : "p-4 sm:p-5", bodyClassName)}>{children}</div>
       )}
     </section>

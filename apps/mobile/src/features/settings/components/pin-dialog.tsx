@@ -73,67 +73,65 @@ export function PinDialog({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={close}
+      onRequestClose={() => { if (!busy) close(); }}
       statusBarTranslucent
     >
       <View className="flex-1 items-center justify-center bg-black/70 px-6">
         <Pressable
           className="absolute inset-0"
           accessible={false}
+          disabled={busy}
           onPress={close}
         />
         <View
           accessibilityViewIsModal
           className="w-full max-w-[400px] gap-4 rounded-[22px] border border-border bg-overlay p-5"
         >
-          <View className="flex-row items-center gap-3">
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-surface">
+          <View className="items-center gap-1">
+            <View className="mb-2 h-10 w-10 items-center justify-center rounded-full bg-surface">
               <Lock size={20} color={colors.ink} />
             </View>
-            <View className="flex-1">
-              <Text
-                accessibilityRole="header"
-                className="font-archivo-bold text-[19px] text-foreground"
-              >
-                {title}
+            <Text
+              accessibilityRole="header"
+              className="text-center font-archivo-bold text-[19px] text-foreground"
+            >
+              {title}
+            </Text>
+            {description ? (
+              <Text className="text-center font-archivo-regular text-[12px] leading-[17px] text-muted">
+                {description}
               </Text>
-              {description ? (
-                <Text className="mt-1 font-archivo-regular text-[12px] leading-[18px] text-muted">
-                  {description}
-                </Text>
-              ) : null}
-            </View>
+            ) : null}
           </View>
-          <TextInput
-            value={pin}
-            onChangeText={(value) => {
-              setPin(value.replace(/\D/g, "").slice(0, 4));
-              setError("");
-            }}
-            placeholder={mode === "set" ? "New 4-digit PIN" : "4-digit PIN"}
-            placeholderTextColor={colors.muted}
-            keyboardType="number-pad"
-            secureTextEntry
-            maxLength={4}
-            autoFocus
-            accessibilityLabel={mode === "set" ? "New PIN" : "Family PIN"}
-            className="min-h-[52px] rounded-[14px] border border-border bg-surface px-4 text-center font-archivo-bold text-[22px] tracking-[8px] text-foreground"
-          />
-          {mode === "set" ? (
-            <TextInput
-              value={confirm}
-              onChangeText={(value) => {
-                setConfirm(value.replace(/\D/g, "").slice(0, 4));
-                setError("");
-              }}
-              placeholder="Confirm PIN"
-              placeholderTextColor={colors.muted}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              accessibilityLabel="Confirm PIN"
-              className="min-h-[52px] rounded-[14px] border border-border bg-surface px-4 text-center font-archivo-bold text-[22px] tracking-[8px] text-foreground"
-            />
+          <View className="gap-3">
+            {(mode === "set" ? ["New PIN", "Confirm PIN"] : ["Family PIN"]).map((label, index) => (
+              <View key={label} className="gap-1.5">
+                <Text className="pl-1 font-archivo-medium text-[13px] text-foreground">{label}</Text>
+                <TextInput
+                  value={index === 0 ? pin : confirm}
+                  onChangeText={(value) => {
+                    const digits = value.replace(/\D/g, "").slice(0, 4);
+                    if (index === 0) setPin(digits);
+                    else setConfirm(digits);
+                    setError("");
+                  }}
+                  placeholder="••••"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  autoFocus={index === 0}
+                  editable={!busy}
+                  accessibilityLabel={label}
+                  className="min-h-[48px] rounded-[14px] border border-border bg-surface px-4 text-center font-archivo-bold text-[20px] tracking-[5px] text-foreground"
+                />
+              </View>
+            ))}
+          </View>
+          {mode === "verify" ? (
+            <Text className="text-center font-archivo-regular text-[12px] leading-[17px] text-muted">
+              Forgot your PIN? Clear Plexy’s app data to reset it.
+            </Text>
           ) : null}
           {!!error && (
             <Text className="text-center font-archivo-medium text-[13px] text-danger">
@@ -144,6 +142,7 @@ export function PinDialog({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Cancel"
+              disabled={busy}
               onPress={close}
               className="min-h-[48px] flex-1 items-center justify-center rounded-full bg-default active:opacity-70"
             >
@@ -153,14 +152,14 @@ export function PinDialog({
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={mode === "set" ? "Save PIN" : "Unlock"}
+              accessibilityLabel={mode === "set" ? "Save PIN" : "Confirm"}
               accessibilityState={{ disabled: busy }}
               disabled={busy}
               onPress={() => void submit()}
               className="min-h-[48px] flex-1 items-center justify-center rounded-full bg-accent active:opacity-80"
             >
               <Text className="font-archivo-bold text-[15px] text-white">
-                {busy ? "Checking…" : mode === "set" ? "Save PIN" : "Unlock"}
+                {busy ? "Checking…" : mode === "set" ? "Save PIN" : "Confirm"}
               </Text>
             </Pressable>
           </View>

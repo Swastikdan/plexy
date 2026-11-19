@@ -19,6 +19,7 @@
       "name": "@plexy/desktop",
       "version": "1.0.8",
       "dependencies": {
+        "@plexy/desktop-bridge": "workspace:*",
         "bonjour-service": "^1.4.4",
       },
       "devDependencies": {
@@ -39,6 +40,7 @@
         "@hugeicons/react-native": "^1.0.16",
         "@plexy/api-client": "workspace:*",
         "@plexy/local-library": "workspace:*",
+        "@plexy/media-text": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-community/netinfo": "12.0.1",
         "expo": "~57.0.33",
@@ -115,6 +117,8 @@
         "@heroui/react": "3.2.7",
         "@heroui/styles": "3.2.7",
         "@plexy/api-client": "workspace:*",
+        "@plexy/desktop-bridge": "workspace:*",
+        "@plexy/media-text": "workspace:*",
         "@tanstack/react-query": "^5.104.5",
         "@tanstack/react-router": "^1.170.45",
         "@videojs/core": "10.2.0",
@@ -152,6 +156,14 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/desktop-bridge": {
+      "name": "@plexy/desktop-bridge",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@plexy/tsconfig": "workspace:*",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/local-library": {
       "name": "@plexy/local-library",
       "version": "1.0.0",
@@ -161,6 +173,14 @@
       "devDependencies": {
         "@plexy/tsconfig": "workspace:*",
         "@types/bun": "^1.4.3",
+        "typescript": "^7.0.2",
+      },
+    },
+    "packages/media-text": {
+      "name": "@plexy/media-text",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@plexy/tsconfig": "workspace:*",
         "typescript": "^7.0.2",
       },
     },
@@ -543,7 +563,11 @@
 
     "@plexy/desktop": ["@plexy/desktop@workspace:apps/desktop"],
 
+    "@plexy/desktop-bridge": ["@plexy/desktop-bridge@workspace:packages/desktop-bridge"],
+
     "@plexy/local-library": ["@plexy/local-library@workspace:packages/local-library"],
+
+    "@plexy/media-text": ["@plexy/media-text@workspace:packages/media-text"],
 
     "@plexy/mobile": ["@plexy/mobile@workspace:apps/mobile"],
 

@@ -1,4 +1,4 @@
-import { type LoopbackContext } from "./essentials";
+import { apiError, type LoopbackContext } from "./essentials";
 import { q, type Row } from "./db";
 import type { User } from "./accounts";
 import { requestUser } from "./auth";
@@ -127,7 +127,7 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
     return;
   const user = requestUser(request);
   if (!user)
-    return Response.json({ error: "Sign in required." }, { status: 401 });
+    return apiError("Sign in required.", 401);
   const viewer =
     ["GET", "HEAD"].includes(request.method) &&
     /^\/api\/(?:home|items(?:\/[^/]+)?|search|libraries(?:\/\d+)?|play\/\d+|playability\/\d+|skip-segments\/\d+|stream\/\d+(?:\/[^/]+){0,2}|download\/\d+(?:\/info)?|images\/\d+|people\/\d+(?:\/photo)?|trickplay\/\d+\/[^/]+|subtitles\/\d+(?:\/[^/]+)?)\/?$/.test(
@@ -153,7 +153,7 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
   const item = /^\/api\/(?:items|watch)\/([^/]+)/.exec(path);
   const person = /^\/api\/people\/(\d+)/.exec(path);
   if (file && !canAccessFile(user, Number(file[1])))
-    return Response.json({ error: "Not found." }, { status: 404 });
+    return apiError("Not found.", 404);
   if (file)
     itemId = Number(
       q<Row>("SELECT item_id FROM media_files WHERE id=?").get(Number(file[1]))
@@ -178,7 +178,7 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
       itemId = 0;
   }
   if (itemId != null && !canAccessItem(user, itemId))
-    return Response.json({ error: "Not found." }, { status: 404 });
+    return apiError("Not found.", 404);
 }
 
 const visibleIdsByRequest = new WeakMap<Request, number[]>();

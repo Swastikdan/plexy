@@ -10,7 +10,7 @@ import { displayName, localLibrary } from "@/core/library/local-runtime";
 import { useColors } from "@/shared/theme";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { Button } from "@/shared/ui/button";
-import { ChevronLeft } from "@/shared/ui/icons";
+import { Check, ChevronLeft } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 
 const descriptions: Record<AppMode, string> = {
@@ -53,7 +53,7 @@ export function OnboardingScreen({
     if (onDone) onDone();
     else router.replace("/");
   };
-  const pick = async (kind: "movies" | "tv" | "anime") => {
+  const pick = async (kind: "movies" | "tv") => {
     setBusy(true);
     setError("");
     try {
@@ -85,7 +85,7 @@ export function OnboardingScreen({
             {step === "mode" ? "How do you like to watch?" : mode === "online" ? "Your next watch awaits." : "Make room for your collection."}
           </Text>
           <Text className="font-archivo-regular text-[16px] leading-[24px] text-muted">
-            {step === "mode" ? "Choose your Plexy experience. You can change it later in Settings." : mode === "local" ? "Connect at least one media folder to get started. Your videos stay where they are." : mode === "hybrid" ? "Connect a media folder, or start online and add your collection later." : "You’re ready to browse the online catalog. No media folders needed."}
+            {step === "mode" ? "Choose your Plexy experience. You can change it later in Settings." : mode === "local" ? "Add a media folder to continue." : mode === "hybrid" ? "Add a media folder now or start online." : "You’re ready to browse the online catalog. No media folders needed."}
           </Text>
         </View>
         {step === "mode" ? (
@@ -103,8 +103,15 @@ export function OnboardingScreen({
         ) : (
           <>
             {mode !== "online" && <>
-              {folders.map(folder => <Text key={folder.uri} className="font-archivo-medium text-[15px] text-foreground">✓ {folder.name || displayName(folder.uri)}</Text>)}
-              <Button label={busy ? "Adding folder…" : "Add media folder"} disabled={busy} onPress={() => dialog("Add media folder", "What’s in this folder?", (["movies", "tv", "anime"] as const).map(kind => ({ text: kind === "tv" ? "TV shows" : kind === "anime" ? "Anime" : "Movies", onPress: () => void pick(kind) })))} />
+              {folders.map((folder) => (
+                <View key={folder.uri} className="flex-row items-center justify-between gap-3 py-1">
+                  <Text className="shrink font-archivo-medium text-[15px] text-foreground">
+                    {folder.name || displayName(folder.uri)}
+                  </Text>
+                  <Check size={18} color={colors.success} />
+                </View>
+              ))}
+              <Button label={busy ? "Adding folder…" : "Add media folder"} disabled={busy} onPress={() => dialog("Add media folder", "What’s in this folder?", (["movies", "tv"] as const).map(kind => ({ text: kind === "tv" ? "TV shows" : "Movies", onPress: () => void pick(kind) })))} />
             </>}
             {mode !== "local" && <Notice message="Plexy does not host online titles. Metadata comes from TMDB and playback uses third-party sources. Availability may vary by title and region." />}
             {!!error && <Notice message={error} />}

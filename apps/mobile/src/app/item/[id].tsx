@@ -1,20 +1,29 @@
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { TitleScreen } from "@/features/title/title-screen";
 import { useMediaNavigation } from "@/shared/navigation/use-media-navigation";
 import { Notice } from "@/shared/ui/notice";
 export default function DetailRoute() {
-  const { id } = useLocalSearchParams<{
+  const { id, offline } = useLocalSearchParams<{
     id: string;
+    offline?: string;
   }>();
   const navigation = useMediaNavigation();
+  const { push } = useRouter();
+  const offlineOnly = offline === "1";
   if (!id || Array.isArray(id)) return <Notice message="Invalid title." />;
   return (
     <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1 }}>
       <TitleScreen
         input={{ source: "local", id }}
+        offlineOnly={offlineOnly}
         back={navigation.back}
-        play={navigation.play}
+        play={offlineOnly
+          ? (fileId) => push({
+              pathname: "/player/[file-id]",
+              params: { "file-id": String(fileId), offline: "1" },
+            })
+          : navigation.play}
       />
     </SafeAreaView>
   );

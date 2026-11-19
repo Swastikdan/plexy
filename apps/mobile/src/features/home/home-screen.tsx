@@ -7,6 +7,7 @@ import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
+import { usePlayCard } from "@/shared/hooks/use-play-card";
 import { useColors } from "@/shared/theme";
 import { AlertCircle, Film, WifiOff } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
@@ -60,31 +61,7 @@ export function HomeScreen({
       void progress.flush(api).catch(() => {});
     previousActive.current = active;
   }, [active, api, progress]);
-  // Handler for instant playback
-  const handlePlay = React.useCallback(
-    (item: ItemCard) => {
-      if (item.fileId && play) {
-        play(item.fileId);
-        return;
-      }
-      // Fetch detail to get first playable fileId
-      void api
-        .detail(item.publicId)
-        .then((d) => {
-          const fid =
-            d.file?.fileId ||
-            d.episodes?.find((e) => e.fileId && !e.watch?.played)?.fileId ||
-            d.episodes?.find((e) => e.fileId)?.fileId;
-          if (fid && play) {
-            play(fid);
-          } else {
-            open(item.publicId);
-          }
-        })
-        .catch(() => open(item.publicId));
-    },
-    [api, play, open],
-  );
+  const handlePlay = usePlayCard(play, open);
   // Normalize any item: if it is an episode, convert to full TV series card
   const toFullSeriesOrMovie = React.useCallback((it: ItemCard): ItemCard => {
     if (it.kind === "episode") {
