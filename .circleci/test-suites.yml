@@ -1,0 +1,57 @@
+---
+name: build scripts
+discover: git ls-files -- scripts/build-targets.test.ts scripts/native/mobile-delivery-state.test.ts
+run: |
+  report="<< outputs.junit >>"
+  mkdir -p "$(dirname "$report")" &&
+    bun test --reporter=junit --reporter-outfile="$report" << test.atoms >>
+outputs:
+  junit: test-results/build-scripts/junit.xml
+
+---
+name: server
+discover: git ls-files -- 'apps/server/tests/*.test.ts'
+run: |
+  results="<< outputs.junit-directory >>"
+  mkdir -p "$results" || exit 1
+  status=0
+  # Match scripts/test-server.ts: each file gets a clean database and process.
+  for file in << test.atoms >>; do
+    data=$(mktemp -d) || exit 1
+    NODE_ENV=test PLEXY_DATA_DIR="$data" bun test "./$file" --timeout 20000 \
+      --reporter=junit --reporter-outfile="$results/${file##*/}.xml" || status=1
+    rm -rf -- "$data"
+  done
+  exit "$status"
+outputs:
+  junit-directory: test-results/server
+
+---
+name: desktop
+discover: git ls-files -- 'apps/desktop/tests/*.test.ts'
+run: |
+  report="<< outputs.junit >>"
+  mkdir -p "$(dirname "$report")" &&
+    bun test --reporter=junit --reporter-outfile="$report" << test.atoms >>
+outputs:
+  junit: test-results/desktop/junit.xml
+
+---
+name: mobile
+discover: git ls-files -- 'apps/mobile/tests/*.test.ts'
+run: |
+  report="<< outputs.junit >>"
+  mkdir -p "$(dirname "$report")" &&
+    bun test --reporter=junit --reporter-outfile="$report" << test.atoms >>
+outputs:
+  junit: test-results/mobile/junit.xml
+
+---
+name: local library
+discover: git ls-files -- 'packages/local-library/tests/*.test.ts'
+run: |
+  report="<< outputs.junit >>"
+  mkdir -p "$(dirname "$report")" &&
+    bun test --reporter=junit --reporter-outfile="$report" << test.atoms >>
+outputs:
+  junit: test-results/local-library/junit.xml

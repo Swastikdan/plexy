@@ -1,0 +1,86 @@
+version: 2.1
+
+functions:
+  setup-node: github.com/circleci-functions/setup-node@v0.5.0
+
+executors:
+  linux:
+    docker:
+      - image: cimg/base:stable
+    environment:
+      SKIP_FFMPEG: "true"
+
+commands:
+  setup-workspace:
+    steps:
+      - checkout
+      - setup-node:
+          with:
+            node-version: "22"
+      - setup-node/install-packages
+
+jobs:
+  repository:
+    executor: linux
+    steps:
+      - setup-workspace
+      - run: circleci testsuite run "build scripts"
+      - store_test_results:
+          path: test-results/build-scripts
+      - run: bun run turbo run typecheck typecheck:scripts --filter=@plexy/api-client --filter=//
+
+  web:
+    executor: linux
+    steps:
+      - setup-workspace
+      - run: bun run turbo run typecheck --filter=@plexy/web
+
+  server:
+    executor: linux
+    steps:
+      - setup-workspace
+      - run: node scripts/install-ffmpeg.mjs
+      - run: bun run build:server
+      - run: circleci testsuite run "server"
+      - store_test_results:
+          path: test-results/server
+      - run: bun run --filter @plexy/server typecheck
+
+  desktop:
+    executor: linux
+    steps:
+      - setup-workspace
+      - run: bun run --filter @plexy/desktop build:main
+      - run: circleci testsuite run "desktop"
+      - store_test_results:
+          path: test-results/desktop
+      - run: bun run --filter @plexy/desktop typecheck
+
+  mobile:
+    executor: linux
+    steps:
+      - setup-workspace
+      - run: bun run bundle:native
+      - run: circleci testsuite run "mobile"
+      - store_test_results:
+          path: test-results/mobile
+      - run: bun run turbo run typecheck typecheck:tests lint:strict --filter=@plexy/mobile
+
+  local-library:
+    executor: linux
+    steps:
+      - setup-workspace
+      - run: circleci testsuite run "local library"
+      - store_test_results:
+          path: test-results/local-library
+      - run: bun run --filter @plexy/local-library typecheck
+
+workflows:
+  checks:
+    jobs:
+      - repository
+      - web
+      - server
+      - desktop
+      - mobile
+      - local-library
