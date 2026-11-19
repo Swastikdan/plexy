@@ -200,6 +200,7 @@ export function resolveEmbedAddon(): string | null {
 let cachedAddon: MpvEmbedConstructor | null | undefined;
 
 function loadEmbedAddon(): MpvEmbedConstructor | null {
+  if (process.platform !== "darwin") return null;
   if (cachedAddon !== undefined) return cachedAddon;
   const addonPath = resolveEmbedAddon();
   if (!addonPath) {
