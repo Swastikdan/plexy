@@ -1,86 +1,76 @@
 version: 2.1
 
+parameters:
+  macos-target:
+    type: enum
+    enum: [none, desktop, backend]
+    default: none
+  release-sha:
+    type: string
+    default: ""
+
 functions:
   setup-node: github.com/circleci-functions/setup-node@v0.5.0
 
-executors:
-  linux:
-    docker:
-      - image: cimg/base:stable
+jobs:
+  package-macos:
+    macos:
+      xcode: "26.6"
+    resource_class: m4pro.medium
     environment:
       SKIP_FFMPEG: "true"
-
-commands:
-  setup-workspace:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      RELEASE_SHA: << pipeline.parameters.release-sha >>
+      MACOS_TARGET: << pipeline.parameters.macos-target >>
     steps:
-      - checkout
+      - checkout:
+          method: full
+      - run:
+          name: Check out the verified release commit
+          command: |
+            test "$(uname -m)" = arm64
+            [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git fetch origin +refs/heads/main:refs/remotes/origin/main
+            git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+            git checkout --detach "$RELEASE_SHA"
       - setup-node:
           with:
             node-version: "22"
       - setup-node/install-packages
-
-jobs:
-  repository:
-    executor: linux
-    steps:
-      - setup-workspace
-      - run: circleci testsuite run "build scripts"
-      - store_test_results:
-          path: test-results/build-scripts
-      - run: bun run turbo run typecheck typecheck:scripts --filter=@plexy/api-client --filter=//
-
-  web:
-    executor: linux
-    steps:
-      - setup-workspace
-      - run: bun run turbo run typecheck --filter=@plexy/web
-
-  server:
-    executor: linux
-    steps:
-      - setup-workspace
-      - run: node scripts/install-ffmpeg.mjs
-      - run: bun run build:server
-      - run: circleci testsuite run "server"
-      - store_test_results:
-          path: test-results/server
-      - run: bun run --filter @plexy/server typecheck
-
-  desktop:
-    executor: linux
-    steps:
-      - setup-workspace
-      - run: bun run --filter @plexy/desktop build:main
-      - run: circleci testsuite run "desktop"
-      - store_test_results:
-          path: test-results/desktop
-      - run: bun run --filter @plexy/desktop typecheck
-
-  mobile:
-    executor: linux
-    steps:
-      - setup-workspace
-      - run: bun run bundle:native
-      - run: circleci testsuite run "mobile"
-      - store_test_results:
-          path: test-results/mobile
-      - run: bun run turbo run typecheck typecheck:tests lint:strict --filter=@plexy/mobile
-
-  local-library:
-    executor: linux
-    steps:
-      - setup-workspace
-      - run: circleci testsuite run "local library"
-      - store_test_results:
-          path: test-results/local-library
-      - run: bun run --filter @plexy/local-library typecheck
+      - run:
+          name: Install packaged FFmpeg
+          command: node scripts/install-ffmpeg.mjs
+      - run:
+          name: Build and verify macOS package
+          command: |
+            mkdir -p macos-artifacts
+            case "$MACOS_TARGET" in
+              desktop)
+                bun run build:desktop
+                app="dist/mac/mac-arm64/Plexy Beta.app"
+                expected="$(node -p "require('./package.json').version")"
+                actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+                test "$actual" = "$expected"
+                codesign --verify --deep --strict --verbose=2 "$app"
+                cp dist/mac/*.dmg dist/mac/*.zip macos-artifacts/
+                ;;
+              backend)
+                bun run build:server
+                ./dist/server/ffmpeg -version
+                ./dist/server/plexy-server --version
+                tar -czf macos-artifacts/plexy-server-macos-arm64.tar.gz -C dist/server .
+                ;;
+            esac
+      - store_artifacts:
+          path: macos-artifacts
+          destination: macos
 
 workflows:
-  checks:
+  macos-release:
+    when:
+      and:
+        - equal: [main, << pipeline.git.branch >>]
+        - not:
+            equal: [none, << pipeline.parameters.macos-target >>]
     jobs:
-      - repository
-      - web
-      - server
-      - desktop
-      - mobile
-      - local-library
+      - package-macos

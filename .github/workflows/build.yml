@@ -135,45 +135,6 @@ jobs:
           path: dist/web
           if-no-files-found: error
 
-  mac:
-    name: macOS app (Apple Silicon)
-    needs: [plan, checks]
-    runs-on: macos-15
-    # A missing Apple Silicon runner must never hold the release hostage.
-    continue-on-error: true
-    timeout-minutes: 75
-    if: |
-      github.ref == 'refs/heads/main' &&
-      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.build_desktop == 'true'
-    steps:
-      - name: Check out
-        uses: actions/checkout@v7
-
-      - uses: ./.github/actions/package-macos
-
-  mac-fallback:
-    name: macOS app (Apple Silicon, fallback pool)
-    needs: [plan, checks, mac]
-    runs-on: macos-14
-    # GitHub occasionally cannot hand out a macos-15 arm64 runner within the
-    # acquisition window. Try the other arm64 image once before giving up.
-    continue-on-error: true
-    timeout-minutes: 75
-    if: |
-      always() &&
-      github.ref == 'refs/heads/main' &&
-      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.result == 'success' &&
-      needs.checks.result == 'success' &&
-      needs.plan.outputs.build_desktop == 'true' &&
-      needs.mac.result != 'success'
-    steps:
-      - name: Check out
-        uses: actions/checkout@v7
-
-      - uses: ./.github/actions/package-macos
-
   mobile-delivery:
     name: Route Android delivery
     needs: [plan, checks]
@@ -291,24 +252,32 @@ jobs:
         with:
           platform: linux-x64
 
-  server-macos:
-    name: Backend (macos-arm64)
+  macos:
+    name: macOS package (${{ matrix.target }})
     needs: [plan, checks]
-    runs-on: macos-15
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.build_server == 'true'
+      (needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.build_desktop == 'true' && needs.plan.outputs.build_server == 'true' && '["desktop","backend"]' || needs.plan.outputs.build_desktop == 'true' && '["desktop"]' || '["backend"]') }}
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/package-server
-        with:
-          platform: macos-arm64
-      - name: Attach macOS backend to the release
+      - name: Build on CircleCI and download artifacts
+        env:
+          CIRCLE_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+          CIRCLECI_PROJECT_SLUG: ${{ vars.CIRCLECI_PROJECT_SLUG }}
+          CIRCLECI_PIPELINE_DEFINITION_ID: ${{ vars.CIRCLECI_PIPELINE_DEFINITION_ID }}
+          MACOS_TARGET: ${{ matrix.target }}
+        run: node scripts/circleci-macos.mjs
+      - name: Attach macOS assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/publish-release.sh "" dist/plexy-server-macos-arm64.tar.gz
+        run: bash scripts/publish-release.sh "" release-macos/*
 
   release:
     name: Publish GitHub release
@@ -319,7 +288,7 @@ jobs:
       - checks
       - android
       - server-linux
-    # macOS jobs attach their artifacts independently as runners become available.
+    # The CircleCI handoff publishes macOS artifacts independently.
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
