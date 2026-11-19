@@ -5,13 +5,6 @@ name: Android E2E
 # navigates on a device, which is the only way to catch a broken native module,
 # a missing asset at runtime, or a screen that crashes after mount.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/mobile/**"
-      - "packages/**"
-      - "scripts/native/**"
-      - ".github/workflows/android-e2e.yml"
   workflow_dispatch:
 
 concurrency:

@@ -1,19 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { compareSemver } from "../../apps/mobile/src/features/settings/lib/update-policy";
 import { isVersion, MOBILE_POLICY_URL, parseMobileManifest, type MobileUpdateManifest, type UpdateType } from "../../apps/mobile/src/features/settings/lib/mobile-update-manifest";
 import { mobileVersionCode, nextMobileVersion } from "./mobile-version";
+import { github, listTagRefs, releaseCommit, reserveTag } from "../release-refs";
 
 const projectRoot = resolve(import.meta.dir, "../..");
 const repo = "Swastikdan/plexy";
-interface Release { tag_name: string; body: string; draft: boolean; assets?: { name: string }[] }
-async function gh(args: string[]) {
-  const process = Bun.spawn(["gh", ...args], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
-  const output = await new Response(process.stdout).text();
-  if (await process.exited) throw Error(`GitHub release reservation failed: ${await new Response(process.stderr).text()}`);
-  return output;
-}
+interface Release { tag_name: string; assets?: { name: string }[] }
 export interface PreparedMobileRelease {
   version: string; versionCode: number; updateType: UpdateType;
   minimumSupportedVersion: string; message: string; releaseNotes: string;
@@ -27,7 +21,7 @@ export async function prepareMobileRelease(options: {
   const root = options.root || projectRoot;
   const stateDir = resolve(root, ".build/native");
   const request = options.request || fetch;
-  const reserve = options.reserve || gh;
+  const reserve = options.reserve || github;
   const env = options.env || Bun.env;
   await mkdir(stateDir, { recursive: true });
   const lock = resolve(stateDir, "version.lock");
@@ -45,7 +39,7 @@ export async function prepareMobileRelease(options: {
       let batch: Release[];
       if (!env.GH_TOKEN && !options.request) {
         // gh uses the developer's authenticated session and includes CI drafts.
-        batch = JSON.parse(await gh(["api", `repos/${repo}/releases?per_page=100&page=${page}`]));
+        batch = JSON.parse(await reserve(["api", `repos/${repo}/releases?per_page=100&page=${page}`]));
       } else {
         const response = await request(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`, { headers, signal: AbortSignal.timeout(15_000) });
         if (!response.ok) throw Error(`Cannot allocate a mobile version (GitHub HTTP ${response.status}).`);
@@ -69,15 +63,24 @@ export async function prepareMobileRelease(options: {
       const local = (await readFile(resolve(stateDir, "mobile-version"), "utf8")).trim();
       if (isVersion(local) && compareSemver(local, previous) > 0) previous = local;
     } catch { /* No local release reservation yet. */ }
-    const run = env.GITHUB_RUN_ID;
-    const marker = run ? `Mobile build reservation: ${run}` : null;
-    const retry = marker ? releases.find(release => release.body?.includes(marker) && /^mobile-v\d+\.\d+\.\d+$/.test(release.tag_name)) : null;
-    if (retry && !retry.draft) throw Error("This mobile release is already published. Start a new workflow run to build another APK.");
-    const version = retry ? retry.tag_name.slice("mobile-v".length) : nextMobileVersion(previous, env.PLEXY_VERSION_BUMP, env.PLEXY_MOBILE_VERSION);
+    const sha = env.GITHUB_SHA || await releaseCommit();
+    let version = "";
+    for (let attempt = 0; attempt < 10; attempt++) {
+      for (const tag of await listTagRefs("mobile-build/", reserve)) {
+        const reserved = tag.slice("mobile-build/".length);
+        if (isVersion(reserved) && compareSemver(reserved, previous) > 0) previous = reserved;
+      }
+      const candidate = nextMobileVersion(previous, env.PLEXY_VERSION_BUMP, env.PLEXY_MOBILE_VERSION);
+      if (await reserveTag(`mobile-build/${candidate}`, sha, reserve)) {
+        version = candidate;
+        break;
+      }
+      previous = candidate;
+    }
+    if (!version) throw Error("Could not reserve a mobile version after 10 concurrent allocations.");
     let minimumSupportedVersion = updateType === "necessary" ? version : config.minimumSupportedVersion || "1.0.0";
     if (previousPolicy && compareSemver(previousPolicy.minimumSupportedVersion, minimumSupportedVersion) > 0) minimumSupportedVersion = previousPolicy.minimumSupportedVersion;
     if (!isVersion(minimumSupportedVersion) || compareSemver(minimumSupportedVersion, version) > 0) throw Error("Invalid minimum supported mobile version.");
-    if (!retry) await reserve(["release", "create", `mobile-v${version}`, "--repo", repo, "--draft", "--title", `Plexy Mobile ${version}`, "--notes", marker || `Local mobile build reservation: ${randomUUID()}`, "--target", env.GITHUB_SHA || "main"]);
     await writeFile(resolve(stateDir, "mobile-version"), `${version}\n`);
     const prepared = { version, versionCode: mobileVersionCode(version), updateType, minimumSupportedVersion, message: String(config.message || "A new version of Plexy is available."), releaseNotes: String(config.releaseNotes || "") } as PreparedMobileRelease;
     await writeFile(resolve(stateDir, "mobile-release.json"), JSON.stringify(prepared, null, 2));

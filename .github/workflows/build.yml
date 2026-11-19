@@ -1,25 +1,38 @@
 name: Build & Release
 
-# Runs on push to `main` (with automatic target detection) or manual dispatch
-# targeting specific components (mobile, desktop, backend, or all).
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
-      target:
-        description: "Target component to build and release"
-        required: true
-        default: "mobile"
+      desktop:
+        description: "macOS desktop app (DMG and ZIP)"
+        type: boolean
+        default: false
+      linux_backend:
+        description: "Linux x64 backend"
+        type: boolean
+        default: false
+      macos_backend:
+        description: "macOS Apple Silicon backend"
+        type: boolean
+        default: false
+      android:
+        description: "Android (OTA when compatible, otherwise APK)"
+        type: boolean
+        default: false
+      backend_contents:
+        description: "Backend package contents"
         type: choice
-        options:
-          - all
-          - mobile
-          - desktop
-          - backend
+        options: [bundle, binary]
+        default: bundle
+      macos_runner:
+        description: "Hosted runner for macOS targets"
+        type: choice
+        options: [github, circleci]
+        default: github
+      release_notes:
+        description: "Optional release highlights"
+        type: string
+        default: ""
       mobile_update_type:
         description: "Mobile update urgency"
         type: choice
@@ -51,33 +64,33 @@ jobs:
     name: Determine build targets
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: |
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
     outputs:
-      build_desktop: ${{ steps.targets.outputs.build_desktop }}
-      build_mobile: ${{ steps.targets.outputs.build_mobile }}
-      build_server: ${{ steps.targets.outputs.build_server }}
-      any_build: ${{ steps.targets.outputs.any_build }}
+      build_number: ${{ steps.reserve.outputs.build_number }}
     steps:
-      - name: Check out
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Detect targets
-        id: targets
+      - name: Select targets and reserve a build number
+        id: reserve
         env:
-          BUILD_TARGET: ${{ inputs.target || '' }}
-          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: bun scripts/build-targets.ts
+          GH_TOKEN: ${{ github.token }}
+          HAS_TARGET: ${{ inputs.desktop || inputs.linux_backend || inputs.macos_backend || inputs.android }}
+        run: |
+          if [[ "$HAS_TARGET" != true ]]; then
+            echo "::error::Select at least one release target."
+            exit 1
+          fi
+          build_number="$(bun scripts/release-refs.ts)"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "### Plexy build $build_number" >> "$GITHUB_STEP_SUMMARY"
 
   checks:
     name: Tests and type checks
     needs: plan
-    if: needs.plan.outputs.any_build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -99,33 +112,33 @@ jobs:
       - name: Verify shared packages
         run: bun run turbo run typecheck typecheck:scripts --filter=@plexy/api-client --filter=@plexy/local-library --filter=//
       - name: Build and verify embedded website
-        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
+        if: inputs.desktop || ((inputs.linux_backend || inputs.macos_backend) && inputs.backend_contents == 'bundle')
         run: bun run turbo run typecheck --filter=@plexy/web
       - name: Install FFmpeg for preparation integration tests
-        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
+        if: inputs.desktop || inputs.linux_backend || inputs.macos_backend
         run: node scripts/install-ffmpeg.mjs
       - name: Verify backend
-        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
+        if: inputs.desktop || inputs.linux_backend || inputs.macos_backend
         run: bun run turbo run typecheck test --filter=@plexy/server
       - name: Verify desktop
-        if: needs.plan.outputs.build_desktop == 'true'
+        if: inputs.desktop
         run: bun run turbo run typecheck test --filter=@plexy/desktop
       - name: Verify Android clients
-        if: needs.plan.outputs.build_mobile == 'true'
+        if: inputs.android
         # Typecheck the suites separately from the Expo app and verify Metro's export.
         run: bun run turbo run typecheck typecheck:tests lint:strict bundle --filter=@plexy/mobile
       - name: Enforce mobile coverage floor
-        if: needs.plan.outputs.build_mobile == 'true'
+        if: inputs.android
         run: bun run test:native:coverage
       - name: Save mobile coverage
-        if: needs.plan.outputs.build_mobile == 'true' && always()
+        if: inputs.android && always()
         uses: actions/upload-artifact@v7
         with:
           name: mobile-coverage
           path: .build/coverage/native/lcov.info
           if-no-files-found: warn
       - name: Save verified website
-        if: needs.plan.outputs.build_server == 'true' || needs.plan.outputs.build_desktop == 'true'
+        if: inputs.desktop || ((inputs.linux_backend || inputs.macos_backend) && inputs.backend_contents == 'bundle')
         uses: actions/upload-artifact@v7
         with:
           name: verified-web
@@ -140,7 +153,7 @@ jobs:
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.build_mobile == 'true'
+      inputs.android
     outputs:
       delivery: ${{ steps.route.outputs.delivery }}
     steps:
@@ -242,39 +255,70 @@ jobs:
     if: |
       github.ref == 'refs/heads/main' &&
       contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      needs.plan.outputs.build_server == 'true'
+      inputs.linux_backend
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/package-server
         with:
           platform: linux-x64
+          contents: ${{ inputs.backend_contents }}
 
   macos:
     name: macOS package (${{ matrix.target }})
     needs: [plan, checks]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.macos_runner == 'circleci' && 'ubuntu-24.04' || 'macos-26' }}
     timeout-minutes: 90
-    if: |
-      github.ref == 'refs/heads/main' &&
-      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor)) &&
-      (needs.plan.outputs.build_desktop == 'true' || needs.plan.outputs.build_server == 'true')
+    if: inputs.desktop || inputs.macos_backend
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.plan.outputs.build_desktop == 'true' && needs.plan.outputs.build_server == 'true' && '["desktop","backend"]' || needs.plan.outputs.build_desktop == 'true' && '["desktop"]' || '["backend"]') }}
+        target: ${{ fromJSON(inputs.desktop && inputs.macos_backend && '["desktop","backend"]' || inputs.desktop && '["desktop"]' || '["backend"]') }}
+    env:
+      MACOS_TARGET: ${{ matrix.target }}
+      PLEXY_BUILD_NUMBER: ${{ needs.plan.outputs.build_number }}
+      BACKEND_CONTENTS: ${{ inputs.backend_contents }}
     steps:
       - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        if: inputs.macos_runner == 'github'
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v7
+        if: inputs.macos_runner == 'github'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Build on GitHub's macOS runner
+        if: inputs.macos_runner == 'github'
+        env:
+          SKIP_FFMPEG: "true"
+        run: |
+          bun install --frozen-lockfile
+          bash scripts/package-macos.sh
       - name: Build on CircleCI and download artifacts
+        if: inputs.macos_runner == 'circleci'
         env:
           CIRCLE_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
           CIRCLECI_PROJECT_SLUG: ${{ vars.CIRCLECI_PROJECT_SLUG }}
           CIRCLECI_PIPELINE_DEFINITION_ID: ${{ vars.CIRCLECI_PIPELINE_DEFINITION_ID }}
-          MACOS_TARGET: ${{ matrix.target }}
         run: node scripts/circleci-macos.mjs
       - name: Attach macOS assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/publish-release.sh "" release-macos/*
+          RELEASE_HIGHLIGHTS: ${{ inputs.release_notes }}
+        run: |
+          notes="$(mktemp)"
+          if [[ "$MACOS_TARGET" == desktop ]]; then
+            printf 'Apple Silicon desktop app. The app is ad-hoc signed and requires approval in macOS Privacy & Security on first launch.\n' > "$notes"
+          elif [[ "$BACKEND_CONTENTS" == binary ]]; then
+            printf 'Apple Silicon backend executable. Supply the runtime files separately.\n' > "$notes"
+          else
+            printf 'Apple Silicon backend bundle with the web UI, migrations, and FFmpeg.\n' > "$notes"
+          fi
+          if [[ -n "$RELEASE_HIGHLIGHTS" ]]; then
+            printf '\n%s\n' "$RELEASE_HIGHLIGHTS" >> "$notes"
+          fi
+          PLEXY_KEEP_RELEASE_NOTES=true bash scripts/publish-release.sh "$notes" release-macos/*
 
   release:
     name: Publish GitHub release
@@ -285,7 +329,7 @@ jobs:
       - checks
       - android
       - server-linux
-    # The CircleCI handoff publishes macOS artifacts independently.
+    # macOS jobs publish their assets independently.
     if: |
       always() &&
       github.ref == 'refs/heads/main' &&
@@ -324,9 +368,20 @@ jobs:
             apk="$(node -p "JSON.parse(require('fs').readFileSync('release/mobile-update.json','utf8')).apkName")"
             tag="mobile-v${version}"
             # Publish the installable APK first; only then advertise the policy.
-            gh release upload "$tag" "release/$apk" release/mobile-update.json --clobber
-            gh release edit "$tag" --draft=false --latest=false --title "Plexy Mobile ${version}" --notes-file release/mobile-update.json
-            if ! gh release view mobile-latest >/dev/null 2>&1; then
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "release/$apk" release/mobile-update.json --clobber
+            else
+              gh release create "$tag" "release/$apk" release/mobile-update.json --target "$GITHUB_SHA" --latest=false --title "Plexy Mobile ${version}" --notes-file release/mobile-update.json
+            fi
+            if gh release view mobile-latest --json assets --jq '.assets[].name' | grep -qx mobile-update.json; then
+              current_policy="$(mktemp)"
+              gh release download mobile-latest --pattern mobile-update.json --output "$current_policy" --clobber
+              latest_version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).latestVersion' "$current_policy")"
+              if [[ "$(printf '%s\n' "$version" "$latest_version" | sort -V | tail -1)" != "$version" ]]; then
+                echo "Keeping the newer Android startup policy for $latest_version."
+                exit 0
+              fi
+            elif ! gh release view mobile-latest >/dev/null 2>&1; then
               gh release create mobile-latest --title "Plexy Mobile update policy" --notes "Stable mobile startup update policy." --latest=false
             fi
             gh release upload mobile-latest release/mobile-update.json --clobber
@@ -349,16 +404,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          PLEXY_BUILD_NUMBER: ${{ needs.plan.outputs.build_number }}
+          RELEASE_HIGHLIGHTS: ${{ inputs.release_notes }}
+          BACKEND_CONTENTS: ${{ inputs.backend_contents }}
         run: |
           set -euo pipefail
 
           version="$(node -p "require('./package.json').version")"
-          # Give every successful run its own release, including beta builds.
-          # Re-running a workflow intentionally updates that run's release.
-          # Base offset of 2000 ensures build numbers exceed any legacy preview builds (1000+)
-          # and keeps Android versionCode strictly increasing to allow in-place updates.
-          build_num=$(( 2000 + GITHUB_RUN_NUMBER ))
-          tag="v${version}-build.${build_num}"
+          tag="v${version}-build.${PLEXY_BUILD_NUMBER}"
           if [[ "$version" == *-beta.* ]]; then
             release_title="Plexy Beta ${tag}"
           else
@@ -375,13 +428,13 @@ jobs:
           cat > release-notes.md <<EOF
           ## ${release_title}
 
-          Only components affected by this change are attached to this release.
+          This release contains the targets selected at dispatch.
 
           ${mac_paragraph}
 
           ${mobile_paragraph}
 
-          **Backend:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg, migrations, and the web folder beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. The browser UI is included: open the server address, or pass \`--no-ui\` for API-only operation.
+          **Backend bundle:** extract the archive for your platform and run \`./plexy-server\`. Keep FFmpeg, migrations, and the web folder beside the executable. Set \`PLEXY_DATA_DIR\` to choose the data folder. The browser UI is included: open the server address, or pass \`--no-ui\` for API-only operation.
 
           This release is ad-hoc signed, but it is not Developer ID signed or notarized. On first launch, macOS may say it cannot verify Plexy and block it. After trying to open Plexy from Applications:
 
@@ -399,6 +452,12 @@ jobs:
 
           Built from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
           EOF
+          if [[ "$BACKEND_CONTENTS" == binary ]]; then
+            printf '\nBackend binary archives contain only the executable. Supply the runtime files separately.\n' >> release-notes.md
+          fi
+          if [[ -n "$RELEASE_HIGHLIGHTS" ]]; then
+            printf '\n%s\n' "$RELEASE_HIGHLIGHTS" >> release-notes.md
+          fi
 
           shopt -s nullglob
           assets=(release/*.apk release/*.tar.gz)

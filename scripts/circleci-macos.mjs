@@ -10,6 +10,8 @@ const {
   CIRCLECI_PIPELINE_DEFINITION_ID,
   GITHUB_SHA,
   MACOS_TARGET,
+  PLEXY_BUILD_NUMBER,
+  BACKEND_CONTENTS = "bundle",
 } = process.env;
 const api = "https://circleci.com/api/v2";
 
@@ -95,7 +97,12 @@ const { id } = await circle(`${project}/pipeline/run`, {
   definition_id: CIRCLECI_PIPELINE_DEFINITION_ID,
   config: { branch: "main" },
   checkout: { branch: "main" },
-  parameters: { "macos-target": MACOS_TARGET, "release-sha": GITHUB_SHA },
+  parameters: {
+    "macos-target": MACOS_TARGET,
+    "release-sha": GITHUB_SHA,
+    "build-number": PLEXY_BUILD_NUMBER,
+    "backend-contents": BACKEND_CONTENTS,
+  },
 });
 console.log(`Started CircleCI pipeline ${id} for ${MACOS_TARGET} at ${GITHUB_SHA}`);
 
@@ -105,7 +112,9 @@ const job = jobs.find(({ name, status }) => name === "package-macos" && status =
 if (!job) throw new Error("CircleCI did not return a successful macOS packaging job");
 
 const { items: artifacts } = await circle(`${project}/${job.job_number}/artifacts`);
-const expected = MACOS_TARGET === "desktop" ? [/\.dmg$/, /\.zip$/] : [/^plexy-server-macos-arm64\.tar\.gz$/];
+const expected = MACOS_TARGET === "desktop"
+  ? [/\.dmg$/, /\.zip$/]
+  : [BACKEND_CONTENTS === "binary" ? /^plexy-server-macos-arm64-binary\.tar\.gz$/ : /^plexy-server-macos-arm64\.tar\.gz$/];
 const output = "release-macos";
 await mkdir(output, { recursive: true });
 for (const pattern of expected) {

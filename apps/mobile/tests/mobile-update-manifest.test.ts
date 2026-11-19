@@ -63,7 +63,7 @@ test("new mobile semantic tags work without build suffixes, ignoring drafts and 
   expect(selectUpdate([{ ...release, prerelease: true }], "mobile", 1, "1.0.8")).toBeNull();
 });
 
-test("allocator reserves distinct builds, reuses draft workflow identity, and preserves the mandatory cutoff", async () => {
+test("allocator reserves Git tags without drafts and preserves the mandatory cutoff", async () => {
   const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -73,23 +73,31 @@ test("allocator reserves distinct builds, reuses draft workflow identity, and pr
     await mkdir(join(root, "apps/mobile"), { recursive: true });
     await writeFile(join(root, "apps/mobile/package.json"), JSON.stringify({ version: "1.0.8" }));
     await writeFile(join(root, "apps/mobile/mobile-release.json"), JSON.stringify({ updateType: "optional", minimumSupportedVersion: "1.0.0" }));
-    let releases: { tag_name: string; body: string; draft: boolean }[] = [];
+    const releases = [{ tag_name: "mobile-v1.0.9", draft: true }];
     const request = (async (url) => String(url).includes("api.github.com") ? Response.json(releases) : Response.json(policy("1.0.9", "1.0.9", "necessary"))) as typeof fetch;
-    const calls: string[][] = [];
-    const reserve = async (args: string[]) => { calls.push(args); return ""; };
-    const first = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_RUN_ID: "42", GITHUB_SHA: "abc", PLEXY_VERSION_BUMP: "", PLEXY_UPDATE_TYPE: "" } });
-    expect(first.version).toBe("1.0.10");
+    const refs = new Set<string>();
+    let collision = true;
+    const reserve = async (args: string[]) => {
+      if (args.includes("-X")) {
+        const ref = args.find((arg) => arg.startsWith("ref="))!.slice(4);
+        if (collision) {
+          collision = false;
+          refs.add(ref);
+          throw Error("Reference already exists");
+        }
+        refs.add(ref);
+        return "";
+      }
+      expect(args.at(-1)).toContain("/git/matching-refs/tags/mobile-build/");
+      return [...refs].join("\n");
+    };
+    const first = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_SHA: "abc", PLEXY_VERSION_BUMP: "", PLEXY_UPDATE_TYPE: "" } });
+    expect(first.version).toBe("1.0.11");
     expect(first.minimumSupportedVersion).toBe("1.0.9");
-    expect(calls).toHaveLength(1);
-    releases = [{ tag_name: "mobile-v1.0.10", body: "Mobile build reservation: 42", draft: true }];
-    const retry = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_RUN_ID: "42" } });
-    expect(retry.version).toBe(first.version);
-    expect(calls).toHaveLength(1);
-    const next = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_RUN_ID: "43", GITHUB_SHA: "abc", PLEXY_UPDATE_TYPE: "necessary" } });
-    expect(next.version).toBe("1.0.11");
-    expect(next.minimumSupportedVersion).toBe("1.0.11");
-    releases[0]!.draft = false;
-    await expect(prepareMobileRelease({ root, request, reserve, env: { GITHUB_RUN_ID: "42" } })).rejects.toThrow("already published");
+    const next = await prepareMobileRelease({ root, request, reserve, env: { GITHUB_SHA: "abc", PLEXY_UPDATE_TYPE: "necessary" } });
+    expect(next.version).toBe("1.0.12");
+    expect(next.minimumSupportedVersion).toBe("1.0.12");
+    expect([...refs]).toEqual(["refs/tags/mobile-build/1.0.10", "refs/tags/mobile-build/1.0.11", "refs/tags/mobile-build/1.0.12"]);
     // An interrupted simultaneous allocation must fail rather than reusing a version.
     await mkdir(join(root, ".build/native/version.lock"));
     await expect(prepareMobileRelease({ root, request, reserve, env: {} })).rejects.toThrow("Another mobile build");

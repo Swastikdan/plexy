@@ -9,7 +9,7 @@ for asset in "$@"; do
 done
 
 version="$(node -p "require('./package.json').version")"
-tag="v${version}-build.$((2000 + GITHUB_RUN_NUMBER))"
+tag="v${version}-build.${PLEXY_BUILD_NUMBER:?Missing reserved Plexy build number}"
 flags=()
 if [[ "$version" == *-beta.* ]]; then
   title="Plexy Beta ${tag}"
@@ -32,6 +32,6 @@ if ! gh release view "$tag" >/dev/null 2>&1; then
 fi
 
 gh release upload "$tag" "$@" --clobber
-if [ -n "$notes_file" ]; then
+if [ -n "$notes_file" ] && [ "${PLEXY_KEEP_RELEASE_NOTES:-}" != true ]; then
   gh release edit "$tag" --draft=false --title "$title" "${notes[@]}"
 fi

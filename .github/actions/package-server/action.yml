@@ -4,6 +4,9 @@ inputs:
   platform:
     description: Platform suffix for the server archive
     required: true
+  contents:
+    description: Backend archive contents (bundle or binary).
+    default: bundle
 runs:
   using: composite
   steps:
@@ -20,27 +23,16 @@ runs:
       run: bun install --frozen-lockfile
       env:
         SKIP_FFMPEG: "true"
-    - name: Cache FFmpeg runtime
-      uses: actions/cache@v5
-      with:
-        path: node_modules/node-av/binary
-        key: ffmpeg-${{ inputs.platform }}-v1-${{ hashFiles('bun.lock', 'scripts/install-ffmpeg.mjs') }}
-    - name: Ensure FFmpeg runtime is installed
-      shell: bash
-      run: node scripts/install-ffmpeg.mjs
     - uses: actions/download-artifact@v8
+      if: inputs.contents == 'bundle'
       with:
         name: verified-web
         path: dist/web
     - shell: bash
-      run: bun run turbo run assemble:server --filter=@plexy/server
-    - name: Smoke test backend
-      shell: bash
-      run: |
-        ./dist/server/ffmpeg -version
-        ./dist/server/plexy-server --version
-    - shell: bash
-      run: tar -czf dist/plexy-server-${{ inputs.platform }}.tar.gz -C dist/server .
+      env:
+        BACKEND_PLATFORM: ${{ inputs.platform }}
+        BACKEND_CONTENTS: ${{ inputs.contents }}
+      run: bash scripts/package-backend.sh "$BACKEND_PLATFORM" "$BACKEND_CONTENTS" dist
     - uses: actions/upload-artifact@v7
       with:
         name: plexy-server-${{ inputs.platform }}

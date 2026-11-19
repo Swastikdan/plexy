@@ -7,6 +7,7 @@ import { generateDmgBackground } from "./generate-dmg-background";
 import { bundleMpv } from "./bundle-mpv";
 import { bundleLibmpv } from "./bundle-libmpv";
 import { findFfmpeg } from "./find-ffmpeg";
+import { releaseCommit, reserveBuildNumber } from "./release-refs";
 
 /**
  * dmg-builder mounts the image to author its `.DS_Store`. If a volume with the
@@ -98,6 +99,9 @@ async function buildDesktop() {
   console.log("\nGenerating DMG installer window background...");
   await generateDmgBackground();
 
+  const buildNumber = process.env.PLEXY_BUILD_NUMBER || String(await reserveBuildNumber(await releaseCommit()));
+  if (!/^\d+$/.test(buildNumber)) throw new Error("Invalid Plexy build number.");
+
   // `--publish never` is required: on CI, electron-builder otherwise tries to
   // publish to GitHub and fails without GH_TOKEN. The release workflow uploads
   // the artifacts itself.
@@ -106,7 +110,7 @@ async function buildDesktop() {
   );
   detachStaleInstallerVolumes("Plexy Beta");
   execSync(
-    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${releasePackage.version} -c.afterPack="${join(rootDir, "scripts", "after-pack-mpv.cjs")}"`,
+    `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${releasePackage.version} -c.buildVersion=${buildNumber} -c.afterPack="${join(rootDir, "scripts", "after-pack-mpv.cjs")}"`,
     {
       stdio: "inherit",
       env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },

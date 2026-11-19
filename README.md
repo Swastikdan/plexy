@@ -108,6 +108,24 @@ Key docs: `docs/API.md` (auth, playback, download, HLS, subtitles, progress), `d
 
 Desktop packaging needs macOS; server builds target the host; Android builds need JDK 17 + Android SDK (`PLEXY_ANDROID_ARCHITECTURES`, `PLEXY_GRADLE_WORKERS` tune ABIs/workers). Icons are generated from SVG for desktop; mobile icon/splash stay checked in for Linux CI.
 
+## Release
+
+Open [Actions → Build & Release](https://github.com/Swastikdan/plexy/actions/workflows/build.yml), click **Run workflow**, and select **main**. Check any combination of **macOS desktop**, **Linux backend**, **macOS backend**, and **Android**. A push or merge does not launch a release.
+
+- **Desktop** builds the web UI and server executable it embeds, then publishes the macOS DMG and ZIP.
+- **Backend** defaults to a self-contained archive with the executable, web UI, migrations, and FFmpeg. Select **binary** for an archive containing only the executable, then supply its runtime files separately. Select either or both backend platforms.
+- **Android** publishes an OTA update when compatible and otherwise builds an APK. Select **Force APK** to request a new installable build.
+- **macOS runner** defaults to GitHub Actions. Select **CircleCI** if GitHub runner capacity delays the build. **Release highlights** adds your notes to the GitHub release.
+
+For example, to publish just the two backend executables:
+
+```sh
+gh workflow run build.yml --ref main \
+  -F linux_backend=true -F macos_backend=true -f backend_contents=binary
+```
+
+Desktop packages keep the root package's semantic version and use a shared numeric build number. Local desktop and Android packaging use your authenticated `gh` session to reserve versions in this repository, and hosted packaging uses the same Git tags. The Android APK keeps its own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds. Publishing creates release pages only once an artifact is ready.
+
 ## Running the server
 
 Keep `web/`, `migrations/`, and FFmpeg next to the executable:

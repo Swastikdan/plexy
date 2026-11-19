@@ -9,6 +9,14 @@ parameters:
     type: string
     default: ""
 
+  build-number:
+    type: string
+    default: ""
+  backend-contents:
+    type: enum
+    enum: [bundle, binary]
+    default: bundle
+
 functions:
   setup-node: github.com/circleci-functions/setup-node@v0.5.0
 
@@ -21,6 +29,8 @@ jobs:
       SKIP_FFMPEG: "true"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       RELEASE_SHA: << pipeline.parameters.release-sha >>
+      PLEXY_BUILD_NUMBER: << pipeline.parameters.build-number >>
+      BACKEND_CONTENTS: << pipeline.parameters.backend-contents >>
       MACOS_TARGET: << pipeline.parameters.macos-target >>
     steps:
       - checkout:
@@ -38,41 +48,10 @@ jobs:
             node-version: "22"
       - setup-node/install-packages
       - run:
-          name: Install packaged FFmpeg
-          command: node scripts/install-ffmpeg.mjs
-      - run:
           name: Build and verify macOS package
-          command: |
-            mkdir -p macos-artifacts
-            case "$MACOS_TARGET" in
-              desktop)
-                if ! brew list --versions mpv >/dev/null; then
-                  brew update
-                  # The image can have a prelinked certificate keg that blocks dependency installation.
-                  if brew list --versions ca-certificates >/dev/null; then
-                    brew unlink ca-certificates
-                  fi
-                  HOMEBREW_NO_AUTO_UPDATE=1 brew install mpv
-                fi
-                export PLEXY_LIBMPV_SOURCE="$(brew --prefix mpv)/lib/libmpv.2.dylib"
-                test -f "$PLEXY_LIBMPV_SOURCE"
-                bun run build:desktop
-                app="dist/mac/mac-arm64/Plexy Beta.app"
-                expected="$(node -p "require('./package.json').version")"
-                actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
-                test "$actual" = "$expected"
-                codesign --verify --deep --strict --verbose=2 "$app"
-                cp dist/mac/*.dmg dist/mac/*.zip macos-artifacts/
-                ;;
-              backend)
-                bun run build:server
-                ./dist/server/ffmpeg -version
-                ./dist/server/plexy-server --version
-                tar -czf macos-artifacts/plexy-server-macos-arm64.tar.gz -C dist/server .
-                ;;
-            esac
+          command: bash scripts/package-macos.sh
       - store_artifacts:
-          path: macos-artifacts
+          path: release-macos
           destination: macos
 
 workflows:
