@@ -46,7 +46,13 @@ jobs:
             mkdir -p macos-artifacts
             case "$MACOS_TARGET" in
               desktop)
-                brew list --versions mpv >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install mpv
+                if ! brew list --versions mpv >/dev/null; then
+                  # The image can have a prelinked certificate keg that blocks dependency installation.
+                  if brew list --versions ca-certificates >/dev/null; then
+                    brew unlink ca-certificates
+                  fi
+                  HOMEBREW_NO_AUTO_UPDATE=1 brew install mpv
+                fi
                 export PLEXY_LIBMPV_SOURCE="$(brew --prefix mpv)/lib/libmpv.2.dylib"
                 test -f "$PLEXY_LIBMPV_SOURCE"
                 bun run build:desktop
