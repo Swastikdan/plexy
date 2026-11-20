@@ -340,12 +340,14 @@ jobs:
             printf '\n%s\n' "$RELEASE_HIGHLIGHTS" >> "$notes"
           fi
           PLEXY_KEEP_RELEASE_NOTES=true bash scripts/publish-release.sh "$notes" release-macos/*
-      - name: Verify Gcore macOS download links
+      - name: Publish macOS installer to itch.io
         id: desktop-mirror
         if: matrix.target == 'desktop'
+        continue-on-error: true
         env:
-          PLEXY_DESKTOP_CDN: ${{ vars.PLEXY_DESKTOP_CDN }}
-        run: bash scripts/verify-macos-cdn.sh release-macos
+          PLEXY_ITCH_PROJECT: ${{ vars.PLEXY_ITCH_PROJECT }}
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: bash scripts/publish-macos-itch.sh release-macos
 
   release:
     name: Publish GitHub release
@@ -482,7 +484,7 @@ jobs:
           2. Scroll to **Security** and click **Open Anyway** next to the Plexy message.
           3. Confirm with your password or Touch ID, then open Plexy again from **Applications** and choose **Open**.
 
-          On some macOS versions, Control-click **Plexy.app** in Applications, choose **Open**, and confirm **Open**. If macOS still blocks it, use the Privacy & Security steps above. Only do this for a copy downloaded through this repository's GitHub Releases page or its linked CDN.
+          On some macOS versions, Control-click **Plexy.app** in Applications, choose **Open**, and confirm **Open**. If macOS still blocks it, use the Privacy & Security steps above. Only do this for a copy downloaded through this repository's GitHub Releases page or its linked itch.io page.
 
           Advanced Terminal alternative:
 
@@ -512,7 +514,7 @@ jobs:
           bash scripts/publish-release.sh release-notes.md "${assets[@]}"
 
   desktop-mirror-links:
-    name: Add Gcore download links to release
+    name: Add itch.io download link to release
     needs: [plan, macos, release]
     if: ${{ !cancelled() && needs.macos.outputs.desktop_mirror_links != '' }}
     runs-on: ubuntu-24.04
@@ -526,7 +528,7 @@ jobs:
         run: |
           notes="$(mktemp)"
           gh release view "$RELEASE_TAG" --json body --jq .body > "$notes"
-          if ! grep -Fxq '### macOS downloads via Gcore' "$notes"; then
-            printf '\n### macOS downloads via Gcore\n\n%s\n' "$MIRROR_LINKS" >> "$notes"
+          if ! grep -Fxq '### macOS downloads via itch.io' "$notes"; then
+            printf '\n### macOS downloads via itch.io\n\n%s\n' "$MIRROR_LINKS" >> "$notes"
             gh release edit "$RELEASE_TAG" --notes-file "$notes"
           fi

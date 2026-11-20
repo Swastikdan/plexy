@@ -160,11 +160,11 @@ gh workflow run build.yml --ref main \
 
 The desktop app, its package filenames, and the general release tag use the version selected by the workflow. A local desktop package uses the higher of the root package's version and the latest general release tag. Local desktop and Android packaging use your authenticated `gh` session to reserve numbers in this repository, and hosted packaging uses the same Git tags. Android APKs keep their own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds.
 
-### macOS download CDN
+### macOS download mirror
 
-The release workflow publishes the DMG and ZIP to GitHub. To serve those files through Gcore, configure an HTTPS CDN resource with `github.com` as its HTTPS origin and Origin Host header. Enable **Redirection from origin** for HTTP 302. Limit delivery to this repository's versioned release download paths. Keep the account within Gcore's free traffic allowance and leave billing disabled.
+Create a public, downloadable itch.io project with **No payments** pricing. In GitHub Actions set the variable `PLEXY_ITCH_PROJECT` to the uploader target (`creator/project` from the itch.io project URL) and the secret `BUTLER_API_KEY` to an [itch.io upload key](https://itch.io/docs/butler/login.html).
 
-Set the GitHub Actions variable `PLEXY_DESKTOP_CDN` to the CDN's HTTPS URL. The workflow adds Gcore links to the release notes after confirming that the CDN serves bytes from each installer directly. The GitHub assets remain available.
+After publishing the DMG and ZIP to GitHub, the desktop workflow pushes the DMG to itch.io with Butler. The itch.io page offers the latest installer in each channel. GitHub keeps the original versioned assets and links to the itch.io page when the upload succeeds and the page is public.
 
 ### Android download mirror
 
