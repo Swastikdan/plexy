@@ -14,7 +14,7 @@
 ///
 /// A sync is a plain client pull: it calls the same read endpoints the UI uses
 /// and performs no server-side work. It never runs while the player is open.
-import type { HomePayload, ItemCard, PersonDetail, TitleDetail } from "@plexy/api-client";
+import type { HomePayload, ItemCard, PersonDetail, SearchResponse, TitleDetail } from "@plexy/api-client";
 import { api } from "../client";
 import { cacheAssetUrls } from "./asset-prefetch";
 
@@ -315,11 +315,36 @@ async function mapWithConcurrency<T>(
 /** Filter and sort the cached catalog for an offline library grid. */
 export function filterCachedItems(
   items: ItemCard[],
-  query: { kind?: "movie" | "series"; libraryId?: number; sort?: string; unwatched?: boolean; q?: string },
+  query: {
+    kind?: "movie" | "series";
+    libraryId?: number;
+    sort?: string;
+    unwatched?: boolean;
+    q?: string;
+    genre?: string;
+    yearFrom?: number;
+    yearTo?: number;
+    minRating?: number;
+    maxRuntime?: number;
+    watchlist?: boolean;
+    favorite?: boolean;
+    hidden?: boolean;
+    minUserRating?: number;
+  },
 ): ItemCard[] {
   let result = items;
   if (query.kind) result = result.filter((item) => item.kind === query.kind);
   if (query.unwatched) result = result.filter((item) => !item.watch?.played);
+  if (query.genre) result = result.filter((item) => item.genres.includes(query.genre!));
+  if (query.yearFrom) result = result.filter((item) => (item.year ?? 0) >= query.yearFrom!);
+  if (query.yearTo) result = result.filter((item) => (item.year ?? 0) <= query.yearTo!);
+  if (query.minRating) result = result.filter((item) => (item.rating ?? 0) >= query.minRating!);
+  if (query.maxRuntime) result = result.filter((item) => (item.runtime ?? 0) <= query.maxRuntime!);
+  if (query.watchlist) result = result.filter((item) => item.watchlist);
+  if (query.favorite) result = result.filter((item) => item.favorite);
+  if (query.hidden) result = result.filter((item) => item.hidden);
+  else result = result.filter((item) => !item.hidden);
+  if (query.minUserRating) result = result.filter((item) => (item.userRating ?? 0) >= query.minUserRating!);
   const text = query.q?.trim().toLowerCase();
   if (text) result = result.filter((item) => item.name.toLowerCase().includes(text));
 
@@ -336,15 +361,23 @@ export function filterCachedItems(
 export function searchCachedItems(
   items: ItemCard[],
   text: string,
-): { titles: ItemCard[]; episodes: ItemCard[] } {
+): SearchResponse {
   const needle = text.trim().toLowerCase();
-  if (!needle) return { titles: [], episodes: [] };
+  if (!needle) {
+    return { titles: [], episodes: [], people: [], total: 0, query: text };
+  }
   const matches = items.filter((item) =>
     item.name.toLowerCase().includes(needle) ||
-    (item.parentTitle ?? "").toLowerCase().includes(needle),
+    (item.parentTitle ?? "").toLowerCase().includes(needle) ||
+    item.genres.some((genre) => genre.toLowerCase().includes(needle)),
   );
+  const titles = matches.filter((item) => item.kind !== "episode");
+  const episodes = matches.filter((item) => item.kind === "episode");
   return {
-    titles: matches.filter((item) => item.kind !== "episode"),
-    episodes: matches.filter((item) => item.kind === "episode"),
+    titles,
+    episodes,
+    people: [],
+    total: titles.length + episodes.length,
+    query: text,
   };
 }

@@ -8,10 +8,10 @@
 /// pointer or keyboard is on the carousel, and can be stopped.
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Bookmark, ChevronLeft, ChevronRight, Info, Pause, Play, Star } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, Pause, Play, Star } from "lucide-react";
 import { artworkUrl } from "../lib/artwork-url";
 import { cx } from "../lib/cx";
-import { useStoredFlag } from "../lib/use-stored-flag";
+import { useItemFlags } from "../lib/use-item-flags";
 import type { ItemCard } from "../client";
 
 const ADVANCE_MS = 7000;
@@ -40,7 +40,8 @@ function HeroSlide({ item }: { item: ItemCard }) {
   const backdrop = artworkUrl(item.backdrop ?? item.poster);
   const logo = artworkUrl(item.logo);
   const { resuming, fileId, canPlay } = slidePlayback(item);
-  const [inWatchlist, toggleWatchlist] = useStoredFlag(`plexy:watchlist:${item.id}`);
+  const { flags, toggleWatchlist } = useItemFlags(item);
+  const inWatchlist = flags.watchlist;
 
   const play = () => {
     if (!canPlay) {
@@ -55,10 +56,10 @@ function HeroSlide({ item }: { item: ItemCard }) {
   };
 
   const playLabel = !canPlay
-    ? `Open ${item.name}`
+    ? "Details"
     : resuming
-      ? `Continue watching ${item.name}`
-      : `Play ${item.name}`;
+      ? "Continue watching"
+      : "Play";
 
   return (
     <article className="relative h-full w-full shrink-0 overflow-hidden">
@@ -91,6 +92,15 @@ function HeroSlide({ item }: { item: ItemCard }) {
 
       <div className="pointer-events-none relative z-10 mx-auto flex h-full max-w-[var(--app-max)] flex-col justify-end px-[var(--app-gutter)] pb-20 pt-20 sm:pb-24 lg:pb-24">
         <div className="hero-copy min-w-0 max-w-[44rem]">
+          {item.genres.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-2" aria-label="Genres">
+              {item.genres.slice(0, 3).map((genre) => (
+                <span key={genre} className="hero-chip">
+                  {genre}
+                </span>
+              ))}
+            </div>
+          )}
           {logo ? (
             <>
               <h1 className="sr-only">{item.name}</h1>
@@ -107,6 +117,10 @@ function HeroSlide({ item }: { item: ItemCard }) {
           )}
 
           <div className="hero-meta">
+            {item.playSubtitle && (
+              <span className="font-semibold text-white/92">{item.playSubtitle}</span>
+            )}
+            {item.playSubtitle && item.year && <span className="meta-dot" aria-hidden />}
             {item.year && <span>{item.year}</span>}
             {item.rating != null && (
               <>
@@ -123,23 +137,11 @@ function HeroSlide({ item }: { item: ItemCard }) {
                 <span>{item.runtime} min</span>
               </>
             )}
-            {item.genres.length > 0 && (
-              <>
-                <span className="meta-dot" aria-hidden />
-                <span className="text-white/60">{item.genres.slice(0, 3).join(" · ")}</span>
-              </>
-            )}
             <span className="meta-dot" aria-hidden />
             <span>{item.kind === "series" ? "Series" : "Film"}</span>
           </div>
 
-          {item.overview && (
-            <p className="mt-3 max-w-[38rem] text-[12.5px] leading-relaxed text-white/75 line-clamp-2 sm:mt-4 sm:text-sm sm:line-clamp-3">
-              {item.overview}
-            </p>
-          )}
-
-          <div className="pointer-events-auto mt-5 flex flex-wrap items-center gap-2.5">
+          <div className="pointer-events-auto mt-6 flex flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={(event) => {
@@ -147,11 +149,26 @@ function HeroSlide({ item }: { item: ItemCard }) {
                 event.stopPropagation();
                 play();
               }}
-              aria-label={playLabel}
-              title={playLabel}
-              className="hero-icon"
+              aria-label={canPlay ? `${playLabel} ${item.name}` : `Details for ${item.name}`}
+              title={canPlay ? playLabel : "Details"}
+              className="hero-primary"
             >
-              <Play size={17} fill="currentColor" aria-hidden />
+              <Play size={15} fill="currentColor" aria-hidden />
+              {playLabel}
+            </button>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void navigate({ to: "/title/$itemId", params: { itemId: item.publicId } });
+              }}
+              aria-label={`Details for ${item.name}`}
+              title="Details"
+              className="hero-secondary"
+            >
+              Details
             </button>
 
             <button
@@ -167,20 +184,6 @@ function HeroSlide({ item }: { item: ItemCard }) {
               className="hero-icon"
             >
               <Bookmark size={16} fill={inWatchlist ? "currentColor" : "none"} />
-            </button>
-
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void navigate({ to: "/title/$itemId", params: { itemId: item.publicId } });
-              }}
-              aria-label={`Details for ${item.name}`}
-              title="Details"
-              className="hero-icon"
-            >
-              <Info size={17} aria-hidden />
             </button>
           </div>
         </div>
@@ -230,7 +233,7 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
         const next = event.relatedTarget;
         if (!(next instanceof Node) || !event.currentTarget.contains(next)) setFocused(false);
       }}
-      className="hero-shell hero-shell--bleed hero-carousel relative h-[clamp(30rem,64vh,44rem)] select-none"
+      className="hero-shell hero-shell--bleed hero-carousel relative !-mt-[3.25rem] h-[clamp(30rem,68vh,52rem)] select-none md:!-mt-[var(--app-topbar-height)]"
     >
       <div className="relative h-full" aria-live={paused ? "polite" : "off"}>
         {items.map((item, index) => (

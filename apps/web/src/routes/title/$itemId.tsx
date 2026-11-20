@@ -20,6 +20,10 @@ import {
   ChevronRight,
   Users,
   HardDrive,
+  EyeOff,
+  FolderHeart,
+  Download,
+  Captions,
 } from "lucide-react";
 import { queries } from "../../queries";
 import { nativeBridge } from "../../lib/native-playback";
@@ -27,11 +31,14 @@ import { api, probeBrowserCaps, type TitleDetail } from "../../client";
 import { Button, Dropdown, Modal } from "@heroui/react";
 import { TrailerModal } from "../../components/trailer-modal";
 import { FixMatchModal } from "../../components/fix-match-modal";
+import { CollectionPicker } from "../../components/collection-picker";
+import { SubtitleSearchModal } from "../../components/subtitle-search-modal";
+import { Row } from "../../components/row";
 import { Page } from "../../components/page";
 import { State } from "../../components/state";
 import { cx } from "../../lib/cx";
 import { artworkUrl } from "../../lib/artwork-url";
-import { useStoredFlag } from "../../lib/use-stored-flag";
+import { useItemFlags } from "../../lib/use-item-flags";
 
 // Capabilities do not change during a session; probing once keeps hover
 // prefetches free of layout work.
@@ -106,12 +113,17 @@ function DetailView({
   queryId: number | string;
   onRefresh: () => void;
 }) {
-  const { item, metadata, cast, trailer, seasons, episodes, file, logo, unmatched, matchReason } = detail;
+  const { item, metadata, cast, trailer, extras, seasons, episodes, file, logo, unmatched, matchReason } = detail;
+  const extraVideos = extras ?? [];
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const [extraVideo, setExtraVideo] = useState<{ key: string; name: string } | null>(null);
   const [fixMatchOpen, setFixMatchOpen] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [subtitleOpen, setSubtitleOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const similar = useQuery(queries.similar(item.id));
 
   const seasonList = seasons && seasons.length > 0
     ? seasons
@@ -177,8 +189,15 @@ function DetailView({
   const isPlayed = !!activeWatch?.played;
   const resumePos = activeWatch?.position ?? 0;
   const hasResume = resumePos > 15 && !isPlayed;
-  const [inWatchlist, toggleWatchlist] = useStoredFlag(`plexy:watchlist:${item.id}`);
-  const [isFavorite, toggleFavorite] = useStoredFlag(`plexy:favorite:${item.id}`);
+  const {
+    flags,
+    toggleWatchlist,
+    toggleFavorite,
+    setRating,
+    setHidden,
+  } = useItemFlags(item);
+  const inWatchlist = flags.watchlist;
+  const isFavorite = flags.favorite;
 
   const displayRuntime = activeEpisode?.runtime || metadata?.runtime || null;
   const displayCert = metadata?.certification || null;
@@ -254,6 +273,15 @@ function DetailView({
 
           <div className="flex items-end gap-6 lg:gap-8">
             <div className="hero-copy min-w-0 flex-1">
+              {displayGenres.length > 0 && (
+                <div className="mb-3.5 flex flex-wrap gap-2" aria-label="Genres">
+                  {displayGenres.map((genre) => (
+                    <span key={genre} className="hero-chip">
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+              )}
               {logo ? (
                 <>
                   <h1 className="sr-only">{item.name}</h1>
@@ -283,12 +311,6 @@ function DetailView({
                     <span>{displayCert}</span>
                   </>
                 )}
-                {displayGenres.length > 0 && (
-                  <>
-                    <span className="meta-dot" aria-hidden />
-                    <span className="text-white/55">{displayGenres.join(" · ")}</span>
-                  </>
-                )}
                 <span className="meta-dot" aria-hidden />
                 <span>{item.kind === "series" ? "Series" : "Film"}</span>
               </div>
@@ -311,6 +333,43 @@ function DetailView({
                   </span>
                 </div>
               )}
+
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-[11px] font-medium text-white/55">
+                  Your rating
+                </span>
+                <span className="flex items-center gap-0.5" role="group" aria-label="Rate this title">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const selected = (flags.rating ?? 0) >= star;
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setRating(flags.rating === star ? null : star)}
+                        aria-label={`${selected ? "Remove" : "Set"} ${star}-star rating`}
+                        title={`${star} star${star === 1 ? "" : "s"}`}
+                        className="rounded p-0.5 text-[#f0c56a] transition-transform active:scale-90"
+                      >
+                        <Star
+                          size={15}
+                          strokeWidth={1.5}
+                          fill={selected ? "currentColor" : "none"}
+                          className={selected ? "" : "text-white/35"}
+                        />
+                      </button>
+                    );
+                  })}
+                </span>
+                {flags.rating != null && (
+                  <button
+                    type="button"
+                    onClick={() => setRating(null)}
+                    className="text-[10px] font-semibold text-white/45 underline underline-offset-2 hover:text-white/75"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
 
               {displayOverview && (
                 <p className="mt-4 max-w-[42rem] text-[13px] leading-relaxed text-white/75 line-clamp-3 sm:text-sm">
@@ -381,15 +440,37 @@ function DetailView({
                       <Dropdown.Menu
                         onAction={(key) => {
                           if (key === "fix-match") setFixMatchOpen(true);
+                          else if (key === "collection") setCollectionOpen(true);
+                          else if (key === "subtitles") setSubtitleOpen(true);
                           else if (key === "refresh") refreshMutation.mutate();
-                          else if (key === "clear-watch") clearWatchMutation.mutate(item.id);
-                          else if (key === "delete") setDeleteOpen(true);
+                          else if (key === "download" && file?.fileId) {
+                            const anchor = document.createElement("a");
+                            anchor.href = `/api/download/${file.fileId}`;
+                            anchor.download = "";
+                            anchor.click();
+                          } else if (key === "clear-watch") clearWatchMutation.mutate(item.id);
+                          else if (key === "hide") {
+                            setHidden(true);
+                            void navigate({ to: "/" });
+                          } else if (key === "delete") setDeleteOpen(true);
                         }}
                       >
                         {item.kind !== "episode" && (
                           <Dropdown.Item id="fix-match" textValue="Fix TMDB match">
                             <Wrench size={14} className="shrink-0 text-muted" />
                             <span>Fix TMDB match</span>
+                          </Dropdown.Item>
+                        )}
+                        {item.kind !== "episode" && (
+                          <Dropdown.Item id="collection" textValue="Add to collection">
+                            <FolderHeart size={14} className="shrink-0 text-muted" />
+                            <span>Add to collection</span>
+                          </Dropdown.Item>
+                        )}
+                        {file?.fileId && (
+                          <Dropdown.Item id="subtitles" textValue="Find subtitles">
+                            <Captions size={14} className="shrink-0 text-muted" />
+                            <span>Find subtitles</span>
                           </Dropdown.Item>
                         )}
                         <Dropdown.Item
@@ -400,6 +481,12 @@ function DetailView({
                           <RotateCw size={14} className={cx("shrink-0 text-muted", refreshMutation.isPending && "animate-spin")} />
                           <span>Refresh metadata</span>
                         </Dropdown.Item>
+                        {item.kind !== "series" && file?.fileId && (
+                          <Dropdown.Item id="download" textValue="Download original">
+                            <Download size={14} className="shrink-0 text-muted" />
+                            <span>Download original</span>
+                          </Dropdown.Item>
+                        )}
                         {item.watch && (
                           <Dropdown.Item
                             id="clear-watch"
@@ -408,6 +495,12 @@ function DetailView({
                           >
                             <Trash2 size={14} className="shrink-0 text-danger-soft-foreground" />
                             <span>Clear watch progress</span>
+                          </Dropdown.Item>
+                        )}
+                        {item.kind !== "episode" && (
+                          <Dropdown.Item id="hide" textValue="Hide from library">
+                            <EyeOff size={14} className="shrink-0 text-muted" />
+                            <span>Hide from library</span>
                           </Dropdown.Item>
                         )}
                         <Dropdown.Section>
@@ -579,6 +672,36 @@ function DetailView({
             </section>
           )}
 
+          {similar.data && similar.data.items.length > 0 && (
+            <Row title="More like this" items={similar.data.items} wide />
+          )}
+
+          {extraVideos.length > 0 && (
+            <section className="panel overflow-hidden">
+              <header className="border-b border-border/70 px-4 py-3.5 sm:px-5">
+                <h2 className="font-sans text-lg font-bold tracking-[-0.03em] text-foreground">
+                  More videos
+                </h2>
+              </header>
+              <div className="flex flex-wrap gap-2 p-3 sm:p-4">
+                {extraVideos.map((extra) => (
+                  <button
+                    key={`${extra.provider}-${extra.key}`}
+                    type="button"
+                    onClick={() => setExtraVideo({ key: extra.key, name: extra.name })}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-secondary/50 px-3 py-2 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-surface-secondary"
+                  >
+                    <Video size={13} className="text-muted" aria-hidden />
+                    <span className="max-w-56 truncate">{extra.name}</span>
+                    <span className="text-[9.5px] font-medium uppercase tracking-[0.08em] text-muted">
+                      {extra.type}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
         </div>
 
         {(cast?.length || (item.kind !== "series" && file)) && (
@@ -670,11 +793,31 @@ function DetailView({
       </div>
 
       <TrailerModal
-        open={trailerOpen}
-        onOpenChange={setTrailerOpen}
-        trailerKey={trailer?.key ?? null}
-        title={item.name}
+        open={trailerOpen || extraVideo !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTrailerOpen(false);
+            setExtraVideo(null);
+          }
+        }}
+        trailerKey={extraVideo?.key ?? trailer?.key ?? null}
+        title={extraVideo?.name ?? item.name}
       />
+
+      <CollectionPicker
+        item={item}
+        open={collectionOpen}
+        onOpenChange={setCollectionOpen}
+      />
+
+      {file?.fileId && (
+        <SubtitleSearchModal
+          fileId={file.fileId}
+          title={item.name}
+          open={subtitleOpen}
+          onOpenChange={setSubtitleOpen}
+        />
+      )}
 
       <FixMatchModal
         open={fixMatchOpen}

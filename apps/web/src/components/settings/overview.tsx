@@ -1,9 +1,9 @@
 /// Settings dashboard landing page: identity, catalog snapshot, device summary,
 /// and the actions people actually reach for.
 ///
-/// Every block on this page uses the same panel radius, header padding, and
-/// label scale as the rest of Settings, so the dashboard reads as one surface
-/// rather than a collage.
+/// Every block uses the same panel radius and one header rhythm. The catalog
+/// numbers stand alone, libraries take the full width, and the two secondary
+/// panels share an equal row so nothing is squeezed into a narrow column.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -31,18 +31,6 @@ interface MeResponse {
   device: AuthDevice;
 }
 
-const TYPE_ICON: Record<string, typeof Film> = {
-  movies: Film,
-  tv: Tv,
-  anime: Sparkles,
-};
-
-const TYPE_LABEL: Record<string, string> = {
-  movies: "Movies",
-  tv: "TV shows",
-  anime: "Anime",
-};
-
 export function OverviewPanel({ admin }: { admin: boolean }) {
   const me = useQuery<MeResponse>({
     queryKey: ["account"],
@@ -57,39 +45,24 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
   const shows = libraryList.filter((library) => library.type === "tv" || library.type === "anime");
   const movieTitles = sumCount(movies, "items");
   const showTitles = sumCount(shows, "items");
-  const needsReview = sumCount(libraryList, "review");
   const activeDevices = (devices.data ?? []).filter((device) => !device.revoked).length;
-  const scan = status.data?.scan;
 
   return (
     <div className="space-y-4">
-      <ProfileBanner
-        me={me.data}
-        admin={admin}
-        scanning={scan?.status === "running"}
-        online={Boolean(status.data)}
-      />
+      <ProfileBanner me={me.data} admin={admin} />
 
       <section className="panel grid grid-cols-2 gap-px overflow-hidden bg-border xl:grid-cols-4">
-        <StatTile icon={Film} label="Movies" value={movieTitles.toLocaleString()} detail={`${movies.length} ${movies.length === 1 ? "library" : "libraries"}`} />
-        <StatTile icon={Tv} label="TV shows" value={showTitles.toLocaleString()} detail={`${shows.length} ${shows.length === 1 ? "library" : "libraries"}`} />
-        <StatTile
-          icon={Library}
-          label="Libraries"
-          value={String(libraryList.length)}
-          detail={needsReview > 0 ? `${needsReview} to review` : "All matched"}
-          tone={needsReview > 0 ? "warning" : undefined}
-        />
-        <StatTile icon={MonitorSmartphone} label="Devices" value={String(activeDevices)} detail="signed in" />
+        <StatTile label="Movies" value={movieTitles} />
+        <StatTile label="TV shows" value={showTitles} />
+        <StatTile label="Libraries" value={libraryList.length} />
+        <StatTile label="Devices" value={activeDevices} />
       </section>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <LibrarySnapshot libraries={libraryList} admin={admin} loading={libraries.isLoading} />
+      <LibrarySnapshot libraries={libraryList} admin={admin} loading={libraries.isLoading} />
 
-        <div className="space-y-4">
-          <QuickActions admin={admin} />
-          <ServerHealth admin={admin} />
-        </div>
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <QuickActions admin={admin} />
+        <ServerHealth admin={admin} />
       </div>
     </div>
   );
@@ -98,13 +71,9 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
 function ProfileBanner({
   me,
   admin,
-  scanning,
-  online,
 }: {
   me?: MeResponse;
   admin: boolean;
-  scanning: boolean;
-  online: boolean;
 }) {
   return (
     <section className="panel relative overflow-hidden p-4 sm:p-5">
@@ -137,17 +106,6 @@ function ProfileBanner({
                 {me?.user.role === "admin" ? "Administrator" : "Viewer"}
               </span>
             </div>
-            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
-              <span className="inline-flex min-w-0 items-center gap-1.5">
-                <MonitorSmartphone size={11} className="shrink-0" />
-                <span className="truncate">{me?.device.name ?? "This device"}</span>
-              </span>
-              <span aria-hidden className="text-muted/35">/</span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden className={cx("h-1.5 w-1.5 rounded-full", online ? "bg-[var(--success)]" : "bg-[var(--warning)]")} />
-                {statusLabel(scanning, online)}
-              </span>
-            </p>
           </div>
         </div>
 
@@ -175,35 +133,12 @@ function ProfileBanner({
   );
 }
 
-function statusLabel(scanning: boolean, online: boolean): string {
-  if (scanning) return "Scanning libraries";
-  return online ? "Server online" : "Connecting to server";
-}
-
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: typeof Film;
-  label: string;
-  value: string;
-  detail: string;
-  tone?: "warning";
-}) {
+function StatTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="bg-surface px-4 py-4 sm:px-5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10.5px] font-semibold text-muted">{label}</span>
-        <Icon size={13} className="text-muted/50" aria-hidden />
-      </div>
-      <p className="mt-2 font-sans text-[1.7rem] font-extrabold leading-none tracking-[-0.05em] text-foreground tabular-nums">
-        {value}
-      </p>
-      <p className={cx("mt-1.5 text-[10.5px]", tone === "warning" ? "font-medium text-warning-soft-foreground" : "text-muted")}>
-        {detail}
+      <p className="text-[10.5px] font-semibold text-muted">{label}</p>
+      <p className="mt-1.5 font-sans text-[1.8rem] font-extrabold leading-none tracking-[-0.05em] text-foreground tabular-nums">
+        {value.toLocaleString()}
       </p>
     </div>
   );
@@ -235,20 +170,15 @@ function LibrarySnapshot({
       </header>
 
       {loading ? (
-        <div className="space-y-2 p-4">
+        <div className="space-y-2 border-t border-border/70 p-4">
           {[0, 1, 2].map((index) => (
             <div key={index} className="skeleton h-12 rounded-lg" />
           ))}
         </div>
       ) : libraries.length === 0 ? (
-        <div className="flex flex-col items-start gap-2 px-5 py-7">
+        <div className="flex flex-col items-start gap-2 border-t border-border/70 px-5 py-7">
           <FolderOpen size={20} className="text-muted" />
           <p className="text-[13px] font-semibold text-foreground">No libraries yet</p>
-          <p className="max-w-sm text-[11px] leading-relaxed text-muted">
-            {admin
-              ? "Add a media type, point Plexy at its folders, and the catalog builds in the background."
-              : "Ask an administrator to share a library with your account."}
-          </p>
           {admin && (
             <Link
               to="/add-library"
@@ -261,29 +191,16 @@ function LibrarySnapshot({
       ) : (
         <ul className="divide-y divide-border/50 border-t border-border/70">
           {libraries.map((library) => {
-            const Icon = TYPE_ICON[library.type] ?? Film;
-            const review = library.counts.review ?? 0;
+            const Icon = library.type === "movies" ? Film : Tv;
             return (
               <li key={library.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-secondary/40 sm:px-5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-secondary text-foreground">
                   <Icon size={14} aria-hidden />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-semibold text-foreground">{library.name}</p>
-                  <p className="mt-0.5 truncate text-[10.5px] text-muted">
-                    {TYPE_LABEL[library.type] ?? "Library"}
-                    <span className="px-1.5 text-muted/30">·</span>
-                    {library.paths.length} folder{library.paths.length === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-[12px] font-semibold tabular-nums text-foreground">
-                    {library.counts.items.toLocaleString()}
-                  </p>
-                  <p className={cx("text-[10px]", review > 0 ? "text-warning-soft-foreground" : "text-muted")}>
-                    {review > 0 ? `${review} to review` : "titles"}
-                  </p>
-                </div>
+                <p className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">{library.name}</p>
+                <p className="shrink-0 text-[12px] font-semibold tabular-nums text-foreground">
+                  {library.counts.items.toLocaleString()}
+                </p>
               </li>
             );
           })}
@@ -305,7 +222,7 @@ function QuickActions({ admin }: { admin: boolean }) {
     { to: "/settings" as const, search: { tab: "appearance" as const }, label: "Change appearance", icon: Sparkles },
   ];
   return (
-    <section className="panel overflow-hidden">
+    <section className="panel flex h-full flex-col overflow-hidden">
       <header className="px-4 py-3.5 sm:px-5">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Quick actions</h2>
       </header>
@@ -337,7 +254,7 @@ function ServerHealth({ admin }: { admin: boolean }) {
   const status = useQuery(queries.serverStatus());
   const data = status.data;
   return (
-    <section className="panel p-4 sm:p-5">
+    <section className="panel flex h-full flex-col p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Server health</h2>
         <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-muted">
@@ -345,7 +262,7 @@ function ServerHealth({ admin }: { admin: boolean }) {
           {data ? "Online" : "Connecting"}
         </span>
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3.5">
+      <dl className="mt-4 grid flex-1 grid-cols-2 gap-x-4 gap-y-3.5">
         <HealthItem label="Version" value={data?.version ? `v${data.version}` : "…"} />
         <HealthItem label="Uptime" value={data?.uptimeSeconds != null ? formatUptime(data.uptimeSeconds) : "…"} />
         <HealthItem label="Address" value={data?.bind ? `${data.bind}:${data.port}` : "…"} mono />
@@ -355,7 +272,7 @@ function ServerHealth({ admin }: { admin: boolean }) {
         <Link
           to="/settings"
           search={{ tab: "server" }}
-          className="group mt-4 inline-flex items-center gap-1 text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground"
+          className="group mt-4 inline-flex items-center gap-1 self-start text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground"
         >
           Open server settings
           <ArrowUpRight size={12} className="transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />

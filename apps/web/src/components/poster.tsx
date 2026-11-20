@@ -30,16 +30,54 @@ export interface PosterItem {
   name: string;
   poster?: string | null;
   backdrop?: string | null;
+  still?: string | null;
   kind?: string;
   year?: number | null;
   rating?: number | null;
   fileId?: number | null;
   watch?: ItemCard["watch"] | null;
   parentTitle?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  playSubtitle?: string | null;
 }
 
 function stripEpisodePrefix(name: string): string {
   return name.replace(/^S\d+E\d+\s*[·:\-–—]\s*/i, "").trim() || name;
+}
+
+function durationLabel(seconds: number | null | undefined): string | null {
+  if (!seconds || seconds <= 0) return null;
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+function ProgressRing({ percent }: { percent: number }) {
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - Math.min(100, Math.max(0, percent)) / 100);
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5 -rotate-90" aria-hidden>
+      <circle cx="10" cy="10" r={radius} fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
+      <circle
+        cx="10"
+        cy="10"
+        r={radius}
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+      />
+    </svg>
+  );
 }
 
 export function Poster({
@@ -47,14 +85,25 @@ export function Poster({
   className,
   wide = false,
   directPlay = false,
+  caption = false,
+  overlayTitle = true,
 }: {
   item: PosterItem;
   className?: string;
   wide?: boolean;
   directPlay?: boolean;
+  /** Show the title/metadata below the card even for a wide card. */
+  caption?: boolean;
+  /** Draw the title over wide artwork; turn off when a caption sits below. */
+  overlayTitle?: boolean;
 }) {
-  const imgSrc = artworkUrl(wide ? item.backdrop ?? item.poster : item.poster ?? item.backdrop);
-  const showTitleBelow = !wide;
+  const imgSrc = artworkUrl(
+    wide
+      ? item.still ?? item.backdrop ?? item.poster
+      : item.poster ?? item.backdrop,
+  );
+  const showTitleBelow = !wide || caption;
+  const showOverlay = wide && overlayTitle;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const canPlayDirect = directPlay && item.fileId != null;
@@ -104,6 +153,16 @@ export function Poster({
   const primaryTitle = item.kind === "episode" ? item.parentTitle ?? episodeTitle : item.name;
   const secondaryTitle = item.kind === "episode" && item.parentTitle ? episodeTitle : null;
   const percent = Math.min(100, Math.max(0, item.watch?.percent ?? 0));
+  const episodeBadge =
+    wide && item.kind === "episode"
+      ? item.episodeNumber
+        ? `E${item.episodeNumber}`
+        : item.playSubtitle
+      : null;
+  const duration = durationLabel(item.watch?.duration);
+  const overlayPrimary = item.kind === "episode" ? episodeTitle : primaryTitle;
+  const overlaySecondary =
+    item.kind === "episode" ? item.parentTitle ?? null : secondaryTitle;
 
   return (
     <div
@@ -119,7 +178,9 @@ export function Poster({
         className={cx(
           "media-card group relative block h-full overflow-hidden",
           "focus-within:ring-2 focus-within:ring-accent/60 focus-within:ring-offset-2 focus-within:ring-offset-background",
-          wide ? "rounded-xl" : "rounded-[calc(var(--radius)*1.35)]",
+          wide
+            ? "rounded-xl border border-[var(--cinema-line)]"
+            : "rounded-[calc(var(--radius)*1.35)]",
           menuOpen && "z-30",
           className,
         )}
@@ -149,23 +210,40 @@ export function Poster({
           </div>
         )}
 
-        {/* Wide cards carry their own caption on the art. */}
-        {wide && (
+        {/* Wide cards carry their own caption on the art unless a caption sits below. */}
+        {showOverlay && (
           <div className="pointer-events-none absolute inset-0" aria-hidden>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 p-3 sm:p-3.5">
-              <p className="truncate text-[12.5px] font-semibold text-white">{primaryTitle}</p>
-              {secondaryTitle && (
-                <p className="mt-0.5 truncate text-[10px] text-white/55">{secondaryTitle}</p>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/92 via-black/24 to-black/12" />
+            <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2.5">
+              {episodeBadge ? (
+                <span className="inline-flex h-5 items-center rounded-md bg-black/55 px-1.5 text-[10px] font-semibold tracking-[0.02em] text-white/92 backdrop-blur-sm">
+                  {episodeBadge}
+                </span>
+              ) : (
+                <span />
               )}
+              {duration && (
+                <span className="inline-flex h-5 items-center rounded-md bg-black/55 px-1.5 text-[10px] font-semibold tabular-nums text-white/88 backdrop-blur-sm transition-opacity duration-150 group-hover/card:opacity-0">
+                  {duration}
+                </span>
+              )}
+            </div>
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3 sm:p-3.5">
+              <div className="min-w-0">
+                <p className="truncate text-[12.5px] font-semibold text-white">{overlayPrimary}</p>
+                {overlaySecondary && (
+                  <p className="mt-0.5 truncate text-[10px] text-white/58">{overlaySecondary}</p>
+                )}
+              </div>
+              {percent > 0 && <ProgressRing percent={percent} />}
             </div>
           </div>
         )}
 
-        {percent > 0 && (
+        {percent > 0 && !wide && (
           <div className="absolute inset-x-0 bottom-0 z-10 h-[3px] bg-black/55" aria-hidden>
             <div
-              className="h-full origin-left bg-accent transition-transform duration-500 ease-out"
+              className="h-full origin-left bg-[var(--brand)] transition-transform duration-500 ease-out"
               style={{ transform: `scaleX(${Math.max(2, percent) / 100})` }}
             />
           </div>

@@ -7,7 +7,6 @@ import { BufferingIndicator } from '@/components/videojs/ui/buffering-indicator'
 import { Container } from '@/components/videojs/ui/container';
 import { ErrorDialog } from '@/components/videojs/ui/error-dialog';
 import { Poster } from '@/components/videojs/ui/poster';
-import { Title } from '@/components/videojs/ui/title';
 import { cn } from '@/lib/resolve-class-name';
 
 import { VideoGestures } from './behaviors/gestures';
@@ -17,6 +16,10 @@ import { NeutralVideoControls } from './layout/controls';
 
 export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof Container>>, 'children'> {
   children?: ReactNode;
+  title?: string;
+  subtitle?: string | null;
+  /** Render the built-in Video.js error dialog. Off while a retry is recovering. */
+  showErrorDialog?: boolean;
   renderPoster?: NonNullable<ComponentProps<typeof Poster>>['renderImage'];
   renderThumbnail?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['renderThumbnail'];
   onSeekDragStart?: () => void;
@@ -30,11 +33,19 @@ export interface VideoSkinProps extends Omit<NonNullable<ComponentProps<typeof C
   subtitlePosition?: number;
   onAdjustSubtitlePosition?: (delta: number) => void;
   onResetSubtitlePosition?: () => void;
+  chapters?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['chapters'];
+  onSelectChapter?: (start: number) => void;
+  versions?: NonNullable<ComponentProps<typeof NeutralVideoControls>>['versions'];
+  selectedFileId?: number;
+  onSelectVersion?: (fileId: number) => void;
 }
 
 export function VideoSkin({
   children,
   className,
+  title,
+  subtitle,
+  showErrorDialog = true,
   renderPoster,
   renderThumbnail,
   onSeekDragStart,
@@ -48,6 +59,11 @@ export function VideoSkin({
   subtitlePosition,
   onAdjustSubtitlePosition,
   onResetSubtitlePosition,
+  chapters,
+  onSelectChapter,
+  versions,
+  selectedFileId,
+  onSelectVersion,
   ...props
 }: VideoSkinProps = {}) {
   return (
@@ -60,10 +76,11 @@ export function VideoSkin({
       {children}
       <Poster renderImage={renderPoster} />
       <BufferingIndicator />
-      <ErrorDialog />
-      <Title />
+      {showErrorDialog && <ErrorDialog />}
 
       <NeutralVideoControls
+        title={title}
+        subtitle={subtitle}
         renderThumbnail={renderThumbnail}
         onSeekDragStart={onSeekDragStart}
         onSeekDragEnd={onSeekDragEnd}
@@ -76,6 +93,11 @@ export function VideoSkin({
         subtitlePosition={subtitlePosition}
         onAdjustSubtitlePosition={onAdjustSubtitlePosition}
         onResetSubtitlePosition={onResetSubtitlePosition}
+        chapters={chapters}
+        onSelectChapter={onSelectChapter}
+        versions={versions}
+        selectedFileId={selectedFileId}
+        onSelectVersion={onSelectVersion}
       />
 
       <VideoHotkeys />

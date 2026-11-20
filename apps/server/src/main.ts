@@ -166,6 +166,14 @@ async function main(): Promise<void> {
       .catch(() => {});
   }, 5_000);
 
+  // Age ratings were skipped by older hydration passes. Fill a bounded batch
+  // at startup so parental controls start working without a manual rescan.
+  setTimeout(() => {
+    void import("./hydrate")
+      .then(({ backfillCertifications }) => backfillCertifications(100))
+      .catch(() => {});
+  }, 7_000);
+
   // Backfill community skip markers for libraries indexed before the cache
   // existed. Scans and playbacks refresh stale rows from here on.
   if (cfg.skipSegmentsEnabled) {

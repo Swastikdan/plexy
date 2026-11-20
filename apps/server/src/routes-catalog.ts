@@ -16,6 +16,13 @@ import { optimizationView } from "./optimize";
 import { denyIfNotLocal, apiError } from "./essentials";
 import { getConfig } from "./config";
 import { removeOriginal } from "./trash";
+import { fileForEpisode } from "./episode-files";
+import {
+  ensureSearchIndex,
+  fallbackIds,
+  searchIds,
+  searchPeople,
+} from "./search-index";
 import type { ItemCard } from "@plexy/api-client";
 
 // --- card assembly -----------------------------------------------------------
@@ -51,7 +58,7 @@ function sizedImageUrl(artworkId: number, kind: string): string {
  * Decorate raw item rows with artwork, metadata, files and watch state. Three indexed
  * queries beat a correlated subquery per row on large libraries.
  */
-async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
+export async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
   const user = requestUser(request);
   if (user) rows = rows.filter(row => canAccessItem(user, Number(row.id)));
   const userId = user?.id ?? 0;
@@ -68,6 +75,12 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
   const watchRows = q<Row>(
     `SELECT item_id, position_seconds, duration_seconds, played FROM watch_state WHERE user_id = ${userId} AND item_id IN (${ph})`,
   ).all(...ids);
+  const flagRows = userId
+    ? q<Row>(
+        `SELECT item_id, watchlist, favorite, hidden, rating FROM user_item_flags
+         WHERE user_id = ? AND item_id IN (${ph})`,
+      ).all(userId, ...ids)
+    : [];
   const fileRows = q<Row>(
     `SELECT id, item_id FROM media_files WHERE item_id IN (${ph}) AND unavailable = 0 ORDER BY id DESC`,
   ).all(...ids);
@@ -81,6 +94,21 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
     }
   }
 
+  // Episode cards read best as "Series · S01E03". The parent lookup is one
+  // extra indexed query for the whole page, not one per row.
+  const parentIds = [...new Set(rows
+    .map((row) => (row.parent_id == null ? null : Number(row.parent_id)))
+    .filter((id): id is number => id != null && id > 0))];
+  const parents = new Map<number, Row>();
+  if (parentIds.length) {
+    const parentPh = parentIds.map(() => "?").join(",");
+    for (const parent of q<Row>(
+      `SELECT id, name, public_id FROM items WHERE id IN (${parentPh})`,
+    ).all(...parentIds)) {
+      parents.set(Number(parent.id), parent);
+    }
+  }
+
   const art = new Map<number, Record<string, string>>();
   for (const a of artRows) {
     const id = Number(a.item_id);
@@ -91,15 +119,25 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
   }
   const meta = new Map(metaRows.map((m) => [Number(m.item_id), m]));
   const watch = new Map(watchRows.map((w) => [Number(w.item_id), w]));
+  const flags = new Map(flagRows.map((f) => [Number(f.item_id), f]));
 
   return rows.map((row) => {
     const id = Number(row.id);
+    // A multi-episode file belongs to the first episode only; later siblings
+    // resolve the same file through their stored range.
+    if (!fileIds.has(id) && String(row.kind) === "episode") {
+      const covering = fileForEpisode(id);
+      if (covering && (!user || canAccessFile(user, Number(covering.id)))) {
+        fileIds.set(id, Number(covering.id));
+      }
+    }
     const w = watch.get(id);
     const position = w ? Number(w.position_seconds) : 0;
     const duration = w && w.duration_seconds != null ? Number(w.duration_seconds) : null;
     const played = w ? !!Number(w.played) : false;
     const md = meta.get(id);
     const m = art.get(id);
+    const flag = flags.get(id);
     return {
       id,
       publicId: String(row.public_id),
@@ -110,6 +148,16 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
       episodeNumber: row.episode_number == null ? null : Number(row.episode_number),
       fileId: fileIds.get(id) ?? null,
       parentId: row.parent_id == null ? null : Number(row.parent_id),
+      parentTitle: row.parent_id == null
+        ? null
+        : parents.get(Number(row.parent_id))?.name != null
+          ? String(parents.get(Number(row.parent_id))!.name)
+          : null,
+      parentPublicId: row.parent_id == null
+        ? null
+        : parents.get(Number(row.parent_id))?.public_id != null
+          ? String(parents.get(Number(row.parent_id))!.public_id)
+          : null,
       poster: m?.poster ?? (row.kind === "episode" ? m?.thumb ?? null : null),
       backdrop: m?.backdrop ?? (row.kind === "episode" ? m?.thumb ?? m?.poster ?? null : null),
       logo: m?.logo ?? null,
@@ -118,6 +166,10 @@ async function attachArt(rows: Row[], request: Request): Promise<ItemCard[]> {
       runtime: md?.runtime == null ? null : Number(md.runtime),
       genres: md?.genres ? JSON.parse(String(md.genres)) as string[] : [],
       matchStatus: String(row.match_status ?? ""),
+      watchlist: Boolean(flag?.watchlist),
+      favorite: Boolean(flag?.favorite),
+      hidden: Boolean(flag?.hidden),
+      userRating: flag?.rating == null ? null : Number(flag.rating),
       watch: played || position > 0
         ? {
             position, duration, played,
@@ -212,6 +264,11 @@ async function nextUpEpisodes(request: Request): Promise<ItemCard[]> {
      ORDER BY parent_id, season_number, episode_number`,
   ).all(...seriesIds);
 
+  const hiddenSeries = new Set(
+    q<{ item_id: number }>(
+      "SELECT item_id FROM user_item_flags WHERE user_id=? AND hidden=1",
+    ).all(userId).map((row) => Number(row.item_id)),
+  );
   const bySeries = new Map<number | null, Row[]>();
   for (const e of episodes) {
     const key = (e.parent_id as number | null) ?? null;
@@ -221,7 +278,8 @@ async function nextUpEpisodes(request: Request): Promise<ItemCard[]> {
   }
 
   const picks: Row[] = [];
-  for (const list of bySeries.values()) {
+  for (const [parentId, list] of bySeries) {
+    if (parentId != null && hiddenSeries.has(parentId)) continue;
     for (let i = 1; i < list.length; i++) {
       const ep = list[i]!;
       const prev = list[i - 1]!;
@@ -283,16 +341,15 @@ function heroPlayback(
 
   if (kind === "series") {
     const watched = q<Row>(
-      `SELECT f.id, e.season_number, e.episode_number,
+      `SELECT e.id AS item_id, e.season_number, e.episode_number,
               w.position_seconds, w.duration_seconds, w.played
        FROM watch_state w
        JOIN items e ON e.id = w.item_id AND e.kind = 'episode' AND e.parent_id = ?
-       JOIN media_files f ON f.item_id = e.id AND f.unavailable = 0
        WHERE w.user_id = ? AND w.position_seconds > 0
        ORDER BY w.updated_at DESC, w.item_id DESC LIMIT 1`,
     ).get(itemId, user?.id ?? 0);
-    const resumeFile = accessible(watched);
-    if (resumeFile != null) {
+    const resumeFile = watched ? accessible(fileForEpisode(Number(watched.item_id))) : null;
+    if (resumeFile != null && watched) {
       return {
         playFileId: resumeFile,
         playSubtitle: episodeLabel(watched),
@@ -300,15 +357,24 @@ function heroPlayback(
       };
     }
 
-    const firstEpisode = q<Row>(
-      `SELECT f.id, e.season_number, e.episode_number FROM items e
-       JOIN media_files f ON f.item_id = e.id AND f.unavailable = 0
-       WHERE e.parent_id = ? AND e.kind = 'episode'
-       ORDER BY e.season_number, e.episode_number, f.height DESC, f.id
-       LIMIT 1`,
-    ).get(itemId);
+    const firstEpisodes = q<Row>(
+      `SELECT id, season_number, episode_number FROM items
+       WHERE parent_id = ? AND kind = 'episode'
+       ORDER BY season_number, episode_number LIMIT 50`,
+    ).all(itemId);
+    let firstEpisode: Row | null = null;
+    let firstFile: Row | null = null;
+    for (const episode of firstEpisodes) {
+      const candidate = fileForEpisode(Number(episode.id));
+      if (!candidate) continue;
+      if (accessible(candidate) != null) {
+        firstEpisode = episode;
+        firstFile = candidate;
+        break;
+      }
+    }
     return {
-      playFileId: accessible(firstEpisode),
+      playFileId: accessible(firstFile),
       playSubtitle: episodeLabel(firstEpisode),
       playWatch: null,
     };
@@ -342,32 +408,68 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
          JOIN item_metadata m ON m.item_id = i.id
          JOIN artwork a ON a.item_id = i.id AND a.kind = 'backdrop'
          WHERE ${accessSql(request)} AND i.kind = 'movie' AND i.match_status = 'matched' AND m.rating IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM user_item_flags hf WHERE hf.user_id=${userId} AND hf.item_id=i.id AND hf.hidden=1)
          ORDER BY m.rating DESC, i.sort_title LIMIT 1`,
       ).get()
       ?? q<Row>(
         `SELECT i.* FROM items i JOIN artwork a ON a.item_id = i.id AND a.kind = 'backdrop'
          WHERE ${accessSql(request)} AND i.kind IN ('movie','series') AND i.match_status != 'unmatched'
+           AND NOT EXISTS (SELECT 1 FROM user_item_flags hf WHERE hf.user_id=${userId} AND hf.item_id=i.id AND hf.hidden=1)
          ORDER BY i.match_status = 'matched' DESC, i.added_at DESC, i.id DESC LIMIT 1`,
       ).get()
       ?? null;
 
+    const hiddenSql = `AND NOT EXISTS (
+      SELECT 1 FROM user_item_flags hf
+      WHERE hf.user_id = ${userId} AND hf.hidden = 1
+        AND (hf.item_id = i.id OR (i.parent_id IS NOT NULL AND hf.item_id = i.parent_id))
+    )`;
     const continueRows = q<Row>(
       `SELECT i.* FROM items i JOIN watch_state w ON w.item_id = i.id
        WHERE w.user_id = ${userId} AND w.position_seconds > 15 AND w.played = 0
          AND w.duration_seconds IS NOT NULL
          AND w.position_seconds < w.duration_seconds * 0.95
+         ${hiddenSql}
        ORDER BY w.updated_at DESC LIMIT 50`,
     ).all();
     const recentMovies = q<Row>(
-      `SELECT * FROM items WHERE ${accessSql(request, 'id')} AND kind='movie' AND match_status='matched'
-       ORDER BY added_at DESC, id DESC LIMIT 20`,
+      `SELECT * FROM items i WHERE ${accessSql(request, 'i.id')} AND i.kind='movie' AND i.match_status='matched'
+       ${hiddenSql}
+       ORDER BY i.added_at DESC, i.id DESC LIMIT 20`,
     ).all();
     const recentShows = q<Row>(
-      `SELECT * FROM items WHERE ${accessSql(request, 'id')} AND kind='series' ORDER BY added_at DESC, id DESC LIMIT 20`,
+      `SELECT * FROM items i WHERE ${accessSql(request, 'i.id')} AND i.kind='series'
+       ${hiddenSql}
+       ORDER BY i.added_at DESC, i.id DESC LIMIT 20`,
     ).all();
+    const watchlist = userId
+      ? q<Row>(
+          `SELECT i.* FROM items i
+           JOIN user_item_flags f ON f.item_id = i.id
+           WHERE f.user_id = ? AND f.watchlist = 1 AND f.hidden = 0
+             AND i.kind IN ('movie','series') AND ${accessSql(request, 'i.id')}
+           ORDER BY f.updated_at DESC LIMIT 20`,
+        ).all(userId)
+      : [];
+    const favorites = userId
+      ? q<Row>(
+          `SELECT i.* FROM items i
+           JOIN user_item_flags f ON f.item_id = i.id
+           WHERE f.user_id = ? AND f.favorite = 1 AND f.hidden = 0
+             AND i.kind IN ('movie','series') AND ${accessSql(request, 'i.id')}
+           ORDER BY f.updated_at DESC LIMIT 20`,
+        ).all(userId)
+      : [];
     const nextUp = await nextUpEpisodes(request);
 
-    const [featured, continueWatching, recentlyMovies, recentlyShows] = await Promise.all([
+    const [
+      featured,
+      continueWatching,
+      recentlyMovies,
+      recentlyShows,
+      watchlistCards,
+      favoriteCards,
+    ] = await Promise.all([
       featuredRow
         ? attachArt([featuredRow], request).then((r) => {
             const card = r[0];
@@ -379,41 +481,176 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       attachArt(continueRows, request),
       attachArt(recentMovies, request),
       attachArt(recentShows, request),
+      attachArt(watchlist, request),
+      attachArt(favorites, request),
     ]);
 
     const rows = [
       continueWatching.length > 0 && { key: "continue", title: "Continue watching", items: continueWatching },
       nextUp.length > 0 && { key: "next", title: "Next up", items: nextUp },
+      watchlistCards.length > 0 && { key: "watchlist", title: "Watchlist", items: watchlistCards },
+      favoriteCards.length > 0 && { key: "favorites", title: "Favorites", items: favoriteCards },
       recentlyMovies.length > 0 && { key: "recent-movies", title: "Recently added movies", items: recentlyMovies },
       recentlyShows.length > 0 && { key: "recent-shows", title: "Recently added shows", items: recentlyShows },
     ].filter(Boolean);
     return { featured, rows };
   })
 
+  /** Recently watched movies and episodes, newest first. */
+  .get("/history", async ({ query, request }) => {
+    const user = requestUser(request);
+    if (!user) return { items: [], total: 0 };
+    const limit = Math.min(Math.max(Number(query.limit), 1), 500);
+    const offset = Math.max(0, Number(query.offset));
+    const whereSql = [
+      accessSql(request, "i.id"),
+      "w.user_id = ?",
+      "i.kind IN ('movie','episode')",
+      "(w.position_seconds > 0 OR w.played = 1)",
+      "NOT EXISTS (SELECT 1 FROM user_item_flags hf WHERE hf.user_id = ? AND hf.hidden = 1 AND (hf.item_id = i.id OR (i.parent_id IS NOT NULL AND hf.item_id = i.parent_id)))",
+    ].join(" AND ");
+    const rows = q<Row>(
+      `SELECT i.*, w.updated_at AS watched_at
+       FROM items i JOIN watch_state w ON w.item_id = i.id
+       WHERE ${whereSql}
+       ORDER BY w.updated_at DESC, i.id DESC
+       LIMIT ? OFFSET ?`,
+    ).all(user.id, user.id, limit, offset);
+    const total = Number(
+      q<{ n: number }>(
+        `SELECT COUNT(*) AS n
+         FROM items i JOIN watch_state w ON w.item_id = i.id
+         WHERE ${whereSql}`,
+      ).get(user.id, user.id)?.n ?? 0,
+    );
+    const cards = await attachArt(rows, request);
+    const watchedAt = new Map(
+      rows.map((row) => [Number(row.id), row.watched_at == null ? null : String(row.watched_at)]),
+    );
+    return {
+      items: cards.map((card) => ({
+        ...card,
+        watchedAt: watchedAt.get(card.id) ?? null,
+      })),
+      total,
+    };
+  }, {
+    query: t.Object({
+      limit: t.Numeric({ default: 60 }),
+      offset: t.Numeric({ default: 0 }),
+    }),
+  })
+
+  /** Remove one title from this user's history (also clears its resume point). */
+  .delete("/history/:itemId", ({ params, request }) => {
+    const user = requestUser(request);
+    if (!user) return apiError("Sign in required.", 401);
+    const itemId = parseItemId(params.itemId);
+    if (itemId == null) return invalidItemId();
+    run("DELETE FROM watch_state WHERE user_id = ? AND item_id = ?", user.id, itemId);
+    return { ok: true };
+  }, { params: t.Object({ itemId: t.Numeric() }) })
+
+  /** Clear this user's whole watch history and resume points. */
+  .delete("/history", ({ request }) => {
+    const user = requestUser(request);
+    if (!user) return apiError("Sign in required.", 401);
+    run("DELETE FROM watch_state WHERE user_id = ?", user.id);
+    return { ok: true };
+  })
+
   /** Library grid with sort + filters (PRD 5.9, 10.2). */
   .get("/items", async ({ query, request }) => {
     // Browse surfaces list titles, not their episodes or season containers. An
     // episode card only belongs in Continue watching, Next up, or search.
+    const userId = requestUser(request)?.id ?? 0;
     const where: string[] = [accessSql(request), "i.kind IN ('movie','series')"];
     const params: unknown[] = [];
     if (query.kind) { where.push("i.kind = ?"); params.push(query.kind); }
     if (query.year) { where.push("i.year = ?"); params.push(query.year); }
+    if (query.yearFrom) { where.push("i.year >= ?"); params.push(query.yearFrom); }
+    if (query.yearTo) { where.push("i.year <= ?"); params.push(query.yearTo); }
     if (query.libraryId) { where.push("i.library_id = ?"); params.push(query.libraryId); }
-    if (query.unwatched) where.push(`i.id NOT IN (SELECT item_id FROM watch_state WHERE user_id=${requestUser(request)?.id ?? 0} AND played = 1)`);
-    if (query.q) { where.push("i.name LIKE ?"); params.push(`%${query.q}%`); }
-    const order = ITEM_ORDER[query.sort ?? "name"] ?? ITEM_ORDER.name;
+    if (query.unwatched) {
+      where.push(`i.id NOT IN (SELECT item_id FROM watch_state WHERE user_id=${userId} AND played = 1)`);
+    }
+    if (query.q) {
+      where.push("(i.name LIKE ? OR i.sort_title LIKE ?)");
+      params.push(`%${query.q}%`, `%${query.q}%`);
+    }
+    if (query.genre) {
+      where.push(
+        `EXISTS (SELECT 1 FROM json_each(COALESCE(m.genres, '[]')) j WHERE j.value = ?)`,
+      );
+      params.push(query.genre);
+    }
+    if (query.minRating) {
+      where.push("m.rating IS NOT NULL AND m.rating >= ?");
+      params.push(query.minRating);
+    }
+    if (query.maxRuntime) {
+      where.push("m.runtime IS NOT NULL AND m.runtime <= ?");
+      params.push(query.maxRuntime);
+    }
+    if (query.watchlist) {
+      where.push(
+        `EXISTS (SELECT 1 FROM user_item_flags f WHERE f.user_id=${userId} AND f.item_id=i.id AND f.watchlist=1)`,
+      );
+    }
+    if (query.favorite) {
+      where.push(
+        `EXISTS (SELECT 1 FROM user_item_flags f WHERE f.user_id=${userId} AND f.item_id=i.id AND f.favorite=1)`,
+      );
+    }
+    if (query.minUserRating) {
+      where.push(
+        `EXISTS (SELECT 1 FROM user_item_flags f WHERE f.user_id=${userId} AND f.item_id=i.id AND f.rating >= ?)`,
+      );
+      params.push(query.minUserRating);
+    }
+    if (query.hidden) {
+      where.push(
+        `EXISTS (SELECT 1 FROM user_item_flags f WHERE f.user_id=${userId} AND f.item_id=i.id AND f.hidden=1)`,
+      );
+    } else {
+      where.push(
+        `NOT EXISTS (SELECT 1 FROM user_item_flags f WHERE f.user_id=${userId} AND f.item_id=i.id AND f.hidden=1)`,
+      );
+    }
+    const order = query.sort === "userRating"
+      ? `COALESCE((SELECT f.rating FROM user_item_flags f WHERE f.user_id=${userId} AND f.item_id=i.id), 0) DESC, i.sort_title`
+      : ITEM_ORDER[query.sort ?? "name"] ?? ITEM_ORDER.name;
+    const limit = Math.min(Math.max(Number(query.limit ?? 60), 1), 5000);
+    const offset = Math.max(0, Number(query.offset ?? 0));
+    const whereSql = where.join(" AND ");
     const rows = q<Row>(
       `SELECT i.* FROM items i
        LEFT JOIN item_metadata m ON m.item_id = i.id
-       WHERE ${where.join(" AND ")}
+       WHERE ${whereSql}
        ORDER BY ${order} LIMIT ? OFFSET ?`,
-    ).all(...params, query.limit, query.offset);
-    return { items: await attachArt(rows, request) };
+    ).all(...params, limit, offset);
+    const total = Number(
+      q<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM items i
+         LEFT JOIN item_metadata m ON m.item_id = i.id
+         WHERE ${whereSql}`,
+      ).get(...params)?.n ?? 0,
+    );
+    return { items: await attachArt(rows, request), total };
   }, {
     query: t.Object({
       libraryId: t.Optional(t.Numeric()),
       kind: t.Optional(t.Union([t.Literal("movie"), t.Literal("series")])),
       year: t.Optional(t.Numeric()),
+      yearFrom: t.Optional(t.Numeric()),
+      yearTo: t.Optional(t.Numeric()),
+      genre: t.Optional(t.String()),
+      minRating: t.Optional(t.Numeric()),
+      maxRuntime: t.Optional(t.Numeric()),
+      watchlist: t.Optional(t.BooleanString()),
+      favorite: t.Optional(t.BooleanString()),
+      hidden: t.Optional(t.BooleanString()),
+      minUserRating: t.Optional(t.Numeric()),
       unwatched: t.Optional(t.BooleanString()),
       sort: t.Optional(t.String()),
       q: t.Optional(t.String()),
@@ -446,9 +683,20 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       character: p.character_name ? String(p.character_name) : null,
       photo: p.profile_path ? `/api/people/${Number(p.id)}/photo?w=300` : null,
     }));
-    const video = q<Row>(
-      "SELECT * FROM videos WHERE item_id = ? ORDER BY official DESC, published_at DESC LIMIT 1",
-    ).get(id);
+    const videos = q<Row>(
+      `SELECT id, provider, key, name, type, official, published_at
+       FROM videos WHERE item_id = ?
+       ORDER BY CASE WHEN type = 'Trailer' THEN 0 WHEN type = 'Teaser' THEN 1 ELSE 2 END,
+                official DESC, published_at DESC
+       LIMIT 16`,
+    ).all(id);
+    const video = videos[0];
+    const extras = videos.slice(1).map((entry) => ({
+      provider: String(entry.provider),
+      key: String(entry.key),
+      name: String(entry.name),
+      type: String(entry.type),
+    }));
 
     let seasons: Array<{ id: number; number: number; name?: string; poster?: string | null }> | null = null;
     let episodes: ItemCard[] | null = null;
@@ -501,9 +749,13 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       }
     }
 
-    const file = row.kind === "movie" || row.kind === "episode"
+    let file = row.kind === "movie" || row.kind === "episode"
       ? q<Row>("SELECT * FROM media_files WHERE item_id = ? AND unavailable = 0 ORDER BY id DESC").all(id).find(file => !user || canAccessFile(user, Number(file.id)))
       : null;
+    if (!file && row.kind === "episode") {
+      const covering = fileForEpisode(id);
+      if (covering && (!user || canAccessFile(user, Number(covering.id)))) file = covering;
+    }
 
     // Sidecar logo (clear-art) is a detail-hero nicety; missing is fine.
     const logoRow = q<Row>(
@@ -524,6 +776,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       } : null,
       cast,
       trailer: video ? { provider: String(video.provider), key: String(video.key), name: String(video.name) } : null,
+      extras,
       seasons,
       episodes,
       file: file ? fileInfoView(file) : null,
@@ -532,6 +785,41 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       matchReason: (row.reason as string | null) ?? null,
     });
   })
+
+  /** Local recommendation shelf: shared genres and people, rating as a tie-break. */
+  .get("/items/:id/similar", async ({ params, request }) => {
+    const itemId = parseItemId(params.id);
+    if (itemId == null) return apiError("Not found", 404);
+    const target = q<Row>(
+      `SELECT i.id, i.kind, COALESCE(m.genres, '[]') AS genres
+       FROM items i LEFT JOIN item_metadata m ON m.item_id=i.id
+       WHERE i.id = ?`,
+    ).get(itemId);
+    if (!target) return apiError("Not found", 404);
+    const rows = q<Row>(
+      `SELECT i.*,
+         (
+           SELECT COUNT(*) FROM json_each(COALESCE(m.genres, '[]')) g
+           WHERE g.value IN (SELECT value FROM json_each(?))
+         ) * 3 +
+         (
+           SELECT COUNT(DISTINCT ip2.person_id)
+           FROM item_people ip1 JOIN item_people ip2 ON ip2.person_id = ip1.person_id
+           WHERE ip1.item_id = ? AND ip2.item_id = i.id
+         ) AS affinity
+       FROM items i
+       LEFT JOIN item_metadata m ON m.item_id = i.id
+       WHERE i.id != ? AND i.kind IN ('movie','series')
+         AND ${accessSql(request, 'i.id')}
+         AND NOT EXISTS (
+           SELECT 1 FROM user_item_flags f
+           WHERE f.user_id = ? AND f.item_id = i.id AND f.hidden = 1
+         )
+       ORDER BY affinity DESC, COALESCE(m.rating, 0) DESC, i.added_at DESC
+       LIMIT 14`,
+    ).all(String(target.genres), itemId, itemId, requestUser(request)?.id ?? 0);
+    return { items: await attachArt(rows.filter((row) => Number(row.affinity) > 0), request) };
+  }, { params: t.Object({ id: t.String() }) })
 
   /**
    * Person detail: photo plus every title they appear in that is locally
@@ -568,6 +856,63 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
       items,
     });
   }, { params: t.Object({ personId: t.Numeric() }) })
+
+  /**
+   * Set the signed-in viewer's watchlist/favorite/hidden/rating flags. Missing
+   * fields keep their previous value; `rating: null` clears the rating.
+   */
+  .put("/items/:id/flags", ({ params, body, request }) => {
+    const user = requestUser(request);
+    const itemId = parseItemId(params.id);
+    if (itemId == null) return invalidItemId();
+    if (!user) return apiError("Sign in required.", 401);
+    if (!canAccessItem(user, itemId)) return apiError("Not found", 404);
+
+    const existing = q<Row>(
+      "SELECT watchlist, favorite, hidden, rating FROM user_item_flags WHERE user_id=? AND item_id=?",
+    ).get(user.id, itemId);
+    const watchlist = body.watchlist ?? Boolean(existing?.watchlist);
+    const favorite = body.favorite ?? Boolean(existing?.favorite);
+    const hidden = body.hidden ?? Boolean(existing?.hidden);
+    const rating = body.rating !== undefined
+      ? body.rating
+      : existing?.rating == null ? null : Number(existing.rating);
+
+    if (!watchlist && !favorite && !hidden && rating == null) {
+      run("DELETE FROM user_item_flags WHERE user_id=? AND item_id=?", user.id, itemId);
+    } else {
+      run(
+        `INSERT INTO user_item_flags
+           (user_id,item_id,watchlist,favorite,hidden,rating,updated_at)
+         VALUES (?,?,?,?,?,?,datetime('now'))
+         ON CONFLICT(user_id,item_id) DO UPDATE SET
+           watchlist=excluded.watchlist, favorite=excluded.favorite,
+           hidden=excluded.hidden, rating=excluded.rating,
+           updated_at=datetime('now')`,
+        user.id,
+        itemId,
+        watchlist ? 1 : 0,
+        favorite ? 1 : 0,
+        hidden ? 1 : 0,
+        rating,
+      );
+    }
+    return {
+      ok: true as const,
+      watchlist,
+      favorite,
+      hidden,
+      rating,
+    };
+  }, {
+    params: t.Object({ id: t.String() }),
+    body: t.Object({
+      watchlist: t.Optional(t.Boolean()),
+      favorite: t.Optional(t.Boolean()),
+      hidden: t.Optional(t.Boolean()),
+      rating: t.Optional(t.Union([t.Null(), t.Integer({ minimum: 1, maximum: 5 })])),
+    }),
+  })
 
   /**
    * Remove a title and its indexed descendants. Source files follow the
@@ -635,36 +980,59 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
    */
   .get("/search", async ({ query, request }) => {
     const text = query.q.trim();
-    if (!text) return { titles: [] as ItemCard[], episodes: [] as ItemCard[], items: [] as ItemCard[] };
-    const like = `%${text}%`;
+    const empty = {
+      titles: [] as ItemCard[],
+      episodes: [] as ItemCard[],
+      people: [] as Array<{ id: number; name: string; photo: string | null }>,
+      total: 0,
+      query: text,
+      items: [] as ItemCard[],
+    };
+    if (!text) return empty;
 
-    const titleRows = q<Row>(
-      `SELECT * FROM items
-       WHERE ${accessSql(request, 'id')} AND kind IN ('movie', 'series') AND match_status = 'matched' AND name LIKE ?
-       ORDER BY score DESC, sort_title LIMIT 24`,
-    ).all(like);
+    ensureSearchIndex();
+    const limit = Math.min(Math.max(Number(query.limit ?? 60), 1), 120);
+    const offset = Math.max(0, Number(query.offset ?? 0));
+    // Ask FTS for a little more than a page because access filtering and the
+    // title/episode split happen after the rows are decorated.
+    let hits = searchIds(text, limit * 3, offset);
+    if (!hits.length) hits = fallbackIds(text, limit * 3, offset);
+    if (!hits.length) {
+      return { ...empty, people: searchPeople(text) };
+    }
 
-    const episodeRows = q<Row>(
-      `SELECT e.* FROM items e
-       LEFT JOIN items s ON s.id = e.parent_id
-       WHERE ${accessSql(request, 'e.id')} AND e.kind = 'episode' AND e.match_status = 'matched'
-         AND (e.name LIKE ? OR s.name LIKE ?)
-       ORDER BY s.sort_title, e.season_number, e.episode_number
-       LIMIT 40`,
-    ).all(like, like);
+    const ids = hits.map((hit) => hit.itemId);
+    const ph = ids.map(() => "?").join(",");
+    const rows = q<Row>(`SELECT * FROM items WHERE id IN (${ph})`).all(...ids);
+    const cards = await attachArt(rows, request);
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    const userId = requestUser(request)?.id ?? 0;
+    const hiddenIds = new Set(
+      userId
+        ? q<{ item_id: number }>(
+            "SELECT item_id FROM user_item_flags WHERE user_id = ? AND hidden = 1",
+          ).all(userId).map((row) => Number(row.item_id))
+        : [],
+    );
+    const visible = ids
+      .map((id) => byId.get(id))
+      .filter((card): card is ItemCard =>
+        Boolean(card) &&
+        !card!.hidden &&
+        !(card!.parentId != null && hiddenIds.has(card!.parentId)),
+      )
+      .slice(0, limit);
 
-    const [titles, episodes] = await Promise.all([
-      attachArt(titleRows, request),
-      attachArt(episodeRows, request),
-    ]);
+    const titles = visible.filter((item) => item.kind !== "episode");
+    const episodes = visible.filter((item) => item.kind === "episode");
 
     // Episodes carry their series name and public id so the card can show
     // "The Bear · S02E03" and link the episode rather than the show.
     const parentIds = [...new Set(episodes.map((e) => e.parentId).filter((id): id is number => id != null))];
     if (parentIds.length) {
-      const ph = parentIds.map(() => "?").join(",");
+      const parentPh = parentIds.map(() => "?").join(",");
       const parents = new Map(
-        q<Row>(`SELECT id, name, public_id FROM items WHERE id IN (${ph})`)
+        q<Row>(`SELECT id, name, public_id FROM items WHERE id IN (${parentPh})`)
           .all(...parentIds)
           .map((p) => [Number(p.id), p]),
       );
@@ -678,9 +1046,22 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     }
 
     // Keep the flat alias while older desktop bundles may still request
-    // `items`; current clients render the two typed sections above.
-    return { titles, episodes, items: [...titles, ...episodes] };
-  }, { query: t.Object({ q: t.String() }) })
+    // `items`; current clients render the typed groups above.
+    return {
+      titles,
+      episodes,
+      people: searchPeople(text),
+      total: titles.length + episodes.length,
+      query: text,
+      items: [...titles, ...episodes],
+    };
+  }, {
+    query: t.Object({
+      q: t.String(),
+      limit: t.Optional(t.Numeric()),
+      offset: t.Optional(t.Numeric()),
+    }),
+  })
 
   /**
    * Shared playback progress (PRD 5.8, 5.10) — the only LAN-allowed mutation.

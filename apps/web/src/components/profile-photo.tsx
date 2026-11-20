@@ -95,10 +95,6 @@ export function ProfilePhotoEditor({ user }: { user?: AccountUser }) {
           <UserAvatar user={user} size={56} className="rounded-2xl" />
           <div className="min-w-0">
             <h2 className="text-[12.5px] font-bold tracking-[-0.01em] text-foreground">Profile photo</h2>
-            <p className="mt-1 max-w-md text-[10.5px] leading-relaxed text-muted">
-              Shown in the header, settings, and user lists. Images are cropped
-              to a square and compressed on this device before upload.
-            </p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">

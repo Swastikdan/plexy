@@ -49,14 +49,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="mt-1.5 max-w-2xl text-[11px] leading-relaxed text-muted">
-            People who can sign in to this Plexy server. New accounts start with
-            no library access; administrators always have full access. Everyone
-            pairs their own devices from Settings.
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <Button
           variant="primary"
           onPress={() => setCreating(true)}

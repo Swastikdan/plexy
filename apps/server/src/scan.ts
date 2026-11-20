@@ -21,6 +21,7 @@ import { cacheEmbeddedSubtitles } from "./subtitles";
 import { resolveOptimizedDir, resolveTrickplayDir } from "./paths";
 import { PLEXY_MEDIA_DIR, removePreparedFile } from "./trash";
 import { hydrateItemMetadata, hydrateEpisodeItem, hydrateMissingEpisodes } from "./hydrate";
+import { rebuildSearchIndex } from "./search-index";
 import { refreshMissingSkipSegments } from "./skip-segments";
 
 export interface ScanProgress {
@@ -311,6 +312,7 @@ async function runScan(libraryIds: number[]): Promise<void> {
     log.info("scanner", "scan complete", {
       files: progress.filesSeen, updated: progress.filesUpdated, issues: progress.issues,
     });
+    rebuildSearchIndex();
     void pruneTmdbCacheSoon();
   } catch (err) {
     progress.status = "failed";
@@ -632,6 +634,14 @@ async function ensureItemAndMatch(
   if (episodeNumber) {
     const episodeItem = await ensureEpisode(seriesItem, seasonItem, seasonNumber, episodeNumber, parsed.title);
     if (episodeItem) run("UPDATE media_files SET item_id=? WHERE id=?", episodeItem, fileId);
+
+    // `S01E01-E02` covers more than one episode. Create the sibling items so
+    // they appear in the season and next-up; fileForEpisode() maps them back to
+    // this one media file.
+    const rangeEnd = parsed.episodeEnd == null ? episodeNumber : Math.min(parsed.episodeEnd, episodeNumber + 9);
+    for (let number = episodeNumber + 1; number <= rangeEnd; number++) {
+      await ensureEpisode(seriesItem, seasonItem, seasonNumber, number, parsed.title);
+    }
   }
 }
 

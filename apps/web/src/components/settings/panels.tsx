@@ -61,12 +61,11 @@ interface MeResponse {
 const THEME_CHOICES: Array<{
   value: ThemePreference;
   label: string;
-  hint: string;
   icon: typeof Sun;
 }> = [
-  { value: "light", label: "Light", hint: "Bright surfaces, dark text", icon: Sun },
-  { value: "dark", label: "Dark", hint: "Dim room, low glare", icon: Moon },
-  { value: "system", label: "System", hint: "Follows this device", icon: Monitor },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "System", icon: Monitor },
 ];
 
 const LANGUAGE_OPTIONS = [
@@ -86,11 +85,7 @@ export function AppearancePanel() {
   const { preference, setPreference } = useTheme();
   return (
     <div className="space-y-4">
-      <SettingsSection
-        icon={Palette}
-        title="Theme"
-        description="Saved on this device only. Your phone can follow the system while the desktop app stays dark."
-      >
+      <SettingsSection icon={Palette} title="Theme">
         <div className="grid gap-3 sm:grid-cols-3">
           {THEME_CHOICES.map((choice) => {
             const Icon = choice.icon;
@@ -118,10 +113,7 @@ export function AppearancePanel() {
                     </span>
                   )}
                 </span>
-                <span>
-                  <span className="block text-[12px] font-semibold text-foreground">{choice.label}</span>
-                  <span className="mt-0.5 block text-[10.5px] text-muted">{choice.hint}</span>
-                </span>
+                <span className="text-[12px] font-semibold text-foreground">{choice.label}</span>
                 <ThemeSwatch mode={choice.value} />
               </button>
             );
@@ -129,16 +121,10 @@ export function AppearancePanel() {
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        icon={Accessibility}
-        title="Accessibility"
-        description="Plexy follows your operating system's reduced-motion setting."
-      >
-        <p className="max-w-2xl text-[11.5px] leading-relaxed text-muted">
-          Page transitions and hover physics collapse to simple fades when reduced motion is on.
-          Every control keeps a visible keyboard focus ring in both themes.
-        </p>
-      </SettingsSection>
+      <p className="flex items-center gap-2 px-1 text-[11px] leading-relaxed text-muted">
+        <Accessibility size={13} aria-hidden />
+        Plexy follows your operating system's reduced-motion setting.
+      </p>
     </div>
   );
 }
@@ -155,7 +141,7 @@ function ThemeSwatch({ mode }: { mode: ThemePreference }) {
       <span className={cx("h-full w-2 rounded-sm", mode === "light" ? "bg-[#eaeaeb]" : "bg-[#232325]")} />
       <span className={cx("h-3 w-2 rounded-sm", mode === "light" ? "bg-[#efeff0]" : "bg-[#262728]")} />
       <span className={cx("h-5 w-2 rounded-sm", mode === "light" ? "bg-[#eaeaeb]" : "bg-[#18181b]")} />
-      <span className="ml-auto h-6 w-6 rounded-full bg-[#0485f7]" />
+      <span className="ml-auto h-6 w-6 rounded-full bg-[#5045e6]" />
     </span>
   );
 }
@@ -191,7 +177,6 @@ export function AccountPanel({ admin }: { admin: boolean }) {
       <SettingsSection
         icon={UserRound}
         title="Account"
-        description="Your sign-in details for this Plexy server."
         action={
           admin ? (
             <Link
@@ -204,7 +189,7 @@ export function AccountPanel({ admin }: { admin: boolean }) {
           ) : undefined
         }
       >
-        <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4">
           <Detail label="Username" value={user?.username ?? "…"} />
           <Detail label="Role" value={user?.role === "admin" ? "Administrator" : "User"} />
           <Detail label="This device" value={me.data?.device.name ?? "…"} />
@@ -221,13 +206,9 @@ export function AccountPanel({ admin }: { admin: boolean }) {
 
       <ProfilePhotoEditor user={user} />
 
-      <SettingsSection
-        icon={KeyRound}
-        title="Password"
-        description="Changing your password signs out your other devices and invalidates pairing codes. You stay signed in here."
-      >
+      <SettingsSection icon={KeyRound} title="Password">
         <form
-          className="max-w-lg space-y-3.5"
+          className="space-y-3.5"
           onSubmit={(event) => {
             event.preventDefault();
             void changePassword();
@@ -243,7 +224,7 @@ export function AccountPanel({ admin }: { admin: boolean }) {
               fullWidth
             />
           </Field>
-          <Field label="New password" hint="At least 12 characters.">
+          <Field label="New password">
             <Input
               required
               minLength={12}
@@ -272,12 +253,7 @@ export function AccountPanel({ admin }: { admin: boolean }) {
       <SettingsSection
         icon={LogOut}
         title="Sign out"
-        description="Ends this session on this device. Other paired devices stay signed in."
-      >
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="max-w-xl text-[11.5px] leading-relaxed text-muted">
-            Plexy will ask for the account password the next time this device connects.
-          </p>
+        action={
           <Button
             variant="secondary"
             onPress={() => {
@@ -288,8 +264,8 @@ export function AccountPanel({ admin }: { admin: boolean }) {
             <LogOut size={13} />
             Sign out
           </Button>
-        </div>
-      </SettingsSection>
+        }
+      />
     </div>
   );
 }
@@ -339,7 +315,6 @@ export function DevicesPanel() {
       <SettingsSection
         icon={KeyRound}
         title="Pair a device"
-        description="Create a six-digit code and enter it on the other device. It expires after ten minutes and works once."
         action={
           <Button
             isDisabled={busy}
@@ -391,7 +366,6 @@ export function DevicesPanel() {
       <SettingsSection
         icon={Laptop}
         title="This device"
-        description="Everything below belongs to your account on this server."
       >
         <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-3">
           <Detail label="Name" value={me.data?.device.name ?? "…"} icon={Laptop} />
@@ -403,7 +377,6 @@ export function DevicesPanel() {
       <SettingsSection
         icon={Smartphone}
         title="Paired devices"
-        description={`${active.length} device${active.length === 1 ? "" : "s"} signed in to your account.`}
         flush
       >
         <ul className="divide-y divide-border/50">
@@ -473,7 +446,6 @@ export function DevicesPanel() {
         <SettingsSection
           icon={ShieldCheck}
           title="Server certificate"
-          description="Compare this fingerprint before trusting the server on another device. Browsers still need their own certificate trust step for the local HTTPS address."
         >
           <p className="select-all break-all rounded-lg border border-border bg-surface-secondary/50 p-3 font-mono text-[10px] text-foreground">
             {certificate.data.fingerprint}
@@ -510,13 +482,9 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
       <SettingsSection
         icon={Captions}
         title="Subtitles"
-        description="Applied when playback starts on this device. You can still switch tracks inside the player."
       >
         <div className="divide-y divide-border/60">
-          <SettingsToggleRow
-            label="Turn on subtitles"
-            description="Pick a matching track automatically when the file has one."
-          >
+          <SettingsToggleRow label="Turn on subtitles">
             <Switch
               size="sm"
               aria-label="Turn on subtitles"
@@ -534,12 +502,7 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
           </SettingsToggleRow>
 
           <div className="grid gap-3 pt-3.5 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-center">
-            <div className="min-w-0">
-              <p className="text-[11.5px] font-semibold text-foreground">Preferred subtitle language</p>
-              <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted">
-                Used for the automatic pick when a file has several tracks.
-              </p>
-            </div>
+            <p className="min-w-0 text-[11.5px] font-semibold text-foreground">Preferred subtitle language</p>
             <Select
               aria-label="Preferred subtitle language"
               selectedKey={prefs.subtitleLanguage}
@@ -569,12 +532,9 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
         <SettingsSection
           icon={Captions}
           title="Audio language"
-          description="Server-wide default for every viewer. Individual devices can still change the audio track in the player."
         >
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-center">
-            <p className="text-[11.5px] text-muted">
-              New playback starts on this track unless the file only has one.
-            </p>
+            <p className="min-w-0 text-[11.5px] font-semibold text-foreground">Preferred audio language</p>
             <div className="w-full">
               <Select
                 aria-label="Preferred audio language"
@@ -611,12 +571,8 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
       <SettingsSection
         icon={Activity}
         title="Playback diagnostics"
-        description="Shares startup, rebuffer, and error details from this device with the server. The server keeps the latest 100 events in memory."
       >
-        <SettingsToggleRow
-          label="Share playback diagnostics"
-          description="Helps trace a title that stutters or fails to start on this device."
-        >
+        <SettingsToggleRow label="Share playback diagnostics">
           <Switch
             size="sm"
             aria-label="Share playback diagnostics"

@@ -127,10 +127,18 @@ export interface SkipSegments {
 
 export interface SubtitleTrack {
   track: string;
-  kind: "embedded" | "sidecar";
+  kind: "embedded" | "sidecar" | "downloaded";
   language: string | null;
   title: string;
   isDefault?: boolean;
+}
+
+/** One OpenSubtitles result returned by the server's subtitle search proxy. */
+export interface SubtitleSearchResult {
+  id: string;
+  url: string;
+  language: string;
+  name: string;
 }
 
 /** A chapter marker read from the media file itself. */

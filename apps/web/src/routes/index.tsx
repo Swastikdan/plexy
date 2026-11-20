@@ -1,20 +1,25 @@
 import { getSignedInUser } from "../auth";
 /// Home: one featured carousel, then the shelves that matter.
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, FolderPlus, Plus } from "lucide-react";
+import { ArrowRight, ArrowUpDown, FolderPlus, Plus } from "lucide-react";
 import { queries } from "../queries";
 import { Row } from "../components/row";
 import { HomeHero } from "../components/home-hero";
-import { Button } from "@heroui/react";
+import { Button, Dropdown } from "@heroui/react";
 import { Page } from "../components/page";
 import { State } from "../components/state";
 import type { ItemCard } from "../client";
 
-const ROW_META: Record<string, { viewAll?: "movies" | "tv" }> = {
+const ROW_META: Record<
+  string,
+  { viewAll?: "movies" | "tv"; list?: "watchlist" | "favorites" }
+> = {
   "recent-movies": { viewAll: "movies" },
   "recent-shows": { viewAll: "tv" },
+  watchlist: { list: "watchlist" },
+  favorites: { list: "favorites" },
 };
 
 function HomeSkeleton() {
@@ -39,6 +44,7 @@ function HomeSkeleton() {
 
 function HomeRoute() {
   const navigate = useNavigate();
+  const [continueSort, setContinueSort] = useState<"recent" | "title">("recent");
   const status = useQuery(queries.serverStatus());
   const { data, isLoading, isError } = useQuery(queries.home());
 
@@ -127,36 +133,70 @@ function HomeRoute() {
           )}
         </div>
       ) : (
-        <div className="staggered space-y-8 pb-8 sm:space-y-9">
+        <div className="staggered space-y-3 pb-8 sm:space-y-4">
           {featuredItems.length > 0 && <HomeHero items={featuredItems} />}
 
-          <div className="space-y-8 pt-6 sm:space-y-9 sm:pt-7">
+          <div className="space-y-8 sm:space-y-9">
             {rows.map((row) => {
               const meta = ROW_META[row.key];
+              const items =
+                row.key === "continue" && continueSort === "title"
+                  ? [...row.items].sort((a, b) => a.name.localeCompare(b.name))
+                  : row.items;
+              const action =
+                row.key === "continue" ? (
+                  <Dropdown>
+                    <Dropdown.Trigger className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-secondary/60 px-3 py-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground">
+                      <ArrowUpDown size={12} aria-hidden />
+                      {continueSort === "title" ? "A–Z" : "Recently watched"}
+                    </Dropdown.Trigger>
+                    <Dropdown.Popover placement="bottom end">
+                      <Dropdown.Menu onAction={(key) => setContinueSort(key as "recent" | "title")}>
+                        <Dropdown.Item id="recent" textValue="Recently watched">
+                          Recently watched
+                        </Dropdown.Item>
+                        <Dropdown.Item id="title" textValue="A–Z">
+                          A–Z
+                        </Dropdown.Item>
+                      </Dropdown.Menu>
+                    </Dropdown.Popover>
+                  </Dropdown>
+                ) : meta?.viewAll ? (
+                  <Link
+                    to="/library/$kind"
+                    params={{ kind: meta.viewAll }}
+                    className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-secondary/60 px-3 py-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                  >
+                    See all
+                    <ArrowRight
+                      size={12}
+                      className="transition-transform duration-150 group-hover:translate-x-0.5"
+                      aria-hidden
+                    />
+                  </Link>
+                ) : meta?.list ? (
+                  <Link
+                    to="/list/$kind"
+                    params={{ kind: meta.list }}
+                    className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-secondary/60 px-3 py-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                  >
+                    See all
+                    <ArrowRight
+                      size={12}
+                      className="transition-transform duration-150 group-hover:translate-x-0.5"
+                      aria-hidden
+                    />
+                  </Link>
+                ) : undefined;
               return (
                 <Row
                   key={row.key}
                   id={row.key === "continue" ? "continue-watching" : undefined}
                   title={row.title}
-                  items={row.items}
+                  items={items}
                   directPlay={row.key === "continue" || row.key === "next"}
                   wide={row.key === "continue" || row.key === "next"}
-                  action={
-                    meta?.viewAll ? (
-                      <Link
-                        to="/library/$kind"
-                        params={{ kind: meta.viewAll }}
-                        className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
-                      >
-                        See all
-                        <ArrowRight
-                          size={12}
-                          className="transition-transform duration-150 group-hover:translate-x-0.5"
-                          aria-hidden
-                        />
-                      </Link>
-                    ) : undefined
-                  }
+                  action={action}
                 />
               );
             })}

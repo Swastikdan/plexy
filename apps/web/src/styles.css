@@ -13,6 +13,7 @@
  */
 @import "@heroui/styles";
 @import "@fontsource-variable/archivo";
+@import "@fontsource/anton";
 
 /* Utility-class scanning for the app. HeroUI's own component CSS is shipped
  * precompiled, so only our source needs to be scanned. */
@@ -208,7 +209,7 @@
    * switching between the brand and a back button never moves the page. */
   --app-gutter: clamp(1rem, 2.4vw, 2.75rem);
   --app-max: 106rem;
-  --app-topbar-height: 4rem;
+  --app-topbar-height: 4.5rem;
 
   /* Motion: one strong ease-out for entrances and one for on-screen travel.
    * HeroUI exposes the individual curves; these aliases keep our own CSS from
@@ -218,6 +219,29 @@
 
   /* Shared page gutter for poster scrollers (3 == px-3). */
   --row-inset: calc(var(--spacing) * 3);
+
+  /* One brand accent across every surface. HeroUI's default blue is replaced
+   * by the cinema reference's indigo, so primary buttons, focus rings, selected
+   * tabs and progress fills all agree with the home/library art direction. */
+  --accent: #5045e6;
+  --accent-foreground: #ffffff;
+  --focus: #5045e6;
+
+  /* Cinema surfaces. Home, library, title and the player share a darker,
+   * poster-forward surface than the admin/settings shell. The brand indigo is
+   * the one accent across them; danger/success keep their HeroUI roles. */
+  --cinema-canvas: #080808;
+  --cinema-surface: #141416;
+  --cinema-raised: #1d1f21;
+  --cinema-ink: #f7f8f8;
+  --cinema-muted: #9aa0a3;
+  --cinema-line: rgba(255, 255, 255, 0.1);
+  --cinema-glass: rgba(255, 255, 255, 0.08);
+  --cinema-glass-line: rgba(255, 255, 255, 0.16);
+  --brand: #5045e6;
+  --brand-hover: #6a60ff;
+  --brand-ink: #ffffff;
+  --font-display: "Anton", "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 .skip-link {
@@ -503,10 +527,114 @@
 .hero-copy > *:nth-child(5) { animation-delay: 240ms; }
 
 .hero-title {
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 0.94;
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.005em;
+  line-height: 0.9;
+  text-transform: uppercase;
   text-wrap: balance;
+  text-shadow: 0 3px 26px rgba(0, 0, 0, 0.42);
+}
+
+/* Genre pills sit above the display title, as in the home reference. */
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--cinema-glass-line);
+  background: var(--cinema-glass);
+  color: rgba(247, 248, 248, 0.88);
+  padding-inline: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Header search: a wide, quiet field centred over the hero. On pages without
+ * a hero it switches to the page surface so light theme stays legible. */
+.cinema-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 2.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--cinema-glass-line);
+  background: color-mix(in oklab, var(--cinema-raised) 72%, transparent);
+  color: var(--cinema-ink);
+  padding-inline: 1rem;
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
+}
+.cinema-search:hover { border-color: rgba(255, 255, 255, 0.24); }
+.cinema-search:focus-within {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: color-mix(in oklab, var(--cinema-raised) 88%, transparent);
+}
+.cinema-search input {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  color: var(--cinema-ink);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  outline: none;
+}
+.cinema-search input::placeholder { color: rgba(247, 248, 248, 0.44); }
+.cinema-search kbd {
+  border-radius: 0.3rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0.05rem 0.3rem;
+  font-size: 0.625rem;
+  color: rgba(247, 248, 248, 0.5);
+}
+
+.cinema-search.cinema-search--surface {
+  border-color: var(--border);
+  background: color-mix(in oklab, var(--surface-secondary) 88%, transparent);
+  color: var(--foreground);
+}
+.cinema-search.cinema-search--surface input { color: var(--foreground); }
+.cinema-search.cinema-search--surface input::placeholder { color: var(--muted); }
+.cinema-search.cinema-search--surface svg { color: var(--muted); }
+.cinema-search.cinema-search--surface:focus-within {
+  border-color: color-mix(in oklab, var(--accent) 48%, var(--border));
+  background: var(--surface-secondary);
+}
+
+/* Header action circles, matching the reference's quiet glass buttons. */
+.cinema-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.25rem;
+  width: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--cinema-glass-line);
+  background: var(--cinema-glass);
+  color: rgba(247, 248, 248, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.cinema-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--cinema-ink);
+}
+.cinema-action:active { transform: scale(0.94); }
+
+.cinema-action.cinema-action--surface {
+  border-color: var(--border);
+  background: var(--surface-secondary);
+  color: var(--muted);
+}
+.cinema-action.cinema-action--surface:hover {
+  background: var(--surface-tertiary);
+  color: var(--foreground);
 }
 
 .hero-meta {
@@ -539,17 +667,17 @@
   justify-content: center;
   gap: 0.55rem;
   height: 2.75rem;
-  border-radius: calc(var(--radius) * 1.4);
-  background: var(--accent);
-  color: var(--accent-foreground);
-  padding-inline: 1.1rem;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  padding-inline: 1.35rem;
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  box-shadow: 0 12px 30px -16px color-mix(in oklab, var(--accent) 70%, transparent);
+  box-shadow: 0 12px 30px -16px color-mix(in oklab, var(--brand) 70%, transparent);
   transition: background-color 160ms var(--ease-out), transform 160ms var(--ease-out);
 }
-.hero-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.hero-primary:hover { background: var(--brand-hover); transform: translateY(-1px); }
 .hero-primary:active { transform: scale(0.975); }
 
 .hero-secondary {
@@ -558,11 +686,11 @@
   justify-content: center;
   gap: 0.55rem;
   height: 2.75rem;
-  border-radius: calc(var(--radius) * 0.9);
-  border: 1px solid rgba(247, 245, 239, 0.24);
-  background: rgba(247, 245, 239, 0.08);
+  border-radius: 999px;
+  border: 1px solid var(--cinema-glass-line);
+  background: var(--cinema-glass);
   color: #f7f5ef;
-  padding-inline: 1.05rem;
+  padding-inline: 1.3rem;
   font-size: 0.8125rem;
   font-weight: 600;
   backdrop-filter: blur(14px);

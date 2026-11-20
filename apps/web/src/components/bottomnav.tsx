@@ -3,7 +3,7 @@
 /// server control share one destination because they share one dashboard.
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Library, UserRound } from "lucide-react";
+import { FolderHeart, Home, Library, Clock3, UserRound } from "lucide-react";
 import { cx } from "../lib/cx";
 import { accountRequest, getSignedInUser, type AccountUser } from "../auth";
 import { UserAvatar } from "./user-avatar";
@@ -25,6 +25,8 @@ export function BottomNav() {
       icon: Library,
       params: { kind: "all" as const },
     },
+    { to: "/collections" as const, label: "Collections", icon: FolderHeart, params: undefined },
+    { to: "/history" as const, label: "History", icon: Clock3, params: undefined },
     { to: "/settings" as const, label: "You", icon: UserRound, params: undefined },
   ];
 
@@ -43,7 +45,11 @@ export function BottomNav() {
               ? pathname === "/"
               : item.label === "Library"
                 ? pathname.startsWith("/library")
-                : pathname.startsWith("/settings");
+                : item.label === "Collections"
+                  ? pathname.startsWith("/collections")
+                  : item.label === "History"
+                    ? pathname.startsWith("/history")
+                    : pathname.startsWith("/settings");
           return (
             <Link
               key={item.label}

@@ -44,10 +44,18 @@ export interface ItemCard {
   still?: string | null;
   /** The title is in the user's watch list. */
   watchlist?: boolean;
+  /** The title is in the user's favorites. */
+  favorite?: boolean;
+  /** The user hid this title from browse surfaces. */
+  hidden?: boolean;
+  /** The user's 1–5 star rating, when set. */
+  userRating?: number | null;
   /** Age rating from metadata (for example "PG-13" or "TV-14"). */
   certification?: string | null;
   /** TMDB release / first-air date, used to hide unreleased online titles. */
   releaseDate?: string | null;
+  /** When the title was last watched, for history rows. */
+  watchedAt?: string | null;
 }
 
 export interface HomeRow {
@@ -74,6 +82,7 @@ export interface TitleDetail {
   } | null;
   cast: Array<{ id: number; name: string; character: string | null; photo: string | null }>;
   trailer: { provider: string; key: string; name: string } | null;
+  extras?: Array<{ provider: string; key: string; name: string; type: string }>;
   seasons: Array<{ id: number; number: number; name?: string; poster?: string | null }> | null;
   episodes: ItemCard[] | null;
   file: FileFacts | null;
@@ -94,6 +103,34 @@ export interface PersonSummary {
 
 export interface PersonDetail {
   person: PersonSummary;
+  items: ItemCard[];
+}
+
+export interface SearchResponse {
+  titles: ItemCard[];
+  episodes: ItemCard[];
+  people: PersonSummary[];
+  total: number;
+  query: string;
+}
+
+export interface ItemsResponse {
+  items: ItemCard[];
+  total: number;
+}
+
+export interface CollectionSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  count: number;
+  poster: string | null;
+  /** Present when the request included `itemId`. */
+  contains?: boolean;
+}
+
+export interface CollectionDetail {
+  collection: CollectionSummary;
   items: ItemCard[];
 }
 

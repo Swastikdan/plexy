@@ -82,7 +82,6 @@ export function LibrariesPanel() {
       <SettingsSection
         icon={LibraryIcon}
         title="On this server"
-        description="Every folder Plexy watches. A rescan looks for new, moved, and removed files without touching your originals."
         flush
         action={
           <Link to="/add-library">
@@ -118,25 +117,10 @@ export function LibrariesPanel() {
                 </div>
 
                 <div className="flex shrink-0 items-center gap-5 text-right">
-                  <div>
-                    <p className="text-[12px] font-semibold tabular-nums text-foreground">{lib.counts.items.toLocaleString()}</p>
-                    <p className="text-[9.5px] text-muted/70">titles</p>
-                  </div>
-                  {lib.counts.review > 0 && (
-                    <div>
-                      <p className="text-[12px] font-semibold tabular-nums text-warning-soft-foreground">{lib.counts.review}</p>
-                      <p className="text-[9.5px] text-muted/70">review</p>
-                    </div>
-                  )}
-                  {lib.counts.unmatched > 0 && (
-                    <div>
-                      <p className="text-[12px] font-semibold tabular-nums text-muted">{lib.counts.unmatched}</p>
-                      <p className="text-[9.5px] text-muted/70">unmatched</p>
-                    </div>
-                  )}
+                  <p className="text-[12px] font-semibold tabular-nums text-foreground">{lib.counts.items.toLocaleString()}</p>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-0.5 lg:opacity-0 lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                <div className="flex shrink-0 items-center gap-0.5">
                   <IconButton label={`Edit ${lib.name}`} onClick={() => setEditing(lib)}>
                     <Pencil size={14} />
                   </IconButton>
@@ -159,9 +143,6 @@ export function LibrariesPanel() {
           <div className="flex flex-col items-start gap-2 border-t border-border/70 px-5 py-7">
             <Folder size={20} className="text-muted" />
             <p className="text-[13px] font-semibold text-foreground">No libraries yet</p>
-            <p className="max-w-md text-[11px] leading-relaxed text-muted">
-              Choose a media type, point Plexy at its folders, and the catalog builds in the background.
-            </p>
             <Link to="/add-library" className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-secondary px-2.5 py-1.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary">
               <Folder size={12} /> Add your first library
             </Link>
@@ -171,11 +152,6 @@ export function LibrariesPanel() {
         {remove.isError && (
           <p role="alert" className={`border-t border-border/70 px-5 py-3 text-[11px] ${ERROR_TEXT}`}>{remove.error.message}</p>
         )}
-
-        <p className="border-t border-border/70 px-4 py-3 text-[10.5px] leading-relaxed text-muted sm:px-5">
-          Library records live in Plexy's own database. Removing a library forgets its catalog entries; it never deletes the
-          files on disk.
-        </p>
       </SettingsSection>
 
       <Modal isOpen={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
@@ -280,14 +256,6 @@ export function MatchesPanel() {
           </SearchField.Group>
         </SearchField>
       </div>
-
-      <p className="text-xs leading-relaxed text-muted">
-        {filter === "attention"
-          ? "Plexy is unsure about these titles. Pick the right result, or search TMDB manually."
-          : filter === "matched"
-            ? "Every matched title is listed here so a wrong poster or metadata match can be remapped. Choosing a new result locks it."
-            : "Every movie and show in the library, including correct and incorrect matches. Use search to find the title with the wrong poster."}
-      </p>
 
       {counts && filter === "all" && !debounced && counts.all > items.length && (
         <p className="text-xs text-muted">
@@ -537,6 +505,7 @@ export function ServerPreferencesPanel() {
   const [testing, setTesting] = useState(false);
   const [token, setToken] = useState("");
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+  const [certMessage, setCertMessage] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPhrase, setResetPhrase] = useState("");
   const [resetMessage, setResetMessage] = useState<string | null>(null);
@@ -567,6 +536,21 @@ export function ServerPreferencesPanel() {
   const clearCache = useMutation({
     mutationFn: api.clearTmdbCache,
     onSuccess: ({ removed }) => setCacheMessage(`Cleared ${removed} cached TMDB response${removed === 1 ? "" : "s"}.`),
+  });
+
+  const backfillCerts = useMutation({
+    mutationFn: () => api.backfillCertifications(250),
+    onSuccess: ({ checked, updated }) => {
+      setCertMessage(
+        checked === 0
+          ? "Every title already has an age rating."
+          : `Checked ${checked} title${checked === 1 ? "" : "s"}; filled ${updated} age rating${updated === 1 ? "" : "s"}.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["home"] });
+      void queryClient.invalidateQueries({ queryKey: ["title"] });
+    },
+    onError: () => setCertMessage("Could not fetch age ratings. Check the TMDB token and server log."),
   });
 
   const refreshSkipMarkers = useMutation({
@@ -742,6 +726,23 @@ export function ServerPreferencesPanel() {
           </Button>
         </div>
         {cacheMessage && <p className="text-xs font-medium text-muted">{cacheMessage}</p>}
+
+        <div className="flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-xl text-xs leading-relaxed text-muted">
+            Age ratings power parental controls. Backfill titles that were matched before regional
+            certifications were stored.
+          </p>
+          <Button
+            variant="secondary"
+            onPress={() => backfillCerts.mutate()}
+            isDisabled={backfillCerts.isPending}
+            className="h-9 shrink-0 px-3 text-xs font-semibold"
+          >
+            {backfillCerts.isPending && <RotateCw size={13} className="animate-spin" />}
+            {backfillCerts.isPending ? "Checking…" : "Backfill age ratings"}
+          </Button>
+        </div>
+        {certMessage && <p className="text-xs font-medium text-muted">{certMessage}</p>}
 
         <form
           onSubmit={async (e) => {

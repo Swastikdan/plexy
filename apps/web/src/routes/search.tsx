@@ -7,12 +7,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SearchField } from "@heroui/react";
-import { ArrowRight, Compass } from "lucide-react";
+import { ArrowRight, Compass, UserRound } from "lucide-react";
 import { queries } from "../queries";
 import { SearchResultCard } from "../components/search-result-card";
 import { Row } from "../components/row";
 import { Page } from "../components/page";
 import { State } from "@/components/state";
+import { artworkUrl } from "../lib/artwork-url";
+import type { PersonSummary } from "@plexy/api-client";
 
 function ResultSection({
   title,
@@ -34,6 +36,37 @@ function ResultSection({
       </div>
       <div className="grid gap-2.5 md:grid-cols-2 2xl:grid-cols-3">{children}</div>
     </section>
+  );
+}
+
+function SearchPersonCard({ person }: { person: PersonSummary }) {
+  return (
+    <Link
+      to="/person/$personId"
+      params={{ personId: String(person.id) }}
+      className="media-card group flex items-center gap-3.5 rounded-xl border border-border/60 p-2.5 transition-colors hover:bg-surface-secondary/40"
+    >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-secondary">
+        {person.photo ? (
+          <img
+            src={artworkUrl(person.photo) ?? ""}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <UserRound size={20} className="text-muted" aria-hidden />
+        )}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[13px] font-semibold text-foreground">
+          {person.name}
+        </span>
+        <span className="mt-0.5 block text-[10.5px] text-muted">
+          Cast &amp; crew
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -74,7 +107,8 @@ function SearchRoute() {
   const hasQuery = debounced.trim().length > 0;
   const titles = data?.titles ?? [];
   const episodes = data?.episodes ?? [];
-  const count = titles.length + episodes.length;
+  const people = data?.people ?? [];
+  const count = titles.length + episodes.length + people.length;
 
   // The empty search is a doorway, not a dead end: show what is already in
   // progress and what just arrived, so people can start without typing.
@@ -85,7 +119,7 @@ function SearchRoute() {
   return (
     <Page className="!pt-0">
       <div className="sticky top-[3.25rem] z-20 -mx-[var(--app-gutter)] border-b border-border/70 bg-background/92 px-[var(--app-gutter)] py-3 backdrop-blur-xl md:top-[var(--app-topbar-height)]">
-        <div className="flex w-full items-center gap-3">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
           <SearchField
             autoFocus
             value={q}
@@ -93,11 +127,10 @@ function SearchRoute() {
             aria-label="Search your films and shows"
             fullWidth
           >
-            <SearchField.Group className="h-12">
-              <SearchField.SearchIcon />
+            <SearchField.Group className="h-11 rounded-full border-border/70 bg-surface-secondary/45 px-4">
               <SearchField.Input
                 placeholder="Search your films and shows…"
-                className="text-[15px]"
+                className="text-[14px]"
               />
               {isFetching ? (
                 <span
@@ -108,6 +141,7 @@ function SearchRoute() {
               ) : (
                 <SearchField.ClearButton aria-label="Clear search" />
               )}
+              <SearchField.SearchIcon />
             </SearchField.Group>
           </SearchField>
         </div>
@@ -190,6 +224,12 @@ function SearchRoute() {
           <ResultSection title="Episodes" count={episodes.length}>
             {episodes.map((item) => (
               <SearchResultCard key={`episode-${item.id}`} item={item} />
+            ))}
+          </ResultSection>
+
+          <ResultSection title="People" count={people.length}>
+            {people.map((person) => (
+              <SearchPersonCard key={`person-${person.id}`} person={person} />
             ))}
           </ResultSection>
         </div>

@@ -77,6 +77,18 @@ const Detail = z.object({
       id: z.number(), name: z.string(), job: z.string().optional(),
     })).nullish(),
   }).nullish(),
+  release_dates: z.object({
+    results: z.array(z.object({
+      iso_3166_1: z.string(),
+      release_dates: z.array(z.object({ certification: z.string().nullish() })),
+    })),
+  }).nullish(),
+  content_ratings: z.object({
+    results: z.array(z.object({
+      iso_3166_1: z.string(),
+      rating: z.string().nullish(),
+    })),
+  }).nullish(),
 });
 const EpisodeResults = z.object({ episodes: z.array(z.object({
   id: z.number(),
@@ -369,14 +381,46 @@ export async function search(kind: "movie" | "tv", query: string, year: number |
 
 const DETAIL_TTL = 7 * 24 * 3600_000;
 
-/** Combined details + videos + credits fetch used by matching and detail views. */
+/** Combined details + videos + credits + age ratings used by matching and detail views. */
 export async function detail(kind: "movie" | "tv", id: number): Promise<TmdbDetail> {
   const lang = (await getConfig()).metadataLanguage;
-  const path = `/${kind}/${id}?append_to_response=videos,credits&language=${lang}`;
+  const path = `/${kind}/${id}?append_to_response=videos,credits,release_dates,content_ratings&language=${lang}`;
   const raw = await requestJson(path, `detail/${kind}`, DETAIL_TTL);
   const parsed = Detail.safeParse(raw);
   if (!parsed.success) throw new TmdbError(`bad detail payload for ${kind}/${id}`, 502, "TMDB returned unexpected data");
   return parsed.data;
+}
+
+/**
+ * Pick the best regional certification from a TMDB detail payload.
+ *
+ * Movies expose `release_dates` (many rows per country, only some have a
+ * certification); TV exposes `content_ratings` (one rating per country).
+ * Try the configured region first, then US, then the first non-empty rating.
+ */
+export function certificationFromDetail(
+  detail: TmdbDetail,
+  kind: "movie" | "tv",
+  region: string,
+): string | null {
+  const wanted = (region || "US").toUpperCase();
+  const pick = (codes: string[]): string | null => {
+    for (const code of codes) {
+      const value = kind === "tv"
+        ? detail.content_ratings?.results?.find((row) => row.iso_3166_1 === code)?.rating
+        : detail.release_dates?.results
+            ?.find((row) => row.iso_3166_1 === code)
+            ?.release_dates?.find((row) => row.certification)
+            ?.certification;
+      if (value && value.trim()) return value.trim();
+    }
+    return null;
+  };
+  return pick([wanted, "US"])
+    ?? pick((kind === "tv"
+      ? detail.content_ratings?.results?.map((row) => row.iso_3166_1) ?? []
+      : detail.release_dates?.results?.map((row) => row.iso_3166_1) ?? []))
+    ?? null;
 }
 
 /** Season fetch used to resolve episode numbers. */

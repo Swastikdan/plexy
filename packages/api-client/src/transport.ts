@@ -7,8 +7,11 @@
 import type {
   BrowserCaps,
   CrashesResponse,
+  CollectionDetail,
+  CollectionSummary,
   HomePayload,
   ItemCard,
+  ItemsResponse,
   LibraryItem,
   LibraryType,
   LocalFoldersResponse,
@@ -19,9 +22,11 @@ import type {
   PlayPath,
   PlaybackDiagnostic,
   ReviewPayload,
+  SearchResponse,
   ServerStatus,
   SettingsResponse,
   SkipSegments,
+  SubtitleSearchResult,
   SubtitleTrack,
   TitleDetail,
   TmdbMatchSearchResponse,
@@ -85,18 +90,49 @@ export interface PlexyClient {
   };
   catalog: {
     home(): Promise<HomePayload>;
+    history(
+      limit?: number,
+      offset?: number,
+    ): Promise<{ items: ItemCard[]; total: number }>;
+    removeHistory(itemId: number): Promise<{ ok: true }>;
+    clearHistory(): Promise<{ ok: true }>;
     items(query: {
       kind?: "movie" | "series";
       libraryId?: number;
       sort?: string;
       unwatched?: boolean;
       q?: string;
+      genre?: string;
+      yearFrom?: number;
+      yearTo?: number;
+      minRating?: number;
+      maxRuntime?: number;
+      watchlist?: boolean;
+      favorite?: boolean;
+      hidden?: boolean;
+      minUserRating?: number;
       limit?: number;
       offset?: number;
-    }): Promise<{ items: ItemCard[] }>;
+    }): Promise<ItemsResponse>;
     title(id: number | string): Promise<TitleDetail>;
+    similar(itemId: number): Promise<{ items: ItemCard[] }>;
     person(personId: number): Promise<PersonDetail>;
-    search(q: string): Promise<{ titles: ItemCard[]; episodes: ItemCard[] }>;
+    search(q: string): Promise<SearchResponse>;
+    setFlags(
+      itemId: number,
+      flags: {
+        watchlist?: boolean;
+        favorite?: boolean;
+        hidden?: boolean;
+        rating?: number | null;
+      },
+    ): Promise<{ ok: true }>;
+    collections(itemId?: number): Promise<{ collections: CollectionSummary[] }>;
+    collection(id: number): Promise<CollectionDetail>;
+    createCollection(name: string): Promise<{ collection: CollectionSummary }>;
+    addToCollection(id: number, itemId: number): Promise<{ ok: true }>;
+    removeFromCollection(id: number, itemId: number): Promise<{ ok: true }>;
+    deleteCollection(id: number): Promise<{ ok: true }>;
     libraries(): Promise<{ libraries: LibraryItem[] }>;
     createLibrary(name: string, type: LibraryType, paths: string[]): Promise<{ id: number }>;
     updateLibrary(
@@ -124,12 +160,21 @@ export interface PlexyClient {
     playNative(fileId: number): Promise<Playability>;
     skipSegments(fileId: number): Promise<{ enabled: boolean } & SkipSegments>;
     subtitles(fileId: number): Promise<{ tracks: SubtitleTrack[] }>;
+    searchSubtitles(
+      fileId: number,
+      language?: string,
+    ): Promise<{ results: SubtitleSearchResult[] }>;
+    downloadSubtitle(
+      fileId: number,
+      result: SubtitleSearchResult,
+    ): Promise<{ track: SubtitleTrack }>;
   };
   admin: {
     settings(): Promise<SettingsResponse>;
     updateSettings(patch: Record<string, unknown>): Promise<{ settings: unknown }>;
     clearTmdbCache(): Promise<{ removed: number }>;
     refreshSkipSegments(): Promise<{ checked: number; found: number }>;
+    backfillCertifications(limit?: number): Promise<{ checked: number; updated: number }>;
     resetLocalData(): Promise<{ ok: true; libraries: number; files: number; titles: number }>;
     testTmdb(): Promise<{ ok: boolean; message: string }>;
     localFolders(path?: string): Promise<LocalFoldersResponse>;
@@ -275,35 +320,68 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
 
   const catalog: PlexyClient["catalog"] = {
     home: () => get<HomePayload>("/api/home"),
+    history: (limit = 60, offset = 0) =>
+      get<{ items: ItemCard[]; total: number }>(
+        `/api/history${query({ limit, offset })}`,
+      ),
+    removeHistory: (itemId) =>
+      send<{ ok: true }>(`/api/history/${itemId}`, "DELETE"),
+    clearHistory: () => send<{ ok: true }>("/api/history", "DELETE"),
     items: (params) =>
-      get<{ items: ItemCard[] }>(
+      get<ItemsResponse>(
         `/api/items${query({
           kind: params.kind,
           libraryId: params.libraryId,
           sort: params.sort,
           unwatched: params.unwatched ? true : undefined,
           q: params.q,
+          genre: params.genre,
+          yearFrom: params.yearFrom,
+          yearTo: params.yearTo,
+          minRating: params.minRating,
+          maxRuntime: params.maxRuntime,
+          watchlist: params.watchlist ? true : undefined,
+          favorite: params.favorite ? true : undefined,
+          hidden: params.hidden ? true : undefined,
+          minUserRating: params.minUserRating,
           limit: params.limit ?? 60,
           offset: params.offset ?? 0,
         })}`,
       ),
     title: (id) => get<TitleDetail>(`/api/items/${encodeURIComponent(String(id))}`),
+    similar: (itemId) => get<{ items: ItemCard[] }>(`/api/items/${itemId}/similar`),
     person: (personId) => get<PersonDetail>(`/api/people/${personId}`),
     search: async (text) => {
       const result = await get<{
         titles?: ItemCard[];
         episodes?: ItemCard[];
+        people?: SearchResponse["people"];
+        total?: number;
         items?: ItemCard[];
       }>(`/api/search${query({ q: text })}`);
-      if (result.titles || result.episodes) {
-        return { titles: result.titles ?? [], episodes: result.episodes ?? [] };
-      }
-      const items = result.items ?? [];
       return {
-        titles: items.filter((item) => item.kind !== "episode"),
-        episodes: items.filter((item) => item.kind === "episode"),
+        titles: result.titles ?? result.items?.filter((item) => item.kind !== "episode") ?? [],
+        episodes: result.episodes ?? result.items?.filter((item) => item.kind === "episode") ?? [],
+        people: result.people ?? [],
+        total: result.total ?? (result.titles?.length ?? 0) + (result.episodes?.length ?? 0),
+        query: text,
       };
     },
+    setFlags: (itemId, flags) =>
+      send<{ ok: true }>(`/api/items/${itemId}/flags`, "PUT", flags),
+    collections: (itemId) =>
+      get<{ collections: CollectionSummary[] }>(
+        `/api/collections${query({ itemId })}`,
+      ),
+    collection: (id) => get<CollectionDetail>(`/api/collections/${id}`),
+    createCollection: (name) =>
+      send<{ collection: CollectionSummary }>("/api/collections", "POST", { name }),
+    addToCollection: (id, itemId) =>
+      send<{ ok: true }>(`/api/collections/${id}/items`, "POST", { itemId }),
+    removeFromCollection: (id, itemId) =>
+      send<{ ok: true }>(`/api/collections/${id}/items/${itemId}`, "DELETE"),
+    deleteCollection: (id) =>
+      send<{ ok: true }>(`/api/collections/${id}`, "DELETE"),
     libraries: () => get<{ libraries: LibraryItem[] }>("/api/libraries"),
     createLibrary: (name, type, paths) =>
       send<{ id: number }>("/api/libraries", "POST", { name, type, paths }),
@@ -341,6 +419,20 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
       get<{ enabled: boolean } & SkipSegments>(`/api/skip-segments/${fileId}`),
     subtitles: (fileId) =>
       get<{ tracks: SubtitleTrack[] }>(`/api/subtitles/${fileId}`),
+    searchSubtitles: (fileId, language) =>
+      get<{ results: SubtitleSearchResult[] }>(
+        `/api/subtitles/${fileId}/search${query({ language })}`,
+      ),
+    downloadSubtitle: (fileId, result) =>
+      send<{ track: SubtitleTrack }>(
+        `/api/subtitles/${fileId}/download`,
+        "POST",
+        {
+          url: result.url,
+          language: result.language,
+          name: result.name,
+        },
+      ),
   };
 
   const admin: PlexyClient["admin"] = {
@@ -349,6 +441,12 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
     clearTmdbCache: () => send<{ removed: number }>("/api/tmdb/cache/clear", "POST"),
     refreshSkipSegments: () =>
       send<{ checked: number; found: number }>("/api/skip-segments/refresh", "POST"),
+    backfillCertifications: (limit = 100) =>
+      send<{ checked: number; updated: number }>(
+        "/api/metadata/certifications/backfill",
+        "POST",
+        { limit },
+      ),
     resetLocalData: () =>
       send<{ ok: true; libraries: number; files: number; titles: number }>(
         "/api/database/reset",
