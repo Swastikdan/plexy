@@ -24,7 +24,7 @@ export interface EmbeddedSubtitle {
 
 export interface SubtitleTrackInfo {
   track: string;
-  kind: "embedded" | "sidecar";
+  kind: "embedded" | "sidecar" | "downloaded";
   language: string | null;
   title: string;
   isDefault: boolean;
@@ -436,6 +436,28 @@ export async function findSidecarSubtitles(row: Row): Promise<SidecarFile[]> {
 }
 
 /** Embedded + sidecar tracks, in a stable order for the player menu. */
+export function listDownloadedSubtitles(row: Row): SubtitleTrackInfo[] {
+  return q<Row>(
+    `SELECT track, language, title
+     FROM downloaded_subtitles
+     WHERE file_id = ?
+     ORDER BY created_at DESC`,
+  ).all(Number(row.id)).map((entry) => ({
+    track: String(entry.track),
+    kind: "downloaded" as const,
+    language: entry.language == null ? null : String(entry.language),
+    title: String(entry.title),
+    isDefault: false,
+  }));
+}
+
+export function downloadedSubtitlePath(row: Row, track: string): string | null {
+  const entry = q<{ path: string }, [number, string]>(
+    "SELECT path FROM downloaded_subtitles WHERE file_id = ? AND track = ?",
+  ).get(Number(row.id), track);
+  return entry ? String(entry.path) : null;
+}
+
 export async function listSubtitleTracks(row: Row): Promise<SubtitleTrackInfo[]> {
   const embedded = parseEmbedded(row)
     .map((info, index): SubtitleTrackInfo & { codec: string | null } => ({
@@ -459,5 +481,5 @@ export async function listSubtitleTracks(row: Row): Promise<SubtitleTrackInfo[]>
     isDefault: false,
   }));
 
-  return [...embedded, ...sidecars];
+  return [...embedded, ...sidecars, ...listDownloadedSubtitles(row)];
 }

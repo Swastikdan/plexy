@@ -1,5 +1,11 @@
 # Plexy feature audit: desktop, mobile, backend
 
+> **Status note (20 Nov 2026):** some rows below are stale. In particular, the
+> server does not implement HLS, `maxHeight` generated downloads, live
+> remux/transcode, or the 2-transcode limit, and mobile “saved” online titles are
+> bookmarks rather than downloads. See `docs/APP_FEATURE_AUDIT.md` for the
+> current code-level audit.
+
 This audit compares what ships in each app and turns the gaps into a desktop roadmap.
 It reflects the code in `apps/server`, `apps/web` (the UI the desktop app hosts), `apps/desktop`
 (the Electron shell), and `apps/mobile`.
@@ -41,7 +47,7 @@ and the only place where the full admin surface is available.
 | Capability | Backend | Desktop browser player | Desktop native mpv | Mobile |
 | --- | --- | --- | --- | --- |
 | Direct stream with range seeking | Yes | Yes | Yes | Local file |
-| Remux / transcode / HLS fallback | Yes | Yes | Not needed (original) | Local codecs only |
+| Prepared MP4 remux / transcode | Yes | Yes | Not needed (original) | Local codecs only |
 | Resume position | Yes | Yes | Yes | Yes |
 | Audio tracks | Yes | Yes | Yes | Yes |
 | Subtitles | Embedded + sidecar + WebVTT + cache | Embedded, sidecar, styling, sync, position | Same via Video.js chrome | Embedded + **import SRT/VTT**, timing, size, placement |

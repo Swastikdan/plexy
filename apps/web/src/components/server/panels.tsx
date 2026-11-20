@@ -505,6 +505,7 @@ export function ServerPreferencesPanel() {
   const [testing, setTesting] = useState(false);
   const [token, setToken] = useState("");
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+  const [certMessage, setCertMessage] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPhrase, setResetPhrase] = useState("");
   const [resetMessage, setResetMessage] = useState<string | null>(null);
@@ -535,6 +536,21 @@ export function ServerPreferencesPanel() {
   const clearCache = useMutation({
     mutationFn: api.clearTmdbCache,
     onSuccess: ({ removed }) => setCacheMessage(`Cleared ${removed} cached TMDB response${removed === 1 ? "" : "s"}.`),
+  });
+
+  const backfillCerts = useMutation({
+    mutationFn: () => api.backfillCertifications(250),
+    onSuccess: ({ checked, updated }) => {
+      setCertMessage(
+        checked === 0
+          ? "Every title already has an age rating."
+          : `Checked ${checked} title${checked === 1 ? "" : "s"}; filled ${updated} age rating${updated === 1 ? "" : "s"}.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      void queryClient.invalidateQueries({ queryKey: ["home"] });
+      void queryClient.invalidateQueries({ queryKey: ["title"] });
+    },
+    onError: () => setCertMessage("Could not fetch age ratings. Check the TMDB token and server log."),
   });
 
   const refreshSkipMarkers = useMutation({
@@ -710,6 +726,23 @@ export function ServerPreferencesPanel() {
           </Button>
         </div>
         {cacheMessage && <p className="text-xs font-medium text-muted">{cacheMessage}</p>}
+
+        <div className="flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-xl text-xs leading-relaxed text-muted">
+            Age ratings power parental controls. Backfill titles that were matched before regional
+            certifications were stored.
+          </p>
+          <Button
+            variant="secondary"
+            onPress={() => backfillCerts.mutate()}
+            isDisabled={backfillCerts.isPending}
+            className="h-9 shrink-0 px-3 text-xs font-semibold"
+          >
+            {backfillCerts.isPending && <RotateCw size={13} className="animate-spin" />}
+            {backfillCerts.isPending ? "Checking…" : "Backfill age ratings"}
+          </Button>
+        </div>
+        {certMessage && <p className="text-xs font-medium text-muted">{certMessage}</p>}
 
         <form
           onSubmit={async (e) => {

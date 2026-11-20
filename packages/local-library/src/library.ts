@@ -744,6 +744,18 @@ export class LocalLibrary {
     await this.persist();
     this.changed();
   }
+  async setEpisodesWatched(ids: readonly number[], played: boolean) {
+    const requested = new Set(ids);
+    for (const record of this.state.records) {
+      if (record.card.kind !== "episode" || !requested.has(record.id)) continue;
+      const duration = record.card.watch?.duration ?? (record.card.runtime ? record.card.runtime * 60 : null);
+      record.card.watch = played ? {
+        position: duration ?? 0, duration, played: true, percent: 100,
+      } : null;
+    }
+    this.changed();
+    await this.persist();
+  }
   async clearWatch(id: number) {
     for (const r of this.recordsFor(id)) r.card.watch = null;
     this.invalidate();

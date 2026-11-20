@@ -69,14 +69,13 @@ class PlexyMediaModule : Module() {
       val intent = listOfNotNull(incoming, appContext.currentActivity?.intent)
         .firstOrNull { it.data?.getQueryParameter("id") == requestId }
       val uri = intent?.let { videoUri(it) }
-      if (uri == null) null else {
-        val resolver = appContext.reactContext?.contentResolver ?: error("Android storage is unavailable.")
-        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-          ?.use { if (it.moveToFirst()) it.getString(0) else null }
-        resolver.openAssetFileDescriptor(uri, "r")?.close() ?: error("Android did not grant access to this video.")
-        externalUri = uri
-        mapOf("uri" to uri.toString(), "name" to (name ?: "Video"))
-      }
+      uri?.let(::readVideo)
+    }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
+
+    AsyncFunction("openPickedVideo") { rawUri: String ->
+      val uri = Uri.parse(rawUri)
+      require(uri.scheme == "content" || uri.scheme == "file") { "Choose a video from Android Files." }
+      readVideo(uri, validateType = true)
     }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
 
     AsyncFunction("importVideo") { rawUri: String, requestedName: String ->
@@ -169,6 +168,22 @@ class PlexyMediaModule : Module() {
       }
       Unit
     }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
+  }
+
+  private fun readVideo(uri: Uri, validateType: Boolean = false): Map<String, String> {
+    val resolver = appContext.reactContext?.contentResolver ?: error("Android storage is unavailable.")
+    val name = if (uri.scheme == "file") uri.lastPathSegment else resolver
+      .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+      ?.use { if (it.moveToFirst()) it.getString(0) else null }
+    if (validateType) {
+      require(isVideoMimeType(resolver.getType(uri)) ||
+        name?.matches(Regex(".+\\.(mp4|mkv|m4v|webm|avi|mov|ts|3gp|mpeg|mpg)$", RegexOption.IGNORE_CASE)) == true) {
+        "Choose a supported video file."
+      }
+    }
+    resolver.openAssetFileDescriptor(uri, "r")?.close() ?: error("Android did not grant access to this video.")
+    externalUri = uri
+    return mapOf("uri" to uri.toString(), "name" to (name ?: "Video"))
   }
 
   private fun videoUri(intent: Intent): Uri? {

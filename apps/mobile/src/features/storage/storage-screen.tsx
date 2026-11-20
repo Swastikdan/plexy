@@ -1,7 +1,10 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { SectionList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { localLibrary } from "@/core/library/local-runtime";
+import { displayName, localLibrary } from "@/core/library/local-runtime";
+import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
+import { Film, Folder, HardDrive, Trash2 } from "@/shared/ui/icons";
+import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
@@ -15,6 +18,7 @@ function formatSize(bytes: number) {
 }
 
 export function StorageScreen() {
+  const colors = useColors();
   const revision = useSyncExternalStore(subscribe, version);
   const show = useAppDialog();
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -27,6 +31,25 @@ export function StorageScreen() {
     return records.filter((record) => !watchedOnly || record.card.watch?.played)
       .sort((a, b) => b.file.size - a.file.size);
   }, [records, watchedOnly, revision]);
+  const sections = useMemo(() => {
+    const roots = new Map(localLibrary.state.roots.map((root) => [root.uri, root]));
+    const folders = new Map<string, { key: string; title: string; bytes: number; data: typeof sorted }>();
+    for (const record of sorted) {
+      const root = roots.get(record.root);
+      const parent = record.file.relativePath.split("/").slice(0, -1).join("/");
+      const key = root?.singleFile ? "standalone" : `${record.root}|${parent}`;
+      let folder = folders.get(key);
+      if (!folder) {
+        const rootName = root?.name || displayName(record.root);
+        const title = root?.singleFile ? "Individual imports" : [rootName, parent].filter(Boolean).join(" / ");
+        folder = { key, title, bytes: 0, data: [] };
+        folders.set(key, folder);
+      }
+      folder.bytes += record.file.size;
+      folder.data.push(record);
+    }
+    return [...folders.values()].sort((a, b) => b.bytes - a.bytes || a.title.localeCompare(b.title));
+  }, [sorted]);
   const selection = sorted.filter((record) => selected.has(record.id));
   const total = records.reduce((sum, record) => sum + record.file.size, 0);
   const size = selection.reduce((sum, record) => sum + record.file.size, 0);
@@ -44,32 +67,68 @@ export function StorageScreen() {
     } }],
   );
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <PageHeader title="Storage" subtitle={`${formatSize(total)} in indexed video files`} />
-      <View className="gap-2 px-5 pb-2">
-        <Button label={watchedOnly ? "Show all videos" : "Show watched only"} selected={watchedOnly} disabled={busy}
-          onPress={() => { setWatchedOnly(!watchedOnly); setSelected(new Set()); }} />
-        {message ? <Notice message={message} /> : null}
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
+      <PageHeader title="Storage" />
+      <View className="mx-5 mb-2 flex-row items-center gap-4 rounded-2xl bg-surface px-4 py-3">
+        <HardDrive size={24} color={colors.muted} />
+        <View className="flex-1">
+          <Text className="font-archivo-bold text-[22px] text-foreground">{formatSize(total)}</Text>
+          <Text className="text-muted">Library video storage</Text>
+        </View>
       </View>
-      <FlatList data={sorted} keyExtractor={(record) => String(record.id)}
-        contentContainerStyle={{ padding: 20, gap: 8 }}
-        ListEmptyComponent={<Text className="text-muted">No videos to review.</Text>}
-        renderItem={({ item }) => <Pressable
-          accessibilityRole="checkbox" accessibilityState={{ checked: selected.has(item.id), disabled: busy }} disabled={busy}
-          className={selected.has(item.id) ? "rounded-xl border border-foreground bg-surface px-4 py-3" : "rounded-xl border border-border bg-surface px-4 py-3"}
-          onPress={() => setSelected((current) => {
-            const next = new Set(current);
-            if (next.has(item.id)) next.delete(item.id);
-            else next.add(item.id);
-            return next;
-          })}>
-          <Text className="font-archivo-medium text-foreground">{item.file.name}</Text>
-          <Text className="text-muted">{formatSize(item.file.size)}{item.card.watch?.played ? " · Watched" : ""}</Text>
-        </Pressable>} />
-      <View className="px-5 pb-3">
-        <Button primary label={busy ? "Deleting…" : `Review ${selection.length} selected · ${formatSize(size)}`}
-          disabled={!selection.length || busy} onPress={confirm} />
+      {message ? <View className="px-5 pb-2"><Notice message={message} /></View> : null}
+      <View className="self-start px-5 pb-1">
+        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: watchedOnly, disabled: busy }} disabled={busy}
+          className="min-h-11 flex-row items-center gap-2 py-1"
+          onPress={() => { setWatchedOnly(!watchedOnly); setSelected(new Set()); }}>
+          <CheckboxIndicator checked={watchedOnly} />
+          <Text className="font-archivo-medium text-foreground">Watched videos only</Text>
+        </Pressable>
       </View>
+      <SectionList
+        style={{ flex: 1 }}
+        sections={sections}
+        keyExtractor={(record) => String(record.id)}
+        stickySectionHeadersEnabled={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 28 }}
+        ListEmptyComponent={<Text className="py-4 text-muted">{watchedOnly ? "No watched videos." : "No videos in your library."}</Text>}
+        renderSectionHeader={({ section }) => (
+          <View className="flex-row items-center gap-2 pb-2 pt-4">
+            <Folder size={19} color={colors.muted} />
+            <Text className="flex-1 font-archivo-bold text-foreground">{section.title}</Text>
+            <Text className="text-muted">{formatSize(section.bytes)}</Text>
+          </View>
+        )}
+        renderItem={({ item }) => (
+          <Pressable
+            accessibilityRole="checkbox" accessibilityState={{ checked: selected.has(item.id), disabled: busy }}
+            disabled={busy}
+            className="mb-2 flex-row items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 active:opacity-70"
+            onPress={() => setSelected((current) => {
+              const next = new Set(current);
+              if (next.has(item.id)) next.delete(item.id);
+              else next.add(item.id);
+              return next;
+            })}
+          >
+            <Film size={19} color={colors.muted} />
+            <View className="flex-1">
+              <Text className="font-archivo-medium text-foreground" numberOfLines={2}>{item.file.name}</Text>
+              <Text className="text-muted">{formatSize(item.file.size)}{item.card.watch?.played ? " · Watched" : ""}</Text>
+            </View>
+            <CheckboxIndicator checked={selected.has(item.id)} />
+          </Pressable>
+        )}
+      />
+      {selection.length > 0 || busy ? (
+        <View className="border-t border-border bg-background px-5 pb-4 pt-3">
+          <View className="mb-2 flex-row items-center gap-2">
+            <Trash2 size={17} color={colors.muted} />
+            <Text className="font-archivo-medium text-muted">{selection.length} selected · {formatSize(size)}</Text>
+          </View>
+          <Button primary label={busy ? "Deleting…" : "Review deletion"} disabled={busy} onPress={confirm} />
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }

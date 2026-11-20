@@ -27,33 +27,50 @@ different server.
   subtitle tracks, and playback URLs.
 - `GET /api/stream/:fileId` serves direct media and supports HTTP byte ranges
   for seeking.
-- `GET /api/download/:fileId` serves an existing source version as an
+- `GET /api/download/:fileId` serves the existing source version as an
   attachment and supports `HEAD`/byte ranges so a native app can resume a local
-  download. `GET /api/download/:fileId?maxHeight=720` transcodes and streams a
-  generated quality cap to the client; optional `audio=<index>` selects the
-  audio track in generated output. Generated downloads are streamed live and
-  cannot resume after a connection interruption. Supported caps are 360, 480,
-  720, 1080, 1440, and 2160.
-- `GET /api/stream/:fileId/remux` and `/transcode` provide live conversion
-  fallbacks. Live conversions are limited to two at a time; excess requests
-  receive `503` and `Retry-After`.
-- The transcode URL accepts optional `maxHeight` values `360`, `480`, `720`,
-  `1080`, `1440`, or `2160`. It scales the live output down when the source is
-  taller and selects a lower target bitrate. Omitting it preserves the current
-  server-selected output. This is a manual quality cap for fallback streams;
-  prepared HLS exposes its own variant qualities, while direct play uses the
-  source file's quality.
-- `GET /api/stream/:fileId/hls/:asset` serves prepared HLS playlists and
-  segments.
+  download. Quality-capped `?maxHeight=` downloads are **not implemented** in
+  the current server.
+- `GET /api/stream/:fileId/remux` and `/transcode` are compatibility routes
+  that currently return `409`; live conversion is disabled. Playback uses the
+  prepared MP4/audio-variant pipeline instead. There is no 2-transcode limit or
+  `503`/`Retry-After` behavior.
+- `GET /api/stream/:fileId/hls/:asset` is **not implemented**; the server never
+  emits HLS. Prepared playback is MP4 only.
 - `GET /api/subtitles/:fileId` lists subtitle tracks;
   `GET /api/subtitles/:fileId/:track` serves WebVTT.
+- `GET /api/subtitles/:fileId/search?language=en` proxies OpenSubtitles search for
+  the matched IMDb title; `POST /api/subtitles/:fileId/download` saves one result
+  as a WebVTT track. Downloaded tracks then appear in the normal track list.
 - `POST /api/progress` stores playback progress.
 
-Native clients should attach Bearer auth to each media request and use a
-playback stack that can authenticate HLS playlist and segment requests. A
-browser `<video>` element cannot set arbitrary Authorization headers; browser
-playback uses the HttpOnly session cookie instead. Native tokens returned by
-pairing are not stored by the browser client.
+## Catalog, search, and collections
+
+- `GET /api/home` returns the hero and all home rows (continue, next up,
+  watchlist, favorites, recently added).
+- `GET /api/items` accepts `kind`, `libraryId`, `q`, `genre`, `yearFrom`,
+  `yearTo`, `minRating`, `maxRuntime`, `unwatched`, `watchlist`, `favorite`,
+  `hidden`, `minUserRating`, `sort`, `limit`, and `offset`, and returns
+  `{ items, total }`.
+- `GET /api/items/:id` returns the title card, metadata, cast, trailer/extras,
+  seasons/episodes, and the playable file. `GET /api/items/:id/similar` returns
+  local genre/cast affinity recommendations.
+- `GET /api/search?q=` searches titles, episodes, people, and genres through
+  SQLite FTS5 (with a LIKE fallback) and returns grouped results.
+- `PUT /api/items/:id/flags` sets the signed-in user's `watchlist`, `favorite`,
+  `hidden`, and 1–5 `rating` flags.
+- `GET /api/history?limit=&offset=` lists the signed-in user's watched movies
+  and episodes. `DELETE /api/history/:itemId` removes one entry (and its resume
+  point); `DELETE /api/history` clears the account's history.
+- `GET /api/collections` lists collections (optionally with membership for
+  `?itemId=`), `POST /api/collections` creates one, `GET /api/collections/:id`
+  returns its items, and `POST|DELETE /api/collections/:id/items[/:itemId]`
+  adds or removes a title.
+
+Native clients should attach Bearer auth to each media request. A browser
+`<video>` element cannot set arbitrary Authorization headers; browser playback
+uses the HttpOnly session cookie instead. Native tokens returned by pairing are
+not stored by the browser client.
 
 ## Preparation settings
 
@@ -72,35 +89,30 @@ recovery behavior.
 ## Native playback behavior
 
 The playback response supplies the selected path, resume position, available
-file versions, audio and subtitle tracks, trickplay metadata, and related
+file versions, chapters, audio and subtitle tracks, trickplay metadata, and related
 playback details. A native client can use those fields to build player controls
 without reusing the web player's DOM components. For typical flows:
 
-- Scrubbing: use byte-range requests for direct files and native HLS seeking
-  for prepared HLS. Live remux/transcode streams are pipes, so resume or a long
-  seek restarts the request with `start=<seconds>`.
+- Scrubbing: use byte-range requests for direct/prepared MP4 files. Live
+  remux/transcode streams are disabled in the current server.
 - Audio: pass the selected audio index to the playback/stream request. The
   server maps it into the source and converts audio as needed.
 - Subtitles: list tracks, then load the selected WebVTT URL. Embedded and
   sidecar track rendering must be supported by the native player or a native
   subtitle overlay.
 - Trickplay: use the returned VTT and sprite URLs to implement a scrub preview.
-- Quality: choose an alternate file version or prepared HLS variant when
-  available. For a live transcode fallback, set `maxHeight` on the transcode
-  URL to cap output resolution and bitrate.
+- Quality: choose an alternate file version from the playback manifest. HLS
+  variants and live `maxHeight` transcodes are not implemented.
 - Offline source downloads: use the `versions` from the playback manifest to
   let the user choose a source file, then download that version through
   `/api/download/:fileId` with Bearer auth. The client owns local storage,
-  download progress, resume, and deletion. If the desired source resolution is
-  unavailable, ask whether to generate it and stream the result from the
-  `maxHeight` download URL; this conversion is not resumable after disconnect.
+  download progress, resume, and deletion.
 - Progress: send periodic and lifecycle progress updates to `/api/progress`.
 
 Expo Video is the recommended native decoder surface in the mobile app plan;
 the React Native client will implement its own controls and use the same server
-playback contract. Verify Bearer headers on HLS child requests, redirects, and
-range requests on physical iOS and Android devices before relying on native
-playback for release.
+playback contract. Verify Bearer headers, redirects, and range requests on
+physical iOS and Android devices before relying on native playback for release.
 
 ## Web connection addresses
 

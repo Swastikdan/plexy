@@ -50,7 +50,7 @@ plexy-exact/
 /*.mp4
 /*.webm
 
-/plans/
+/plans/*
 .cloud-attachments/
 .freebuff/
 .animation-plans/
@@ -59,4 +59,13 @@ plexy-exact/
 .taste-skill/*
 skills/*
 docs/design/*
+!/docs/design/README.md
+!/docs/design/REFERENCE.md
+!/docs/design/UI_INVENTORY.md
+!/docs/design/reference/
+!/docs/design/reference/**
+!/plans/013-visual-parity-loop.md
+/qa/*
 docs/MEDIA_SERVER_FEATURE_RESEARCH.md
+docs/design/reference/*
+shots/*

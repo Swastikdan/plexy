@@ -2,7 +2,6 @@ import { Controls, Time, Tooltip } from '@videojs/react';
 import type { ComponentProps } from 'react';
 
 import { AirPlayButton } from '@/components/videojs/ui/airplay-button';
-import { AudioTrackButton } from '@/components/videojs/ui/audio-track-button';
 import { ButtonTooltip } from '@/components/videojs/ui/button-tooltip';
 import { CaptionsButton } from '@/components/videojs/ui/captions-button';
 import { CastButton } from '@/components/videojs/ui/cast-button';
@@ -15,8 +14,12 @@ import { VolumePopover } from '@/components/videojs/ui/volume-popover';
 import { cn } from '@/lib/resolve-class-name';
 
 import { VideoSettingsMenu, type VideoSettingsMenuProps } from '../menus/settings-menu';
+import type { Chapter } from '@/components/videojs/ui/chapters-menu';
+import type { Playability } from '@plexy/api-client';
 
 export interface NeutralVideoControlsProps {
+  title?: string | null;
+  subtitle?: string | null;
   renderThumbnail?: NonNullable<ComponentProps<typeof TimeSlider>>['renderThumbnail'];
   onSeekDragStart?: () => void;
   onSeekDragEnd?: () => void;
@@ -29,9 +32,19 @@ export interface NeutralVideoControlsProps {
   subtitlePosition?: number;
   onAdjustSubtitlePosition?: (delta: number) => void;
   onResetSubtitlePosition?: () => void;
+  chapters?: Chapter[];
+  onSelectChapter?: (start: number) => void;
+  versions?: NonNullable<Playability['versions']>;
+  selectedFileId?: number;
+  onSelectVersion?: (fileId: number) => void;
 }
 
+/// Cinema controls: title and time at the bottom corners, a hairline seek
+/// track, then transport on the left and utilities on the right. This mirrors
+/// the Plexy player reference rather than a generic video.js control bar.
 export function NeutralVideoControls({
+  title,
+  subtitle,
   renderThumbnail,
   onSeekDragStart,
   onSeekDragEnd,
@@ -44,6 +57,11 @@ export function NeutralVideoControls({
   subtitlePosition,
   onAdjustSubtitlePosition,
   onResetSubtitlePosition,
+  chapters,
+  onSelectChapter,
+  versions,
+  selectedFileId,
+  onSelectVersion,
 }: NeutralVideoControlsProps = {}) {
   return (
     <Controls.Root>
@@ -58,92 +76,76 @@ export function NeutralVideoControls({
           'video-controls',
           'group/controls text-media-controls-foreground text-shadow-media',
           'duration-media-controls-enter ease-out',
-          'absolute inset-x-4 bottom-0.5 z-30 flex items-center rtl:flex-row-reverse gap-x-2 rounded-media-controls bg-transparent p-1 media-high-contrast:bg-media-background',
+          'absolute inset-x-0 bottom-0 z-30 flex flex-col items-stretch gap-0 px-4 pb-2 pt-7 sm:px-5',
           'transition-[filter,opacity,translate]',
           'not-data-visible:pointer-events-none not-data-visible:opacity-0',
           'not-data-visible:duration-media-controls',
-          'not-data-visible:translate-y-media-hidden-offset pointer-fine:not-data-visible:blur-media-hidden',
-          'media-2xl:bottom-2',
-          'media-2xl:[--media-popover-side-offset:--spacing(3)]',
-          'media-2xl:[--media-tooltip-side-offset:var(--media-popover-side-offset)]',
-          'flex-wrap media-2xl:flex-nowrap'
+          'not-data-visible:translate-y-media-hidden-offset pointer-fine:not-data-visible:blur-media-hidden'
         )}
       >
         <Tooltip.Provider>
-          <Controls.Group className={'flex flex-1 items-center rtl:flex-row-reverse gap-0.5 media-2xl:flex-none'}>
-            <SeekBackwardButton seconds={-10} />
-            <ButtonTooltip side="top">
-              <PlayButton />
-            </ButtonTooltip>
-            <SeekForwardButton seconds={10} />
-            <VolumePopover showTooltip side="right" orientation="horizontal" />
-          </Controls.Group>
-
-          <Controls.Group
-            className={cn(
-              '@container/video-time-controls -order-1 flex flex-none basis-full flex-row-reverse items-center rtl:flex-row gap-3 px-1.5',
-              '[--media-slider-height:--spacing(5)]',
-              'media-2xl:order-none media-2xl:min-w-0 media-2xl:flex-1 media-2xl:flex-row media-2xl:rtl:flex-row-reverse',
-              'media-2xl:[--media-slider-height:--spacing(8)]',
-              'media-2xl:mask-media-volume media-2xl:[mask-size:200%_100%]',
-              'group-has-[[data-volume-level][aria-expanded=true]]/controls:media-2xl:mask-media-volume-open'
-            )}
-          >
-            <Time.Group className={'flex items-center rtl:flex-row-reverse gap-1'}>
-              <Time.Value
-                className={cn(
-                  'cursor-pointer rounded-sm tabular-nums focus-ring-media',
-                  'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
-                  'transition-[outline-color,outline-offset] duration-media-fast ease-out',
-                  'focus-visible:outline-media-ring focus-visible:outline-offset-2',
-                  'supports-[corner-shape:squircle]:rounded-2xl supports-[corner-shape:squircle]:[corner-shape:squircle]'
-                )}
-                type="current"
-                toggle
-              />
-              <Time.Separator className={'hidden media-2xl:inline media-2xl:text-media-controls-foreground/60'} />
-              <Time.Value
-                className={
-                  'hidden tabular-nums transition-opacity duration-media-slow ease-out data-unavailable:opacity-50 media-2xl:inline media-2xl:text-media-controls-foreground/60'
-                }
-                type="duration"
-              />
+          <div className="flex items-end justify-between gap-4 px-1 pb-1.5">
+            <div className="min-w-0">
+              {title && (
+                <p className="truncate text-[15px] font-semibold leading-tight text-white drop-shadow">
+                  {title}
+                </p>
+              )}
+              {subtitle && (
+                <p className="mt-0.5 truncate text-[11px] font-medium leading-tight text-white/55">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+            <Time.Group className="flex shrink-0 items-center gap-1 pb-0.5 text-[11px] tabular-nums text-white/75">
+              <Time.Value type="current" className="tabular-nums text-white/85" />
+              <span aria-hidden className="text-white/35">
+                /
+              </span>
+              <Time.Value type="duration" className="tabular-nums text-white/55" />
             </Time.Group>
+          </div>
+
+          <div className="px-0.5">
             <TimeSlider
               previewOverflow="clamp"
               renderThumbnail={renderThumbnail}
               onDragStart={onSeekDragStart}
               onDragEnd={onSeekDragEnd}
+              className="[--media-slider-height:0.5rem]"
             />
-          </Controls.Group>
+          </div>
 
-          <Controls.Group
-            className={cn(
-              'flex flex-1 items-center rtl:flex-row-reverse justify-end gap-px media-2xl:flex-none',
-              'media-max-2xl:mask-media-volume media-max-2xl:[mask-size:400%_100%]',
-              'group-has-[[data-volume-level][aria-expanded=true]]/controls:media-max-2xl:mask-media-volume-open'
-            )}
-          >
-            <AudioTrackButton
-              tracks={serverAudioTracks}
-              selectedIndex={selectedAudioIndex}
-              onSelectTrack={onSelectAudioTrack}
-            />
-            <ButtonTooltip side="top">
-              <CaptionsButton className={'media-max-xs:hidden'} />
-            </ButtonTooltip>
-            <VideoSettingsMenu
-              serverAudioTracks={serverAudioTracks}
-              selectedAudioIndex={selectedAudioIndex}
-              onSelectAudioTrack={onSelectAudioTrack}
-              subtitleOffset={subtitleOffset}
-              onAdjustSubtitleOffset={onAdjustSubtitleOffset}
-              onResetSubtitleOffset={onResetSubtitleOffset}
-              subtitlePosition={subtitlePosition}
-              onAdjustSubtitlePosition={onAdjustSubtitlePosition}
-              onResetSubtitlePosition={onResetSubtitlePosition}
-            />
-            <Controls.Group className={'flex items-center rtl:flex-row-reverse gap-px'}>
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <Controls.Group className="flex items-center gap-0.5 rtl:flex-row-reverse">
+              <ButtonTooltip side="top">
+                <PlayButton />
+              </ButtonTooltip>
+              <SeekBackwardButton seconds={-10} />
+              <SeekForwardButton seconds={10} />
+            </Controls.Group>
+
+            <Controls.Group className="flex items-center justify-end gap-0.5 rtl:flex-row-reverse">
+              <VolumePopover showTooltip side="top" orientation="horizontal" />
+              <ButtonTooltip side="top">
+                <CaptionsButton className="media-max-xs:hidden" />
+              </ButtonTooltip>
+              <VideoSettingsMenu
+                serverAudioTracks={serverAudioTracks}
+                selectedAudioIndex={selectedAudioIndex}
+                onSelectAudioTrack={onSelectAudioTrack}
+                subtitleOffset={subtitleOffset}
+                onAdjustSubtitleOffset={onAdjustSubtitleOffset}
+                onResetSubtitleOffset={onResetSubtitleOffset}
+                subtitlePosition={subtitlePosition}
+                onAdjustSubtitlePosition={onAdjustSubtitlePosition}
+                onResetSubtitlePosition={onResetSubtitlePosition}
+                chapters={chapters}
+                onSelectChapter={onSelectChapter}
+                versions={versions}
+                selectedFileId={selectedFileId}
+                onSelectVersion={onSelectVersion}
+              />
               <ButtonTooltip side="top">
                 <CastButton />
               </ButtonTooltip>
@@ -157,7 +159,7 @@ export function NeutralVideoControls({
                 <FullscreenButton />
               </ButtonTooltip>
             </Controls.Group>
-          </Controls.Group>
+          </div>
         </Tooltip.Provider>
       </Controls.Content>
     </Controls.Root>

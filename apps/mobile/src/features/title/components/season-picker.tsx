@@ -4,6 +4,7 @@ import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import {
   Eye,
+  EyeOff,
   ChevronDown,
   MoreHorizontal,
 } from "@/shared/ui/icons";
@@ -14,12 +15,14 @@ export function SeasonPicker({
   onChange,
   onMarkWatched,
   busy = false,
+  watched = false,
 }: {
   seasons: { number: number; label: string; count?: number }[];
   value: number | null;
   onChange: (season: number) => void;
   onMarkWatched: () => void;
   busy?: boolean;
+  watched?: boolean;
 }) {
   const colors = useColors();
   if (!seasons.length) return null;
@@ -82,8 +85,8 @@ export function SeasonPicker({
             <Menu.Overlay />
             <Menu.Content presentation="popover" align="end" offset={6} width={208} className="border border-border" style={{ backgroundColor: colors.elevated }}>
               <Menu.Item onPress={onMarkWatched} className="min-h-12">
-                <Eye size={18} color={colors.ink} />
-                <Menu.ItemTitle className="font-archivo-medium">Mark as watched</Menu.ItemTitle>
+                {watched ? <EyeOff size={18} color={colors.ink} /> : <Eye size={18} color={colors.ink} />}
+                <Menu.ItemTitle className="font-archivo-medium">{watched ? "Mark as unwatched" : "Mark as watched"}</Menu.ItemTitle>
               </Menu.Item>
             </Menu.Content>
           </Menu.Portal>

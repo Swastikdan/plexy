@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { defaultSeasonNumber } from "@/features/title/lib/default-season";
+import { defaultSeasonNumber, playbackSeasonNumber, seasonComplete } from "@/features/title/lib/default-season";
 
 function season(
   number: number,
@@ -48,4 +48,12 @@ test("empty seasons are skipped and an empty list returns null", () => {
     ]),
   ).toBe(2);
   expect(defaultSeasonNumber([])).toBeNull();
+});
+
+test("Play advances from the season still open in the picker and returns when it is unmarked", () => {
+  const s2 = season(2, 2, []);
+  const s1 = { ...season(1, 2, [2, 4]), episodeNumbers: [2, 4] };
+  expect(seasonComplete(s1)).toBe(true);
+  expect(playbackSeasonNumber([s1, s2], 1)).toBe(2);
+  expect(playbackSeasonNumber([{ ...s1, isEpisodeWatched: () => false }, s2], 1)).toBe(1);
 });

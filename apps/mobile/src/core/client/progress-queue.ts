@@ -116,9 +116,16 @@ export class ProgressQueue {
     return this.history.get(itemId);
   }
   async forget(itemId: number) {
-    this.pending.delete(itemId);
-    this.history.delete(itemId);
-    await this.persistNow().catch(() => {});
+    await this.forgetMany([itemId]);
+  }
+  async forgetMany(itemIds: readonly number[]) {
+    let changed = false;
+    for (const id of itemIds) {
+      const pending = this.pending.delete(id);
+      const history = this.history.delete(id);
+      changed = changed || pending || history;
+    }
+    if (changed) await this.persistNow().catch(() => {});
   }
   async record(progress: Progress) {
     const next = mergeProgress(
@@ -137,6 +144,7 @@ export class ProgressQueue {
       const snapshot = [...this.pending.values()];
       await this.flushLocal();
       for (const p of snapshot) {
+        if (this.pending.get(p.itemId) !== p) continue;
         await api.progress(p.itemId, p.position, p.duration, p.played);
         if (this.pending.get(p.itemId) === p) {
           this.pending.delete(p.itemId);

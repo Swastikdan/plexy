@@ -235,6 +235,9 @@ export class LocalApi extends LocalCatalog {
             await this.library.clearWatch(itemId);
         return { ok: true };
     }
+    override setEpisodesWatched(ids: readonly number[], played: boolean) {
+        return this.library.setEpisodesWatched(ids, played);
+    }
     override async clearWatch(itemId: number) {
         await this.library.clearWatch(itemId);
         return { ok: true };

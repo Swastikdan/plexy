@@ -18,10 +18,13 @@ import { requestUser } from "./auth";
 /// media file is never modified.
 import { Elysia, t } from "elysia";
 import { apiError } from "./essentials";
-import { stat } from "node:fs/promises";
-import { extname } from "node:path";
-import { q, type Row } from "./db";
+import { mkdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { extname, join } from "node:path";
+import { q, run, type Row } from "./db";
 import { log } from "./logger";
+import { resolveSubtitleCacheDir } from "./paths";
+import * as tmdb from "./tmdb";
 import {
   classifyPlayability,
   isStreamableContainer,
@@ -32,10 +35,17 @@ import {
   audioVariantView, enqueueAudioVariant, enqueueOptimization, optimizationView,
   usableAudioVariant, usableOptimizedPath,
 } from "./optimize";
-import { cachedEmbeddedSubtitle, findSidecarSubtitles, listSubtitleTracks, srtToVtt } from "./subtitles";
+import {
+  cachedEmbeddedSubtitle,
+  downloadedSubtitlePath,
+  findSidecarSubtitles,
+  listSubtitleTracks,
+  srtToVtt,
+} from "./subtitles";
 import { getConfig } from "./config";
 import { storeProbeFacts } from "./media-facts";
 import { getSkipSegments } from "./skip-segments";
+import { fileForEpisode } from "./episode-files";
 import {
   trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
@@ -46,6 +56,7 @@ function getFile(fileOrItemId: number): Row | null {
   return (
     q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileOrItemId) ??
     q<Row, [number]>("SELECT * FROM media_files WHERE item_id = ? AND unavailable = 0 ORDER BY id DESC LIMIT 1").get(fileOrItemId) ??
+    fileForEpisode(fileOrItemId) ??
     null
   );
 }
@@ -258,6 +269,12 @@ function itemContext(row: Row): ItemContext {
      WHERE e.parent_id = ? AND e.kind = 'episode'
      ORDER BY e.season_number, e.episode_number`,
   ).all(Number(item.parent_id));
+  // Multi-episode files cover later siblings that own no file row of their own.
+  for (const sibling of siblings) {
+    if (sibling.file_id != null) continue;
+    const file = fileForEpisode(Number(sibling.item_id));
+    if (file) sibling.file_id = file.id;
+  }
   const index = siblings.findIndex((sibling) => Number(sibling.item_id) === itemId);
   const nextRow = index >= 0
     ? siblings.slice(index + 1).find((sibling) => sibling.file_id != null)
@@ -396,6 +413,26 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       return [];
     });
 
+    // The scanner already persisted chapter timestamps. Expose them so web,
+    // native, and mobile clients can build a chapter menu without re-probing.
+    let chapters: Array<{ start: number; end: number; label: string }> = [];
+    try {
+      const parsed = row.chapters_json ? JSON.parse(String(row.chapters_json)) : [];
+      if (Array.isArray(parsed)) {
+        chapters = parsed
+          .filter((chapter) =>
+            chapter && Number.isFinite(Number(chapter.start)) && Number(chapter.start) >= 0)
+          .map((chapter, index) => ({
+            start: Number(chapter.start),
+            end: Number.isFinite(Number(chapter.end)) ? Number(chapter.end) : Number(chapter.start),
+            label: String(chapter.label ?? `Chapter ${index + 1}`),
+          }))
+          .sort((a, b) => a.start - b.start);
+      }
+    } catch {
+      /* malformed chapter metadata must not block playback */
+    }
+
     // Lazy, idempotent: the first play starts one background FFmpeg pass.
     // Thumbnail extraction is queued by scanning, never by playback.
     const trickplay = trickplayView(row);
@@ -424,6 +461,7 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       parentPublicId: context.parentPublicId,
       watch,
       tracks,
+      chapters,
       trickplay,
       optimization: !nativeRequested && selectedAudioIndex > 0
         ? audioVariantView(getFile(Number(row.id)) ?? row, selectedAudioIndex)
@@ -744,6 +782,120 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     });
   }, { params: t.Object({ fileId: t.Numeric(), frame: t.String() }) })
 
+  /** Search OpenSubtitles through the public Stremio-compatible index. */
+  .get("/subtitles/:fileId/search", async ({ params, query }) => {
+    const row = getFile(Number(params.fileId));
+    if (!row?.item_id) return apiError("Identify this title before searching subtitles.", 409);
+    const item = q<Row>("SELECT * FROM items WHERE id = ?").get(Number(row.item_id));
+    if (!item) return apiError("Title not found.", 404);
+    const series = item.kind === "episode" && item.parent_id
+      ? q<Row>("SELECT * FROM items WHERE id = ?").get(Number(item.parent_id))
+      : null;
+    const identity = series ?? item;
+    const kind: "movie" | "tv" = series ? "tv" : "movie";
+    const tmdbId = identity.tmdb_id == null ? null : Number(identity.tmdb_id);
+    if (!tmdbId) return apiError("This title has no TMDB identity yet.", 409);
+    const imdbId = await tmdb.externalImdbId(kind, tmdbId).catch(() => null);
+    if (!imdbId || !/^tt\d+$/.test(imdbId)) {
+      return apiError("No IMDb match was found for this title.", 409);
+    }
+    const season = item.season_number == null ? null : Number(item.season_number);
+    const episode = item.episode_number == null ? null : Number(item.episode_number);
+    if (series && (season == null || episode == null)) {
+      return apiError("Identify the season and episode first.", 409);
+    }
+    const lookup = series
+      ? `${imdbId}:${season}:${episode}`
+      : imdbId;
+    const endpoint = `https://opensubtitles-v3.strem.io/subtitles/${series ? "series" : "movie"}/${lookup}.json`;
+    let body: { subtitles?: unknown };
+    try {
+      const response = await fetch(endpoint, {
+        signal: AbortSignal.timeout(10_000),
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) return apiError("OpenSubtitles is unavailable.", 502);
+      body = await response.json() as { subtitles?: unknown };
+    } catch {
+      return apiError("Couldn't reach OpenSubtitles.", 502);
+    }
+    if (!Array.isArray(body.subtitles)) return { results: [] };
+    const wanted = query.language?.toLowerCase().split(/[-_]/)[0];
+    const results = body.subtitles.flatMap((entry: any) => {
+      if (typeof entry?.id !== "string" || typeof entry?.lang !== "string") return [];
+      if (typeof entry?.url !== "string" || !/^https:\/\/subs\d*\.strem\.io\//i.test(entry.url)) return [];
+      if (wanted && !entry.lang.toLowerCase().startsWith(wanted)) return [];
+      return [{
+        id: entry.id,
+        url: entry.url,
+        language: entry.lang,
+        name: [entry.subtitleFileName, entry.SubFileName, entry.name, entry.title]
+          .find((value) => typeof value === "string" && value.trim())
+          ?? `Subtitle ${entry.id}`,
+      }];
+    }).slice(0, 40);
+    return { results };
+  }, {
+    params: t.Object({ fileId: t.Numeric() }),
+    query: t.Object({ language: t.Optional(t.String()) }),
+  })
+
+  /** Download one chosen OpenSubtitles result into the server's VTT cache. */
+  .post("/subtitles/:fileId/download", async ({ params, body }) => {
+    const row = getFile(Number(params.fileId));
+    if (!row) return apiError("File unavailable", 404);
+    if (!/^https:\/\/subs\d*\.strem\.io\//i.test(body.url)) {
+      return apiError("Invalid subtitle URL.");
+    }
+    let text: string;
+    try {
+      const response = await fetch(body.url, { signal: AbortSignal.timeout(10_000) });
+      const length = Number(response.headers.get("content-length") ?? 0);
+      if (!response.ok || length > 2 * 1024 * 1024) {
+        return apiError("Could not download this subtitle.", 502);
+      }
+      text = await response.text();
+      if (text.length > 2 * 1024 * 1024) return apiError("Subtitle is too large.", 413);
+    } catch {
+      return apiError("Could not download this subtitle.", 502);
+    }
+    const vtt = srtToVtt(text);
+    if (!vtt.trim()) return apiError("This subtitle has no readable cues.", 422);
+    const hash = createHash("sha1").update(body.url).digest("hex").slice(0, 12);
+    const track = `downloaded-${hash}`;
+    const path = join(resolveSubtitleCacheDir(), `${Number(row.id)}-${hash}.vtt`);
+    await mkdir(resolveSubtitleCacheDir(), { recursive: true });
+    await Bun.write(path, vtt);
+    run(
+      `INSERT INTO downloaded_subtitles (file_id, track, language, title, path)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(file_id,track) DO UPDATE SET
+         language=excluded.language, title=excluded.title, path=excluded.path,
+         created_at=datetime('now')`,
+      Number(row.id),
+      track,
+      body.language ?? null,
+      body.name.trim() || "Downloaded subtitle",
+      path,
+    );
+    return {
+      track: {
+        track,
+        kind: "downloaded" as const,
+        language: body.language ?? null,
+        title: body.name.trim() || "Downloaded subtitle",
+        isDefault: false,
+      },
+    };
+  }, {
+    params: t.Object({ fileId: t.Numeric() }),
+    body: t.Object({
+      url: t.String({ minLength: 1 }),
+      language: t.Optional(t.String({ maxLength: 20 })),
+      name: t.String({ maxLength: 300 }),
+    }),
+  })
+
   /** Track discovery for the player: embedded + sidecar names together. */
   .get("/subtitles/:fileId", async (ctx) => {
     const row = getFile(Number(ctx.params.fileId));
@@ -763,6 +915,17 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     let track = ctx.params.track;
     try { track = decodeURIComponent(track); } catch { /* already decoded */ }
     track = track.replace(/\.vtt$/i, "");
+
+    if (track.startsWith("downloaded-")) {
+      const path = downloadedSubtitlePath(row, track);
+      if (!path) return apiError("Subtitle not found", 404);
+      return new Response(Bun.file(path), {
+        headers: {
+          "Content-Type": "text/vtt; charset=utf-8",
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
+    }
 
     if (track.startsWith("embedded-")) {
       const index = Number(track.slice("embedded-".length));

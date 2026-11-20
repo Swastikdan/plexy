@@ -4,29 +4,63 @@ Plexy is a self-hosted personal media server for your own movie and TV collectio
 
 It exists because personal video libraries are messy in practice: files live in odd containers and codecs browsers can't play, metadata is missing, subtitles are embedded or scattered, and you still want intro-skip, resume, scrub previews, and offline playback. Plexy handles all of that locally.
 
+## Repository map
+
+```text
+apps/
+  server/     Bun + Elysia backend and HTTP API (SQLite catalog, scanner,
+              TMDB hydration, FFmpeg preparation pipeline)
+  web/        Browser frontend (React 19 + TanStack Router/Query + Video.js),
+              built to a single file and served by the server process
+  desktop/    Electron shell (API proxy, mpv relay, updater) — bundles the
+              web UI and a child backend process
+  mobile/     Fully independent offline Android app (Expo Router, on-device
+              SQLite, no server/login required)
+packages/
+  api-client/     Shared HTTP contracts, browser capability probing,
+                  transport policy (dependency-free, source-only)
+  local-library/  Device-local catalog/scan/metadata/skip logic for mobile
+                  (depends only on api-client types, source-only)
+  media-text/     Language names + subtitle labels shared by web and mobile
+  desktop-bridge/ Electron IPC contract shared by main, preload, and web UI
+  tsconfig/       Shared TypeScript presets (base, bun, react)
+scripts/      Build, release, test, and license tooling (Bun)
+docs/         Feature and operations docs (see "Docs index" below)
+```
+
+Dependency direction is strict: `apps/* → packages/*`, never the reverse. See `docs/MONOREPO.md`.
+
+New to the codebase? Read in this order:
+
+1. This README (what it is, how to run it)
+2. `docs/ARCHITECTURE.md` — system diagram, request flows, data model
+3. `docs/CODEBASE_TOUR.md` — directory-by-directory file tour
+4. Per-app READMEs: `apps/server/README.md`, `apps/web/README.md`, `apps/desktop/README.md`, `apps/mobile/README.md`
+5. Feature docs in the index below as needed
+
 ## What it does
 
-**Server (`apps/server`) — the core**
+**Server (`apps/server`) — the core.** See `apps/server/README.md`.
 
 - Scans media folders into a SQLite catalog of movies, series, seasons, and episodes.
 - Matches files against TMDB (titles, posters, backdrops, logos, cast, trailers, certifications, episode names/stills), with manual matching for ambiguous results.
-- Makes anything playable in a browser: fast-start MP4 remux (lossless, seconds), audio-only transcode, full H.264/AAC transcode, prepared HLS with variants, plus live remux/transcode fallbacks (max 2 concurrent, `503` + `Retry-After` beyond that).
-- Serves direct streams with byte-range seeking, resumable source downloads, quality-capped generated downloads (`maxHeight` 360–2160), subtitles as WebVTT (embedded + sidecar), trickplay sprites/VTT for scrub previews, and community intro/recap/credits skip markers.
-- Tracks watch progress, exposes playback manifests (`GET /api/play/:fileId`) so any client can build its own player.
-- Authenticates clients by device pairing codes → Bearer tokens (native) or HttpOnly session cookies (browser `<video>`, which can't set auth headers). First run creates the owner in the local UI; LAN access, TLS, and allowed origins are opt-in settings.
-- Optional storage optimization: keep prepared copies in the app-data folder or beside media (`.plexy/optimized`, scanner-skipped), with opt-in original replacement and Trash-first deletion (macOS Trash / `gio trash` / `.plexy/trash` fallback).
+- Makes anything playable in a browser: fast-start MP4 remux (lossless, seconds), audio-only transcode, and full H.264/AAC transcode, prepared ahead of playback by a single background queue. HLS/ABR and live remux/transcode are **not** implemented (`GET /api/stream/:fileId/remux`, `/transcode`, and `/hls/:asset` return `409`); see `docs/APP_FEATURE_AUDIT.md` and `docs/API.md`.
+- Serves direct streams with byte-range seeking, resumable source downloads, subtitles as WebVTT (embedded + sidecar), trickplay sprites/VTT for scrub previews, and community intro/recap/credits skip markers (opt-in via `skipSegmentsEnabled`).
+- Tracks watch progress and exposes playback manifests (`GET /api/play/:fileId`) so any client can build its own player.
+- Authenticates clients by device pairing codes → Bearer tokens (native/API clients) or HttpOnly session cookies (browser `<video>`, which can't set auth headers). First run creates the owner in the local UI; LAN access, TLS, and allowed origins are opt-in settings.
+- Optional storage optimization: keep prepared copies in the app-data folder (`optimizeStorage: "data"`, default) or beside media (`.plexy/optimized`, scanner-skipped), with opt-in original replacement and Trash-first deletion (macOS Trash / `gio trash` / `.plexy/trash` fallback).
 
-**Browser frontend (`apps/web`) — embedded, not deployed separately**
+**Browser frontend (`apps/web`) — embedded, not deployed separately.** See `apps/web/README.md`.
 
-- React 19 + TanStack Router/Query + Video.js + Tailwind/HeroUI single-file build served as static files by the backend process itself. There is no separate UI server.
-- `--no-ui` / `PLEXY_NO_UI=1` disables UI routes and assets while keeping the API and media jobs running (headless mode).
+- React 19 + TanStack Router/Query + Video.js + Tailwind 4/HeroUI single-file build, served as static files by the backend process itself. There is no separate UI server.
+- `bun run dev` runs backend + Vite dev servers; `--no-ui` / `PLEXY_NO_UI=1` disables UI routes and assets while keeping the API and media jobs running (headless mode).
 
-**Desktop (`apps/desktop`) — Electron shell**
+**Desktop (`apps/desktop`) — Electron shell.** See `apps/desktop/README.md`.
 
 - Bundles the same frontend and a child backend process. **Run local server** toggles between running its own backend and acting as a client to another Plexy server via an authenticated API proxy (cookies/credentials are never forwarded across servers).
 - Native mpv video window with the Plexy player chrome (matching the browser player) that streams the original over an authenticated loopback relay, bypassing browser preparation.
 
-**Mobile (`apps/mobile`) — fully independent offline Android app**
+**Mobile (`apps/mobile`) — fully independent offline Android app.** See `apps/mobile/README.md`.
 
 - Expo Router app with its own on-device SQLite library (`plexy-library.db`). No Plexy server, account, pairing, or remote playback involved.
 - Plays original file URIs with expo-video, imports external SRT/VTT, generates local scrub-preview JPEGs (2s buckets, 50 MB cache), and caches TMDB metadata/artwork and IntroDB skip markers for offline use. Videos stay in their picked folders.
@@ -34,7 +68,7 @@ It exists because personal video libraries are messy in practice: files live in 
 ## Why it's built this way
 
 - **Your files stay yours.** No cloud relay, no telemetry-gated playback. The server runs on your machine (`:8765` by default); remote access is explicit LAN/TLS configuration, not a default.
-- **Browsers can't play everything.** MKV/HEVC/odd audio tracks are the norm in personal libraries, so preparation (remux → transcode → HLS) is a first-class pipeline, not an afterthought, with safe original-replacement semantics.
+- **Browsers can't play everything.** MKV/HEVC/odd audio tracks are the norm in personal libraries, so preparation (remux → transcode → prepared MP4) is a first-class pipeline, not an afterthought, with safe original-replacement semantics.
 - **One API, many players.** The HTTP contract (`/api/*`, typed in `packages/api-client`) drives the web player, desktop proxy, mpv relay, and documents the native playback flow — so clients stay thin.
 - **Offline-first mobile.** Phones with local files shouldn't need a server or login to watch them; metadata and skip data are optional cached enrichments.
 - **Monorepo with strict boundaries.** Apps are shippable deliverables; `packages/*` is shared source only. Dependencies flow `apps → packages`, never the reverse.
@@ -44,7 +78,7 @@ It exists because personal video libraries are messy in practice: files live in 
 ```text
 media folders ──► scanner ──► SQLite catalog ──► TMDB matcher ──► artwork/subtitle/skip hydration
                                                     │
-originals ──► FFmpeg (remux / transcode / HLS / trickplay) ──► cache (.plexy/optimized or data dir)
+originals ──► FFmpeg (remux / transcode / trickplay) ──► cache (.plexy/optimized or data dir)
                                                     │
                               Elysia HTTP API (/api) + static web UI ──► browser / desktop proxy / mpv relay
                               pairing auth (Bearer / session cookie)
@@ -60,30 +94,31 @@ Android (separate): Storage Access folders ──► local SQLite ──► expo
 | Mobile | Expo 57 / React Native 0.86, expo-router, expo-video, expo-sqlite, Reanimated |
 | Shared | `packages/api-client` (HTTP contracts, capability probing, transport policy), `packages/local-library` (scan/match/metadata/skip logic), `packages/media-text` (language names and subtitle labels), `packages/desktop-bridge` (Electron IPC contract), `packages/tsconfig` (presets) |
 
-```text
-apps/
-  web/        Browser frontend embedded into desktop and server builds
-  server/     Bun backend and HTTP API
-  desktop/    Electron shell, API proxy, mpv relay, updater
-  mobile/     Expo Router Android app (independent device library)
-packages/
-  api-client/     HTTP contracts, browser capability probing, transport policy
-  local-library/  Device-local catalog, scanning, metadata, and skip-marker logic
-  media-text/     Language names and subtitle labels shared by web and mobile
-  desktop-bridge/ Electron IPC contract shared by main, preload, and the web UI
-  tsconfig/       Shared TypeScript presets
-```
-
 Mobile app code further splits into `apps/mobile/src/core` (infrastructure), `src/features` (screen logic), and `src/shared` (reusable controls). See `docs/MONOREPO.md` before adding packages or moving shared code.
 
-## Development
+## Prerequisites
 
-Requires Bun 1.4.4, then `bun install`.
+- **Bun 1.4.4** (`packageManager: bun@1.4.4`) — all server/web/desktop/packages scripts run on Bun.
+- **FFmpeg** — bundled into `dist/server` by `bun run build:server`; for `bun run dev` it must be on `PATH`.
+- **macOS** — required for desktop packaging (`electron-builder`, ad-hoc signed DMG/ZIP).
+- **JDK 17 + Android SDK** — required only for `bun run build:mobile` (ARM64 APK under `.build/native`). Tune with `PLEXY_ANDROID_ARCHITECTURES`, `PLEXY_GRADLE_WORKERS`.
+- **TMDB token** — set in Settings UI (server) or `TMDB_TOKEN`/`EXPO_PUBLIC_TMDB_TOKEN` at build time (mobile preview/EAS builds fail without it).
+
+Install once: `bun install` (links all `apps/*` + `packages/*` workspaces).
+
+## Quickstart
+
+```sh
+bun install
+bun run dev            # backend :8765 + web dev server :5173 (PORT moves both)
+```
+
+Then open the printed URL (`http://localhost:8765/setup` on first run) to create the owner, add a library folder, and let the scanner + TMDB hydration run.
 
 | Command | Purpose |
 | --- | --- |
 | `bun run dev` | Backend + frontend dev servers (`PORT` moves both; the Vite proxy follows it) |
-| `bun run dev:desktop` | Electron shell (run `bun run dev` and set `VITE_DEV_SERVER_URL=http://localhost:5173`) |
+| `bun run dev:desktop` | Electron shell (run `bun run dev` first and set `VITE_DEV_SERVER_URL=http://localhost:5173`) |
 | `bun run dev:mobile` | Expo dev server |
 | `bun run android:mobile` | Generate and run the Android dev app |
 | `bun run typecheck` | Server, web, desktop, shared packages, root scripts |
@@ -93,8 +128,6 @@ Requires Bun 1.4.4, then `bun install`.
 | `bun run test:desktop` | Desktop API proxy tests |
 | `bun run test:packages` | Shared-package tests |
 | `bun run test:native` | Local-library + mobile logic tests |
-
-Key docs: `docs/API.md` (auth, playback, download, HLS, subtitles, progress), `docs/PLAYBACK_PREPARATION.md` (remux/transcode, storage modes, replacement + Trash policy), `docs/MOBILE_LOCAL_LIBRARY.md` (offline catalog, TMDB/IntroDB caching, previews), `docs/native-playback.md`, `docs/CODE_HEALTH.md` (build/dev layout and line budget), `apps/mobile/README.md`.
 
 ## Build
 
@@ -127,9 +160,11 @@ gh workflow run build.yml --ref main \
 
 The desktop app, its package filenames, and the general release tag use the version selected by the workflow. A local desktop package uses the higher of the root package's version and the latest general release tag. Local desktop and Android packaging use your authenticated `gh` session to reserve numbers in this repository, and hosted packaging uses the same Git tags. Android APKs keep their own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds.
 
-### Android download mirror
+### Cloudflare download mirror
 
-To serve the latest installer and update manifest from Cloudflare R2, connect an HTTPS custom domain to a dedicated R2 bucket. In GitHub Actions set the variables `PLEXY_UPDATE_ORIGIN` (the HTTPS origin) and `PLEXY_UPDATE_R2_BUCKET` (the bucket name). Set the secrets `CLOUDFLARE_ACCOUNT_ID`, `PLEXY_R2_ACCESS_KEY_ID`, and `PLEXY_R2_SECRET_ACCESS_KEY` with a bucket-scoped R2 credential.
+To serve release downloads from Cloudflare R2, connect an HTTPS custom domain to a dedicated R2 bucket. In GitHub Actions set the variables `PLEXY_UPDATE_ORIGIN` (the HTTPS origin) and `PLEXY_UPDATE_R2_BUCKET` (the bucket name). Set the secrets `CLOUDFLARE_ACCOUNT_ID`, `PLEXY_R2_ACCESS_KEY_ID`, and `PLEXY_R2_SECRET_ACCESS_KEY` with a bucket-scoped R2 credential.
+
+Desktop releases upload the Apple Silicon DMG and ZIP to GitHub and to a release-specific path in R2. Once both mirror URLs are reachable, the workflow adds them to the GitHub release notes.
 
 The next **Force APK** release uploads the APK first, then the manifest, and removes older Android APKs from the bucket. GitHub Releases keeps the full history. The Android app tries R2 first for the current manifest and installer, and falls back to GitHub. It checks the APK size and SHA-256 before opening the installer.
 
@@ -146,6 +181,22 @@ PLEXY_NO_UI=1 ./plexy-server
 `PORT` (default `8765`) overrides the port. `PLEXY_DATA_DIR` selects the database/library-data dir; `PLEXY_LOG_LEVEL` controls logging; `--version` / `--help` exit without starting. First run: open the local UI to create the owner and add libraries; restart with `--no-ui` for headless. Enable LAN access in settings before connecting other machines (use the reported HTTPS address); `PLEXY_ALLOWED_ORIGINS` gates separately hosted web clients.
 
 In desktop **Settings** (or the connection screen), **Run local server** starts/stops only the bundled backend — it never stops an external server. Off = this window becomes a client to a remote Plexy.
+
+## Docs index
+
+| Doc | What it covers |
+| --- | --- |
+| `docs/ARCHITECTURE.md` | System diagram, process model, auth flows, playback pipeline |
+| `docs/CODEBASE_TOUR.md` | File-by-file tour of `apps/*`, `packages/*`, `scripts/` |
+| `docs/API.md` | HTTP API: auth, playback, catalog, settings (contract reference) |
+| `docs/PLAYBACK_PREPARATION.md` | Remux/transcode, storage modes, replacement + Trash policy |
+| `docs/MOBILE_LOCAL_LIBRARY.md` | Offline catalog, TMDB/IntroDB caching, previews |
+| `docs/native-playback.md` | Native playback contract details |
+| `docs/MONOREPO.md` | Workspace layout, dependency rules, adding apps/packages |
+| `docs/CODE_HEALTH.md` | Build/dev layout, line budget, guardrails |
+| `docs/APP_FEATURE_AUDIT.md` | Current feature status (what is/isn't implemented) |
+| `docs/TESTING.md` | How to run each test suite |
+| `apps/mobile/README.md` | Mobile source layout, build/verify, OTA + APK versioning |
 
 ## CI and releases
 

@@ -7,6 +7,8 @@
 import { q, run, type Row } from "./db";
 import { log } from "./logger";
 import { normalizeTitle } from "./parse";
+import { getConfig } from "./config";
+import { indexItem } from "./search-index";
 import * as tmdb from "./tmdb";
 import type { TmdbDetail } from "./tmdb";
 import { refreshSkipSegmentsForItem, refreshSkipSegmentsForSeries } from "./skip-segments";
@@ -16,6 +18,8 @@ export async function hydrateItemMetadata(
   itemId: number, tmdbType: "movie" | "tv", tmdbId: number,
 ): Promise<void> {
   const full = await tmdb.detail(tmdbType, tmdbId);
+  const cfg = await getConfig();
+  const certification = tmdb.certificationFromDetail(full, tmdbType, cfg.metadataRegion);
   const year = Number((full.release_date ?? full.first_air_date ?? "").slice(0, 4)) || null;
 
   run(
@@ -28,7 +32,7 @@ export async function hydrateItemMetadata(
        poster_path=excluded.poster_path, backdrop_path=excluded.backdrop_path,
        popularity=excluded.popularity, updated_at=excluded.updated_at`,
     itemId, full.overview ?? null, full.tagline ?? null, full.runtime ?? null,
-    full.vote_average ?? null, null,
+    full.vote_average ?? null, certification,
     JSON.stringify((full.genres ?? []).map((g) => g.name)),
     full.poster_path ?? null, full.backdrop_path ?? null, full.popularity ?? null,
     new Date().toISOString(),
@@ -45,11 +49,13 @@ export async function hydrateItemMetadata(
   await writeArtwork(itemId, "logo", logoPath, img);
 
   run("DELETE FROM videos WHERE item_id=?", itemId);
-  const trailer = bestTrailer(full);
-  if (trailer) {
+  const videos = (full.videos?.results ?? [])
+    .filter((video) => video.site === "YouTube")
+    .slice(0, 16);
+  for (const video of videos) {
     q("INSERT INTO videos (item_id, provider, key, name, type, official, published_at) VALUES (?,?,?,?,?,?,?)").run(
-      itemId, "youtube", trailer.key, trailer.name, trailer.type, trailer.official ? 1 : 0,
-      trailer.published_at ?? null,
+      itemId, "youtube", video.key, video.name, video.type, video.official ? 1 : 0,
+      video.published_at ?? null,
     );
   }
 
@@ -76,6 +82,7 @@ export async function hydrateItemMetadata(
       }));
   }
 
+  indexItem(itemId);
   log.debug("tmdb", "metadata hydrated", { itemId, tmdbId, type: tmdbType });
 
   // Pre-cache artwork and cast photos in the background so item is immediately offline-ready
@@ -177,6 +184,7 @@ export async function hydrateEpisodes(
       if (ep.still_path) {
         await writeEpisodeArtwork(epId, ep.still_path, img);
       }
+      indexItem(epId);
     }
   }
 
@@ -260,6 +268,7 @@ export async function hydrateEpisodeItem(
     new Date().toISOString(),
     epId,
   );
+  indexItem(epId);
 
   run(
     `INSERT INTO item_metadata
@@ -332,15 +341,6 @@ async function writeArtwork(
         : img.posterSize;
   const url = img.baseUrl + size + path;
   q("INSERT INTO artwork (item_id, kind, source, url) VALUES (?,?,?,?)").run(itemId, kind, "tmdb", url);
-}
-
-/** Best trailer per PRD 5.7: Trailer type, official first, then newest. */
-function bestTrailer(full: TmdbDetail) {
-  const yt = (full.videos?.results ?? []).filter((v) => v.site === "YouTube");
-  return yt.find((v) => v.type === "Trailer" && v.official)
-    ?? yt.find((v) => v.type === "Trailer")
-    ?? yt.find((v) => v.type === "Teaser" && v.official)
-    ?? null;
 }
 
 async function upsertPerson(
@@ -431,4 +431,66 @@ export async function backfillMissingLogos(limit = 50): Promise<number> {
     backfillingLogos = false;
   }
   return updated;
+}
+
+let backfillingCertifications = false;
+/**
+ * Existing libraries were hydrated while the age-rating fields were being
+ * discarded. Re-fetch only the certification for titles that still have none,
+ * without rewriting artwork, cast, or the title itself.
+ */
+export async function backfillCertifications(
+  limit = 100,
+): Promise<{ checked: number; updated: number }> {
+  if (backfillingCertifications) return { checked: 0, updated: 0 };
+  backfillingCertifications = true;
+  let checked = 0;
+  let updated = 0;
+  try {
+    const cfg = await getConfig();
+    if (!cfg.tmdbToken) return { checked, updated };
+    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv" }>(
+      `SELECT i.id, i.tmdb_id, i.tmdb_type
+       FROM items i
+       LEFT JOIN item_metadata m ON m.item_id = i.id
+       WHERE i.kind IN ('movie','series')
+         AND i.tmdb_id IS NOT NULL AND i.tmdb_type IN ('movie','tv')
+         AND (m.certification IS NULL OR trim(m.certification) = '')
+       ORDER BY i.added_at DESC, i.id DESC
+       LIMIT ?`,
+    ).all(Math.max(1, Math.min(500, limit)));
+    for (const row of rows) {
+      checked++;
+      try {
+        const full = await tmdb.detail(row.tmdb_type, Number(row.tmdb_id));
+        const certification = tmdb.certificationFromDetail(
+          full,
+          row.tmdb_type,
+          cfg.metadataRegion,
+        );
+        if (!certification) continue;
+        run(
+          `INSERT INTO item_metadata (item_id, certification, updated_at)
+           VALUES (?,?,?)
+           ON CONFLICT(item_id) DO UPDATE SET
+             certification = excluded.certification,
+             updated_at = excluded.updated_at`,
+          row.id,
+          certification,
+          new Date().toISOString(),
+        );
+        updated++;
+      } catch {
+        // A missing token, TMDB outage, or a deleted title must not stop the
+        // rest of the backfill. The rows stay eligible for the next pass.
+        break;
+      }
+    }
+    if (updated) log.debug("tmdb", "backfilled certifications", { checked, updated });
+  } catch {
+    /* offline startup: the next pass retries */
+  } finally {
+    backfillingCertifications = false;
+  }
+  return { checked, updated };
 }

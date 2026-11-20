@@ -27,6 +27,7 @@ import { Button } from "@/shared/ui/button";
 import {
   AlertCircle,
   Film,
+  Folder,
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
@@ -283,6 +284,11 @@ export function LibraryScreen({
       />
 
       <View className="flex-row flex-wrap gap-2 px-5 pb-2">
+        <Pressable accessibilityRole="button" onPress={() => router.push("/settings/folders")}
+          className="flex-row items-center gap-2 rounded-full border border-border px-4 py-2">
+          <Folder size={16} color={colors.muted} />
+          <Text className="font-archivo-medium text-foreground">Media folders</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" onPress={() => router.push("/custom-collections")}
           className="rounded-full border border-border px-4 py-2">
           <Text className="font-archivo-medium text-foreground">Custom collections</Text>

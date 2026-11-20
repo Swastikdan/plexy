@@ -76,25 +76,77 @@ export const queries = {
       staleTime: 60_000,
     }),
 
-  items: (query: { kind?: "movie" | "series"; libraryId?: number; sort?: string; unwatched?: boolean }) =>
+  history: (limit = 120, offset = 0) =>
+    queryOptions({
+      queryKey: ["history", limit, offset],
+      queryFn: () => api.history(limit, offset),
+      staleTime: 30_000,
+    }),
+
+  items: (query: {
+    kind?: "movie" | "series";
+    libraryId?: number;
+    sort?: string;
+    unwatched?: boolean;
+    genre?: string;
+    yearFrom?: number;
+    yearTo?: number;
+    minRating?: number;
+    maxRuntime?: number;
+    watchlist?: boolean;
+    favorite?: boolean;
+    hidden?: boolean;
+    minUserRating?: number;
+    limit?: number;
+    offset?: number;
+  }) =>
     queryOptions({
       queryKey: ["items", query],
       queryFn: async () => {
+        const limit = query.limit ?? 200;
+        const offset = query.offset ?? 0;
         if (!isOffline()) {
           try {
-            return await api.items({ ...query, limit: 200 });
+            return await api.items({ ...query, limit, offset });
           } catch (error) {
             const catalog = await offlineCatalog();
-            if (catalog) return { items: filterCachedItems(catalog.items, query) };
+            if (catalog) {
+              const items = filterCachedItems(catalog.items, query);
+              return { items, total: items.length };
+            }
             throw error;
           }
         }
         const catalog = await offlineCatalog();
-        if (catalog) return { items: filterCachedItems(catalog.items, query) };
-        return api.items({ ...query, limit: 200 });
+        if (catalog) {
+          const items = filterCachedItems(catalog.items, query);
+          return { items, total: items.length };
+        }
+        return api.items({ ...query, limit, offset });
       },
       staleTime: 60_000,
       placeholderData: keepPreviousData,
+    }),
+
+  similar: (itemId: number) =>
+    queryOptions({
+      queryKey: ["similar", itemId],
+      queryFn: () => api.similar(itemId),
+      staleTime: 120_000,
+    }),
+
+  collections: (itemId?: number) =>
+    queryOptions({
+      queryKey: ["collections", itemId ?? 0],
+      queryFn: () => api.collections(itemId),
+      staleTime: 30_000,
+    }),
+
+  collection: (id: number) =>
+    queryOptions({
+      queryKey: ["collection", id],
+      queryFn: () => api.collection(id),
+      staleTime: 30_000,
     }),
 
   title: (id: number | string) =>

@@ -128,6 +128,17 @@ export function HomeScreen({
     return list;
   }, [data.value, toFullSeriesOrMovie]);
   // Other rows: filter out "next" (next up episodes) and continue watching, normalize to full titles
+  const nextItems = React.useMemo(() => {
+    if (!data.value?.rows) return [] as ItemCard[];
+    const row = data.value.rows.find((entry) => entry.key === "next");
+    if (!row) return [];
+    const seen = new Set<string>();
+    return row.items.filter((item) => {
+      if (!item.fileId || seen.has(item.publicId)) return false;
+      seen.add(item.publicId);
+      return true;
+    });
+  }, [data.value]);
   const otherRows = React.useMemo(() => {
     if (!data.value?.rows) return [];
     const continueRowKey = data.value.rows.find(
@@ -367,6 +378,19 @@ export function HomeScreen({
               onChanged={data.retry}
             />
           </View>
+        )}
+
+        {/* Next Up: one unwatched episode per started series. */}
+        {nextItems.length > 0 && (
+          <CatalogRow
+            key="next-up"
+            title="Next Up"
+            items={nextItems}
+            open={open}
+            onPlay={handlePlay}
+            playOnPress
+            onChanged={data.retry}
+          />
         )}
 
         {/* The local Movies & Shows shelf, then the online categories. */}

@@ -219,6 +219,18 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     return result;
   })
 
+  /** Re-fetch missing age ratings for existing titles (parental controls). */
+  .post("/metadata/certifications/backfill", async ({ body, server, request }) => {
+    const denied = denyIfNotLocal({ server, request });
+    if (denied) return denied;
+    const { backfillCertifications } = await import("./hydrate");
+    const result = await backfillCertifications(Number(body?.limit ?? 100));
+    log.debug("tmdb", "manual certification backfill", result);
+    return result;
+  }, {
+    body: t.Optional(t.Object({ limit: t.Optional(t.Numeric()) })),
+  })
+
   /** Reset the catalog and generated caches while preserving media originals and config.json. */
   .post("/database/reset", async (ctx) => {
     const denied = denyIfNotLocal(ctx);
@@ -433,7 +445,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   }, {
     body: t.Object({
       name: t.String({ minLength: 1 }),
-      type: t.Union([t.Literal("movies"), t.Literal("tv"), t.Literal("anime")]),
+      type: t.Union([t.Literal("movies"), t.Literal("tv")]),
       language: t.Optional(t.String()),
       paths: t.Array(t.String({ minLength: 1 }), { minLength: 1 }),
     }),
@@ -489,7 +501,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     params: t.Object({ id: t.Numeric() }),
     body: t.Object({
       name: t.String({ minLength: 1 }),
-      type: t.Union([t.Literal("movies"), t.Literal("tv"), t.Literal("anime")]),
+      type: t.Union([t.Literal("movies"), t.Literal("tv")]),
       paths: t.Array(t.String({ minLength: 1 }), { minItems: 1 }),
     }),
   })

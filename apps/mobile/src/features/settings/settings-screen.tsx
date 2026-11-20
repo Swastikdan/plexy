@@ -1,5 +1,5 @@
 import { modeLabels } from "@/core/client/preferences";
-import { familyLevelLabels } from "@/core/content/audience";
+import { familyAllows, familyLevelLabels } from "@/core/content/audience";
 import { useHiddenTitles } from "@/core/content/hidden-titles";
 import * as Linking from "expo-linking";
 import { fetchUpdateReleases } from "./lib/update-releases";
@@ -36,6 +36,10 @@ import {
   Download,
   EyeOff,
   Film,
+  Folder,
+  HardDrive,
+  Play,
+  Tv,
   Gauge,
   Library,
   Lock,
@@ -222,7 +226,7 @@ export function SettingsScreen({
   ];
   const label = (options: [string, string][], value: string) =>
     options.find((o) => o[0] === value)?.[1] || value;
-  const { fileCount, reviewCount: review, markerCount } = api.libraryStatus();
+  const { reviewCount: review, markerCount } = api.libraryStatus();
   const folderRecords = localLibrary.state.records.filter(
     (record) => record.root === expandedFolder,
   );
@@ -357,7 +361,7 @@ export function SettingsScreen({
               onChange={(theme) => updatePreferences({ theme })}
             />
             <View className="overflow-hidden rounded-[18px] bg-surface">
-              <SettingsRow navigation title="Watching mode" subtitle={modeLabels[preferences.mode]} onPress={() => push("/watching-mode")} />
+              <SettingsRow navigation title="Watching mode" icon={Tv} value={modeLabels[preferences.mode]} onPress={() => push("/watching-mode")} />
             </View>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Kids & family
@@ -366,51 +370,48 @@ export function SettingsScreen({
               <SettingsRow
                 navigation
                 title="Kids & family mode"
-                subtitle={familyLevelLabels[preferences.familyLevel]}
+                value={familyLevelLabels[preferences.familyLevel]}
                 icon={Lock}
                 onPress={() => push("/settings/family")}
               />
               <SettingsRow
                 navigation
                 title="Hidden titles"
-                subtitle={
-                  hidden.length
-                    ? `${hidden.length} ${hidden.length === 1 ? "title" : "titles"} hidden`
-                    : "Restore hidden titles"
-                }
+                value={hidden.length ? String(hidden.length) : undefined}
                 icon={EyeOff}
                 onPress={() => push("/settings/hidden")}
               />
             </View>
-            {hasLocal && <>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Library
             </Text>
             <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow navigation title="Storage"
+                icon={HardDrive}
+                onPress={() => push("/storage")}
+              />
+              {hasLocal && <>
               <SettingsRow
                 navigation
                 title="Library report"
-                subtitle={`${fileCount} files, ${review ? `${review} need attention` : "all titles identified"}`}
+                value={review ? `${review} to review` : undefined}
                 icon={Library}
                 onPress={() => navigate("/settings/report")}
               />
               <SettingsRow
                 navigation
                 title="Metadata & markers"
-                subtitle="Artwork and skip markers"
                 icon={Film}
                 onPress={() => push("/settings/metadata")}
               />
               <SettingsRow
                 navigation
                 title="Media folders"
-                subtitle={`${localLibrary.state.roots.filter((r) => !r.singleFile).length} folders connected`}
-                icon={Film}
+                icon={Folder}
                 onPress={() => push("/settings/folders")}
               />
               <SettingsRow
                 title={localLibrary.scanning ? "Scanning…" : "Scan library"}
-                subtitle="Scan connected folders"
                 icon={RefreshCw}
                 onPress={
                   busy || localLibrary.scanning
@@ -418,19 +419,15 @@ export function SettingsScreen({
                     : () => void action(() => localLibrary.scan())
                 }
               />
-              <SettingsRow navigation title="Storage"
-                subtitle="Review space used by local videos"
-                onPress={() => push("/storage")}
-              />
               <SettingsRow navigation title="Reconnect media"
-                subtitle="Restore access to folders or videos"
+                icon={RefreshCw}
                 onPress={() => push("/library-recovery")}
               />
+              </>}
             </View>
-            {localLibrary.issues.map((issue) => (
+            {hasLocal && localLibrary.issues.map((issue) => (
               <Notice key={issue} message={issue} />
             ))}
-            </>}
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Playback
             </Text>
@@ -438,7 +435,6 @@ export function SettingsScreen({
               <SettingsRow
                 navigation
                 title="Playback settings"
-                subtitle={hasLocal ? "Seeking, subtitles, autoplay and skipping" : "Online autoplay and episode picker"}
                 icon={Gauge}
                 onPress={() => push("/settings/playback")}
               />
@@ -494,17 +490,14 @@ export function SettingsScreen({
               </View>
               <SettingsRow
                 title="Metadata by TMDB"
-                subtitle="Plexy is not endorsed or certified by TMDB."
               />
               <SettingsRow
                 title="Open Source Licenses"
-                subtitle="Credits, copyright and license notices"
                 navigation
                 onPress={() => push("/settings/licenses")}
               />
               <SettingsRow
                 title="Download from GitHub"
-                subtitle="Open the latest Android download"
                 onPress={() =>
                   void action(async () => {
                     const latest = selectUpdate(
@@ -521,6 +514,7 @@ export function SettingsScreen({
                 }
               />
             </View>
+            <Text className="px-4 text-[12px] text-muted">Plexy is not endorsed or certified by TMDB.</Text>
           </>
         )}
         {page === "playback" && (
@@ -634,9 +628,12 @@ export function SettingsScreen({
             </>}
           </>
         )}
-        {page === "folders" && hasLocal && (
+        {page === "folders" && (
           <>
-            {!expandedFolder ? (
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow title="Open a video" icon={Play} navigation onPress={() => push("/external-player")} />
+            </View>
+            {hasLocal && (!expandedFolder ? (
               <>
                 <Button
                   label="Add media folder"
@@ -690,7 +687,10 @@ export function SettingsScreen({
                       }
                       subtitle={folderFiles ? record.card.name : undefined}
                       onPress={() =>
-                        push({
+                        folderFiles && familyAllows(record.certification ?? record.card.certification, preferences.familyLevel, preferences.familyBlockUnrated) ? push({
+                          pathname: "/player/[file-id]",
+                          params: { "file-id": String(record.id), offline: "1" },
+                        }) : push({
                           pathname: "/item/[id]",
                           params: {
                             id: folderFiles
@@ -740,7 +740,7 @@ export function SettingsScreen({
                   </>
                 )}
               </>
-            )}
+            ))}
           </>
         )}
         {page === "metadata" && hasLocal && (

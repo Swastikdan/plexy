@@ -3,6 +3,8 @@ import { useState, useSyncExternalStore } from "react";
 import { Directory, File } from "expo-file-system";
 import { SectionList, Text, View } from "react-native";
 import { displayName, localLibrary } from "@/core/library/local-runtime";
+import { Film, Folder } from "@/shared/ui/icons";
+import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
@@ -16,6 +18,7 @@ async function pickVideo() {
 }
 
 export function LibraryRecoveryScreen() {
+  const colors = useColors();
   useSyncExternalStore(subscribe, getVersion);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -39,11 +42,11 @@ export function LibraryRecoveryScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
       <PageHeader title="Reconnect media" />
       <SectionList
         sections={[
-          {
+          ...(missing.size ? [{
             title: "Missing videos",
             data: [...missing.values()].map(record => ({
               key: String(record.id),
@@ -56,8 +59,8 @@ export function LibraryRecoveryScreen() {
                 return true;
               },
             })),
-          },
-          {
+          }] : []),
+          ...(roots.length ? [{
             title: "Library locations",
             data: roots.map(root => ({
               key: root.uri,
@@ -70,17 +73,19 @@ export function LibraryRecoveryScreen() {
                 return true;
               },
             })),
-          },
+          }] : []),
         ]}
         keyExtractor={item => item.key}
-        contentContainerStyle={{ padding: 20, gap: 8 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 28, gap: 8 }}
         ListHeaderComponent={<View className="gap-3 pb-3">
           <Text className="text-muted">Picker access can expire or media can move. Choose the original folder in its new location, or reconnect a missing video individually.</Text>
           <Button label="Check library locations" disabled={busy} onPress={() => void run(() => localLibrary.scan())} />
+          {!missing.size && !roots.length ? <Text className="text-muted">No library locations to reconnect.</Text> : null}
           {message ? <Notice message={message} /> : null}
         </View>}
         renderSectionHeader={({ section }) => <Text className="bg-background py-2 font-archivo-bold text-foreground">{section.title}</Text>}
-        renderItem={({ item }) => <View className="flex-row items-center gap-3 rounded-xl bg-surface p-3">
+        renderItem={({ item, section }) => <View className="flex-row items-center gap-3 rounded-xl bg-surface p-3">
+          {section.title === "Missing videos" ? <Film size={20} color={colors.muted} /> : <Folder size={20} color={colors.muted} />}
           <View className="flex-1">
             <Text className="font-archivo-medium text-foreground" numberOfLines={2}>{item.name}</Text>
             {item.unavailable ? <Text className="text-warning">Unavailable</Text> : null}

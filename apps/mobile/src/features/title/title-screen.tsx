@@ -57,6 +57,7 @@ import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import {
   isRemotePlayed,
   markRemoteEpisodePlayed,
+  markRemoteEpisodesPlayed,
   markRemotePlayed,
   getRemoteTitleProgress,
   remoteEpisodeWatch,
@@ -84,7 +85,7 @@ import { TitleFactLine, TitleRating } from "./components/title-facts";
 import { TitleHero } from "./components/title-hero";
 import { TitleMenuAction } from "./components/title-menu-action";
 import { TitleTabs } from "./components/title-tabs";
-import { defaultSeasonNumber } from "./lib/default-season";
+import { defaultSeasonNumber, playbackSeasonNumber, seasonComplete } from "./lib/default-season";
 import { useMediaTitle, type MediaTitleInput } from "./lib/use-media-title";
 
 const CONTENT_ENTER = FadeIn.duration(120)
@@ -194,6 +195,17 @@ export function TitleScreen({
     Record<number, boolean>
   >({});
 
+  const episodeSnapshot = detail?.episodes;
+  const [previousEpisodeSnapshot, setPreviousEpisodeSnapshot] = useState(episodeSnapshot);
+  if (previousEpisodeSnapshot !== episodeSnapshot) {
+    setPreviousEpisodeSnapshot(episodeSnapshot);
+    if (Object.keys(episodesWatchedOverride).length) {
+      const saved = new Map(episodeSnapshot?.map((episode) => [episode.id, Boolean(episode.watch?.played)]));
+      setEpisodesWatchedOverride(Object.fromEntries(Object.entries(episodesWatchedOverride)
+        .filter(([id, played]) => saved.has(Number(id)) && saved.get(Number(id)) !== played)));
+    }
+  }
+
   const seasonOptions = useMemo(
     () => mergeSeasons(detail?.seasons ?? [], remoteDetail?.seasons ?? []),
     [detail?.seasons, remoteDetail?.seasons],
@@ -209,14 +221,8 @@ export function TitleScreen({
     }
     return seasonOptions.map((option) => ({ ...option, count: counts.get(option.number) }));
   }, [detail?.episodes, remoteDetail?.seasons, seasonOptions]);
-  const defaultSeason = React.useMemo(() => {
+  const seasonWatchInfo = React.useMemo(() => {
     void remoteProgress;
-    if (!seasonOptions.length) return null;
-    const wholeSeriesWatched =
-      overrideWatched ??
-      (remoteMediaType && tmdbId
-        ? isRemotePlayed(remoteMediaType, tmdbId)
-        : false);
     // Episode number -> card, once per season. The old nested find made this
     // O(seasons × episodes²) on a large series and ran before first paint.
     const localBySeason = new Map<number, Map<number, ItemCard>>();
@@ -230,46 +236,35 @@ export function TitleScreen({
       episodes.set(episode.episodeNumber ?? 1, episode);
     }
     const remoteCounts = new Map<number, number>();
-    for (const remoteSeason of remoteDetail?.seasons ?? []) {
+    for (const remoteSeason of onlineEnabled ? (remoteDetail?.seasons ?? []) : []) {
       remoteCounts.set(remoteSeason.number, remoteSeason.episodes);
     }
-    return defaultSeasonNumber(
-      seasonOptions.map((option) => {
-        const localEpisodes = localBySeason.get(option.number);
-        return {
-          number: option.number,
-          totalEpisodes: Math.max(
-            localEpisodes?.size ?? 0,
-            remoteCounts.get(option.number) ?? 0,
-          ),
-          isEpisodeWatched: (number: number) => {
-            const localEpisode = localEpisodes?.get(number);
-            if (localEpisode) {
-              return Boolean(
-                episodesWatchedOverride[localEpisode.id] ??
-                  (progress.latest(localEpisode.id)?.played ||
-                    localEpisode.watch?.played),
-              );
-            }
-            return remoteMediaType && tmdbId
-              ? isRemotePlayed(remoteMediaType, tmdbId, option.number, number)
-              : false;
-          },
-        };
-      }),
-      wholeSeriesWatched,
-    );
-  }, [
-    detail?.episodes,
-    episodesWatchedOverride,
-    overrideWatched,
-    progress,
-    remoteDetail?.seasons,
-    remoteMediaType,
-    remoteProgress,
-    seasonOptions,
-    tmdbId,
-  ]);
+    return seasonOptions.map((option) => {
+      const localEpisodes = localBySeason.get(option.number);
+      const remoteCount = remoteCounts.get(option.number) ?? 0;
+      const episodeNumbers = [...new Set([
+        ...Array.from({ length: remoteCount }, (_, i) => i + 1),
+        ...(localEpisodes?.keys() ?? []),
+      ])].sort((a, b) => a - b);
+      return {
+        number: option.number,
+        episodeNumbers,
+        totalEpisodes: episodeNumbers.length,
+        isEpisodeWatched: (number: number) => {
+          const localEpisode = localEpisodes?.get(number);
+          if (localEpisode?.fileId) {
+            return episodesWatchedOverride[localEpisode.id]
+              ?? progress.latest(localEpisode.id)?.played
+              ?? Boolean(localEpisode.watch?.played);
+          }
+          return Boolean(onlineEnabled && remoteMediaType && tmdbId &&
+            isRemotePlayed(remoteMediaType, tmdbId, option.number, number));
+        },
+      };
+    });
+  }, [detail?.episodes, episodesWatchedOverride, onlineEnabled, progress, remoteDetail?.seasons,
+    remoteMediaType, remoteProgress, seasonOptions, tmdbId]);
+  const defaultSeason = defaultSeasonNumber(seasonWatchInfo);
   const selectedSeason = season != null && seasonOptions.some((option) => option.number === season)
     ? season
     : defaultSeason ?? detail?.seasons?.[0]?.number ?? null;
@@ -370,31 +365,31 @@ export function TitleScreen({
       : null;
   const episodeWatched = (episode: ItemCard) =>
     episodesWatchedOverride[episode.id] ??
-    (progress.latest(episode.id)?.played || Boolean(episode.watch?.played));
-  const remoteEpisodeWatched = (seasonNumber: number, episodeNumber: number) =>
-    remoteMediaType && tmdbId
-      ? isRemotePlayed(
-          remoteMediaType,
-          tmdbId,
-          seasonNumber,
-          episodeNumber,
-        )
-      : false;
-  const nextHybridEpisode =
-    mergedSeasonEpisodes.find((episode) =>
-      episode.local
-        ? Boolean(episode.local.fileId) && !episodeWatched(episode.local)
-        : Boolean(episode.remote) &&
-          !remoteEpisodeWatched(episode.seasonNumber, episode.number),
-    ) ??
-    mergedSeasonEpisodes.find(
-      (episode) => Boolean(episode.local?.fileId) || Boolean(episode.remote),
-    );
-  const hybridPlay = nextHybridEpisode?.local
-    ? { kind: "local" as const, episode: nextHybridEpisode.local }
-    : nextHybridEpisode?.remote
-      ? { kind: "remote" as const, remote: nextHybridEpisode.remote }
-      : null;
+    progress.latest(episode.id)?.played ?? Boolean(episode.watch?.played);
+  const selectedWatchInfo = seasonWatchInfo.find((entry) => entry.number === selectedSeason);
+  const selectedSeasonWatched = selectedWatchInfo ? seasonComplete(selectedWatchInfo) : false;
+  const playbackSeason = playbackSeasonNumber(seasonWatchInfo, selectedSeason);
+  const playbackWatchInfo = seasonWatchInfo.find((entry) => entry.number === playbackSeason);
+  const playbackEpisodes = playbackSeason === selectedSeason ? mergedSeasonEpisodes : mergeEpisodes({
+    local: detail?.episodes?.filter((episode) => (episode.seasonNumber ?? 1) === playbackSeason) ?? [],
+    remote: onlineEnabled && tmdbId && playbackSeason != null ? peekSeason(tmdbId, playbackSeason) ?? [] : [],
+    season: playbackSeason ?? 1,
+    fallbackArtwork: null,
+  });
+  const nextPlayable = playbackEpisodes.find((episode) => episode.local?.fileId || episode.remote);
+  const firstUnwatched = playbackWatchInfo?.episodeNumbers.find((number) => !playbackWatchInfo.isEpisodeWatched(number));
+  const targetNumber = firstUnwatched ?? playbackWatchInfo?.episodeNumbers[0] ?? nextPlayable?.number;
+  const target = playbackEpisodes.find((episode) => episode.number === targetNumber) ??
+    (targetNumber == null ? nextPlayable : undefined);
+  const canStreamTarget = onlineEnabled && remoteMediaType === "tv" && tmdbId != null &&
+    remoteDetail?.seasons.some((entry) => entry.number === playbackSeason && targetNumber != null && targetNumber <= entry.episodes);
+  const hybridPlay = target?.local?.fileId
+    ? { kind: "local" as const, episode: target.local }
+    : target?.remote
+      ? { kind: "remote" as const, remote: target.remote }
+      : canStreamTarget && playbackSeason != null && targetNumber != null
+        ? { kind: "remote" as const, remote: { season: playbackSeason, number: targetNumber } }
+        : null;
   // The person index scans the library. Build it after the page has settled,
   // not during the navigation render, so opening a title stays immediate.
   const cast = detail?.cast;
@@ -445,12 +440,15 @@ export function TitleScreen({
     if (!item || watchedBusy.current) return;
     watchedBusy.current = true;
     const nextPlayed = !isSeriesWatched;
+    setOverrideWatched(nextPlayed);
+    const ids = (detail?.episodes ?? []).map((episode) => episode.id);
+    setEpisodesWatchedOverride(Object.fromEntries(ids.map((id) => [id, nextPlayed])));
     try {
-      if (media.isOffline) {
-        await applyTitleAction(api, progress, item.id, nextPlayed ? "finished" : "remove");
-      }
-      if (remoteMediaType && tmdbId && (onlineEnabled || remoteSeriesWatched)) {
-        await markRemotePlayed(
+      const local = media.isOffline ? (ids.length
+        ? Promise.all([progress.forgetMany(ids), api.setEpisodesWatched(ids, nextPlayed)])
+        : applyTitleAction(api, progress, item.id, nextPlayed ? "finished" : "remove")) : undefined;
+      const remote = remoteMediaType && tmdbId && (onlineEnabled || remoteSeriesWatched)
+        ? markRemotePlayed(
           remoteMediaType,
           tmdbId,
           nextPlayed,
@@ -458,13 +456,11 @@ export function TitleScreen({
             season: season.number,
             episodes: Array.from({ length: season.episodes }, (_, index) => index + 1),
           })),
-        );
-      }
-      setOverrideWatched(nextPlayed);
-      setEpisodesWatchedOverride(Object.fromEntries(
-        (detail?.episodes ?? []).map((episode) => [episode.id, nextPlayed]),
-      ));
+        ) : undefined;
+      await Promise.all([local, remote]);
     } catch (error) {
+      setOverrideWatched(null);
+      setEpisodesWatchedOverride({});
       setActionError(error instanceof Error ? error.message : "Could not update watched state.");
     } finally {
       watchedBusy.current = false;
@@ -472,69 +468,68 @@ export function TitleScreen({
     }
   }
   async function markSeasonWatched() {
-    if (seasonBusy || selectedSeason == null) return;
-    setSeason(selectedSeason);
+    if (watchedBusy.current || !selectedWatchInfo) return;
+    const seasonNumber = selectedWatchInfo.number;
+    const played = !selectedSeasonWatched;
+    const ids = localSeasonEpisodes.map((episode) => episode.id);
+    const numbers = [...new Set([
+      ...selectedWatchInfo.episodeNumbers,
+      ...mergedSeasonEpisodes.map((episode) => episode.number),
+    ])];
+    if (!numbers.length) return;
+    watchedBusy.current = true;
+    setSeason(seasonNumber);
     setSeasonBusy(true);
+    setOverrideWatched(null);
+    setActionError("");
+    setEpisodesWatchedOverride((previous) => ({
+      ...previous,
+      ...Object.fromEntries(ids.map((id) => [id, played])),
+    }));
     try {
-      const remoteEpisodes = onlineEnabled && tmdbId && remoteMediaType === "tv"
-        ? await fetchSeason(tmdbId, selectedSeason)
-        : [];
-      for (const episode of localSeasonEpisodes) {
-        const duration = episode.runtime ? episode.runtime * 60 : 3600;
-        await progress.record({ itemId: episode.id, position: duration, duration,
-          played: true, updatedAt: Date.now() });
-        await api.watched(episode.id, true);
-        setEpisodesWatchedOverride((previous) => ({ ...previous, [episode.id]: true }));
-      }
-      if (remoteMediaType && tmdbId) {
-        const numbers = new Set([
-          ...remoteEpisodes.map((episode) => episode.number),
-          ...localSeasonEpisodes.map((episode) => episode.episodeNumber ?? 1),
-        ]);
-        for (const number of numbers) {
-          await markRemoteEpisodePlayed(remoteMediaType, tmdbId, selectedSeason, number, true);
-        }
-      }
-      await progress.flushLocal();
-      media.retry();
+      const local = ids.length ? Promise.all([
+        progress.forgetMany(ids),
+        api.setEpisodesWatched(ids, played),
+      ]) : undefined;
+      const remote = onlineEnabled && remoteMediaType === "tv" && tmdbId
+        ? markRemoteEpisodesPlayed(remoteMediaType, tmdbId, seasonNumber, numbers, played)
+        : undefined;
+      await Promise.all([local, remote]);
       triggerHaptic("selection");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Could not mark season as watched.");
+      setEpisodesWatchedOverride((previous) => {
+        const next = { ...previous };
+        for (const id of ids) delete next[id];
+        return next;
+      });
+      setActionError(error instanceof Error ? error.message : "Could not update the season.");
     } finally {
+      watchedBusy.current = false;
       setSeasonBusy(false);
+      media.retry();
     }
   }
   async function toggleEpisodeWatched(ep: ItemCard) {
-    const currentEpPlayed =
-      episodesWatchedOverride[ep.id] ??
-      (progress.latest(ep.id)?.played || Boolean(ep.watch?.played));
+    if (watchedBusy.current) return;
+    const currentEpPlayed = episodeWatched(ep);
+    setOverrideWatched(null);
     const nextPlayed = !currentEpPlayed;
     setEpisodesWatchedOverride((prev) => ({ ...prev, [ep.id]: nextPlayed }));
     try {
-      if (nextPlayed) {
-        const dur = ep.runtime ? ep.runtime * 60 : 3600;
-        await progress.record({
-          itemId: ep.id,
-          position: dur,
-          duration: dur,
-          played: true,
-          updatedAt: Date.now(),
-        });
-        await api.watched(ep.id, true);
-      } else {
-        await progress.forget(ep.id);
-        await api.watched(ep.id, false);
-      }
-      await progress.flushLocal().catch(() => {});
+      await Promise.all([progress.forgetMany([ep.id]), api.setEpisodesWatched([ep.id], nextPlayed)]);
       media.retry();
-    } catch {}
+    } catch (error) {
+      setEpisodesWatchedOverride((previous) => ({ ...previous, [ep.id]: currentEpPlayed }));
+      setActionError(error instanceof Error ? error.message : "Could not update episode progress.");
+    }
   }
   async function toggleRemoteEpisode(
     seasonNumber: number,
     episodeNumber: number,
     watchedState: boolean,
   ) {
-    if (!remoteMediaType || !tmdbId) return;
+    if (watchedBusy.current || !remoteMediaType || !tmdbId) return;
+    setOverrideWatched(null);
     try {
       await markRemoteEpisodePlayed(
         remoteMediaType,
@@ -754,18 +749,20 @@ export function TitleScreen({
       : null;
   const remotePlayLabel = remoteSeriesWatched
     ? "Watch again"
-    : (remoteTitleWatch?.position ?? 0) > 0 ||
-        (remoteTargetWatch?.position ?? 0) > 0
+    : ((hasEpisodes ? remoteTargetWatch : remoteTitleWatch)?.position ?? 0) > 0
       ? "Continue watching"
       : "Start watching";
   const hybridBaseLabel =
     !media.isOffline && remoteMediaType === "movie"
       ? remotePlayLabel
       : hybridPlay?.kind === "remote"
-        ? media.isOffline
-          ? "Play"
-          : remotePlayLabel
-        : detailAction.label;
+        ? remotePlayLabel
+        : hybridPlay?.kind === "local"
+          ? episodeWatched(hybridPlay.episode)
+            ? "Watch again"
+            : ((progress.latest(hybridPlay.episode.id)?.position ?? hybridPlay.episode.watch?.position) ?? 0) > 0
+              ? "Continue watching" : "Start watching"
+          : detailAction.label;
   const nextEpisodeNumber = hasEpisodes
     ? hybridPlay?.kind === "local"
       ? (hybridPlay.episode.episodeNumber ?? null)
@@ -773,11 +770,10 @@ export function TitleScreen({
         ? hybridPlay.remote.number
         : null
     : null;
-  // The reference action reads "Start Watching E1": name the exact episode the
-  // pill will open so the bar never leaves the target ambiguous.
+  // Name the exact season and episode the play action will open.
   const hybridLabel =
     nextEpisodeNumber != null
-      ? `${hybridBaseLabel} E${nextEpisodeNumber}`
+      ? `${hybridBaseLabel} ${playbackSeason != null ? `S${playbackSeason}` : ""}E${nextEpisodeNumber}`
       : hybridBaseLabel;
   const hybridDisabled = hasEpisodes
     ? !hybridPlay
@@ -964,18 +960,19 @@ export function TitleScreen({
       ) : null}
 
       {detailRows.length > 0 && (
-        <View className="gap-3 rounded-2xl border border-border bg-surface px-4 py-4">
-          {detailRows.map((row) => (
-            <View
-              key={row.label}
-              className="flex-row items-start justify-between gap-6"
-            >
-              <Text className="font-archivo-medium text-[13px] text-muted">
+        <View className="overflow-hidden rounded-[18px] bg-surface">
+          {detailRows.map((row, index) => (
+            <View key={row.label} className={cn("flex-row items-start gap-3 px-4 py-3.5",
+              index > 0 && "border-t border-border")}>
+              <Text className="w-[76px] pt-[2px] font-archivo-medium text-[13px] text-muted">
                 {row.label}
               </Text>
-              <Text className="flex-1 text-right font-archivo-medium text-[13px] leading-[19px] text-foreground">
-                {row.value}
-              </Text>
+              <View className="flex-1 flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
+                {row.label === "Rating" ? <TitleRating rating={rating} /> : null}
+                <Text className="shrink font-archivo-bold text-[15px] leading-[21px] text-foreground">
+                  {row.value}
+                </Text>
+              </View>
             </View>
           ))}
         </View>
@@ -1076,6 +1073,7 @@ export function TitleScreen({
         <SeasonPicker
           seasons={seasonPickerOptions}
           busy={seasonBusy}
+          watched={selectedSeasonWatched}
           onMarkWatched={() => void markSeasonWatched()}
           value={selectedSeason ?? null}
           onChange={(number) => setSeason(number)}

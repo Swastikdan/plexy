@@ -1,3 +1,5 @@
+import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
+import HardDriveIcon from "@hugeicons/core-free-icons/HardDriveIcon";
 import RefreshIcon from "@hugeicons/core-free-icons/RefreshIcon";
 import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
 import ArrowLeft01Icon from "@hugeicons/core-free-icons/ArrowLeft01Icon";
@@ -79,6 +81,8 @@ export const Check = glyph(Tick02Icon);
 export const ChevronDown = glyph(ArrowDown01Icon);
 export const ChevronLeft = glyph(ArrowLeft01Icon);
 export const ChevronRight = glyph(ArrowRight01Icon);
+export const Folder = glyph(Folder01Icon);
+export const HardDrive = glyph(HardDriveIcon);
 export const Film = glyph(Film01Icon);
 export const Info = glyph(InformationCircleIcon);
 export const Play = glyph(PlayIcon, true);

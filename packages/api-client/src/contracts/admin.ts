@@ -92,9 +92,9 @@ export interface ServerSettings {
   prefetchMaxCacheMb: number;
 }
 
-/** The three library kinds the setup and admin screens can create. */
+/** The library kinds the setup and admin screens can create. */
 
-export type LibraryType = "movies" | "tv" | "anime";
+export type LibraryType = "movies" | "tv";
 
 /** `GET /api/settings` */
 

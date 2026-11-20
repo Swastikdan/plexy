@@ -319,9 +319,22 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       const invalid = validateCredentials(body.username, body.password);
       if (invalid) return apiError(invalid);
       try {
-        return {
-          user: await createUser(body.username, body.password, body.role),
-        };
+        const user = await createUser(body.username, body.password, body.role);
+        // A brand-new household account starts with the libraries that exist
+        // today. The admin can narrow this immediately in the same dialog;
+        // starting with zero access made the account appear broken.
+        db.transaction(() => {
+          const libraries = q<{ id: number }>("SELECT id FROM libraries").all();
+          for (const library of libraries) {
+            run(
+              "INSERT OR IGNORE INTO access_rules(user_id,scope,target,allowed) VALUES(?,?,?,1)",
+              user.id,
+              "library",
+              String(library.id),
+            );
+          }
+        })();
+        return { user };
       } catch {
         return apiError("That username is already taken.", 409);
       }

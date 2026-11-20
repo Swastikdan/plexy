@@ -427,9 +427,30 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           <BufferingIndicator />
           <ErrorDialog />
           <NeutralVideoControls
+            title={title}
+            subtitle={cleanSubtitle || subtitleEp}
             serverAudioTracks={serverAudioTracks}
             selectedAudioIndex={selectedAudioIndex}
             onSelectAudioTrack={handleSelectAudio}
+            chapters={manifest?.chapters}
+            onSelectChapter={(start) => {
+              const bridge = nativeBridge();
+              const id = sessionIdRef.current;
+              if (!bridge || !id) return;
+              positionRef.current = start;
+              setPosition(start);
+              void bridge.command({ sessionId: id, action: "seek", value: start }).catch(() => {});
+            }}
+            versions={manifest?.versions}
+            selectedFileId={fileId}
+            onSelectVersion={(nextFileId) => {
+              void navigate({
+                to: "/watch/$fileId",
+                params: { fileId: String(nextFileId) },
+                replace: true,
+                state: (previous) => ({ playerFromTitle: previous.playerFromTitle }),
+              });
+            }}
           />
           <NativeHotkeys />
           <PlayerGestures />
@@ -458,32 +479,19 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           {/* Top chrome lives inside the skin so it survives fullscreen. */}
           <div
             style={{ paddingLeft: needsMacOffset && !isFullscreen ? "88px" : undefined }}
-            className={`pointer-events-none absolute inset-x-0 top-0 z-40 bg-gradient-to-b from-black/85 via-black/35 to-transparent px-4 pb-12 pt-3 transition-opacity duration-300 sm:px-5 ${
+            className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
               controlsVisible ? "opacity-100" : "opacity-0"
             }`}
           >
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
-              <button
-                onClick={leave}
-                aria-label="Back"
-                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-                  controlsVisible ? "pointer-events-auto" : "pointer-events-none"
-                }`}
-              >
-                <ArrowLeft size={20} />
-              </button>
-              <div className="min-w-0 px-2 pt-1.5 text-center">
-                <p className="truncate font-display text-[13px] font-semibold leading-tight drop-shadow sm:text-[15px]">
-                  {title}
-                </p>
-                {(cleanSubtitle || subtitleEp) && (
-                  <p className="mt-0.5 truncate text-[10.5px] font-medium text-white/60 sm:text-[11.5px]">
-                    {cleanSubtitle || subtitleEp}
-                  </p>
-                )}
-              </div>
-              <span aria-hidden className="h-10 w-10" />
-            </div>
+            <button
+              onClick={leave}
+              aria-label="Back"
+              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+                controlsVisible ? "pointer-events-auto" : "pointer-events-none"
+              }`}
+            >
+              <ArrowLeft size={20} />
+            </button>
           </div>
 
           {activeSegment && !ended && (

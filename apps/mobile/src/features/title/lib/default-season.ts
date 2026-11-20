@@ -1,6 +1,7 @@
 export interface SeasonWatchInfo {
   number: number;
   totalEpisodes: number;
+  episodeNumbers?: readonly number[];
   isEpisodeWatched: (episodeNumber: number) => boolean;
 }
 
@@ -15,16 +16,24 @@ export function defaultSeasonNumber(
 ): number | null {
   if (!seasons.length) return null;
   if (wholeSeriesWatched) return seasons[0]!.number;
-  for (const season of seasons) {
-    if (season.totalEpisodes <= 0) continue;
-    let complete = true;
-    for (let number = 1; number <= season.totalEpisodes; number += 1) {
-      if (!season.isEpisodeWatched(number)) {
-        complete = false;
-        break;
-      }
-    }
-    if (!complete) return season.number;
+  const regular = seasons.filter((season) => season.number !== 0);
+  const candidates = regular.length ? regular : seasons;
+  return candidates.find((season) => season.totalEpisodes > 0 && !seasonComplete(season))?.number
+    ?? candidates[0]!.number;
+}
+
+export function seasonComplete(season: SeasonWatchInfo): boolean {
+  if (season.episodeNumbers) return season.episodeNumbers.length > 0
+    && season.episodeNumbers.every(season.isEpisodeWatched);
+  if (season.totalEpisodes <= 0) return false;
+  for (let number = 1; number <= season.totalEpisodes; number++) {
+    if (!season.isEpisodeWatched(number)) return false;
   }
-  return seasons[0]!.number;
+  return true;
+}
+
+/** Keep the season picker on the browsed season while Play advances. */
+export function playbackSeasonNumber(seasons: SeasonWatchInfo[], selected: number | null): number | null {
+  const current = seasons.find((season) => season.number === selected);
+  return current && !seasonComplete(current) ? current.number : defaultSeasonNumber(seasons) ?? selected;
 }

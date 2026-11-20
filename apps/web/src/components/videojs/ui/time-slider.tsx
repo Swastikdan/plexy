@@ -52,6 +52,7 @@ export function TimeSlider({
               render={<SliderTrack />}
               className={cn(
                 'transition-[height,width] duration-media-slow ease-out',
+                'data-[orientation=horizontal]:!h-[3px]',
                 'data-[orientation=horizontal]:before:clip-media-chapter-track-x data-[orientation=vertical]:before:clip-media-chapter-track-y',
                 'group-data-highlighted/chapter:data-[orientation=horizontal]:h-1.75',
                 'group-data-highlighted/chapter:data-[orientation=vertical]:w-1.75'

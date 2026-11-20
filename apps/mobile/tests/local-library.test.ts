@@ -583,3 +583,18 @@ test("storage cleanup reports only files Android deleted and retains failures fo
   expect(f.library.state.records.map((record) => record.file.uri)).toEqual([locked.uri]);
   expect(f.library.state.excluded).toEqual([removable.uri]);
 });
+
+test("marking and unmarking a season updates every selected episode in one library notification", async () => {
+  const f = fixture();
+  f.files([file("Show/Season 01/Show.S01E01.mkv"), file("Show/Season 01/Show.S01E02.mkv"),
+    file("Show/Season 02/Show.S02E01.mkv")]);
+  await f.library.addRoot({ ...root, kind: "tv" });
+  const ids = f.library.state.records.filter((r) => r.card.seasonNumber === 1).map((r) => r.id);
+  const snapshots: boolean[][] = [];
+  const unsubscribe = f.library.subscribe(() => snapshots.push(ids.map((id) => Boolean(f.library.record(id).card.watch?.played))));
+  await f.library.setEpisodesWatched(ids, true);
+  await f.library.setEpisodesWatched(ids, false);
+  unsubscribe();
+  expect(snapshots).toEqual([[true, true], [false, false]]);
+  expect(f.library.state.records.find((r) => r.card.seasonNumber === 2)?.card.watch).toBeNull();
+});

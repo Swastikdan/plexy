@@ -30,6 +30,7 @@ export abstract class LocalCatalog {
     abstract watched(itemId: number, played: boolean): Promise<{
         ok: boolean;
     }>;
+    abstract setEpisodesWatched(ids: readonly number[], played: boolean): Promise<void>;
     abstract clearWatch(itemId: number): Promise<{
         ok: boolean;
     }>;

@@ -130,7 +130,7 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
     return apiError("Sign in required.", 401);
   const viewer =
     ["GET", "HEAD"].includes(request.method) &&
-    /^\/api\/(?:home|items(?:\/[^/]+)?|search|libraries(?:\/\d+)?|play\/\d+|playability\/\d+|skip-segments\/\d+|stream\/\d+(?:\/[^/]+){0,2}|download\/\d+(?:\/info)?|images\/\d+|people\/\d+(?:\/photo)?|trickplay\/\d+\/[^/]+|subtitles\/\d+(?:\/[^/]+)?)\/?$/.test(
+    /^\/api\/(?:home|history|items(?:\/[^/]+)?(?:\/similar)?|search|libraries(?:\/\d+)?|play\/\d+|playability\/\d+|skip-segments\/\d+|stream\/\d+(?:\/[^/]+){0,2}|download\/\d+(?:\/info)?|images\/\d+|people\/\d+(?:\/photo)?|trickplay\/\d+\/[^/]+|subtitles\/\d+(?:\/[^/]+)?)\/?$/.test(
       path,
     );
   const progress =
@@ -138,12 +138,24 @@ export function accessGuard(ctx: LoopbackContext): Response | undefined {
     (path === "/api/progress" || /^\/api\/watch\/\d+\/played$/.test(path));
   const clearWatch =
     request.method === "DELETE" && /^\/api\/watch\/\d+$/.test(path);
+  const clearHistory =
+    request.method === "DELETE" && /^\/api\/history(?:\/\d+)?$/.test(path);
+  const itemFlags =
+    request.method === "PUT" && /^\/api\/items\/\d+\/flags$/.test(path);
+  const subtitleDownload =
+    request.method === "POST" && /^\/api\/subtitles\/\d+\/download$/.test(path);
+  const collections =
+    /^\/api\/collections(?:\/\d+)?(?:\/items\/\d+)?$/.test(path);
   if (user.role === "admin") return;
-  if (!viewer && !progress && !clearWatch)
+  if (!viewer && !progress && !clearWatch && !clearHistory && !itemFlags && !subtitleDownload && !collections)
     return Response.json(
       { error: "Administrator access required." },
       { status: 403 },
     );
+  if (collections) {
+    // Collection rows are user-created but the items they reference are still
+    // access-checked by attachArt/canAccessItem at read time.
+  }
   let itemId: number | null = null;
   const file =
     /^\/api\/(?:play|playability|skip-segments|stream|download|trickplay|subtitles)\/(\d+)/.exec(

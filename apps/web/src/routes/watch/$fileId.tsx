@@ -1145,6 +1145,8 @@ function BrowserWatchRoute() {
               <VideoSkin
                 className="w-full h-full max-w-full max-h-full aspect-video shadow-2xl"
                 showErrorDialog={showMediaError}
+                title={play.data?.title}
+                subtitle={play.data?.subtitle?.replace(/^(?:S\d+E\d+|E\d+|\d+x\d+)\s*[·\-:–—]\s*/i, "")}
                 serverAudioTracks={play.data?.audioTracks}
                 selectedAudioIndex={selectedAudioIndex}
                 onSelectAudioTrack={handleSelectAudioTrack}
@@ -1156,6 +1158,23 @@ function BrowserWatchRoute() {
                 subtitlePosition={subtitlePosition}
                 onAdjustSubtitlePosition={handleAdjustSubtitlePosition}
                 onResetSubtitlePosition={handleResetSubtitlePosition}
+                chapters={play.data?.chapters}
+                onSelectChapter={(start) => {
+                  const video = videoRef.current;
+                  if (!video) return;
+                  video.currentTime = start;
+                  void video.play().catch(() => {});
+                }}
+                versions={play.data?.versions}
+                selectedFileId={Number(fileId)}
+                onSelectVersion={(nextFileId) => {
+                  void navigate({
+                    to: "/watch/$fileId",
+                    params: { fileId: String(nextFileId) },
+                    replace: true,
+                    state: (previous) => ({ playerFromTitle: previous.playerFromTitle }),
+                  });
+                }}
               >
                 <ControlsVisibility onChange={setControlsVisible} />
 
@@ -1163,45 +1182,30 @@ function BrowserWatchRoute() {
                     fullscreen, so overlays outside it disappear in fullscreen. */}
                 <div
                   style={{ paddingLeft: needsMacOffset ? "88px" : undefined }}
-                  className={`pointer-events-none absolute inset-x-0 top-0 z-40 bg-gradient-to-b from-black/85 via-black/35 to-transparent px-4 pb-12 pt-3 transition-opacity duration-300 sm:px-5 ${
+                  className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
                     controlsVisible ? "opacity-100" : "opacity-0"
                   }`}
                 >
-                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
-                    <button
-                      onClick={leavePlayer}
-                      aria-label="Back"
-                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-                        controlsVisible ? "pointer-events-auto" : "pointer-events-none"
-                      }`}
-                    >
-                      <ArrowLeft size={20} />
-                    </button>
+                  <button
+                    onClick={leavePlayer}
+                    aria-label="Back"
+                    className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+                      controlsVisible ? "pointer-events-auto" : "pointer-events-none"
+                    }`}
+                  >
+                    <ArrowLeft size={20} />
+                  </button>
 
-                    {(play.data?.title || play.data?.subtitle) && (
-                      <div className="min-w-0 px-2 pt-1.5 text-center">
-                        <p className="truncate font-display text-[13px] font-semibold leading-tight text-white drop-shadow sm:text-[15px]">
-                          {play.data?.title}
-                        </p>
-                        {play.data?.subtitle && (
-                          <p className="mt-0.5 truncate text-[10.5px] font-medium text-white/60 sm:text-[11.5px]">
-                            {play.data.subtitle.replace(/^(?:S\d+E\d+|E\d+|\d+x\d+)\s*[·\-:–—]\s*/i, "")}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => setShowPlaybackStats(true)}
-                      aria-label="Show playback stats"
-                      title="Stats for nerds"
-                      className={`pointer-events-auto ml-auto inline-flex h-10 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "pointer-events-none"}`}
-                    >
-                      <Activity size={16} />
-                      <span className="hidden sm:inline">Stats</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPlaybackStats(true)}
+                    aria-label="Show playback stats"
+                    title="Stats for nerds"
+                    className={`pointer-events-auto ml-auto inline-flex h-10 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "pointer-events-none"}`}
+                  >
+                    <Activity size={16} />
+                    <span className="hidden sm:inline">Stats</span>
+                  </button>
                 </div>
 
                 {play.data?.nextFileId && showNextPrompt && !activeSkipSegment && (

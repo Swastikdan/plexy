@@ -14,6 +14,7 @@ import { cors } from "@elysiajs/cors";
 import { adminRoutes } from "./routes-admin";
 import { authRoutes } from "./routes-auth";
 import { catalogRoutes } from "./routes-catalog";
+import { collectionRoutes } from "./routes-collections";
 import { matchingRoutes } from "./routes-matching";
 import { mediaRoutes } from "./routes-media";
 import { logsRoutes } from "./routes-logs";
@@ -174,6 +175,7 @@ export function buildApp(
     .use(authRoutes)
     .use(adminRoutes)
     .use(catalogRoutes)
+    .use(collectionRoutes)
     .use(matchingRoutes)
     .use(mediaRoutes)
     .use(logsRoutes)

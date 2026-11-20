@@ -30,7 +30,7 @@ import { queries } from "../queries";
 import { Button, Input } from "@heroui/react";
 import { cx } from "../lib/cx";
 
-type MediaType = "movies" | "tv" | "anime";
+type MediaType = "movies" | "tv";
 
 const MEDIA_TYPES: Array<{
   value: MediaType;
@@ -58,13 +58,11 @@ const MEDIA_TYPES: Array<{
 const DEFAULT_NAMES: Record<MediaType, string> = {
   movies: "Movies",
   tv: "TV Shows",
-  anime: "Anime",
 };
 
 const TYPE_LABEL: Record<MediaType, string> = {
   movies: "Movies",
   tv: "TV shows",
-  anime: "Anime",
 };
 
 const SHORTCUTS = [
@@ -77,7 +75,7 @@ const SHORTCUTS = [
 ];
 
 function isMediaType(value: string | null | undefined): value is MediaType {
-  return value === "movies" || value === "tv" || value === "anime";
+  return value === "movies" || value === "tv";
 }
 
 /** Split an absolute or home-relative path into clickable browser crumbs. */

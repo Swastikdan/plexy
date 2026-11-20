@@ -330,36 +330,38 @@ export async function markRemoteEpisodePlayed(
   episode: number,
   played: boolean,
 ) {
+  await markRemoteEpisodesPlayed(mediaType, tmdbId, season, [episode], played);
+}
+
+export async function markRemoteEpisodesPlayed(
+  mediaType: RemoteMediaType,
+  tmdbId: number,
+  season: number,
+  episodes: readonly number[],
+  played: boolean,
+) {
+  if (!episodes.length) return;
   const current = remoteProgressStore.get();
-  const key = remoteEpisodeKey(mediaType, tmdbId, season, episode);
-  const existing = progressIndex().get(key);
-  const entry: RemoteProgress = {
-    key,
-    mediaType,
-    tmdbId,
-    season,
-    episode,
-    position: played ? (existing?.duration ?? 100) : 0,
-    duration: existing?.duration ?? null,
-    played,
-    updatedAt: Date.now(),
-  };
+  const index = progressIndex();
+  const numbers = new Set(episodes);
+  const now = Date.now();
+  const entries = [...numbers].map((episode): RemoteProgress => {
+    const key = remoteEpisodeKey(mediaType, tmdbId, season, episode);
+    const existing = index.get(key);
+    return {
+      key, mediaType, tmdbId, season, episode,
+      position: played ? (existing?.duration ?? 100) : 0,
+      duration: existing?.duration ?? null, played, updatedAt: now,
+    };
+  });
+  const keys = new Set(entries.map((entry) => entry.key));
   const titleKey = remoteTitleKey(mediaType, tmdbId);
-  const values = current
-    .filter((value) => value.key !== key)
-    .map((value) =>
-      value.key === titleKey && !played
-        ? {
-            ...value,
-            played: false,
-            position:
-              value.season === season && value.episode === episode
-                ? 0
-                : value.position,
-          }
-        : value,
-    );
-  remoteProgressStore.set([...values, entry]);
+  const values = current.filter((entry) => !keys.has(entry.key)).map((entry) =>
+    entry.key === titleKey && !played
+      ? { ...entry, played: false, position: entry.season === season && entry.episode != null && numbers.has(entry.episode) ? 0 : entry.position }
+      : entry,
+  );
+  remoteProgressStore.set([...values, ...entries]);
   await writeNow();
 }
 

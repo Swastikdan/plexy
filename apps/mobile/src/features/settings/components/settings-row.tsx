@@ -3,11 +3,12 @@ import { Pressable, Text, View } from "react-native";
 import { cn } from "@/shared/lib/cn";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
-import { ChevronRight, type NativeIcon } from "@/shared/ui/icons";
+import { Check, ChevronRight, type NativeIcon } from "@/shared/ui/icons";
 
 export function SettingsRow({
   title,
   subtitle,
+  value,
   icon: Icon,
   onPress,
   children,
@@ -17,6 +18,7 @@ export function SettingsRow({
 }: {
   title: string;
   subtitle?: string;
+  value?: string;
   icon?: NativeIcon;
   onPress?: () => void;
   children?: React.ReactNode;
@@ -64,8 +66,9 @@ export function SettingsRow({
           </Text>
         )}
       </View>
+      {value ? <Text numberOfLines={1} className="max-w-[38%] font-archivo-medium text-[12px] text-muted">{value}</Text> : null}
       {children ||
-        (navigation ? (
+        (selected ? <Check size={18} color={colors.brand} /> : navigation ? (
           <ChevronRight size={20} color={colors.muted} />
         ) : null)}
     </Pressable>

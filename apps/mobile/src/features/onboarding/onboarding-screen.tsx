@@ -9,6 +9,7 @@ import { modeLabels, modePreferences, type AppMode } from "@/core/client/prefere
 import { displayName, localLibrary } from "@/core/library/local-runtime";
 import { useColors } from "@/shared/theme";
 import { useAppDialog } from "@/shared/ui/app-dialog";
+import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
 import { Button } from "@/shared/ui/button";
 import { ChevronLeft } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
@@ -78,7 +79,7 @@ export function OnboardingScreen({
               <ChevronLeft size={26} color={colors.ink} />
             </Pressable>
           )}
-          <Text className="font-archivo-black text-[26px] text-foreground">Plexy</Text>
+          <Text className="font-archivo-black text-[26px] text-foreground">{onClose ? "Watching mode" : "Plexy"}</Text>
         </View>
         <View className="gap-3 pt-5">
           <Text accessibilityRole="header" className="font-archivo-bold text-[34px] leading-[40px] text-foreground">
@@ -93,7 +94,10 @@ export function OnboardingScreen({
             <View className="gap-3" accessibilityRole="radiogroup">
               {(["local", "hybrid", "online"] as const).map(value => (
                 <Pressable key={value} testID={`mode-${value}`} accessibilityRole="radio" accessibilityState={{ checked: mode === value }} onPress={() => setMode(value)} className={`rounded-[18px] border-2 p-5 gap-2 ${mode === value ? "border-accent bg-surface" : "border-border bg-background"}`}>
-                  <Text className={`font-archivo-bold text-[20px] ${mode === value ? "text-accent" : "text-foreground"}`}>{modeLabels[value]}</Text>
+                  <View className="flex-row items-center justify-between gap-3">
+                    <Text className="font-archivo-bold text-[20px] text-foreground">{modeLabels[value]}</Text>
+                    <CheckboxIndicator checked={mode === value} />
+                  </View>
                   <Text className="font-archivo-regular text-[14px] leading-[21px] text-muted">{descriptions[value]}</Text>
                 </Pressable>
               ))}

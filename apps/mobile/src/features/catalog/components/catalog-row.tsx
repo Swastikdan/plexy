@@ -22,6 +22,7 @@ export function CatalogRow({
   allowTitleActions = true,
   cardWidth: cardWidthOverride,
   onlineFor,
+  playOnPress = false,
 }: {
   title: string;
   items: ItemCard[];
@@ -38,6 +39,8 @@ export function CatalogRow({
   cardWidth?: number;
   /** Mark individual cards as online in a mixed local/online row. */
   onlineFor?: (item: ItemCard) => boolean;
+  /** Next Up rows should start playback instead of opening details. */
+  playOnPress?: boolean;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const prefetch = useTitlePrefetch();
@@ -114,7 +117,8 @@ export function CatalogRow({
                 onRowFocus?.();
               }}
               onPress={() => {
-                open(item.publicId);
+                if (playOnPress && onPlay) onPlay(item);
+                else open(item.publicId);
               }}
             />
           )
