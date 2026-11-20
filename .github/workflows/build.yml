@@ -340,17 +340,12 @@ jobs:
             printf '\n%s\n' "$RELEASE_HIGHLIGHTS" >> "$notes"
           fi
           PLEXY_KEEP_RELEASE_NOTES=true bash scripts/publish-release.sh "$notes" release-macos/*
-      - name: Mirror macOS desktop installers to R2
+      - name: Verify Gcore macOS download links
         id: desktop-mirror
         if: matrix.target == 'desktop'
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PLEXY_UPDATE_R2_BUCKET: ${{ vars.PLEXY_UPDATE_R2_BUCKET }}
-          PLEXY_UPDATE_ORIGIN: ${{ vars.PLEXY_UPDATE_ORIGIN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.PLEXY_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.PLEXY_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-        run: bash scripts/mirror-macos-release.sh release-macos
+          PLEXY_DESKTOP_CDN: ${{ vars.PLEXY_DESKTOP_CDN }}
+        run: bash scripts/verify-macos-cdn.sh release-macos
 
   release:
     name: Publish GitHub release
@@ -487,7 +482,7 @@ jobs:
           2. Scroll to **Security** and click **Open Anyway** next to the Plexy message.
           3. Confirm with your password or Touch ID, then open Plexy again from **Applications** and choose **Open**.
 
-          On some macOS versions, Control-click **Plexy.app** in Applications, choose **Open**, and confirm **Open**. If macOS still blocks it, use the Privacy & Security steps above. Only do this for a copy downloaded through this repository's GitHub Releases page or its linked Cloudflare mirror.
+          On some macOS versions, Control-click **Plexy.app** in Applications, choose **Open**, and confirm **Open**. If macOS still blocks it, use the Privacy & Security steps above. Only do this for a copy downloaded through this repository's GitHub Releases page or its linked CDN.
 
           Advanced Terminal alternative:
 
@@ -517,7 +512,7 @@ jobs:
           bash scripts/publish-release.sh release-notes.md "${assets[@]}"
 
   desktop-mirror-links:
-    name: Add Cloudflare download links to release
+    name: Add Gcore download links to release
     needs: [plan, macos, release]
     if: ${{ !cancelled() && needs.macos.outputs.desktop_mirror_links != '' }}
     runs-on: ubuntu-24.04
@@ -531,7 +526,7 @@ jobs:
         run: |
           notes="$(mktemp)"
           gh release view "$RELEASE_TAG" --json body --jq .body > "$notes"
-          if ! grep -Fxq '### macOS downloads via Cloudflare' "$notes"; then
-            printf '\n### macOS downloads via Cloudflare\n\n%s\n' "$MIRROR_LINKS" >> "$notes"
+          if ! grep -Fxq '### macOS downloads via Gcore' "$notes"; then
+            printf '\n### macOS downloads via Gcore\n\n%s\n' "$MIRROR_LINKS" >> "$notes"
             gh release edit "$RELEASE_TAG" --notes-file "$notes"
           fi

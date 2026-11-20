@@ -160,11 +160,15 @@ gh workflow run build.yml --ref main \
 
 The desktop app, its package filenames, and the general release tag use the version selected by the workflow. A local desktop package uses the higher of the root package's version and the latest general release tag. Local desktop and Android packaging use your authenticated `gh` session to reserve numbers in this repository, and hosted packaging uses the same Git tags. Android APKs keep their own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds.
 
-### Cloudflare download mirror
+### macOS download CDN
 
-To serve release downloads from Cloudflare R2, connect an HTTPS custom domain to a dedicated R2 bucket. In GitHub Actions set the variables `PLEXY_UPDATE_ORIGIN` (the HTTPS origin) and `PLEXY_UPDATE_R2_BUCKET` (the bucket name). Set the secrets `CLOUDFLARE_ACCOUNT_ID`, `PLEXY_R2_ACCESS_KEY_ID`, and `PLEXY_R2_SECRET_ACCESS_KEY` with a bucket-scoped R2 credential.
+The release workflow publishes the DMG and ZIP to GitHub. To serve those files through Gcore, configure an HTTPS CDN resource with `github.com` as its HTTPS origin and Origin Host header. Enable **Redirection from origin** for HTTP 302. Limit delivery to this repository's versioned release download paths. Keep the account within Gcore's free traffic allowance and leave billing disabled.
 
-Desktop releases upload the Apple Silicon DMG and ZIP to GitHub and to a release-specific path in R2. Once both mirror URLs are reachable, the workflow adds them to the GitHub release notes.
+Set the GitHub Actions variable `PLEXY_DESKTOP_CDN` to the CDN's HTTPS URL. The workflow adds Gcore links to the release notes after confirming that the CDN serves bytes from each installer directly. The GitHub assets remain available.
+
+### Android download mirror
+
+To serve Android release downloads from Cloudflare R2, connect an HTTPS custom domain to a dedicated R2 bucket. In GitHub Actions set the variables `PLEXY_UPDATE_ORIGIN` (the HTTPS origin) and `PLEXY_UPDATE_R2_BUCKET` (the bucket name). Set the secrets `CLOUDFLARE_ACCOUNT_ID`, `PLEXY_R2_ACCESS_KEY_ID`, and `PLEXY_R2_SECRET_ACCESS_KEY` with a bucket-scoped R2 credential.
 
 The next **Force APK** release uploads the APK first, then the manifest, and removes older Android APKs from the bucket. GitHub Releases keeps the full history. The Android app tries R2 first for the current manifest and installer, and falls back to GitHub. It checks the APK size and SHA-256 before opening the installer.
 
