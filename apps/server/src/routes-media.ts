@@ -46,6 +46,7 @@ import { getConfig } from "./config";
 import { storeProbeFacts } from "./media-facts";
 import { getSkipSegments } from "./skip-segments";
 import { fileForEpisode } from "./episode-files";
+import { beginSession } from "./sessions";
 import {
   trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
@@ -388,6 +389,13 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     const watch = watchStateFor(row.item_id == null ? null : Number(row.item_id), ctx.request);
 
     const context = itemContext(row);
+    beginSession(
+      ctx.request,
+      Number(row.id),
+      row.item_id == null ? null : Number(row.item_id),
+      watch?.position ?? 0,
+      context.duration,
+    );
     const versions = row.item_id == null ? [] : q<Row>(
       `SELECT id, width, height, video_codec, hdr, size FROM media_files
        WHERE item_id = ? AND unavailable = 0 ORDER BY height DESC, size DESC, id DESC`,

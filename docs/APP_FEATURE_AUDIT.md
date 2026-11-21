@@ -1,6 +1,6 @@
 # Plexy Feature Audit — Implemented, Improvable, Adjacent
 
-Audit date: **20 November 2026**
+Audit date: **20 November 2026** · Status update: **21 November 2026**
 Scope: `apps/server`, `apps/web`, `apps/desktop`, `apps/mobile`, `packages/*`
 Companion document: [`MEDIA_SERVER_FEATURE_RESEARCH.md`](./MEDIA_SERVER_FEATURE_RESEARCH.md) (382 competitor features)
 
@@ -18,7 +18,7 @@ the code (see §8).
 Confidence: high for route/feature presence; medium for UX quality; low for performance and reliability without
 running a large library.
 
-## Implementation progress — 20 Nov 2026
+## Implementation progress — 20–21 Nov 2026
 
 Landed in this pass:
 
@@ -50,9 +50,19 @@ Landed in this pass:
 - **Multi-episode files:** a file named `S01E01-E02` now creates both episode items; the later episode resolves
   the shared file for detail, next-up, and playback.
 - **Mobile Next Up:** the row is restored and taps start playback directly.
+- **Active sessions dashboard:** live playback per user/device, progress, stop requests, and device
+  revoke/remove from Server Settings. Stopping pauses the browser and native players on their next heartbeat.
+- **Per-library metadata language:** the library wizard/editor sets it; matching, hydration, logos, and
+  episode names use it, with a background refresh when changed.
+- **Scrub thumbnail pre-generation:** Server Settings shows coverage and can queue every missing or failed
+  trickplay strip.
+- **Mobile watchlist & search:** a local watchlist page and home row, plus local search across parent series
+  names.
+- **Connection resilience:** faster mDNS discovery with reachability/latency, retrying probes, smarter API
+  retry/health thresholds, and direct remote native playback with a local-proxy fallback.
 
 Still open from the audit (next passes): local `Extras/` folder indexing/UI, artwork picker,
-theme music, local intro detection/manual marker editor, sessions/admin dashboard/backups, mobile Plexy-server
+theme music, local intro detection/manual marker editor, backup/restore, activity stats, mobile Plexy-server
 mode + downloads, desktop 10-foot mode, hardware transcoding/HDR tone mapping, HLS/ABR, playlists, and the
 music/photos/books/Live TV product surfaces.
 
@@ -289,14 +299,51 @@ administrative trust layer (sessions, stats, backups), not the transcoding pipel
 
 ## 3. Implemented but can be made better
 
-> **Status note:** the “Current” lines below describe the pre-implementation baseline from the audit.
-> The progress section at the top lists what has since landed; the remaining gaps are still accurate.
+> **Status note:** the “Original baseline” lines below are kept for context. See §3.0 for the
+> current implemented/partial/missing status as of 21 Nov 2026; the “Better” lists remain the roadmap.
 
 This is the core of the audit: the gap between "the code works" and "this is competitive".
 
+### 3.0 Current status (21 Nov 2026)
+
+| Area | Implemented | Remaining |
+| --- | --- | --- |
+| Search | FTS5 titles/episodes/people/genres, prefix matching, unmatched titles, pagination, bm25 ranking, web People cards | Typo/fuzzy fallback, filters inside search, recent searches, shared search core with mobile |
+| Library browse | Server filters + pagination + Load More, unwatched, genre/year/rating/runtime/user-rating filters | Saved views, resolution/HDR/audio-language facets, mobile server filtering |
+| Home | Continue, Next Up, Watchlist, Favorites, Recently Added, hero playback | Personalized “Because you watched”, row order/visibility, collections row, upcoming row |
+| Flags & history | Server watchlist/favorites/hidden/ratings, list pages, `/history`, clear/remove | True `watch_events` timeline (start/pause/finish/device), bulk actions |
+| Collections | Manual collections, picker, page, add/remove/delete | **Playlists**, smart rule-based collections, artwork/description/sort order, Play all/shuffle, M3U |
+| Similar | Local genre/cast affinity shelf | Blend with TMDB recommendations, keywords/director, per-user affinity |
+| Metadata | Regional certifications + backfill, all TMDB videos, episode stills, manual match, per-library metadata language | Artwork picker/upload, NFO read/write, field locks, full crew UI, theme music |
+| Playback | Prepared MP4/audio variants, chapters, versions menu, trickplay pre-generation, skip markers, next episode | HLS/ABR, hardware encode outside macOS, HDR→SDR tone mapping, PGS burn-in, per-title quality cap |
+| Subtitles | Embedded/sidecar/downloaded VTT, server OpenSubtitles search/download, web modal | Caption styling, upload/edit/delete, image-subtitle burn-in, auto-download tasks |
+| Extras | All TMDB trailers/teasers/featurettes/clips in “More videos” | Local `Extras/` folder indexing and playback |
+| Sessions/admin | Active session list, stop requests, device revoke/remove, scan SSE, match queue, logs/crashes, optimizer | Playback stats, activity log, backup/restore, scheduled tasks, webhooks |
+| Mobile | Local-first scan/play, Next Up, watchlist page + row, parent-series search, local chapters/subtitles, family PIN, hidden titles | Plexy-server mode, server downloads, sync collections |
+| Desktop | Server toggle, remote proxy, improved mDNS discovery, native mpv (direct remote with proxy fallback), updater | 10-foot mode, tray/mini-player/media keys, Windows/Linux native player |
+| Access | Multi-user, roles, library/folder/item rules, maturity filters, default grants | Per-request `IN (...)` enumeration performance, concurrent limits, schedules/time limits, 2FA/invites |
+| New surfaces | — | Music, photos, books, Live TV/DVR, TV/console clients, relay/remote access, plugin runtime |
+
+**Implemented and verifiable now:** the 20 Nov pass (see the progress section at the top) plus multi-episode
+expansion, watch history, hidden-series filtering, and the corrected API docs.
+
+**Next code that fits the current architecture:**
+1. **Playlists + smart collections** — the largest remaining catalog gap; collections already provide the
+   table/route/UI pattern.
+2. **Local extras indexing** — scan `Extras/` folders into a local-video table, merge with TMDB videos, play
+   through the existing file/stream pipeline.
+3. **Artwork picker** — store provider candidates, add a `selected` flag, and expose a title-page picker; the
+   artwork cache/derivatives already exist.
+4. **Backup/restore and playback stats** — sessions/history now provide the raw activity; add snapshots and a
+   compact dashboard.
+
+**Not sensible as a “small next pass”:** HLS/ABR, hardware transcoding/HDR, image-subtitle burn-in, mobile
+server mode + downloads, desktop 10-foot mode, relay/remote access, and music/photos/books/Live TV. These need
+new pipelines, platform work, or a separate product surface.
+
 ### 3.1 Global search — the example, expanded
 
-**Current:** `GET /api/search` runs `name LIKE %q%` on titles and episodes, requires `match_status='matched'`,
+**Original baseline (20 Nov 2026):** `GET /api/search` runs `name LIKE %q%` on titles and episodes, requires `match_status='matched'`,
 caps at 24 titles + 40 episodes, and sorts by `items.score` (TMDB match confidence). People are not searched.
 The top nav says "Search titles, people, episodes" and the empty state says "Type a title, an actor, or an
 episode name", so the UI promises something the API does not do. Mobile local search is also a lowercase
@@ -331,7 +378,7 @@ Effort: **M** · Impact: **High**
 
 ### 3.2 Library browse — filters and pagination
 
-**Current:** web library always fetches 200 items and has only kind + sort. Server supports `year`, `q`,
+**Original baseline (20 Nov 2026):** web library always fetches 200 items and has only kind + sort. Server supports `year`, `q`,
 `unwatched`, `libraryId`, `limit`, `offset`. Mobile has genre, runtime, unwatched, and offline filters, but
 they are client-side over the current page and not shared with web.
 
@@ -344,7 +391,7 @@ Effort: **M** · Impact: **High**
 
 ### 3.3 Home — fixed shelves to a personalized surface
 
-**Current:** deterministic best-rated movie hero + 4 fixed shelves. Web merges recent movies/shows into the
+**Original baseline (20 Nov 2026):** deterministic best-rated movie hero + 4 fixed shelves. Web merges recent movies/shows into the
 hero; mobile shows a 5-item carousel. No "Because you watched", genre rows, watchlist row, recently played,
 or per-user row order.
 
@@ -357,7 +404,7 @@ Effort: **M** · Impact: **High**
 
 ### 3.4 Similar titles and recommendations
 
-**Current:** web has no similar shelf. Mobile "More Like This" uses TMDB recommendations in online mode; local
+**Original baseline (20 Nov 2026):** web has no similar shelf. Mobile "More Like This" uses TMDB recommendations in online mode; local
 mode only shows titles already in the library. No server-side similarity.
 
 **Better:** compute local similarity from genres, keywords, cast, director, year, and rating; blend with TMDB
@@ -368,7 +415,7 @@ Effort: **S–M** · Impact: **Medium–High**
 
 ### 3.5 Collections and playlists — the biggest catalog gap
 
-**Current:** no server collections or playlists. Mobile has custom collections stored in AsyncStorage and a
+**Original baseline (20 Nov 2026):** no server collections or playlists. Mobile has custom collections stored in AsyncStorage and a
 TMDB movie-collection tab. Web has nothing. There is no collection page, no add-to-collection action, no
 playlist queue, no M3U import/export.
 
@@ -385,7 +432,7 @@ Effort: **M–L** · Impact: **High**
 
 ### 3.6 Watchlist, favorites, ratings, history
 
-**Current:** watchlist and favorite are per-device `localStorage` flags on web; mobile has a watchlist flag on
+**Original baseline (20 Nov 2026):** watchlist and favorite are per-device `localStorage` flags on web; mobile has a watchlist flag on
 local records and a separate "saved" list for online titles. No favorites page, no user rating, no watch
 history table.
 
@@ -402,7 +449,7 @@ Effort: **M** · Impact: **High**
 
 ### 3.7 Metadata correctness and depth
 
-**Current:** TMDB only; certification is always `null`; NFO is only used for the TMDB ID; artwork is a single
+**Original baseline (20 Nov 2026):** TMDB only; certification is always `null`; NFO is only used for the TMDB ID; artwork is a single
 best pick; one trailer; 12 cast + 3 crew; no field locks or editor; no local metadata write.
 
 **Better:**
@@ -427,7 +474,7 @@ Effort: **M–L** · Impact: **High**
 
 ### 3.8 Artwork picker — a small feature with a big visual payoff
 
-**Current:** TMDB best poster/backdrop/logo + local sidecars only when missing. No choice, upload, crop, or
+**Original baseline (20 Nov 2026):** TMDB best poster/backdrop/logo + local sidecars only when missing. No choice, upload, crop, or
 language variants. The artwork cache/derivative pipeline already exists.
 
 **Better:** return all artwork candidates from the provider + local files; let the owner pick per kind; upload
@@ -438,7 +485,7 @@ Effort: **S–M** · Impact: **Medium–High**
 
 ### 3.9 Chapters and versions — data already exists, UI does not
 
-**Current:** `media_files.chapters_json` is populated; the play manifest does **not** return chapters. The play
+**Original baseline (20 Nov 2026):** `media_files.chapters_json` is populated; the play manifest does **not** return chapters. The play
 manifest returns `versions`, but neither web nor desktop uses it. Mobile local playback parses and displays
 chapters; server clients cannot.
 
@@ -451,7 +498,7 @@ Effort: **S–M** · Impact: **High**
 
 ### 3.10 Playback quality and format coverage
 
-**Current:** prepared MP4 only; no HLS/ABR; quality menu has no variants; `versions` ignored; hardware encode
+**Original baseline (20 Nov 2026):** prepared MP4 only; no HLS/ABR; quality menu has no variants; `versions` ignored; hardware encode
 only on macOS; no tone mapping; image subtitles skipped; live remux/transcode routes return 409.
 
 **Better:**
@@ -470,7 +517,7 @@ Effort: **M–L** · Impact: **High** (hardware/HDR), **Medium** (quality picker
 
 ### 3.11 Subtitles
 
-**Current:** text subtitles are strong; mobile has OpenSubtitles search/import; web has sync/position but no
+**Original baseline (20 Nov 2026):** text subtitles are strong; mobile has OpenSubtitles search/import; web has sync/position but no
 search; image subs are skipped; no per-user caption styling.
 
 **Better:**
@@ -486,7 +533,7 @@ Effort: **M** · Impact: **High**
 
 ### 3.12 Users, family, and sessions
 
-**Current:** good account/access foundation; certification bug; no sessions; no PIN on web/desktop; no
+**Original baseline (20 Nov 2026):** good account/access foundation; certification bug; no sessions; no PIN on web/desktop; no
 concurrent limits/schedules/time limits; no invites; no 2FA.
 
 **Better:**
@@ -505,7 +552,7 @@ Effort: **M** · Impact: **High**
 
 ### 3.13 Admin dashboard and operations
 
-**Current:** settings pages, scan SSE, match queue, user admin, logs/crashes, optimizer, DB reset. No active
+**Original baseline (20 Nov 2026):** settings pages, scan SSE, match queue, user admin, logs/crashes, optimizer, DB reset. No active
 sessions, playback stats, activity log, backup/restore, notifications, webhooks, plugins, task UI, per-library
 settings, or server metrics.
 

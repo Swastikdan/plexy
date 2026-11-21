@@ -3,6 +3,8 @@
 import { createRootRoute, Outlet, useMatchRoute, useRouterState } from "@tanstack/react-router";
 import { TopNav } from "../components/topnav";
 import { BottomNav } from "../components/bottomnav";
+import { cx } from "../lib/cx";
+import { isElectronMac } from "../lib/platform";
 import { ServerGate } from "../components/server-gate";
 import { useLibrarySync, usePrefetchRuntime } from "../lib/prefetch-config";
 
@@ -17,6 +19,7 @@ function Shell() {
   const watching = matchRoute({ to: "/watch/$fileId", fuzzy: true });
   const connecting = matchRoute({ to: "/connect", fuzzy: true });
   const chrome = !watching && !connecting && pathname !== "/setup";
+  const electronMac = isElectronMac();
 
   return (
     <ServerGate>
@@ -26,13 +29,13 @@ function Shell() {
       {chrome ? (
         <div className="app-main">
           <TopNav />
-          <div id="app-content" tabIndex={-1} className="pb-20 outline-none lg:pb-0">
+          <div id="app-content" tabIndex={-1} className={cx("pb-20 outline-none lg:pb-0", electronMac && "md:pb-0")}>
             {/* Keyed by pathname so each route gets one quiet entrance. */}
             <div key={pathname} className="page-enter">
               <Outlet />
             </div>
           </div>
-          <BottomNav />
+          <BottomNav className={electronMac ? "md:hidden" : undefined} />
         </div>
       ) : (
         <div id="app-content" tabIndex={-1} className="app-main outline-none">

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useAttachMedia, useMediaInstance } from "@videojs/react";
 
-import { nativeBridge, nativeServerUrl } from "../../lib/native-playback";
+import { nativeBridge, nativeFallbackServerUrl, nativeServerUrl } from "../../lib/native-playback";
 import type { NativePlaybackEvent } from "../../electron";
 import { MpvMedia, type MpvSessionController } from "./mpv-media";
 
@@ -139,6 +139,7 @@ export function MpvVideo({
       .play({
         fileId,
         serverUrl: nativeServerUrl(),
+        fallbackServerUrl: nativeFallbackServerUrl(),
         resumeSeconds: resume,
         autoSubtitles,
         subtitleLanguage,

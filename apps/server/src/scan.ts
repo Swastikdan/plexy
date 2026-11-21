@@ -754,6 +754,9 @@ async function matchItemOnce(
   if (!item || item.locked) return; // locked manual matches never rerun (PRD 5.4.8)
 
   const id = path.match(/[\[{]tmdb(?:id)?\s*[=:\-]\s*(\d+)[\]}]/i)?.[1];
+  const language = q<{ language: string | null }>(
+    "SELECT l.language FROM items i JOIN libraries l ON l.id = i.library_id WHERE i.id = ?",
+  ).get(itemId)?.language ?? undefined;
   // Movie runtime from the probe lets the top candidates earn the 0.15
   // runtime component (PRD 5.4 step 5).
   const runtimeRow = kind === "movie"
@@ -766,6 +769,7 @@ async function matchItemOnce(
       parsedYear: parsed.year,
       kind: kind === "series" ? "tv" : "movie",
       fileRuntimeMinutes: runtimeRow?.duration ? Math.round(runtimeRow.duration / 60) : null,
+      language: language ?? undefined,
       explicitId: parsed.explicitId ?? nfoId ?? (id ? Number(id) : null),
     });
   } catch (err) {

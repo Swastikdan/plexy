@@ -92,6 +92,61 @@ export interface ServerSettings {
   prefetchMaxCacheMb: number;
 }
 
+/** One paired device, used by the sessions/devices admin view. */
+export interface AuthDeviceInfo {
+  id: number;
+  userId: number;
+  deviceId: string | null;
+  name: string;
+  createdAt: string;
+  lastSeen: string | null;
+  lastIp: string | null;
+  revoked: boolean;
+  username?: string;
+}
+
+/** One playback session refreshed by the progress heartbeat. */
+export interface PlaybackSessionInfo {
+  id: number;
+  userId: number;
+  username: string;
+  deviceId: number | null;
+  deviceName: string | null;
+  itemId: number | null;
+  itemTitle: string | null;
+  itemKind: string | null;
+  parentTitle: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  fileId: number | null;
+  position: number;
+  duration: number | null;
+  paused: boolean;
+  status: string;
+  stopRequested: boolean;
+  client: string | null;
+  ip: string | null;
+  startedAt: string;
+  updatedAt: string;
+  active: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: PlaybackSessionInfo[];
+  active: number;
+}
+
+/** Background trickplay (scrub thumbnail) coverage. */
+export interface TrickplayStatus {
+  running: boolean;
+  queued: number;
+  activeFileId: number | null;
+  total: number;
+  ready: number;
+  failed: number;
+  ffmpegAvailable: boolean;
+}
+
 /** The library kinds the setup and admin screens can create. */
 
 export type LibraryType = "movies" | "tv";

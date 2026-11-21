@@ -155,7 +155,7 @@ function useUpdateCoordinator() {
       const result = await downloadAndInstallUpdate(availableUpdate, percent => {
         if (!alive.current) return;
         setUpdateProgress(percent);
-        setUpdateStatusText(percent === 100 ? "Opening Android installer…" : `Downloading update… ${percent}%`);
+        setUpdateStatusText(percent === 100 ? "Opening Android installer…" : "Downloading update…");
       }, () => setUpdateStatusText("Confirm installation in Android to finish updating."));
       if (!alive.current) return;
       // Only the installed native version can lift a mandatory gate.
@@ -193,7 +193,7 @@ function UpdateContent({ state, required }: { state: Coordinator; required: bool
     <Text className="text-muted text-[16px]">{required ? "Update Plexy to continue using the app." : state.policy?.message || "A newer version of Plexy is ready to install."}</Text>
     <Text className="text-foreground text-[16px]">Version {state.availableUpdate?.version || state.availableUpdate?.tagName || state.policy?.latestVersion}</Text>
     {!!state.availableUpdate?.releaseNotes && <Text className="text-muted text-[14px]">{state.availableUpdate.releaseNotes}</Text>}
-    <Button primary label={state.updateDownloading ? `Updating${state.updateProgress != null ? `… ${state.updateProgress}%` : "…"}` : "Update now"} disabled={!state.online || !state.availableUpdate || state.updateChecking || state.updateDownloading} onPress={() => void state.install()} />
+    <Button primary label={state.updateDownloading ? `Updating…${state.updateProgress != null ? ` ${state.updateProgress}%` : ""}` : "Update now"} disabled={!state.online || !state.availableUpdate || state.updateChecking || state.updateDownloading} onPress={() => void state.install()} />
     {!state.online && <Text className="text-muted">Connect to the internet to download this update.</Text>}
     {!!state.updateStatusText && <Text accessibilityLiveRegion="polite" className="text-muted">{state.updateStatusText}</Text>}
     <Button label={state.updateChecking ? "Checking…" : "Check again"} disabled={!state.online || state.updateChecking || state.updateDownloading} onPress={() => void state.handleCheckUpdate()} />

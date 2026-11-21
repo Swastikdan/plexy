@@ -21,6 +21,7 @@ import {
   pairingAllowed,
   peekToken,
   redeemPairingCode,
+  requestDevice,
   requestUser,
   revokeByToken,
   sessionCookie,
@@ -28,6 +29,7 @@ import {
 } from "./auth";
 import { apiError, isDirectLoopbackContext, remoteAddress } from "./essentials";
 import { getServerId } from "./server-identity";
+import { stopDeviceSessions, stopUserSessions } from "./sessions";
 
 const credentials = t.Object({
   username: t.String({ minLength: 3, maxLength: 40 }),
@@ -197,6 +199,8 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
   )
   .post("/logout", ({ request }) => {
     const token = tokenFromRequest(request);
+    const device = requestDevice(request);
+    if (device) stopDeviceSessions(device.id);
     if (token) revokeByToken(token);
     return Response.json(
       { ok: true },
@@ -215,6 +219,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
   })
   .post("/admin/devices/:id/revoke", ({ request, params }) => {
     if (!admin(request)) return apiError("Administrator access required.", 403);
+    stopDeviceSessions(Number(params.id));
     if (!revokeDevice(Number(params.id)))
       return apiError("Unrevoked device not found.", 404);
     return { ok: true };
@@ -235,6 +240,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
   .post("/devices/:id/revoke", ({ request, params }) => {
     const user = signedIn(request);
     if (!user) return apiError("Sign in first.", 401);
+    stopDeviceSessions(Number(params.id));
     run(
       "UPDATE auth_devices SET revoked=1 WHERE id=? AND user_id=?",
       Number(params.id),
@@ -272,6 +278,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         run("UPDATE users SET password_hash=? WHERE id=?", hash, user.id);
         revokeUserSessions(user.id);
       })();
+      stopUserSessions(user.id);
       return result(
         request,
         createDevice("Signed-in device", null, null, user.id),
@@ -370,6 +377,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         // Changing roles or disabling a user invalidates credentials immediately.
         if (body.disabled) revokeUserSessions(id);
       })();
+      if (body.disabled) stopUserSessions(id);
       return { user: getUser(id) };
     },
     {

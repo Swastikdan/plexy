@@ -13,6 +13,14 @@ import { match, refineWithRuntime, type Candidate } from "./matcher";
 import { parsePath } from "./parse";
 import { normalizeTitle } from "./parse";
 
+function languageForItem(itemId: number | null | undefined): string | undefined {
+  if (!itemId) return undefined;
+  const row = q<{ language: string | null }>(
+    "SELECT l.language FROM items i JOIN libraries l ON l.id = i.library_id WHERE i.id = ?",
+  ).get(Number(itemId));
+  return row?.language ? String(row.language) : undefined;
+}
+
 const REVIEW_FILTERS = ["attention", "all", "matched", "review", "unmatched"] as const;
 type ReviewFilter = (typeof REVIEW_FILTERS)[number];
 
@@ -147,7 +155,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
     const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
     try {
-      const results = await search(body.type, body.query, body.year ?? null);
+      const results = await search(body.type, body.query, body.year ?? null, languageForItem(body.itemId));
       return {
         results: await Promise.all(results.slice(0, 6).map(async (r) => ({
           tmdbId: r.id,
@@ -167,6 +175,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
       type: t.Union([t.Literal("movie"), t.Literal("tv")]),
       query: t.String({ minLength: 1 }),
       year: t.Optional(t.Numeric()),
+      itemId: t.Optional(t.Numeric()),
     }),
   })
 
@@ -215,7 +224,7 @@ export const matchingRoutes = new Elysia({ prefix: "/api", normalize: "typebox" 
       return apiError("A TV series cannot be matched as a movie.");
     }
     try {
-      const full = await detail(type, ctx.body.tmdbId);
+      const full = await detail(type, ctx.body.tmdbId, languageForItem(itemId));
       const title = full.title ?? full.name ?? "";
       const year = Number((full.release_date ?? full.first_air_date ?? "").slice(0, 4)) || null;
       run(

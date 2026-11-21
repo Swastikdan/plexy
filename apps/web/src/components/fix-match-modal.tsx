@@ -72,7 +72,7 @@ export function FixMatchModal({
       setType(isSeries ? "tv" : "movie");
 
       if (cleaned.trim() && !isEpisode) {
-        void api.matchSearch(isSeries ? "tv" : "movie", cleaned.trim(), extractedYear ? Number(extractedYear) : undefined)
+        void api.matchSearch(isSeries ? "tv" : "movie", cleaned.trim(), extractedYear ? Number(extractedYear) : undefined, itemId)
           .then((res) => setResults(res.results))
           .catch(() => {});
       }
@@ -80,7 +80,7 @@ export function FixMatchModal({
   }, [open, initialTitle, initialYear, isSeries, isEpisode]);
 
   const searchMutation = useMutation({
-    mutationFn: () => api.matchSearch(type, query.trim(), year ? Number(year) : undefined),
+    mutationFn: () => api.matchSearch(type, query.trim(), year ? Number(year) : undefined, itemId),
     onSuccess: (data) => {
       setResults(data.results);
     },

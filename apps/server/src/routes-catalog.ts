@@ -17,6 +17,7 @@ import { denyIfNotLocal, apiError } from "./essentials";
 import { getConfig } from "./config";
 import { removeOriginal } from "./trash";
 import { fileForEpisode } from "./episode-files";
+import { reportSession } from "./sessions";
 import {
   ensureSearchIndex,
   fallbackIds,
@@ -1086,14 +1087,23 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
          updated_at = datetime('now')`,
       userId, itemId, Math.max(0, Number(body.position) || 0), body.duration ?? null, body.played ? 1 : 0,
     );
+    const session = reportSession(
+      request,
+      itemId,
+      Math.max(0, Number(body.position) || 0),
+      body.duration ?? null,
+      Boolean(body.played),
+      Boolean(body.paused),
+    );
     log.debug("player", "progress saved", { itemId, position: body.position });
-    return { ok: true };
+    return { ok: true, stop: session.stop };
   }, {
     body: t.Object({
       itemId: t.Numeric(),
       position: t.Numeric(),
       duration: t.Optional(t.Numeric()),
       played: t.Boolean({ default: false }),
+      paused: t.Optional(t.Boolean()),
     }),
   })
 

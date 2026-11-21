@@ -65,6 +65,18 @@ const TYPE_LABEL: Record<MediaType, string> = {
   tv: "TV shows",
 };
 
+const LANGUAGE_OPTIONS = [
+  ["en-US", "English (US)"],
+  ["en-GB", "English (UK)"],
+  ["hi-IN", "Hindi (India)"],
+  ["ja-JP", "Japanese"],
+  ["ko-KR", "Korean"],
+  ["fr-FR", "French"],
+  ["es-ES", "Spanish"],
+  ["de-DE", "German"],
+  ["pt-BR", "Portuguese (Brazil)"],
+] as const;
+
 const SHORTCUTS = [
   { label: "Home", path: "~", icon: Home },
   { label: "Movies", path: "~/Movies", icon: Film },
@@ -118,6 +130,7 @@ export function LibraryFolderForm({
   const [step, setStep] = useState<1 | 2>(editing ? 2 : 1);
   const [type, setType] = useState<MediaType | null>(startingType);
   const [name, setName] = useState(initialLibrary?.name ?? "");
+  const [language, setLanguage] = useState(initialLibrary?.language ?? "en-US");
   const [path, setPath] = useState<string>(initialLibrary?.paths[0] ?? "~");
   const [customInputPath, setCustomInputPath] = useState("");
   const [picked, setPicked] = useState<string[]>(initialLibrary?.paths ?? []);
@@ -133,8 +146,8 @@ export function LibraryFolderForm({
     mutationFn: (): Promise<{ id: number } | { ok: true }> => {
       if (!type) throw new Error("Choose a media type first.");
       return initialLibrary
-        ? api.updateLibrary(initialLibrary.id, { name: name.trim(), type, paths: picked })
-        : api.createLibrary(name.trim(), type, picked);
+        ? api.updateLibrary(initialLibrary.id, { name: name.trim(), type, paths: picked, language })
+        : api.createLibrary(name.trim(), type, picked, language);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["libraries"] });
@@ -484,6 +497,29 @@ export function LibraryFolderForm({
                   fullWidth
                   className="mt-2.5"
                 />
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface-secondary/30 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-[11.5px] font-semibold text-foreground">Metadata language</h3>
+                  <span className="text-[10.5px] text-muted">Per library</span>
+                </div>
+                <select
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  aria-label="Metadata language"
+                  className="mt-2.5 h-10 w-full rounded-lg border border-border bg-surface px-2.5 text-[12px] text-foreground outline-none focus:border-accent"
+                >
+                  {LANGUAGE_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                  {!LANGUAGE_OPTIONS.some(([value]) => value === language) && (
+                    <option value={language}>{language}</option>
+                  )}
+                </select>
+                <p className="mt-2 text-[10.5px] leading-relaxed text-muted">
+                  TMDB titles, synopses, posters and episode names use this language.
+                </p>
               </div>
 
               <div className="rounded-xl border border-border bg-surface-secondary/30 p-4">

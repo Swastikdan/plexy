@@ -218,6 +218,25 @@ export function OpenSourceScreen() {
           ListEmptyComponent={
             <Text className="px-5 text-muted">No matching projects.</Text>
           }
+          ListFooterComponent={
+            <View className="mt-8 gap-3 px-5">
+              <Text className="ml-[2px] text-[13px] font-archivo-medium text-muted">
+                Attribution
+              </Text>
+              <View className="overflow-hidden rounded-[18px] bg-surface">
+                <SettingsRow
+                  title="Metadata by TMDB"
+                  subtitle="The Movie Database"
+                  navigation
+                  onPress={() => openUrl("https://www.themoviedb.org")}
+                />
+              </View>
+              <Text className="text-[12px] leading-[18px] font-archivo-regular text-muted">
+                This product uses the TMDB API but is not endorsed or certified
+                by TMDB.
+              </Text>
+            </View>
+          }
           renderSectionHeader={({ section }) => {
             const expanded =
               normalizedQuery.length > 0 ||

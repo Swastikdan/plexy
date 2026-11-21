@@ -599,6 +599,30 @@
   background: var(--surface-secondary);
 }
 
+/* A horizontal collapse lets the icon positions follow the available label
+   space. Keep the track transition local to the four tabs. */
+.topnav-tab {
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.topnav-tab-label {
+  display: grid;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition: grid-template-columns 150ms var(--ease-out), opacity 150ms var(--ease-out);
+}
+.topnav-tab[data-selected] .topnav-tab-label {
+  grid-template-columns: 1fr;
+  opacity: 1;
+}
+.topnav-tabs:has(.topnav-tab:focus-visible) .topnav-tab-label {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .topnav-tab-label {
+    transition: opacity 150ms var(--ease-out);
+  }
+}
+
 /* Header action circles, matching the reference's quiet glass buttons. */
 .cinema-action {
   display: inline-flex;

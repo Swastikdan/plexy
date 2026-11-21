@@ -203,14 +203,17 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
   const hold = () => {
     holdUntilRef.current = Date.now() + ADVANCE_MS * 2;
   };
-  const [active, setActive] = useState(0);
+  // Track the slide by title instead of array index. Adding to the watchlist
+  // refetches the home payload; even with a stable carousel list, an array
+  // index would still point at whatever title now occupies that slot.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const activeIndex = activeKey
+    ? items.findIndex((item) => item.publicId === activeKey)
+    : -1;
+  const active = activeIndex >= 0 ? activeIndex : 0;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [userPaused, setUserPaused] = useState(false);
-
-  useEffect(() => {
-    if (active >= count) setActive(0);
-  }, [active, count]);
 
   const paused = hovered || focused || userPaused || reducedMotion;
 
@@ -224,15 +227,18 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
       if (sectionRef.current?.matches(":hover")) return;
       const focusedElement = document.activeElement;
       if (focusedElement && sectionRef.current?.contains(focusedElement)) return;
-      setActive((index) => (index + 1) % count);
+      const next = items[(active + 1) % count];
+      if (next) setActiveKey(next.publicId);
     }, ADVANCE_MS);
     return () => window.clearInterval(timer);
-  }, [active, count, paused]);
+  }, [active, count, items, paused]);
 
   if (!count) return null;
 
-  const step = (direction: -1 | 1) =>
-    setActive((index) => (index + direction + count) % count);
+  const step = (direction: -1 | 1) => {
+    const next = items[(active + direction + count) % count];
+    if (next) setActiveKey(next.publicId);
+  };
 
   return (
     <section
@@ -305,7 +311,7 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
               <button
                 key={item.publicId}
                 type="button"
-                onClick={() => setActive(index)}
+                onClick={() => setActiveKey(item.publicId)}
                 aria-label={`Show ${item.name}, slide ${index + 1} of ${count}`}
                 aria-current={index === active ? "true" : undefined}
                 className="group/dot flex h-6 items-center justify-center px-1"

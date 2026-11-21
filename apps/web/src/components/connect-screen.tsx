@@ -15,6 +15,7 @@ import {
 import { Button, Input } from "@heroui/react";
 import { BackButton } from "./back-button";
 import { isElectronMac } from "../lib/platform";
+import { cx } from "../lib/cx";
 import {
   getApiBase,
   getServerOverride,
@@ -48,7 +49,7 @@ export function ConnectScreen({
   const [value, setValue] = useState(() => initialValue ?? getServerOverride());
   const [busy, setBusy] = useState(false);
   const [discovered, setDiscovered] = useState<
-    Array<{ id: string; name: string; url: string }>
+    Array<{ id: string; name: string; url: string; reachable?: boolean; latencyMs?: number | null }>
   >([]);
   const [discovering, setDiscovering] = useState(false);
   const discover = async () => {
@@ -167,30 +168,62 @@ export function ConnectScreen({
           >
             <div className="space-y-2">
               {window.electronAPI?.discoverServers && (
-                <button
-                  type="button"
-                  disabled={discovering}
-                  onClick={() => void discover()}
-                  className="text-sm underline"
-                >
-                  {discovering
-                    ? "Looking for servers on your network…"
-                    : "Find servers on this network"}
-                </button>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    disabled={discovering}
+                    onClick={() => void discover()}
+                    className="text-left text-sm underline disabled:opacity-60"
+                  >
+                    {discovering
+                      ? "Looking for servers on your network…"
+                      : "Find servers on this network"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={discovering}
+                    onClick={() => void discover()}
+                    className="inline-flex h-7 items-center gap-1 rounded-lg border border-border px-2 text-[10.5px] font-semibold text-muted transition-colors hover:bg-surface-secondary disabled:opacity-50"
+                  >
+                    <Wifi size={11} /> Refresh
+                  </button>
+                </div>
               )}
               {discovered.map((server) => (
                 <button
                   type="button"
                   key={server.id}
                   onClick={() => setValue(server.url)}
-                  className="block w-full rounded-lg border border-border p-3 text-left"
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-surface-secondary"
                 >
-                  <span className="block text-sm font-semibold">
-                    {server.name}
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">
+                      {server.name}
+                    </span>
+                    <span className="block truncate text-xs text-muted">{server.url}</span>
                   </span>
-                  <span className="text-xs text-muted">{server.url}</span>
+                  <span
+                    className={cx(
+                      "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                      server.reachable
+                        ? "bg-success/10 text-success-soft-foreground"
+                        : "bg-surface-secondary text-muted",
+                    )}
+                  >
+                    {server.reachable
+                      ? server.latencyMs != null
+                        ? `${server.latencyMs} ms`
+                        : "Online"
+                      : "No answer"}
+                  </span>
                 </button>
               ))}
+              {window.electronAPI?.discoverServers && !discovering && discovered.length === 0 && (
+                <p className="text-xs text-muted">
+                  No servers found automatically. Enter the address shown in
+                  Plexy → Settings → Network &amp; Access.
+                </p>
+              )}
               {!window.electronAPI?.discoverServers && (
                 <p className="text-xs text-muted">
                   Open your server’s client link or enter its address. Automatic

@@ -360,11 +360,17 @@ export class TmdbError extends Error {
 // --- endpoint helpers --------------------------------------------------------
 
 /** Run a search for the given `query` + optional year against movie or tv. */
-export async function search(kind: "movie" | "tv", query: string, year: number | null): Promise<TmdbSearchResult[]> {
+export async function search(
+  kind: "movie" | "tv",
+  query: string,
+  year: number | null,
+  language?: string,
+): Promise<TmdbSearchResult[]> {
   const cfg = await getConfig();
+  const lang = language || cfg.metadataLanguage;
   const base = `/search/${kind}`;
   const mk = (q2: string, y: number | null) => {
-    const p = new URLSearchParams({ query: q2, language: cfg.metadataLanguage });
+    const p = new URLSearchParams({ query: q2, language: lang });
     if (y) p.set(kind === "tv" ? "first_air_date_year" : "year", String(y));
     return `${base}?${p}`;
   };
@@ -382,8 +388,8 @@ export async function search(kind: "movie" | "tv", query: string, year: number |
 const DETAIL_TTL = 7 * 24 * 3600_000;
 
 /** Combined details + videos + credits + age ratings used by matching and detail views. */
-export async function detail(kind: "movie" | "tv", id: number): Promise<TmdbDetail> {
-  const lang = (await getConfig()).metadataLanguage;
+export async function detail(kind: "movie" | "tv", id: number, language?: string): Promise<TmdbDetail> {
+  const lang = language || (await getConfig()).metadataLanguage;
   const path = `/${kind}/${id}?append_to_response=videos,credits,release_dates,content_ratings&language=${lang}`;
   const raw = await requestJson(path, `detail/${kind}`, DETAIL_TTL);
   const parsed = Detail.safeParse(raw);
@@ -424,9 +430,9 @@ export function certificationFromDetail(
 }
 
 /** Season fetch used to resolve episode numbers. */
-export async function season(seriesId: number, season: number): Promise<TmdbEpisode[]> {
-  const cfg = await getConfig();
-  const path = `/tv/${seriesId}/season/${season}?language=${cfg.metadataLanguage}`;
+export async function season(seriesId: number, season: number, language?: string): Promise<TmdbEpisode[]> {
+  const lang = language || (await getConfig()).metadataLanguage;
+  const path = `/tv/${seriesId}/season/${season}?language=${lang}`;
   const parsed = EpisodeResults.parse(await requestJson(path, `season/${seriesId}/${season}`, DETAIL_TTL));
   return parsed.episodes;
 }
@@ -436,10 +442,10 @@ export async function season(seriesId: number, season: number): Promise<TmdbEpis
  * several languages; prefer the configured language, then language-neutral
  * art, then English, and finally the highest-voted logo of any language.
  */
-export async function logo(kind: "movie" | "tv", id: number): Promise<string | null> {
-  const language = (await getConfig()).metadataLanguage;
-  const base = language.split("-")[0];
-  const path = `/${kind}/${id}/images?include_image_language=${encodeURIComponent(`${language},${base},en,null`)}`;
+export async function logo(kind: "movie" | "tv", id: number, language?: string): Promise<string | null> {
+  const lang = language || (await getConfig()).metadataLanguage;
+  const base = lang.split("-")[0];
+  const path = `/${kind}/${id}/images?include_image_language=${encodeURIComponent(`${lang},${base},en,null`)}`;
   const parsed = Logos.safeParse(await requestJson(path, `images/${kind}`, DETAIL_TTL));
   if (!parsed.success) return null;
   const logos = parsed.data.logos ?? [];

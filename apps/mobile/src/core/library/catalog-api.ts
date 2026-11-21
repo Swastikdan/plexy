@@ -37,6 +37,8 @@ export abstract class LocalCatalog {
     abstract setWatchlist(itemId: number, watchlisted: boolean): Promise<{
         ok: boolean;
     }>;
+    /** Movies and series the viewer saved to their local watchlist. */
+    abstract watchlist(signal?: AbortSignal): Promise<ItemCard[]>;
     abstract play(fileId: number): Promise<Playability>;
     abstract stream(fileId: number): string;
     abstract subtitle(fileId: number, uri: string, signal?: AbortSignal): Promise<string>;

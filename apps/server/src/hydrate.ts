@@ -13,11 +13,20 @@ import * as tmdb from "./tmdb";
 import type { TmdbDetail } from "./tmdb";
 import { refreshSkipSegmentsForItem, refreshSkipSegmentsForSeries } from "./skip-segments";
 
+/** Metadata language for the library that owns an item, or the global default. */
+function libraryLanguage(itemId: number): string | undefined {
+  const row = q<{ language: string | null }>(
+    "SELECT l.language FROM items i JOIN libraries l ON l.id = i.library_id WHERE i.id = ?",
+  ).get(itemId);
+  return row?.language ? String(row.language) : undefined;
+}
+
 /** Fetch + persist one item's TMDB essentials. */
 export async function hydrateItemMetadata(
   itemId: number, tmdbType: "movie" | "tv", tmdbId: number,
 ): Promise<void> {
-  const full = await tmdb.detail(tmdbType, tmdbId);
+  const language = libraryLanguage(itemId);
+  const full = await tmdb.detail(tmdbType, tmdbId, language);
   const cfg = await getConfig();
   const certification = tmdb.certificationFromDetail(full, tmdbType, cfg.metadataRegion);
   const year = Number((full.release_date ?? full.first_air_date ?? "").slice(0, 4)) || null;
@@ -45,7 +54,7 @@ export async function hydrateItemMetadata(
   run("DELETE FROM artwork WHERE item_id=?", itemId);
   await writeArtwork(itemId, "poster", full.poster_path, img);
   await writeArtwork(itemId, "backdrop", full.backdrop_path, img);
-  const logoPath = await tmdb.logo(tmdbType, tmdbId).catch(() => null);
+  const logoPath = await tmdb.logo(tmdbType, tmdbId, language).catch(() => null);
   await writeArtwork(itemId, "logo", logoPath, img);
 
   run("DELETE FROM videos WHERE item_id=?", itemId);
@@ -73,7 +82,7 @@ export async function hydrateItemMetadata(
     full.title ?? full.name ?? "", new Date().toISOString(), itemId);
 
   // Series: episode names + stills from the season endpoint (PRD 5.5 M list).
-  if (tmdbType === "tv") await hydrateEpisodes(itemId, tmdbId, full.title ?? full.name ?? "", full);
+  if (tmdbType === "tv") await hydrateEpisodes(itemId, tmdbId, full.title ?? full.name ?? "", full, language);
   else {
     // Movies use the same community database for end-credits markers.
     void refreshSkipSegmentsForItem(itemId).catch((error) =>
@@ -97,6 +106,7 @@ export async function hydrateEpisodes(
   tmdbId: number,
   seriesTitle: string,
   fullDetail?: TmdbDetail,
+  language?: string,
 ): Promise<void> {
   const img = await tmdb.imageConfig();
 
@@ -125,7 +135,7 @@ export async function hydrateEpisodes(
     const seasonNumber = Number(s.season_number);
     let episodes: tmdb.TmdbEpisode[];
     try {
-      episodes = await tmdb.season(tmdbId, seasonNumber);
+      episodes = await tmdb.season(tmdbId, seasonNumber, language);
     } catch (e) {
       log.warn("tmdb", "season hydration skipped", { season: seasonNumber, message: String(e) });
       continue;
@@ -235,10 +245,11 @@ export async function hydrateEpisodeItem(
     "SELECT tmdb_id, name FROM items WHERE id = ?",
   ).get(seriesId);
   if (!series?.tmdb_id) return false;
+  const language = libraryLanguage(seriesId);
 
   let episodes: tmdb.TmdbEpisode[];
   try {
-    episodes = await tmdb.season(series.tmdb_id, seasonNumber);
+    episodes = await tmdb.season(series.tmdb_id, seasonNumber, language);
   } catch {
     return false;
   }
@@ -313,7 +324,7 @@ export async function hydrateMissingEpisodes(targetSeriesId?: number): Promise<n
   let count = 0;
   for (const s of seriesList) {
     try {
-      await hydrateEpisodes(Number(s.id), Number(s.tmdb_id), String(s.name));
+      await hydrateEpisodes(Number(s.id), Number(s.tmdb_id), String(s.name), undefined, libraryLanguage(Number(s.id)));
       count++;
     } catch (e) {
       log.warn("tmdb", "failed hydrating missing episodes for series", {
@@ -391,8 +402,46 @@ export async function refreshStaleLocalMetadata(): Promise<void> {
   finally { refreshingLocalMetadata = false; }
 }
 
-let backfillingLogos = false;
+const refreshingLibraries = new Set<number>();
+
 /**
+ * Refresh matched titles after a library's metadata language changes. Runs in
+ * the background with a tiny worker pool so a language switch is immediate in
+ * the UI and gradually propagates through TMDB-backed fields.
+ */
+export async function refreshLibraryMetadata(libraryId: number): Promise<number> {
+  if (refreshingLibraries.has(libraryId)) return 0;
+  refreshingLibraries.add(libraryId);
+  let updated = 0;
+  try {
+    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv" }>(
+      `SELECT id, tmdb_id, tmdb_type FROM items
+       WHERE library_id = ? AND kind IN ('movie','series')
+         AND tmdb_id IS NOT NULL AND tmdb_type IN ('movie','tv')
+       ORDER BY id`,
+    ).all(libraryId);
+    const queue = [...rows];
+    const workers = Array.from({ length: 2 }, async () => {
+      while (queue.length) {
+        const row = queue.shift();
+        if (!row) break;
+        try {
+          await hydrateItemMetadata(Number(row.id), row.tmdb_type, Number(row.tmdb_id));
+          updated++;
+        } catch {
+          // Network/offline failures leave the existing metadata in place.
+        }
+      }
+    });
+    await Promise.all(workers);
+    if (updated) log.debug("tmdb", "library metadata refreshed", { libraryId, updated });
+  } finally {
+    refreshingLibraries.delete(libraryId);
+  }
+  return updated;
+}
+
+let backfillingLogos = false;/**
  * Titles hydrated before logo support existed keep text-only heroes. Fetch the
  * missing transparent logos in the background, one throttle-friendly request
  * at a time. Existing sidecar logos are left untouched.
@@ -405,8 +454,9 @@ export async function backfillMissingLogos(limit = 50): Promise<number> {
     const { getConfig } = await import("./config");
     const cfg = await getConfig();
     if (!cfg.tmdbToken) return 0;
-    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv" }>(
-      `SELECT i.id, i.tmdb_id, i.tmdb_type FROM items i
+    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv"; language: string | null }>(
+      `SELECT i.id, i.tmdb_id, i.tmdb_type, l.language FROM items i
+       JOIN libraries l ON l.id = i.library_id
        WHERE i.kind IN ('movie','series') AND i.tmdb_id IS NOT NULL
          AND i.tmdb_type IN ('movie','tv')
          AND NOT EXISTS (SELECT 1 FROM artwork a WHERE a.item_id = i.id AND a.kind = 'logo')
@@ -416,7 +466,7 @@ export async function backfillMissingLogos(limit = 50): Promise<number> {
     const img = await tmdb.imageConfig();
     for (const row of rows) {
       try {
-        const path = await tmdb.logo(row.tmdb_type, Number(row.tmdb_id));
+        const path = await tmdb.logo(row.tmdb_type, Number(row.tmdb_id), row.language ?? undefined);
         if (!path) continue;
         await writeArtwork(Number(row.id), "logo", path, img);
         updated++;
@@ -449,9 +499,10 @@ export async function backfillCertifications(
   try {
     const cfg = await getConfig();
     if (!cfg.tmdbToken) return { checked, updated };
-    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv" }>(
-      `SELECT i.id, i.tmdb_id, i.tmdb_type
+    const rows = q<{ id: number; tmdb_id: number; tmdb_type: "movie" | "tv"; language: string | null }>(
+      `SELECT i.id, i.tmdb_id, i.tmdb_type, l.language
        FROM items i
+       JOIN libraries l ON l.id = i.library_id
        LEFT JOIN item_metadata m ON m.item_id = i.id
        WHERE i.kind IN ('movie','series')
          AND i.tmdb_id IS NOT NULL AND i.tmdb_type IN ('movie','tv')
@@ -462,7 +513,7 @@ export async function backfillCertifications(
     for (const row of rows) {
       checked++;
       try {
-        const full = await tmdb.detail(row.tmdb_type, Number(row.tmdb_id));
+        const full = await tmdb.detail(row.tmdb_type, Number(row.tmdb_id), row.language ?? undefined);
         const certification = tmdb.certificationFromDetail(
           full,
           row.tmdb_type,

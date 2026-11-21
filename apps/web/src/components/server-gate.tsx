@@ -110,11 +110,19 @@ export function ServerGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.phase !== "ready" || health === "online") return;
     let cancelled = false;
-    let delay = 5_000;
-    let timer: ReturnType<typeof setTimeout>;
-    const probe = async () => {
+    let delay = 3_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let probing = false;
+    const schedule = (ms: number) => {
       if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(probe, ms);
+    };
+    const probe = async () => {
+      if (cancelled || probing) return;
+      probing = true;
       const result = await probeServer(getApiBase());
+      probing = false;
       if (cancelled) return;
       if (result.ok) {
         const device = await getAuthDevice();
@@ -127,13 +135,24 @@ export function ServerGate({ children }: { children: ReactNode }) {
         await queryClient.invalidateQueries();
         return;
       }
-      delay = Math.min(delay * 2, 60_000);
-      timer = setTimeout(probe, delay);
+      delay = Math.min(delay * 1.6, 15_000);
+      schedule(delay);
     };
-    timer = setTimeout(probe, delay);
+    const wake = () => {
+      delay = 3_000;
+      void probe();
+    };
+    schedule(delay);
+    window.addEventListener("online", wake);
+    const onVisibility = () => {
+      if (!document.hidden) wake();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [health, queryClient, state.phase]);
 

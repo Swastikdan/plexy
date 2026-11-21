@@ -171,10 +171,12 @@ export class LocalApi extends LocalCatalog {
             .filter((record) => this.allowedRecord(record))
             .map((r) => r.card)
             .filter((c) => c.watch && !c.watch.played && c.watch.position > 0);
+        const watchlist = all.filter((card) => card.watchlist);
         return {
             featured: all.find((c) => c.backdrop) || all[0] || null,
             rows: [
                 { key: "continue", title: "Continue Watching", items: continuing },
+                ...(watchlist.length ? [{ key: "watchlist", title: "Watchlist", items: watchlist }] : []),
                 { key: "titles", title: "Movies & Shows", items: all },
             ].filter((r) => r.items.length),
         };
@@ -199,13 +201,18 @@ export class LocalApi extends LocalCatalog {
     override async search(query: string, signal?: AbortSignal) {
         this.checkSignal(signal);
         const q = query.toLowerCase();
+        const matches = (value: string | null | undefined) =>
+            (value ?? "").toLowerCase().includes(q);
         return {
             titles: this.ensureCatalog()
-                .filter((c) => this.allowed(c) && c.name.toLowerCase().includes(q)),
+                .filter((c) => this.allowed(c) &&
+                (matches(c.name) || matches(c.parentTitle))),
             episodes: this.library.state.records
                 .filter((r) => r.card.kind === "episode" &&
                 this.allowedRecord(r) &&
-                r.card.name.toLowerCase().includes(q))
+                (matches(r.card.name) ||
+                    matches(r.card.parentTitle) ||
+                    matches(r.seriesMetadata?.name)))
                 .map((r) => r.card),
         };
     }
@@ -245,6 +252,12 @@ export class LocalApi extends LocalCatalog {
     override async setWatchlist(itemId: number, watchlisted: boolean) {
         await this.library.setWatchlist(itemId, watchlisted);
         return { ok: true };
+    }
+    override async watchlist(signal?: AbortSignal) {
+        this.checkSignal(signal);
+        return this.ensureCatalog()
+            .filter((card) => this.allowed(card) && card.watchlist)
+            .sort((a, b) => a.name.localeCompare(b.name));
     }
     override skips(fileId: number) {
         return this.library.getMarkers(fileId);

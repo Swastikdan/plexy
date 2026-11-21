@@ -446,3 +446,9 @@ export function requestUser(request: Request): User | null {
   const device = token ? peekToken(token) : null;
   return device ? getUser(device.userId) : null;
 }
+
+/** Device behind the current request (used by session tracking and admin views). */
+export function requestDevice(request: Request): AuthDevice | null {
+  const token = tokenFromRequest(request);
+  return token ? peekToken(token) : null;
+}

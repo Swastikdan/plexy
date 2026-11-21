@@ -160,13 +160,18 @@ export function TopNav() {
     >
       {/* Brand and page context stay left; the shelves follow, and the action
           cluster stays right. */}
-      <div className="relative mx-auto flex h-[3.25rem] max-w-[var(--app-max)] items-center gap-2 sm:gap-3 md:h-[var(--app-topbar-height)]">
+      <div
+        className={cx(
+          "relative mx-auto flex h-[3.25rem] max-w-[var(--app-max)] items-center gap-2 sm:gap-3 md:h-[var(--app-topbar-height)]",
+          electronMac && !isFullscreen && "pl-[4.9rem]",
+        )}
+      >
         <div
-          style={{
-            WebkitAppRegion: "no-drag",
-            paddingLeft: electronMac && !isFullscreen ? "4.9rem" : undefined,
-          } as React.CSSProperties}
-          className="flex min-w-0 items-center gap-2 lg:w-[9.5rem] lg:shrink-0 xl:w-[10.5rem]"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          className={cx(
+            "flex min-w-0 items-center gap-2 lg:w-[10.5rem] lg:shrink-0",
+            electronMac && "md:w-[10.5rem] md:shrink-0",
+          )}
         >
           {isHome ? (
             <Link
@@ -199,7 +204,7 @@ export function TopNav() {
 
         <nav
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          className="hidden items-center gap-0.5 lg:flex"
+          className={cx("topnav-tabs hidden shrink-0 items-center gap-0.5 lg:flex", electronMac && "md:flex")}
           aria-label="Main navigation"
         >
           {NAV_LINKS.map((link) => {
@@ -214,8 +219,12 @@ export function TopNav() {
                 to={link.to}
                 params={"params" in link ? link.params : undefined}
                 aria-current={active ? "page" : undefined}
+                aria-label={link.label}
+                title={link.label}
+                data-selected={active ? "" : undefined}
                 className={cx(
-                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
+                  "topnav-tab inline-flex h-8 items-center whitespace-nowrap rounded-full px-3 text-[12.5px] font-semibold",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current",
                   overHero
                     ? active
                       ? "bg-white/12 text-white"
@@ -225,8 +234,12 @@ export function TopNav() {
                       : "text-muted hover:bg-surface-secondary hover:text-foreground",
                 )}
               >
-                <link.icon size={14} strokeWidth={1.9} aria-hidden />
-                {link.label}
+                <link.icon size={14} strokeWidth={1.9} className="shrink-0" aria-hidden />
+                <span className="topnav-tab-label" aria-hidden="true">
+                  <span className="overflow-hidden">
+                    <span className="block pl-1.5">{link.label}</span>
+                  </span>
+                </span>
               </Link>
             );
           })}

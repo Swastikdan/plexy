@@ -78,6 +78,19 @@ describe("device library", () => {
     await f.library.clearWatch(card.id);
     expect(f.library.cards()[0]!.watch).toBeNull();
   });
+  test("local search matches the parent series name, not just the episode title", async () => {
+    const f = fixture();
+    f.files([file("Show/Season 01/Show.S01E01.mkv"), file("Show/Season 01/Show.S01E02.mkv")]);
+    await f.library.addRoot({ ...root, kind: "tv" });
+    for (const record of f.library.state.records) {
+      record.card.name = "Pilot";
+      record.card.parentTitle = "Distinct Show";
+      record.seriesMetadata = { name: "Distinct Show" };
+    }
+    const api = new LocalApi(f.library, async () => "", async () => []);
+    const found = await api.search("distinct");
+    expect(found.episodes).toHaveLength(2);
+  });
   test("watch list state persists for movies and series", async () => {
     const f = fixture();
     f.files([
@@ -132,8 +145,10 @@ describe("device library", () => {
     await api.progress(id, 90, 600);
     await api.setWatchlist(id, true);
     expect((await api.detail(`local-${id}`)).item.watchlist).toBe(true);
+    expect((await api.watchlist()).map((card) => card.id)).toContain(id);
     await api.setWatchlist(id, false);
     expect((await api.detail(`local-${id}`)).item.watchlist).toBe(false);
+    expect((await api.watchlist()).map((card) => card.id)).not.toContain(id);
     expect((await api.play(id)).watch?.position).toBe(90);
     expect(api.stream(id)).toBe(file().uri);
     expect((await api.play(id)).path).toBe("direct");

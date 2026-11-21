@@ -5,6 +5,7 @@
 /// No module imports server source; the contracts in `contracts/` describe the
 /// wire shapes and route modules type their handlers against the same shapes.
 import type {
+  AuthDeviceInfo,
   BrowserCaps,
   CrashesResponse,
   CollectionDetail,
@@ -24,12 +25,14 @@ import type {
   ReviewPayload,
   SearchResponse,
   ServerStatus,
+  SessionsResponse,
   SettingsResponse,
   SkipSegments,
   SubtitleSearchResult,
   SubtitleTrack,
   TitleDetail,
   TmdbMatchSearchResponse,
+  TrickplayStatus,
 } from "./types";
 
 export class ApiError extends Error {
@@ -58,8 +61,13 @@ export interface PlexyClientOptions {
   onHealth?: (state: ConnectionHealth) => void;
 }
 
-const READ_RETRY_DELAYS = [250, 650] as const;
+const READ_RETRY_DELAYS = [400, 1_100] as const;
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+/** Small jitter keeps a room full of clients from retrying in lockstep. */
+function retryDelay(base: number): number {
+  return base + Math.round(Math.random() * 200);
+}
 
 function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -134,10 +142,15 @@ export interface PlexyClient {
     removeFromCollection(id: number, itemId: number): Promise<{ ok: true }>;
     deleteCollection(id: number): Promise<{ ok: true }>;
     libraries(): Promise<{ libraries: LibraryItem[] }>;
-    createLibrary(name: string, type: LibraryType, paths: string[]): Promise<{ id: number }>;
+    createLibrary(
+      name: string,
+      type: LibraryType,
+      paths: string[],
+      language?: string,
+    ): Promise<{ id: number }>;
     updateLibrary(
       id: number,
-      patch: { name: string; type: LibraryType; paths: string[] },
+      patch: { name: string; type: LibraryType; paths: string[]; language?: string },
     ): Promise<{ ok: true }>;
     deleteLibrary(id: number): Promise<{ ok: boolean }>;
     scanLibrary(id: number): Promise<{ id: number }>;
@@ -149,7 +162,8 @@ export interface PlexyClient {
       position: number,
       duration: number | null,
       played: boolean,
-    ): Promise<{ ok: boolean }>;
+      paused?: boolean,
+    ): Promise<{ ok: boolean; stop?: boolean }>;
     markWatched(itemId: number): Promise<{ ok: boolean; played: boolean }>;
     setWatched(itemId: number, played: boolean): Promise<{ ok: boolean; played: boolean }>;
     clearWatch(itemId: number): Promise<{ ok: boolean }>;
@@ -178,6 +192,13 @@ export interface PlexyClient {
     resetLocalData(): Promise<{ ok: true; libraries: number; files: number; titles: number }>;
     testTmdb(): Promise<{ ok: boolean; message: string }>;
     localFolders(path?: string): Promise<LocalFoldersResponse>;
+    sessions(): Promise<SessionsResponse>;
+    stopSession(id: number): Promise<{ ok: true }>;
+    devices(): Promise<{ devices: AuthDeviceInfo[] }>;
+    revokeDevice(id: number): Promise<{ ok: true }>;
+    removeDevice(id: number): Promise<{ ok: true }>;
+    trickplayStatus(): Promise<TrickplayStatus>;
+    runTrickplay(): Promise<TrickplayStatus & { requested: number }>;
     optimizeStatus(): Promise<OptimizerStatus>;
     cancelOptimization(): Promise<OptimizerStatus>;
     resumeOptimization(): Promise<OptimizerStatus>;
@@ -193,6 +214,7 @@ export interface PlexyClient {
       type: "movie" | "tv",
       query: string,
       year?: number | null,
+      itemId?: number,
     ): Promise<TmdbMatchSearchResponse>;
     applyMatch(itemId: number, tmdbId: number, type: "movie" | "tv"): Promise<{ ok: boolean }>;
     refreshItem(itemId: number): Promise<{ ok: boolean }>;
@@ -228,6 +250,19 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
   const base = (): string => {
     const value = typeof options.baseUrl === "function" ? options.baseUrl() : options.baseUrl;
     return value.replace(/\/+$/, "");
+  };
+
+  // A single failed request (sleep/wake, Wi-Fi roam, server busy) should not
+  // flip the whole UI into "offline". Report unavailable first and only mark
+  // offline when two consecutive requests have genuinely failed.
+  let consecutiveFailures = 0;
+  const reportSuccess = () => {
+    consecutiveFailures = 0;
+    options.onHealth?.("online");
+  };
+  const reportFailure = () => {
+    consecutiveFailures++;
+    options.onHealth?.(consecutiveFailures >= 2 ? "offline" : "unavailable");
   };
 
   const absolute = (path: string): string =>
@@ -267,10 +302,10 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
         };
       } catch (error) {
         if (index < retries) {
-          await pause(READ_RETRY_DELAYS[index]!);
+          await pause(retryDelay(READ_RETRY_DELAYS[index]!));
           continue;
         }
-        options.onHealth?.("offline");
+        reportFailure();
         throw new ApiError(
           503,
           error instanceof Error && error.name === "TimeoutError"
@@ -280,12 +315,13 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
       }
 
       if (result.status === 401) options.onUnauthorized?.();
-      options.onHealth?.(result.status >= 500 ? "unavailable" : "online");
+      if (result.ok || result.status < 500) reportSuccess();
       if (result.ok) return result.value;
       if (RETRYABLE_STATUSES.has(result.status) && index < retries) {
-        await pause(READ_RETRY_DELAYS[index]!);
+        await pause(retryDelay(READ_RETRY_DELAYS[index]!));
         continue;
       }
+      if (result.status >= 500) reportFailure();
       throw new ApiError(
         result.status || 500,
         errorMessage(result.error, result.status),
@@ -383,8 +419,8 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
     deleteCollection: (id) =>
       send<{ ok: true }>(`/api/collections/${id}`, "DELETE"),
     libraries: () => get<{ libraries: LibraryItem[] }>("/api/libraries"),
-    createLibrary: (name, type, paths) =>
-      send<{ id: number }>("/api/libraries", "POST", { name, type, paths }),
+    createLibrary: (name, type, paths, language) =>
+      send<{ id: number }>("/api/libraries", "POST", { name, type, paths, language }),
     updateLibrary: (id, patch) =>
       send<{ ok: true }>(`/api/libraries/${id}`, "PATCH", patch),
     deleteLibrary: (id) => send<{ ok: boolean }>(`/api/libraries/${id}`, "DELETE"),
@@ -393,12 +429,13 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
   };
 
   const watch: PlexyClient["watch"] = {
-    progress: (itemId, position, duration, played) =>
-      send<{ ok: boolean }>("/api/progress", "POST", {
+    progress: (itemId, position, duration, played, paused) =>
+      send<{ ok: boolean; stop?: boolean }>("/api/progress", "POST", {
         itemId,
         position,
         duration: duration ?? undefined,
         played,
+        paused: paused ?? undefined,
       }),
     markWatched: (itemId) => watch.setWatched(itemId, true),
     setWatched: (itemId, played) =>
@@ -454,6 +491,14 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
       ),
     testTmdb: () => send<{ ok: boolean; message: string }>("/api/settings/tmdb/test", "POST"),
     localFolders: (path) => get<LocalFoldersResponse>(`/api/local-folders${query({ path })}`),
+    sessions: () => get<SessionsResponse>("/api/admin/sessions"),
+    stopSession: (id) => send<{ ok: true }>(`/api/admin/sessions/${id}/stop`, "POST"),
+    devices: () => get<{ devices: AuthDeviceInfo[] }>("/api/auth/admin/devices"),
+    revokeDevice: (id) => send<{ ok: true }>(`/api/auth/admin/devices/${id}/revoke`, "POST"),
+    removeDevice: (id) => send<{ ok: true }>(`/api/auth/admin/devices/${id}`, "DELETE"),
+    trickplayStatus: () => get<TrickplayStatus>("/api/admin/trickplay/status"),
+    runTrickplay: () =>
+      send<TrickplayStatus & { requested: number }>("/api/admin/trickplay/run", "POST"),
     optimizeStatus: () => get<OptimizerStatus>("/api/optimize/status"),
     cancelOptimization: () => send<OptimizerStatus>("/api/optimize/cancel", "POST"),
     resumeOptimization: () => send<OptimizerStatus>("/api/optimize/resume", "POST"),
@@ -470,11 +515,12 @@ export function createPlexyClient(options: PlexyClientOptions): PlexyClient {
           q: params?.q?.trim() || undefined,
         })}`,
       ),
-    matchSearch: (type, text, year) =>
+    matchSearch: (type, text, year, itemId) =>
       send<TmdbMatchSearchResponse>("/api/match/search", "POST", {
         type,
         query: text,
         year: year ?? undefined,
+        itemId,
       }),
     applyMatch: (itemId, tmdbId, type) =>
       send<{ ok: boolean }>(`/api/items/${itemId}/match`, "POST", { tmdbId, type }),

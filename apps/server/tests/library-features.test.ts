@@ -225,6 +225,31 @@ describe("catalog feature layer", () => {
     expect(empty.total).toBe(0);
   });
 
+  test("admin sessions list live playback and stop it on the next heartbeat", async () => {
+    const progress = (position: number) => request(app, "/progress", token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId: MOVIE_ID, position, duration: 1200, played: false }),
+    });
+    expect((await progress(30)).status).toBe(200);
+
+    const listed = await request(app, "/admin/sessions", token);
+    expect(listed.status).toBe(200);
+    const body = await listed.json();
+    const session = body.sessions.find((entry: any) => entry.itemId === MOVIE_ID && entry.active);
+    expect(session).toMatchObject({ userId, itemId: MOVIE_ID, status: "playing" });
+    expect(body.active).toBeGreaterThanOrEqual(1);
+
+    const stopped = await request(app, `/admin/sessions/${session.id}/stop`, token, { method: "POST" });
+    expect(stopped.status).toBe(200);
+
+    const acknowledged = await progress(45);
+    expect(await acknowledged.json()).toMatchObject({ ok: true, stop: true });
+
+    const resumed = await progress(60);
+    expect(await resumed.json()).toMatchObject({ ok: true, stop: false });
+  });
+
   test("certification selection prefers the requested region, then US", () => {
     const detail = {
       release_dates: {

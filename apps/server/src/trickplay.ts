@@ -140,24 +140,24 @@ function mark(fileId: number, status: string, patch: Record<string, unknown> = {
  * Start (or resume) extraction for a file. Cheap and idempotent: the play
  * manifest calls it on every request, but only the first one does any work.
  */
-export function enqueueTrickplay(rowOrId: Row | number): void {
+export function enqueueTrickplay(rowOrId: Row | number, force = false): boolean {
   const fileId = typeof rowOrId === "number" ? rowOrId : Number(rowOrId.id);
   const row = q<Row, [number]>("SELECT * FROM media_files WHERE id = ?").get(fileId);
-  if (!row || Number(row.unavailable ?? 0) !== 0) return;
-  if (Number(row.mtime) <= 0 || String(row.analysis_status ?? "") !== "probed") return;
+  if (!row || Number(row.unavailable ?? 0) !== 0) return false;
+  if (Number(row.mtime) <= 0 || String(row.analysis_status ?? "") !== "probed") return false;
 
   const entry = currentRow(row, rowFor(fileId));
   const dir = trickplayDirFor(row);
   const hasSprites = existsSync(join(dir, "sprite_000.jpg"));
-  if (entry?.status === "done" && Number(entry.frame_count ?? 0) > 0 && hasSprites) return;
-  if (entry?.status === "running" || entry?.status === "queued") return;
-  if (queued.has(fileId) || active?.fileId === fileId) return;
+  if (entry?.status === "done" && Number(entry.frame_count ?? 0) > 0 && hasSprites) return false;
+  if (entry?.status === "running" || entry?.status === "queued") return false;
+  if (queued.has(fileId) || active?.fileId === fileId) return false;
 
   // A recent failure (corrupt stream, codec missing) is not retried on every
-  // player open; an admin can clear the cache to force it.
-  if (entry?.status === "failed") {
+  // player open; an admin can clear the cache or force a pre-generation pass.
+  if (entry?.status === "failed" && !force) {
     const updated = Date.parse(String(entry.updated_at).replace(" ", "T") + "Z");
-    if (Number.isFinite(updated) && Date.now() - updated < RETRY_AFTER_MS) return;
+    if (Number.isFinite(updated) && Date.now() - updated < RETRY_AFTER_MS) return false;
   }
 
   queued.add(fileId);
@@ -176,6 +176,7 @@ export function enqueueTrickplay(rowOrId: Row | number): void {
       void pump();
     }, START_DELAY_MS);
   }
+  return true;
 }
 
 async function pump(): Promise<void> {
@@ -399,6 +400,57 @@ export async function clearTrickplay(fileId?: number): Promise<number> {
   if (fileId == null) run("DELETE FROM trickplay");
   else run("DELETE FROM trickplay WHERE file_id = ?", fileId);
   return removed;
+}
+
+/** Admin view of the extraction queue and how much of the library is covered. */
+export function trickplayStatus(): {
+  running: boolean;
+  queued: number;
+  activeFileId: number | null;
+  total: number;
+  ready: number;
+  failed: number;
+  ffmpegAvailable: boolean;
+} {
+  const total = Number(q<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM media_files
+     WHERE unavailable = 0 AND analysis_status = 'probed' AND mtime > 0`,
+  ).get()?.n ?? 0);
+  const ready = Number(q<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM trickplay t
+     JOIN media_files f ON f.id = t.file_id
+     WHERE t.status = 'done' AND t.source_mtime = f.mtime
+       AND f.unavailable = 0 AND t.frame_count > 0`,
+  ).get()?.n ?? 0);
+  const failed = Number(q<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM trickplay WHERE status = 'failed'",
+  ).get()?.n ?? 0);
+  return {
+    running,
+    queued: queue.length + (running && active ? 1 : 0),
+    activeFileId: active?.fileId ?? null,
+    total,
+    ready,
+    failed,
+    ffmpegAvailable: Boolean(resolveFfmpeg()),
+  };
+}
+
+/**
+ * Queue every probed file that has no current sprite sheet. The admin button
+ * uses `force` so a previous failure is retried without waiting for the TTL.
+ */
+export function enqueueMissingTrickplay(force = true): number {
+  const rows = q<Row>(
+    `SELECT id FROM media_files
+     WHERE unavailable = 0 AND analysis_status = 'probed' AND mtime > 0
+     ORDER BY id`,
+  ).all();
+  let requested = 0;
+  for (const row of rows) {
+    if (enqueueTrickplay(Number(row.id), force)) requested++;
+  }
+  return requested;
 }
 
 /** Stop the extractor during shutdown. A partial folder is removed next run. */

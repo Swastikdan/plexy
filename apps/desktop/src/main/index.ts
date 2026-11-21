@@ -52,6 +52,15 @@ const nativePlayer = new NativePlayerManager(
       const [width, height] = target.getContentSize();
       return { handle: target.getNativeWindowHandle(), width, height };
     },
+    allowedOrigins: () => {
+      const remote = readServerPreference();
+      if (!remote) return [];
+      try {
+        return [new URL(remote).origin];
+      } catch {
+        return [];
+      }
+    },
   },
 );
 
@@ -405,12 +414,21 @@ function setupIpcHandlers() {
   ipcMain.handle("app:probe-server", async (_event, raw: unknown) => {
     if (typeof raw !== "string" || !isValidServerUrl(raw))
       throw new Error("Invalid server address");
-    const response = await net.fetch(
-      new URL("/api/server/status", raw).toString(),
-      { signal: AbortSignal.timeout(5000) },
-    );
-    if (!response.ok) throw new Error(`Server returned ${response.status}`);
-    return response.json();
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await net.fetch(
+          new URL("/api/server/status", raw).toString(),
+          { signal: AbortSignal.timeout(5_000) },
+        );
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+    throw lastError;
   });
 
   ipcMain.handle("app:is-fullscreen", () => {
@@ -432,6 +450,7 @@ function setupIpcHandlers() {
       fileId: Number(request?.fileId),
       serverUrl: typeof request?.serverUrl === "string" ? request.serverUrl : serverOrigin,
       serverOrigin,
+      fallbackServerUrl: typeof request?.fallbackServerUrl === "string" ? request.fallbackServerUrl : undefined,
       resumeSeconds: Number(request?.resumeSeconds) || 0,
       autoSubtitles: request?.autoSubtitles !== false,
       subtitleLanguage: typeof request?.subtitleLanguage === "string" ? request.subtitleLanguage : undefined,

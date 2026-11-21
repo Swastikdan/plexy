@@ -42,7 +42,9 @@ different server.
 - `GET /api/subtitles/:fileId/search?language=en` proxies OpenSubtitles search for
   the matched IMDb title; `POST /api/subtitles/:fileId/download` saves one result
   as a WebVTT track. Downloaded tracks then appear in the normal track list.
-- `POST /api/progress` stores playback progress.
+- `POST /api/progress` stores playback progress. The body accepts `paused` and
+  the response returns `stop: true` when an administrator has stopped this
+  session; clients should pause playback and show that the owner stopped it.
 
 ## Catalog, search, and collections
 
@@ -66,6 +68,22 @@ different server.
   `?itemId=`), `POST /api/collections` creates one, `GET /api/collections/:id`
   returns its items, and `POST|DELETE /api/collections/:id/items[/:itemId]`
   adds or removes a title.
+- `POST /api/libraries` accepts `language`; `PATCH /api/libraries/:id` accepts
+  the same per-library metadata language. Changing it refreshes matched titles
+  in the background.
+
+## Sessions and administration
+
+- `GET /api/admin/sessions` returns active and recently ended playback sessions
+  (user, device, title, position, status, client, IP).
+- `POST /api/admin/sessions/:id/stop` asks a live player to stop. The player
+  acknowledges on its next progress heartbeat.
+- `GET /api/auth/admin/devices` lists paired devices; `POST
+  /api/auth/admin/devices/:id/revoke` signs one out and ends its live session;
+  `DELETE /api/auth/admin/devices/:id` removes the revoked record.
+- `GET /api/admin/trickplay/status` reports scrub-thumbnail coverage and the
+  extraction queue; `POST /api/admin/trickplay/run` pre-generates every missing
+  strip, including previous failures.
 
 Native clients should attach Bearer auth to each media request. A browser
 `<video>` element cannot set arbitrary Authorization headers; browser playback

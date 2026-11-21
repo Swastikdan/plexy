@@ -25,6 +25,8 @@ import { getServerId } from "./server-identity";
 import { resolveArtworkDir, resolveOptimizedDir, resolveTrickplayDir } from "./paths";
 import { getLiveBinding } from "./runtime";
 import { refreshMissingSkipSegments } from "./skip-segments";
+import { listSessions, stopSession } from "./sessions";
+import { enqueueMissingTrickplay, trickplayStatus } from "./trickplay";
 
 const startedAt = Date.now();
 
@@ -283,6 +285,38 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     }
   })
 
+  /** Active and recent playback sessions for the admin dashboard. */
+  .get("/admin/sessions", (ctx) => {
+    const denied = denyIfNotLocal(ctx);
+    if (denied) return denied;
+    return listSessions();
+  })
+
+  /** Request that a live session stop on its next progress heartbeat. */
+  .post("/admin/sessions/:id/stop", (ctx) => {
+    const denied = denyIfNotLocal(ctx);
+    if (denied) return denied;
+    if (!stopSession(Number(ctx.params.id)))
+      return apiError("Playback session not found.", 404);
+    return { ok: true as const };
+  }, { params: t.Object({ id: t.Numeric() }) })
+
+  /** Trickplay thumbnail coverage and the background extraction queue. */
+  .get("/admin/trickplay/status", (ctx) => {
+    const denied = denyIfNotLocal(ctx);
+    if (denied) return denied;
+    return trickplayStatus();
+  })
+
+  /** Pre-generate scrub thumbnails for every probed file, including failures. */
+  .post("/admin/trickplay/run", (ctx) => {
+    const denied = denyIfNotLocal(ctx);
+    if (denied) return denied;
+    const requested = enqueueMissingTrickplay(true);
+    log.debug("media", "manual trickplay generation requested", { requested });
+    return { ...trickplayStatus(), requested };
+  })
+
   /** Preparation queue state: what is running, how far along, cache size. */
   .get("/optimize/status", async () => optimizerStatus())
 
@@ -458,10 +492,12 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (!Number.isInteger(id) || id <= 0) {
       return apiError("Invalid library id.");
     }
-    const library = q<Row>("SELECT id FROM libraries WHERE id = ?").get(id);
+    const library = q<Row>("SELECT id, language FROM libraries WHERE id = ?").get(id);
     if (!library) return apiError("Library not found.", 404);
     const name = body.name.trim();
     if (!name) return apiError("Enter a library name.");
+    const previousLanguage = String(library.language ?? "en-US");
+    const language = body.language?.trim() || previousLanguage;
 
     const otherPaths = q<Row>("SELECT path FROM library_paths WHERE library_id != ?").all(id)
       .map((row) => String(row.path));
@@ -489,12 +525,19 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       resolvedPaths.push(current);
     }
 
-    run("UPDATE libraries SET name = ?, type = ? WHERE id = ?", name, body.type, id);
+    run("UPDATE libraries SET name = ?, type = ?, language = ? WHERE id = ?", name, body.type, language, id);
     run("DELETE FROM library_paths WHERE library_id = ?", id);
     for (const path of resolvedPaths) {
       q("INSERT INTO library_paths (library_id, path) VALUES (?, ?)").run(id, path);
     }
-    log.info("scanner", "library updated", { id, name, type: body.type, paths: resolvedPaths });
+    log.info("scanner", "library updated", { id, name, type: body.type, language, paths: resolvedPaths });
+    if (language !== previousLanguage) {
+      void import("./hydrate")
+        .then(({ refreshLibraryMetadata }) => refreshLibraryMetadata(id))
+        .catch((error) => log.warn("tmdb", "library language refresh failed", {
+          id, message: error instanceof Error ? error.message : String(error),
+        }));
+    }
     startScan([id]);
     return { ok: true as const };
   }, {
@@ -502,6 +545,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     body: t.Object({
       name: t.String({ minLength: 1 }),
       type: t.Union([t.Literal("movies"), t.Literal("tv")]),
+      language: t.Optional(t.String()),
       paths: t.Array(t.String({ minLength: 1 }), { minItems: 1 }),
     }),
   })

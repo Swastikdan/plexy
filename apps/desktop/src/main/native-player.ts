@@ -219,7 +219,7 @@ function loadEmbedAddon(): MpvEmbedConstructor | null {
   return cachedAddon;
 }
 
-function validateServerUrl(raw: string, frameOrigin: string): URL {
+function validateServerUrl(raw: string, frameOrigin: string, allowed: string[] = []): URL {
   let url: URL;
   try {
     url = new URL(raw);
@@ -234,9 +234,10 @@ function validateServerUrl(raw: string, frameOrigin: string): URL {
   }
   const host = url.hostname.toLowerCase();
   const loopback = host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
-  // The renderer may talk to the page's own server, or to a loopback backend in
-  // development; it can never point the relay at an arbitrary remote host.
-  if (url.origin !== frameOrigin && !loopback) {
+  // The renderer may talk to the page's own server, the configured remote
+  // server, or a loopback backend in development; it can never point the relay
+  // at an arbitrary host.
+  if (url.origin !== frameOrigin && !loopback && !allowed.includes(url.origin)) {
     throw new Error("Native playback only connects to the active Plexy server");
   }
   return new URL(url.origin);
@@ -278,6 +279,8 @@ export class NativePlayerManager {
       fetch?: ManifestFetch;
       /** Injectable so the manager can be exercised on non-macOS CI runners. */
       platform?: NodeJS.Platform;
+      /** Origins the desktop app is configured to trust in remote mode. */
+      allowedOrigins?: () => string[];
       /** The window the video surface is attached to. */
       surface?: () => NativeWindowSurface | null;
       /** Overrides for tests: a fake engine and module factory. */
@@ -337,13 +340,27 @@ export class NativePlayerManager {
 
     const fileId = Number(request.fileId);
     if (!Number.isSafeInteger(fileId) || fileId <= 0) throw new Error("Invalid file id");
-    const serverUrl = validateServerUrl(String(request.serverUrl ?? ""), String(request.serverOrigin ?? ""));
+    const allowed = this.options.allowedOrigins?.() ?? [];
+    let serverUrl = validateServerUrl(String(request.serverUrl ?? ""), String(request.serverOrigin ?? ""), allowed);
 
     const surface = this.options.surface?.() ?? null;
     if (!surface) throw new Error("The Plexy window is not ready for playback.");
 
     const playRequest = ++this.playRequest;
-    const manifest = await this.fetchManifest(serverUrl, fileId);
+    let manifest: NativeManifest;
+    try {
+      manifest = await this.fetchManifest(serverUrl, fileId);
+    } catch (error) {
+      // Direct remote playback is preferred (no local proxy hop). If the remote
+      // host answers with auth/certificate trouble, retry through the desktop's
+      // same-origin proxy, which owns the remote session cookie.
+      const fallbackRaw = String(request.fallbackServerUrl ?? "");
+      if (!fallbackRaw) throw error;
+      const fallback = validateServerUrl(fallbackRaw, String(request.serverOrigin ?? ""), allowed);
+      if (fallback.origin === serverUrl.origin) throw error;
+      serverUrl = fallback;
+      manifest = await this.fetchManifest(serverUrl, fileId);
+    }
     const libmpv = this.options.libmpv ?? resolveLibmpv();
     const Addon = this.options.createEmbed ?? loadEmbedAddon();
     if (!libmpv || !Addon) throw new Error(info.reason ?? "The native playback engine is not installed");

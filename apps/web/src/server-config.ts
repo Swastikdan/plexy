@@ -136,6 +136,20 @@ export function getApiBase(): string {
   return "http://127.0.0.1:8765";
 }
 
+/**
+ * The server used by native playback. In desktop remote mode the browser API
+ * stays on the localhost proxy (so cookies remain same-origin), but mpv can
+ * fetch the chosen server directly. In bundled/server-hosted mode this is just
+ * the page origin.
+ */
+export function getConfiguredServerBase(): string {
+  if (typeof window !== "undefined" && window.electronAPI && !window.electronAPI.localOnly) {
+    const saved = ensureOverrideLoaded();
+    if (saved) return saved;
+  }
+  return getApiBase();
+}
+
 /** Save a server address and make it effective immediately. */
 export function setServerUrl(raw: string): string {
   if (typeof window !== "undefined" && window.electronAPI?.localOnly) {
@@ -196,6 +210,16 @@ export type ProbeResult =
  * not enough: the response must be Plexy's JSON status payload.
  */
 export async function probeServer(raw: string): Promise<ProbeResult> {
+  const first = await probeServerOnce(raw);
+  if (first.ok) return first;
+  // One quiet retry turns a dropped handshake or a laptop waking from sleep
+  // into a successful connection instead of another manual attempt.
+  if (!/Could not reach|did not answer/.test(first.error)) return first;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return probeServerOnce(raw);
+}
+
+async function probeServerOnce(raw: string): Promise<ProbeResult> {
   if (
     typeof window !== "undefined" &&
     window.electronAPI?.localOnly &&

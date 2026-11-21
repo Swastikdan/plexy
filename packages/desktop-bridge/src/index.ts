@@ -6,7 +6,13 @@ export interface ElectronAPI {
   isElectron: boolean;
   localOnly?: boolean;
   discoverServers: () => Promise<
-    Array<{ id: string; name: string; url: string }>
+    Array<{
+      id: string;
+      name: string;
+      url: string;
+      reachable?: boolean;
+      latencyMs?: number | null;
+    }>
   >;
   platform: string;
   selectFolder: () => Promise<string | null>;
@@ -49,6 +55,8 @@ export interface NativePlayRequest {
   serverUrl: string;
   /** Origin of the trusted renderer frame; the server must belong to it. */
   serverOrigin?: string;
+  /** Local proxy to retry through when a direct remote manifest fails. */
+  fallbackServerUrl?: string;
   resumeSeconds?: number;
   autoSubtitles?: boolean;
   subtitleLanguage?: string;

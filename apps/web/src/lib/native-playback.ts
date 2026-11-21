@@ -3,7 +3,7 @@
 /// The native player exists only in the Electron desktop app. Everything here
 /// degrades to "not available" in a browser so the existing browser player
 /// stays untouched for website visitors.
-import { getApiBase } from "../server-config";
+import { getApiBase, getConfiguredServerBase, isLoopbackHostname } from "../server-config";
 
 export type PlayerEngine = "native" | "browser";
 
@@ -49,15 +49,22 @@ export function isNativeAvailable(): boolean {
  * so point native playback at that backend directly.
  */
 export function nativeServerUrl(): string {
-  const base = getApiBase();
+  const base = getConfiguredServerBase();
   try {
     const url = new URL(base);
     const devPort = String(import.meta.env?.VITE_PLEXY_PORT ?? "8765");
-    if (url.port === "5173") return `http://127.0.0.1:${devPort}`;
+    if (url.port === "5173" && isLoopbackHostname(url.hostname)) {
+      return `http://127.0.0.1:${devPort}`;
+    }
     return url.origin;
   } catch {
     return base;
   }
+}
+
+/** Local static proxy origin, used when direct remote playback needs a fallback. */
+export function nativeFallbackServerUrl(): string {
+  return getApiBase();
 }
 
 /** "about 4 min left" style labels for preparation/playback surfaces. */

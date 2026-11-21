@@ -48,9 +48,11 @@ function HomeRoute() {
   const status = useQuery(queries.serverStatus());
   const { data, isLoading, isError } = useQuery(queries.home());
 
-  // The server's featured title leads the carousel; recent movies and shows
-  // fill the remaining slides. Episodes and continue-watching entries stay in
-  // their own rows, and a title only appears once.
+  // The server's featured title leads the carousel; the recently-added rows
+  // fill the remaining slides. Episodes, continue-watching and the watchlist
+  // stay in their own rows: including watchlist/favorites here would reorder
+  // the carousel whenever someone toggles a flag, which looks like the hero
+  // jumping to a different title. A title only appears once.
   const featuredItems = useMemo(() => {
     if (!data) return [] as ItemCard[];
     const list: ItemCard[] = [];
@@ -63,7 +65,7 @@ function HomeRoute() {
     };
     if (data.featured) add(data.featured);
     for (const row of data.rows) {
-      if (row.key === "continue" || row.key === "next") continue;
+      if (row.key !== "recent-movies" && row.key !== "recent-shows") continue;
       for (const item of row.items) {
         add(item);
         if (list.length >= 6) break;

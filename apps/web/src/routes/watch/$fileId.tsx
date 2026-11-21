@@ -126,6 +126,7 @@ function BrowserWatchRoute() {
   const [playbackStatsTick, setPlaybackStatsTick] = useState(0);
   const [isBuffering, setIsBuffering] = useState(true);
   const [showMediaError, setShowMediaError] = useState(false);
+  const [sessionStopped, setSessionStopped] = useState(false);
   const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryAttemptsRef = useRef(0);
@@ -143,6 +144,11 @@ function BrowserWatchRoute() {
   }, [showPlaybackStats]);
   const [restartAt, setRestartAt] = useState<{ fileId: number; seconds: number } | null>(null);
   const [mediaRetryKey, setMediaRetryKey] = useState(0);
+  useEffect(() => {
+    const onStopped = () => setSessionStopped(true);
+    window.addEventListener("plexy:playback-stopped", onStopped);
+    return () => window.removeEventListener("plexy:playback-stopped", onStopped);
+  }, [fileId]);
   const restartPlaybackRef = useRef(true);
   const pendingRestartRef = useRef<{ fileId: number; seconds: number } | null>(null);
   const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1008,6 +1014,18 @@ function BrowserWatchRoute() {
       style={{ "--plexy-caption-offset": `${subtitlePosition}px` } as CSSProperties}
       className="fixed inset-0 z-50 flex flex-col bg-black select-none overflow-hidden"
     >
+      {sessionStopped && (
+        <div className="absolute inset-x-0 top-16 z-[75] mx-auto w-[min(92vw,460px)] rounded-xl border border-white/15 bg-[#181818]/95 p-4 text-center text-white shadow-2xl">
+          <p className="text-sm font-semibold">Playback stopped by the server owner.</p>
+          <button
+            type="button"
+            onClick={leavePlayer}
+            className="mt-3 rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/85 transition hover:bg-white/10"
+          >
+            Back to the title
+          </button>
+        </div>
+      )}
       {showPlaybackStats && (
         <PlaybackStatsOverlay video={videoRef.current} path={play.data?.path} tick={playbackStatsTick} onClose={() => setShowPlaybackStats(false)} />
       )}
@@ -1404,11 +1422,15 @@ function ProgressReporter({
     // report never samples the element at cleanup time.
     let lastLivePos: number | null = null;
 
-    const post = (position: number, played: boolean) => {
+    const post = (position: number, played: boolean, paused = false) => {
       const duration = bridgeRef.current.duration ?? (mediaEl()?.duration || null);
       void api
-        .progress(itemId, position, duration, played)
-        .then(() => {
+        .progress(itemId, position, duration, played, paused)
+        .then((result) => {
+          if (result.stop) {
+            mediaEl()?.pause();
+            window.dispatchEvent(new CustomEvent("plexy:playback-stopped"));
+          }
           bridge.queryClient.invalidateQueries({ queryKey: ["home"] });
           bridge.queryClient.invalidateQueries({ queryKey: ["items"] });
           bridge.queryClient.invalidateQueries({ queryKey: ["title"] });
@@ -1427,12 +1449,12 @@ function ProgressReporter({
       return position;
     };
 
-    const report = (played: boolean) => {
+    const report = (played: boolean, paused = false) => {
       // Prefer the element when it is resolvable; fall back to the last live
       // read during element churn so a remount's artefact cannot regress it.
       const position = liveRead() ?? lastLivePos;
       if (position == null || !(position > 5)) return;
-      post(position, played);
+      post(position, played, paused);
     };
 
     const interval = setInterval(() => {
@@ -1447,7 +1469,7 @@ function ProgressReporter({
       const el = mediaEl();
       if (!el) return;
       const dur = bridgeRef.current.duration ?? (el.duration || null);
-      report(Boolean(dur) && el.currentTime > dur! * 0.9);
+      report(Boolean(dur) && el.currentTime > dur! * 0.9, true);
     };
 
     const leave = () => {

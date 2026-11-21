@@ -37,11 +37,13 @@ import {
   EyeOff,
   Film,
   Folder,
+  Github,
   HardDrive,
   Play,
   Tv,
   Gauge,
   Library,
+  ListVideo,
   Lock,
   RefreshCw,
   X,
@@ -121,7 +123,7 @@ export function SettingsScreen({
   const hasAppUpdate = offerOta || Boolean(availableUpdate);
   let appUpdateLabel = updateChecking ? "Checking…" : "Check";
   if (hasAppUpdate) appUpdateLabel = offerOta ? (otaPending ? "Restart" : "Download") : "Update now";
-  if (updateDownloading) appUpdateLabel = updateProgress === 100 ? "Install…" : "Downloading…";
+  if (updateDownloading) appUpdateLabel = updateProgress === 100 ? "Install…" : "Updating…";
   useEffect(() => runtime.subscribe(() => update((n) => n + 1)), [runtime]);
   const action = async (fn: () => Promise<void>, key = "") => {
     if (busy) return;
@@ -138,6 +140,20 @@ export function SettingsScreen({
       setActiveAction("");
     }
   };
+  const downloadFromGitHub = () =>
+    action(async () => {
+      // A floor version keeps the newest published APK eligible even when the
+      // installed app is already current, including build-less mobile-v tags.
+      const latest = selectUpdate(
+        await fetchUpdateReleases(),
+        "mobile",
+        0,
+        "0.0.0",
+      );
+      if (!latest)
+        throw new Error("No Android download is available on GitHub yet.");
+      await Linking.openURL(latest.apkUrl);
+    });
   const pickFolder = async (kind: "movies" | "tv") => {
     const folder = await Directory.pickDirectoryAsync();
     await localLibrary.addRoot({
@@ -390,6 +406,12 @@ export function SettingsScreen({
                 icon={HardDrive}
                 onPress={() => push("/storage")}
               />
+              <SettingsRow
+                navigation
+                title="Watchlist"
+                icon={ListVideo}
+                onPress={() => push("/watchlist")}
+              />
               {hasLocal && <>
               <SettingsRow
                 navigation
@@ -443,78 +465,74 @@ export function SettingsScreen({
               About
             </Text>
             <View className="overflow-hidden rounded-[18px] bg-surface">
-              <View className="min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5">
-                <View className="w-6 items-center">
-                  <Download size={20} color={colors.muted} />
+              <View className="border-b-[0.33px] border-border px-4 py-3.5">
+                <View className="flex-row items-start gap-3.5">
+                  <View className="h-5 w-6 items-center justify-center">
+                    <Download size={20} color={colors.muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text className="text-[15px] leading-5 font-archivo-medium text-foreground">
+                      App update
+                    </Text>
+                    <Text
+                      className={cn(
+                        "text-[12px] leading-[18px] font-archivo-regular",
+                        updateDownloading || updateProgress !== null
+                          ? "text-foreground"
+                          : "text-muted",
+                      )}
+                    >
+                      {updateProgress !== null
+                        ? updateProgress === 100
+                          ? updateStatusText
+                          : `Downloading update… ${updateProgress}%`
+                        : updateStatusText ||
+                          (appInfo
+                            ? `Version ${appInfo.versionName}`
+                            : "Version checking…")}
+                    </Text>
+                  </View>
                 </View>
-                <View className="flex-1 gap-1">
-                  <Text className="text-[15px] font-archivo-medium text-foreground">
-                    App update
-                  </Text>
-                  <Text
-                    className={cn(
-                      "text-[12px] leading-[18px] font-archivo-regular",
-                      updateDownloading || updateProgress !== null
-                        ? "text-foreground"
-                        : "text-muted",
-                    )}
+                <View className="mt-3 flex-row flex-wrap items-center gap-x-3 gap-y-2">
+                  <Button
+                    label={appUpdateLabel}
+                    primary={hasAppUpdate}
+                    disabled={(!online && !otaPending) || updateChecking || updateDownloading}
+                    onPress={() =>
+                      void (hasAppUpdate
+                        ? handleDownloadAndInstall()
+                        : handleCheckUpdate())
+                    }
+                    style={{
+                      minHeight: 44,
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      opacity: online ? 1 : 0.4,
+                    }}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Download from GitHub"
+                    accessibilityState={{ disabled: busy || !online }}
+                    disabled={busy || !online}
+                    hitSlop={6}
+                    onPress={() => void downloadFromGitHub()}
+                    className="flex-row items-center gap-1.5 py-2 active:opacity-60"
+                    style={{ opacity: online ? 1 : 0.4 }}
                   >
-                    {updateProgress !== null
-                      ? updateProgress === 100
-                        ? updateStatusText
-                        : `Downloading update… ${updateProgress}%`
-                      : updateStatusText ||
-                        (appInfo
-                          ? `Version ${appInfo.versionName}`
-                          : "Version checking…")}
-                  </Text>
+                    <Github size={16} color={colors.muted} />
+                    <Text className="text-[13px] font-archivo-medium text-muted">
+                      Download from GitHub
+                    </Text>
+                  </Pressable>
                 </View>
-                <Button
-                  label={appUpdateLabel}
-                  primary={hasAppUpdate}
-                  disabled={(!online && !otaPending) || updateChecking || updateDownloading}
-                  onPress={() =>
-                    void (hasAppUpdate
-                      ? handleDownloadAndInstall()
-                      : handleCheckUpdate())
-                  }
-                  style={{
-                    width: 120,
-                    flexShrink: 0,
-                    minHeight: 44,
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
-                    opacity: online ? 1 : 0.4,
-                  }}
-                />
               </View>
-              <SettingsRow
-                title="Metadata by TMDB"
-              />
               <SettingsRow
                 title="Open Source Licenses"
                 navigation
                 onPress={() => push("/settings/licenses")}
               />
-              <SettingsRow
-                title="Download from GitHub"
-                onPress={() =>
-                  void action(async () => {
-                    const latest = selectUpdate(
-                      await fetchUpdateReleases(),
-                      "mobile",
-                      0,
-                    );
-                    if (!latest)
-                      throw new Error(
-                        "No Android download is available on GitHub yet.",
-                      );
-                    await Linking.openURL(latest.apkUrl);
-                  })
-                }
-              />
             </View>
-            <Text className="px-4 text-[12px] text-muted">Plexy is not endorsed or certified by TMDB.</Text>
           </>
         )}
         {page === "playback" && (

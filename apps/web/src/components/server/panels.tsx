@@ -27,6 +27,10 @@ import {
   FileText,
   X,
   Library as LibraryIcon,
+  Monitor,
+  Smartphone,
+  Square,
+  ShieldOff,
 } from "lucide-react";
 import { api, type LibraryItem, type ReviewEntry } from "../../client";
 import { getApiBase, hasServerOverride } from "../../server-config";
@@ -604,6 +608,8 @@ export function ServerPreferencesPanel() {
       <DesktopServerSettings />
       <DesktopUpdateSettings />
       <SystemUsage />
+      <ActiveSessionsPanel />
+      <TrickplayPanel />
       <details open name="admin-settings" className="group overflow-hidden rounded-xl border border-border/70 bg-surface">
         <summary className="flex list-none cursor-pointer items-center justify-between gap-4 px-4 py-4 focus-visible:outline-2 focus-visible:outline-foreground focus-visible:outline-offset-[-2px] [&::-webkit-details-marker]:hidden sm:px-5">
           <span>
@@ -2253,6 +2259,265 @@ function Crashes() {
       </ul>
     </Section>
   );
+}
+
+function TrickplayPanel() {
+  const queryClient = useQueryClient();
+  const status = useQuery(queries.trickplay());
+  const run = useMutation({
+    mutationFn: api.runTrickplay,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["trickplay-status"] });
+    },
+  });
+  const data = status.data;
+  const percent = data && data.total > 0 ? Math.round((data.ready / data.total) * 100) : 0;
+  return (
+    <Section title="Scrub thumbnails">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="text-xs text-muted">
+          Generate the thumbnail strips used while scrubbing. Normally they build
+          on first play; this pre-generates them for the whole library.
+        </p>
+        <Button
+          variant="secondary"
+          className="h-8 px-3 text-xs"
+          onPress={() => run.mutate()}
+          isDisabled={run.isPending || !data?.ffmpegAvailable}
+        >
+          <RotateCw size={13} className={run.isPending || data?.running ? "animate-spin" : ""} />
+          {run.isPending ? "Queuing…" : "Generate missing"}
+        </Button>
+      </div>
+      {data && (
+        <div className="mt-4 rounded-xl border border-border/70 bg-surface p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-foreground">
+              {data.ready.toLocaleString()} of {data.total.toLocaleString()} files ready
+            </span>
+            <span className="text-muted">
+              {data.running || data.queued > 0
+                ? `${data.queued} queued${data.activeFileId ? ` · working on file ${data.activeFileId}` : ""}`
+                : data.failed > 0
+                  ? `${data.failed} failed`
+                  : "Up to date"}
+            </span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-border" role="progressbar" aria-label="Scrub thumbnail coverage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+            <div className="h-full rounded-full bg-foreground/70 transition-[width] duration-300" style={{ width: `${percent}%` }} />
+          </div>
+          <p className="mt-2 text-[10.5px] text-muted">
+            {data.ffmpegAvailable
+              ? "Uses FFmpeg one file at a time so playback keeps priority."
+              : "FFmpeg was not found on this machine. Install it or use the bundled build to generate thumbnails."}
+          </p>
+        </div>
+      )}
+      {run.data?.requested != null && (
+        <p className="mt-2 text-[11px] text-success-soft-foreground">
+          Queued {run.data.requested} file{run.data.requested === 1 ? "" : "s"}.
+        </p>
+      )}
+    </Section>
+  );
+}
+
+function ActiveSessionsPanel() {
+  const queryClient = useQueryClient();
+  const sessions = useQuery(queries.sessions());
+  const devices = useQuery(queries.devices());
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    await queryClient.invalidateQueries({ queryKey: ["devices"] });
+  };
+  const stop = useMutation({
+    mutationFn: api.stopSession,
+    onSuccess: refresh,
+  });
+  const revoke = useMutation({
+    mutationFn: api.revokeDevice,
+    onSuccess: refresh,
+  });
+  const remove = useMutation({
+    mutationFn: api.removeDevice,
+    onSuccess: refresh,
+  });
+
+  const active = sessions.data?.sessions.filter((session) => session.active) ?? [];
+  const recent = sessions.data?.sessions.filter((session) => !session.active) ?? [];
+  const paired = devices.data?.devices ?? [];
+
+  return (
+    <Section title={`Active sessions${active.length ? ` · ${active.length}` : ""}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="text-xs text-muted">
+          Live playback from every paired device. Stop ends the session on the
+          player's next progress report; revoke removes its sign-in.
+        </p>
+        <Button
+          variant="secondary"
+          className="h-8 px-3 text-xs"
+          onPress={() => void refresh()}
+          isDisabled={sessions.isFetching || devices.isFetching}
+        >
+          <RotateCw size={13} className={sessions.isFetching ? "animate-spin" : ""} />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {active.length === 0 ? (
+          <p className="rounded-xl border border-border/70 bg-surface px-4 py-3 text-sm text-muted">
+            No one is playing right now.
+          </p>
+        ) : (
+          active.map((session) => {
+            const title = session.parentTitle && session.seasonNumber != null
+              ? `${session.parentTitle} · S${String(session.seasonNumber).padStart(2, "0")}E${String(session.episodeNumber ?? 0).padStart(2, "0")}`
+              : session.itemTitle ?? "Unknown title";
+            const percent = session.duration && session.duration > 0
+              ? Math.min(100, Math.round((session.position / session.duration) * 100))
+              : 0;
+            return (
+              <div key={session.id} className="rounded-xl border border-border/70 bg-surface p-3.5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${session.paused ? "bg-warning" : "bg-success"}`} />
+                      <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      {session.username} · {session.deviceName ?? "Unknown device"}
+                      {session.ip ? ` · ${session.ip}` : ""}
+                    </p>
+                    {session.client && (
+                      <p className="mt-0.5 truncate text-[10.5px] text-muted/80" title={session.client}>
+                        {session.client}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => stop.mutate(session.id)}
+                    disabled={stop.isPending}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-[11px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+                  >
+                    <Square size={11} />
+                    Stop
+                  </button>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border/70">
+                    <div className="h-full rounded-full bg-foreground/70" style={{ width: `${percent}%` }} />
+                  </div>
+                  <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
+                    {formatSessionTime(session.position)} / {session.duration ? formatSessionTime(session.duration) : "—"}
+                  </span>
+                </div>
+                <p className="mt-2 text-[10.5px] text-muted">
+                  {session.status === "paused" ? "Paused" : "Playing"} · last update {relativeSessionTime(session.updatedAt)}
+                </p>
+              </div>
+            );
+          })
+        )}
+        {recent.length > 0 && (
+          <details className="rounded-xl border border-border/70 bg-surface">
+            <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold text-muted [&::-webkit-details-marker]:hidden">
+              Recently stopped / ended ({recent.length})
+            </summary>
+            <div className="divide-y divide-border/60 border-t border-border/60">
+              {recent.slice(0, 12).map((session) => (
+                <div key={session.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+                  <span className="min-w-0 truncate text-foreground">
+                    {session.parentTitle ?? session.itemTitle ?? "Unknown title"}
+                    <span className="text-muted"> · {session.username} · {session.deviceName ?? "Unknown device"}</span>
+                  </span>
+                  <span className="shrink-0 text-muted">{relativeSessionTime(session.updatedAt)}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-border/70 pt-4">
+        <h3 className="text-xs font-semibold text-foreground">Paired devices</h3>
+        <p className="mt-1 text-[11px] text-muted">
+          Revoking signs the device out immediately. Remove is available after revocation.
+        </p>
+        <div className="mt-3 space-y-2">
+          {paired.length === 0 ? (
+            <p className="text-xs text-muted">No devices have signed in yet.</p>
+          ) : (
+            paired.map((device) => (
+              <div key={device.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface px-3.5 py-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-secondary text-muted">
+                    {/iphone|ipad|android|phone|mobile/i.test(device.name) ? <Smartphone size={14} /> : <Monitor size={14} />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-foreground">
+                      {device.name}
+                      {device.revoked && <span className="ml-2 text-[10px] font-medium text-muted">revoked</span>}
+                    </p>
+                    <p className="truncate text-[10.5px] text-muted">
+                      {device.username ?? "Unknown user"} · {device.lastSeen ? `seen ${relativeSessionTime(device.lastSeen)}` : "never seen"}
+                      {device.lastIp ? ` · ${device.lastIp}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {!device.revoked ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`Revoke ${device.name}? It will need to sign in again.`)) revoke.mutate(device.id);
+                      }}
+                      disabled={revoke.isPending}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-border px-2 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+                    >
+                      <ShieldOff size={11} /> Revoke
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => remove.mutate(device.id)}
+                      disabled={remove.isPending}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-border px-2 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+                    >
+                      <Trash2 size={11} /> Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function formatSessionTime(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+    : `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+function relativeSessionTime(value: string | null | undefined): string {
+  if (!value) return "never";
+  const date = new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 45) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86_400)}d ago`;
 }
 
 function SystemUsage() {

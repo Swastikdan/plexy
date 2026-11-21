@@ -147,12 +147,13 @@ export function scoreCandidate(input: ScoreInput): Candidate {
 export async function refineWithRuntime(
   candidates: Candidate[],
   fileRuntimeMinutes: number | null,
+  language?: string,
 ): Promise<Candidate[]> {
   if (!fileRuntimeMinutes) return candidates;
   const out: Candidate[] = [];
   for (const candidate of candidates) {
     try {
-      const full = await detail(candidate.tmdbType, candidate.tmdbId);
+      const full = await detail(candidate.tmdbType, candidate.tmdbId, language);
       const runtime = full.runtime ?? null;
       if (runtime && Math.abs(runtime - fileRuntimeMinutes) / runtime <= 0.05) {
         out.push({
@@ -178,6 +179,8 @@ export interface MatchInput {
   parsedYear: number | null;
   kind: TmdbKind;
   fileRuntimeMinutes?: number | null;
+  /** Metadata language (per-library), falling back to the server default. */
+  language?: string;
   /** True when the title came from an explicit id tag or NFO file. */
   explicitId?: number | null;
 }
@@ -190,7 +193,7 @@ export async function match(input: MatchInput): Promise<MatchResult> {
   // Shortcut: explicit id verifies existence then stops searching (PRD 5.4.3).
   if (input.explicitId) {
     try {
-      const full = await detail(input.kind, input.explicitId);
+      const full = await detail(input.kind, input.explicitId, input.language);
       const title = full.title ?? full.name ?? "";
       return {
         status: "matched",
@@ -212,7 +215,7 @@ export async function match(input: MatchInput): Promise<MatchResult> {
     }
   }
 
-  const results = await search(input.kind, input.parsedTitle, input.parsedYear);
+  const results = await search(input.kind, input.parsedTitle, input.parsedYear, input.language);
   let candidates = results
     .map((c) => scoreCandidate({
       parsedTitle: input.parsedTitle,
@@ -225,7 +228,7 @@ export async function match(input: MatchInput): Promise<MatchResult> {
 
   // Runtime refinement only matters near the auto threshold.
   if (input.kind === "movie" && input.fileRuntimeMinutes) {
-    candidates = await refineWithRuntime(candidates, input.fileRuntimeMinutes);
+    candidates = await refineWithRuntime(candidates, input.fileRuntimeMinutes, input.language);
   }
 
   candidates = candidates.slice(0, MAX_CANDIDATES);

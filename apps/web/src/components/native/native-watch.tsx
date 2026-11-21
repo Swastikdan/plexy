@@ -193,6 +193,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
 
   const [starting, setStarting] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [stoppedByAdmin, setStoppedByAdmin] = useState(false);
   const manifestError = play.isLoadingError && !play.isFetching
     ? (play.error instanceof Error ? play.error.message : "Could not load this title.")
     : null;
@@ -253,7 +254,18 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
       lastSaveRef.current = Date.now();
       void api
         .progress(itemId, current, durationRef.current, played)
-        .then(invalidateProgress)
+        .then((result) => {
+          if (result.stop) {
+            setStoppedByAdmin(true);
+            const sessionId = sessionIdRef.current;
+            if (sessionId) {
+              void window.electronAPI?.nativePlayer
+                ?.command({ sessionId, action: "pause" })
+                .catch(() => {});
+            }
+          }
+          invalidateProgress();
+        })
         .catch(() => {});
     },
     [invalidateProgress],
@@ -481,6 +493,18 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
   return (
     <VideoPlayer>
       <div className="fixed inset-0 z-50 select-none overflow-hidden bg-transparent text-white">
+        {stoppedByAdmin && (
+          <div className="absolute inset-x-0 top-16 z-[75] mx-auto w-[min(92vw,460px)] rounded-xl border border-white/15 bg-[#181818]/95 p-4 text-center shadow-2xl">
+            <p className="text-sm font-semibold">Playback stopped by the server owner.</p>
+            <button
+              type="button"
+              onClick={leave}
+              className="mt-3 rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/85 transition hover:bg-white/10"
+            >
+              Back to the title
+            </button>
+          </div>
+        )}
         <Container
           data-theme="neutral"
           data-preset="video"
@@ -490,7 +514,6 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           {!starting && !error && <BufferingIndicator />}
           <NeutralVideoControls
             thumbnails={trickplayThumbnails}
-            volumePlacement="right"
             serverAudioTracks={serverAudioTracks}
             selectedAudioIndex={selectedAudioIndex}
             onSelectAudioTrack={handleSelectAudio}

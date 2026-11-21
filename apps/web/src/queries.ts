@@ -230,6 +230,28 @@ export const queries = {
         q.state.data?.running || q.state.data?.queued ? 2000 : 30_000,
     }),
 
+  sessions: () =>
+    queryOptions({
+      queryKey: ["sessions"],
+      queryFn: api.sessions,
+      refetchInterval: 5_000,
+    }),
+
+  devices: () =>
+    queryOptions({
+      queryKey: ["devices"],
+      queryFn: api.devices,
+      staleTime: 10_000,
+    }),
+
+  trickplay: () =>
+    queryOptions({
+      queryKey: ["trickplay-status"],
+      queryFn: api.trickplayStatus,
+      refetchInterval: (q) =>
+        q.state.data?.running || q.state.data?.queued ? 2000 : 30_000,
+    }),
+
   // --- admin ---
 
   libraries: () =>

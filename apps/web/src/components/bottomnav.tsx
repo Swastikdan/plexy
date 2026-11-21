@@ -8,7 +8,7 @@ import { cx } from "../lib/cx";
 import { accountRequest, getSignedInUser, type AccountUser } from "../auth";
 import { UserAvatar } from "./user-avatar";
 
-export function BottomNav() {
+export function BottomNav({ className }: { className?: string }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const account = useQuery({
     queryKey: ["account"],
@@ -35,6 +35,7 @@ export function BottomNav() {
       className={cx(
         "glass fixed inset-x-0 bottom-0 z-40 border-t border-border/80 lg:hidden",
         "px-3 pb-[max(env(safe-area-inset-bottom),0.55rem)] pt-1.5",
+        className,
       )}
       aria-label="Mobile navigation"
     >
