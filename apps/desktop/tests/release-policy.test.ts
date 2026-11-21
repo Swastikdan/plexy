@@ -6,7 +6,7 @@ import {
   desktopUpdateAssets,
   selectDesktopRelease,
   type Release,
-} from "../src/main/release-policy";
+} from "@/main/release-policy";
 const digest = "a".repeat(64);
 test("late Mac assets use GitHub's digest when the manifest lists only servers", () => {
   const asset = { name: "Plexy.Beta-1.0.7-arm64.zip", digest: `sha256:${digest}` };

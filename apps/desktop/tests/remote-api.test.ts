@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
-import { proxyApi } from "../src/main/remote-api";
+import { proxyApi } from "@/main/remote-api";
 const servers: Server[] = [];
 afterEach(async () => {
   for (const server of servers.splice(0))

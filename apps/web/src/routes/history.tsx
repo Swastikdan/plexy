@@ -3,11 +3,11 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock3, Trash2, X } from "lucide-react";
-import { api, type ItemCard } from "../client";
-import { queries } from "../queries";
-import { Page } from "../components/page";
-import { Poster } from "../components/poster";
-import { State } from "../components/state";
+import { api, type ItemCard } from "@/client";
+import { queries } from "@/queries";
+import { Page } from "@/components/page";
+import { Poster } from "@/components/poster";
+import { State } from "@/components/state";
 
 function watchedLabel(value: string | null | undefined): string {
   if (!value) return "";

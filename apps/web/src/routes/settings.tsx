@@ -14,24 +14,24 @@ import {
   Users,
   UserRound,
 } from "lucide-react";
-import { accountRequest, getSignedInUser, type AccountUser, type AuthDevice } from "../auth";
-import { getClientRuntime } from "../runtime-config";
-import { queries } from "../queries";
-import { cx } from "../lib/cx";
-import { Page } from "../components/page";
-import { OverviewPanel } from "../components/settings/overview";
+import { accountRequest, getSignedInUser, type AccountUser, type AuthDevice } from "@/auth";
+import { getClientRuntime } from "@/runtime-config";
+import { queries } from "@/queries";
+import { cx } from "@/lib/cx";
+import { Page } from "@/components/page";
+import { OverviewPanel } from "@/components/settings/overview";
 import {
   AccountPanel,
   AppearancePanel,
   DevicesPanel,
   PlaybackPanel,
-} from "../components/settings/panels";
+} from "@/components/settings/panels";
 import {
   LibrariesPanel,
   MatchesPanel,
   ServerPreferencesPanel,
-} from "../components/server/panels";
-import { UserManagement } from "../components/user-management";
+} from "@/components/server/panels";
+import { UserManagement } from "@/components/user-management";
 
 const PERSONAL_TABS = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },

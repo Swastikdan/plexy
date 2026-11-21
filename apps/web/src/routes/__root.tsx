@@ -1,12 +1,12 @@
 /// App root: every page sits behind the server connection gate, and the app
 /// chrome (top bar and mobile bar) wraps every page except the player.
 import { createRootRoute, Outlet, useMatchRoute, useRouterState } from "@tanstack/react-router";
-import { TopNav } from "../components/topnav";
-import { BottomNav } from "../components/bottomnav";
-import { cx } from "../lib/cx";
-import { isElectronMac } from "../lib/platform";
-import { ServerGate } from "../components/server-gate";
-import { useLibrarySync, usePrefetchRuntime } from "../lib/prefetch-config";
+import { TopNav } from "@/components/topnav";
+import { BottomNav } from "@/components/bottomnav";
+import { cx } from "@/lib/cx";
+import { isElectronMac } from "@/lib/platform";
+import { ServerGate } from "@/components/server-gate";
+import { useLibrarySync, usePrefetchRuntime } from "@/lib/prefetch-config";
 
 function Shell() {
   // The offline cache follows the saved preferences everywhere in the app and

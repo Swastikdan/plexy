@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { db, q, run, runMigrations } from "../src/db";
-import { createUser, setupState } from "../src/accounts";
-import { peekToken } from "../src/auth";
+import { db, q, run, runMigrations } from "@/db";
+import { createUser, setupState } from "@/accounts";
+import { peekToken } from "@/auth";
 
 test("existing libraries and progress migrate; old account-free devices cannot authenticate", async () => {
   const dir = join(import.meta.dir, "../src/migrations");

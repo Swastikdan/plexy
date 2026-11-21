@@ -1,29 +1,42 @@
 # Testing
 
-The suite is deliberately split into four layers. Each one answers a different
-question, and a change only merges when the cheap layers pass.
+## Pull-request checks
 
-| Layer | Question it answers | Cost |
-| --- | --- | --- |
-| Unit and contract tests | Does the extracted logic still behave? | ~25s |
-| Typecheck of tests | Does a test still match the API it calls? | ~10s |
-| Metro bundle | Do the routes, assets and native config still compile? | ~60s |
-| Android E2E | Does the app boot and navigate on a device? | ~20min |
+Run `bun run check` from the root. The [contributor workflow](../.github/workflows/check.yml)
+runs the same command with Bun from `package.json` and FFmpeg on `PATH`.
+It checks workspace boundaries, typechecks every app and shared package plus
+scripts and mobile tests, runs strict mobile lint and the workspace and release
+script tests, and exercises the playback smoke flow. The web typecheck builds
+the web assets because the build generates the TanStack route tree.
 
-## Commands
+### Focused checks
 
-```sh
-bun run test:native            # mobile + local-library unit tests
-bun run test:native:coverage   # same run, with the coverage floor enforced
-bun run typecheck:native       # app sources
-bun run typecheck:tests        # mobile tests (separate tsconfig)
-bun run bundle:native          # Metro export, catches broken routes/assets
-bun run e2e:android            # Maestro flows, needs a device or emulator
-bun run e2e:android:smoke      # only the smoke-tagged flows
-```
+| Command | Scope |
+| --- | --- |
+| `bun run test:server` | Backend suites, each with a fresh database and log directory |
+| `bun scripts/test-server.ts routes.test.ts` | One backend suite with the same isolation |
+| `bun run test:desktop` | Electron proxy, relay, and other desktop logic |
+| `bun run test:native` | Android logic and local-library suites |
+| `bun run test:native:coverage` | Android and local-library suites with the coverage floor |
+| `bun run typecheck:tests` | Android test types |
+| `bun run bundle:native` | Android Metro export for route, asset, and native config checks |
 
-`bun run build:check` runs the unit, typecheck and bundle layers locally
-without needing Gradle or Xcode.
+### Playback smoke
+
+`bun run smoke:playback` needs FFmpeg with libx264 on `PATH`. It generates a
+short MP4, starts a fresh loopback server with its own database and logs, creates
+an owner, and registers and scans the fixture folder through the public API.
+It uses the session cookie to verify the playback manifest and compare a
+byte-range response with the original file. It cleans up the server and its
+temporary directory on exit. This check does not require an existing Plexy
+instance, a browser, credentials for TMDB, or personal media.
+
+### Build checks
+
+`bun run build:check:mobile` runs the mobile typechecks, strict lint, tests, and
+Metro export. `bun run build:check` runs the full contributor check and adds
+the Electron main/preload build, Android Metro export, and server bundle assembly.
+Neither command builds a signed installer or needs a device or emulator.
 
 ## Why the tests are typechecked separately
 
@@ -74,15 +87,15 @@ touches; there is no value in tagging every view.
 - Start from `launchApp: { clearState: true }` so the run is deterministic. A
   fresh install has no library and Home redirects to folder setup, which makes
   that first screen a stable entry point.
-- Tag cheap, high-value flows `smoke`; the pull request job runs only those.
+- Tag cheap, high-value flows `smoke` so the manual workflow picks them up.
 - Never assert on a spinner or an animated value. Assert on the settled state.
 
 ### CI
 
-`.github/workflows/android-e2e.yml` builds the APK and runs the smoke flows on
-an emulator. It is `continue-on-error: true` while the flows settle: a failure
-shows on the pull request without blocking it. Remove that line once it has
-been green for a week so a real regression blocks the merge.
+The [Android E2E workflow](../.github/workflows/android-e2e.yml) is run manually.
+It builds an APK and runs the smoke flows on an emulator. To run them locally
+against an installed APK, use `bun run e2e:android:smoke`. Use
+`bun run e2e:android` to run the full Maestro suite.
 
 ## Adding tests
 

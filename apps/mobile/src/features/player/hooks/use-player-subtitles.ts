@@ -1,4 +1,4 @@
-import { updateNativePlayer } from "../lib/native-player";
+import { updateNativePlayer } from "@/features/player/lib/native-player";
 import { useEventCallback } from "@/shared/hooks/use-event-callback";
 import { useEffect, useRef, useState } from "react";
 import type { VideoPlayer } from "expo-video";
@@ -9,7 +9,7 @@ import {
   preferredSubtitleTrack,
   subtitleText,
   type Cue,
-} from "../lib/subtitles";
+} from "@/features/player/lib/subtitles";
 export function usePlayerSubtitles({
   manifest,
   player,

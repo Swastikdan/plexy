@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyPlayability, rangeResponse } from "../src/playback";
+import { classifyPlayability, rangeResponse } from "@/playback";
 
 describe("Playback Classification (PRD 5.6, 5.8)", () => {
   const browserWithBasicCaps = {

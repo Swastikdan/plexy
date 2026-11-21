@@ -8,12 +8,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SearchField } from "@heroui/react";
 import { ArrowRight, Compass, UserRound } from "lucide-react";
-import { queries } from "../queries";
-import { SearchResultCard } from "../components/search-result-card";
-import { Row } from "../components/row";
-import { Page } from "../components/page";
+import { queries } from "@/queries";
+import { SearchResultCard } from "@/components/search-result-card";
+import { Row } from "@/components/row";
+import { Page } from "@/components/page";
 import { State } from "@/components/state";
-import { artworkUrl } from "../lib/artwork-url";
+import { artworkUrl } from "@/lib/artwork-url";
 import type { PersonSummary } from "@plexy/api-client";
 
 function ResultSection({
@@ -119,7 +119,7 @@ function SearchRoute() {
   return (
     <Page className="!pt-0">
       <div className="sticky top-[3.25rem] z-20 -mx-[var(--app-gutter)] border-b border-border/70 bg-background/92 px-[var(--app-gutter)] py-3 backdrop-blur-xl md:top-[var(--app-topbar-height)]">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
+        <div className="flex w-full items-center">
           <SearchField
             autoFocus
             value={q}
@@ -128,6 +128,7 @@ function SearchRoute() {
             fullWidth
           >
             <SearchField.Group className="h-11 rounded-full border-border/70 bg-surface-secondary/45 px-4">
+              <SearchField.SearchIcon />
               <SearchField.Input
                 placeholder="Search your films and shows…"
                 aria-label="Search your films and shows"
@@ -142,7 +143,6 @@ function SearchRoute() {
               ) : (
                 <SearchField.ClearButton aria-label="Clear search" />
               )}
-              <SearchField.SearchIcon />
             </SearchField.Group>
           </SearchField>
         </div>

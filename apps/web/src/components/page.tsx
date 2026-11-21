@@ -4,7 +4,7 @@
 /// eyebrow → title → description rhythm. Consistency here is what makes the
 /// catalog feel like one product rather than a set of routes.
 import type { ReactNode } from "react";
-import { cx } from "../lib/cx";
+import { cx } from "@/lib/cx";
 
 export function Page({
   children,

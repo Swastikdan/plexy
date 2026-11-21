@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { runMigrations, run, q, type Row } from "../src/db";
-import { initConfig, save } from "../src/config";
-import { hydrateMissingEpisodes } from "../src/hydrate";
+import { runMigrations, run, q, type Row } from "@/db";
+import { initConfig, save } from "@/config";
+import { hydrateMissingEpisodes } from "@/hydrate";
 
 const originalFetch = globalThis.fetch;
 

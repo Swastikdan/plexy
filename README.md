@@ -4,6 +4,62 @@ Plexy is a self-hosted personal media server for your own movie and TV collectio
 
 It exists because personal video libraries are messy in practice: files live in odd containers and codecs browsers can't play, metadata is missing, subtitles are embedded or scattered, and you still want intro-skip, resume, scrub previews, and offline playback. Plexy handles all of that locally.
 
+## Develop locally
+
+Use **Bun 1.4.4** (pinned in `package.json`) and **Node.js 22.13 or newer in the 22.x line** for the frontend and native tooling. Install FFmpeg on `PATH` for server development and playback tests. From the repo root:
+
+```sh
+SKIP_FFMPEG=true bun install --frozen-lockfile
+```
+
+This uses your system FFmpeg for development. See the [build instructions](#build) if you are packaging a release.
+
+### Web and server
+
+```sh
+PLEXY_DATA_DIR="$PWD/.data/dev" PLEXY_LOG_DIR="$PWD/.data/dev/logs" bun run dev
+```
+
+Open [http://localhost:5173/setup](http://localhost:5173/setup) from the Vite output. Create an owner, choose **Configure metadata later** if you have no TMDB token, and add a folder with a video. The server's port, `8765`, is the API target during development. `PORT` changes the backend port and Vite's proxy target. Vite listens on localhost and reserves `5173`. Stop the previous Vite instance before switching worktrees.
+
+The paths above keep the database, settings, caches, and logs under each checkout's ignored `.data/` directory. Use a new path for a fresh setup without clearing existing state. For server-only development, use `bun run --filter @plexy/server dev` with the same environment variables and check `/api/server/status`.
+
+`bun run dev:admin` also starts both processes and creates a development-only owner on a fresh database. It is intended for [loopback development](apps/server/README.md#development-owner---dev-admin).
+
+### Electron
+
+On Apple Silicon macOS, build the web assets once, then start Electron with its own local backend:
+
+```sh
+bun run build:web
+PLEXY_DATA_DIR="$PWD/.data/desktop" bun run dev:desktop
+```
+
+Check that the window opens and can browse a local library. Install mpv with Homebrew if you are working on native playback. See the [desktop README](apps/desktop/README.md) for renderer development and packaging.
+
+### Android
+
+Install JDK 17 and the Android SDK, then start an emulator or connect an Android device with USB debugging enabled.
+
+```sh
+bun run android:mobile
+```
+
+Confirm Plexy opens and the folder picker can see device storage. Once the development build is installed, `bun run dev:mobile` starts Metro for JavaScript changes. The Android app runs independently of the Plexy server. See the [mobile README](apps/mobile/README.md) for device checks and release requirements.
+
+### Verify a change
+
+| Command | Purpose |
+| --- | --- |
+| `bun run check` | Same checks as pull-request CI, including typechecks, strict mobile lint, tests, and playback smoke |
+| `bun run smoke:playback` | Fresh owner setup, library scan, and byte-range playback with a generated fixture |
+| `bun run test:server`, `bun run test:desktop`, `bun run test:native` | Focused workspace tests |
+| `bun run turbo run typecheck --filter=@plexy/<name>` | Typecheck a single workspace |
+| `bun run build:check:mobile` | Mobile checks plus Metro export |
+| `bun run perf:check` | Built artifact budgets and server boot, memory, and transfer measurements |
+
+See [Testing](docs/TESTING.md) for the test and build layers.
+
 ## Repository map
 
 ```text
@@ -28,7 +84,7 @@ scripts/      Build, release, test, and license tooling (Bun)
 docs/         Feature and operations docs (see "Docs index" below)
 ```
 
-Dependency direction is strict: `apps/* → packages/*`, never the reverse. See `docs/MONOREPO.md`.
+Apps depend on shared packages. See the dependency rules and the entry points for common changes. [Monorepo](docs/MONOREPO.md) · [AGENTS.md](AGENTS.md)
 
 New to the codebase? Read in this order:
 
@@ -52,7 +108,7 @@ New to the codebase? Read in this order:
 
 **Browser frontend (`apps/web`) — embedded, not deployed separately.** See `apps/web/README.md`.
 
-- React 19 + TanStack Router/Query + Video.js + Tailwind 4/HeroUI single-file build, served as static files by the backend process itself. There is no separate UI server.
+- React 19 + TanStack Router/Query + Video.js + Tailwind 4/HeroUI single-file build, served as static files by the backend process in packaged builds.
 - `bun run dev` runs backend + Vite dev servers; `--no-ui` / `PLEXY_NO_UI=1` disables UI routes and assets while keeping the API and media jobs running (headless mode).
 
 **Desktop (`apps/desktop`) — Electron shell.** See `apps/desktop/README.md`.
@@ -96,42 +152,6 @@ Android (separate): Storage Access folders ──► local SQLite ──► expo
 
 Mobile app code further splits into `apps/mobile/src/core` (infrastructure), `src/features` (screen logic), and `src/shared` (reusable controls). See `docs/MONOREPO.md` before adding packages or moving shared code.
 
-## Prerequisites
-
-- **Bun 1.4.4** (`packageManager: bun@1.4.4`) — all server/web/desktop/packages scripts run on Bun.
-- **FFmpeg** — bundled into `dist/server` by `bun run build:server`; for `bun run dev` it must be on `PATH`.
-- **macOS** — required for desktop packaging (`electron-builder`, ad-hoc signed DMG/ZIP).
-- **JDK 17 + Android SDK** — required only for `bun run build:mobile` (ARM64 APK under `.build/native`). Tune with `PLEXY_ANDROID_ARCHITECTURES`, `PLEXY_GRADLE_WORKERS`.
-- **TMDB token** — set in Settings UI (server) or `TMDB_TOKEN`/`EXPO_PUBLIC_TMDB_TOKEN` at build time (mobile preview/EAS builds fail without it).
-
-Install once: `bun install` (links all `apps/*` + `packages/*` workspaces).
-
-## Quickstart
-
-```sh
-bun install
-bun run dev            # backend :8765 + web dev server :5173 (PORT moves both)
-```
-
-Then open the printed URL (`http://localhost:8765/setup` on first run) to create the owner, add a library folder, and let the scanner + TMDB hydration run.
-
-| Command | Purpose |
-| --- | --- |
-| `bun run dev` | Backend + frontend dev servers (`PORT` moves both; the Vite proxy follows it) |
-| `bun run dev:admin` | Same, plus a one-time development owner `admin` / `admin` (Bun dev server on loopback only; never expose this) |
-| `bun run dev:desktop` | Electron shell (run `bun run dev` first and set `VITE_DEV_SERVER_URL=http://localhost:5173`) |
-| `bun run dev:mobile` | Expo dev server |
-| `bun run android:mobile` | Generate and run the Android dev app |
-| `bun run typecheck` | Server, web, desktop, shared packages, root scripts |
-| `bun run typecheck:native` | Mobile types |
-| `bun run test` | Every non-E2E suite (server, desktop, mobile, shared packages) |
-| `bun run test:server` | Isolated backend tests |
-| `bun run test:desktop` | Desktop API proxy tests |
-| `bun run test:packages` | Shared-package tests |
-| `bun run test:native` | Local-library + mobile logic tests |
-| `bun run perf:check` | Artifact budgets + server boot/RSS/transfer probe |
-| `bun run arch:check` | One-way workspace dependencies, no app-to-app edges, no cycles |
-
 ## Build
 
 | Command | Output |
@@ -169,17 +189,21 @@ gh workflow run build.yml --ref main \
 
 The desktop app, its package filenames, and the general release tag use the version selected by the workflow. A local desktop package uses the higher of the root package's version and the latest general release tag. Local desktop and Android packaging use your authenticated `gh` session to reserve numbers in this repository, and hosted packaging uses the same Git tags. Android APKs keep their own semantic version and Android version code. Reservations can leave gaps after failed or local-only builds.
 
-### macOS download mirror
+### itch.io download mirror
 
 Create a public, downloadable itch.io project with **No payments** pricing. In GitHub Actions set the variable `PLEXY_ITCH_PROJECT` to the uploader target (`creator/project` from the itch.io project URL) and the secret `BUTLER_API_KEY` to an [itch.io upload key](https://itch.io/docs/butler/login.html).
 
-After publishing the DMG and ZIP to GitHub, the desktop workflow pushes the DMG to itch.io with Butler. The itch.io page offers the latest installer in each channel. GitHub keeps the original versioned assets and links to the itch.io page when the upload succeeds and the page is public.
+The release workflow sends each selected artifact to its own Butler channel after publishing to GitHub. This includes the macOS DMG and ZIP, the Android APK when a native build is published, and both backend platforms in the selected bundle or binary format. The itch.io page serves the latest file in each channel. GitHub keeps the versioned artifacts and update metadata.
+
+To enable direct links in release notes and itch.io downloads in the macOS and Android updaters, deploy the redirect Worker in [services/itch-downloads](services/itch-downloads). Set `ITCH_GAME_ID` in its Wrangler config to the project's numeric itch.io ID. From that directory, run `wrangler secret put ITCH_API_KEY` with an itch.io API key authorized to download the project's files, then run `wrangler deploy`. Set the GitHub Actions variable `PLEXY_ITCH_DOWNLOAD_ORIGIN` to the Worker's HTTPS origin.
+
+The Worker checks the requested build tag and redirects to a fresh itch.io download URL. The file goes from itch.io to the device. The updaters use GitHub release metadata to select the update and verify its checksum. If the itch.io build is processing, its channel has moved to another version, or verification fails, the apps use their existing fallback sources.
 
 ### Android download mirror
 
 To serve Android release downloads from Cloudflare R2, connect an HTTPS custom domain to a dedicated R2 bucket. In GitHub Actions set the variables `PLEXY_UPDATE_ORIGIN` (the HTTPS origin) and `PLEXY_UPDATE_R2_BUCKET` (the bucket name). Set the secrets `CLOUDFLARE_ACCOUNT_ID`, `PLEXY_R2_ACCESS_KEY_ID`, and `PLEXY_R2_SECRET_ACCESS_KEY` with a bucket-scoped R2 credential.
 
-The next **Force APK** release uploads the APK first, then the manifest, and removes older Android APKs from the bucket. GitHub Releases keeps the full history. The Android app tries R2 first for the current manifest and installer, and falls back to GitHub. It checks the APK size and SHA-256 before opening the installer.
+The next **Force APK** release uploads the APK first, then the manifest, and removes older Android APKs from the bucket. GitHub Releases keeps the full history. The Android app checks GitHub for the current manifest, with R2 as a fallback if that request fails. APK downloads try itch.io, then configured R2, then GitHub. It checks the APK size and SHA-256 before opening the installer.
 
 ## Running the server
 

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createFingerprintAsync, DEFAULT_SOURCE_SKIPS, SourceSkips } from "@expo/fingerprint";
-import { isAndroidBundleCurrent, needsMobileApk, otaMessage, readMobileDeliveryState, type ExpoDelivery } from "../../../scripts/native/mobile-delivery-state";
-import { MOBILE_POLICY_URL, parseMobileManifest } from "../src/features/settings/lib/mobile-update-manifest";
+import { isAndroidBundleCurrent, needsMobileApk, otaMessage, readMobileDeliveryState, type ExpoDelivery } from "@scripts/native/mobile-delivery-state";
+import { MOBILE_POLICY_URL, parseMobileManifest } from "@/features/settings/lib/mobile-update-manifest";
 
 const project = resolve(import.meta.dir, "..");
 const root = resolve(project, "../..");

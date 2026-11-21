@@ -294,7 +294,7 @@ export class LocalLibrary {
     }
     await this.scan();
   }
-  async addSubtitle(fileId: number, track: import("../../api-client/src/types").SubtitleTrack) {
+  async addSubtitle(fileId: number, track: import("@plexy/api-client/types").SubtitleTrack) {
     const record = this.record(fileId);
     record.externalSubtitles = [...(record.externalSubtitles || []).filter(t => t.track !== track.track), track];
     await this.persist();

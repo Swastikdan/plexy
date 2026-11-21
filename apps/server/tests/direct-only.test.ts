@@ -1,16 +1,16 @@
 /// Playback fallbacks: conversion is available (direct-first, not direct-only),
 /// and the optimizer prepares only files that cannot play as-is.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { buildApp } from "../src/app";
-import { q, run, runMigrations } from "../src/db";
-import { initConfig, save } from "../src/config";
+import { buildApp } from "@/app";
+import { q, run, runMigrations } from "@/db";
+import { initConfig, save } from "@/config";
 import {
   enqueueMissingOptimizations,
   needsPreparation,
   pauseOptimizer,
   startOptimizer,
   stopOptimizer,
-} from "../src/optimize";
+} from "@/optimize";
 
 describe("playback conversion routes", () => {
   const app = buildApp();

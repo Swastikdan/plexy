@@ -18,10 +18,10 @@ import {
   probeServer,
   rememberServerCandidate,
   setServerUrl,
-} from "../server-config";
-import { getClientRuntime } from "../runtime-config";
-import { accountRequest, isLocalPage, type SetupState, getAuthDevice } from "../auth";
-import { reportConnectionHealth, subscribeConnectionHealth, type ConnectionHealth } from "../lib/connection-health";
+} from "@/server-config";
+import { getClientRuntime } from "@/runtime-config";
+import { accountRequest, isLocalPage, type SetupState, getAuthDevice } from "@/auth";
+import { reportConnectionHealth, subscribeConnectionHealth, type ConnectionHealth } from "@/lib/connection-health";
 
 type GateState =
   | { phase: "checking" }

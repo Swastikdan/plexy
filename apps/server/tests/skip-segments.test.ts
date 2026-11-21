@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { q, run, runMigrations, type Row } from "../src/db";
-import { initConfig, save } from "../src/config";
-import { buildApp } from "../src/app";
+import { q, run, runMigrations, type Row } from "@/db";
+import { initConfig, save } from "@/config";
+import { buildApp } from "@/app";
 import {
   getSkipSegments,
   normalizeSegment,
   refreshSkipSegmentsForItem,
-} from "../src/skip-segments";
+} from "@/skip-segments";
 
 const originalFetch = globalThis.fetch;
 const LIBRARY_ID = 7400;

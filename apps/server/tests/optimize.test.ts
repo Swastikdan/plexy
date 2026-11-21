@@ -7,10 +7,10 @@ import {
   replaceOriginalWithPrepared,
   requeueAfterUrgent,
   type OptimizeFacts,
-} from "../src/optimize";
+} from "@/optimize";
 import {
   cuesToVtt, fmtVttTimestamp, packetToCues, srtToVtt,
-} from "../src/subtitles";
+} from "@/subtitles";
 
 const baseFacts: OptimizeFacts = {
   container: "mkv",

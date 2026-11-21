@@ -7,7 +7,7 @@ import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import type { Playability } from "@/core/library/catalog-api";
 import { useColors } from "@/shared/theme";
 import { cn } from "@/shared/lib/cn";
-import { subtitleLanguageName, subtitleTrackDisplay } from "../lib/subtitles";
+import { subtitleLanguageName, subtitleTrackDisplay } from "@/features/player/lib/subtitles";
 
 interface TrackRow {
   key: string;

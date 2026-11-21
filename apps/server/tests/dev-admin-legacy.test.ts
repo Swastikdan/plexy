@@ -1,10 +1,10 @@
 import { beforeAll, expect, test } from "bun:test";
-import { initConfig } from "../src/config";
-import { runMigrations } from "../src/db";
+import { initConfig } from "@/config";
+import { runMigrations } from "@/db";
 import {
   createUser,
   devAdminUsesDefaultPassword,
-} from "../src/accounts";
+} from "@/accounts";
 
 beforeAll(async () => {
   await runMigrations();

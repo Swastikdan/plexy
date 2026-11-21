@@ -1,8 +1,8 @@
 /// Dedicated server-connection page, reachable from Settings so a connected
 /// user can point the client at a different Plexy server.
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { ConnectScreen } from "../components/connect-screen";
-import { getApiBase, getServerOverride } from "../server-config";
+import { ConnectScreen } from "@/components/connect-screen";
+import { getApiBase, getServerOverride } from "@/server-config";
 
 function ConnectRoute() {
   const router = useRouter();

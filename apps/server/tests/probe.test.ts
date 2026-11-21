@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { resolveFfmpeg } from "../src/ffmpeg";
-import { probeFile } from "../src/media-worker";
-import { extractEmbeddedVtt } from "../src/subtitles";
+import { resolveFfmpeg } from "@/ffmpeg";
+import { probeFile } from "@/media-worker";
+import { extractEmbeddedVtt } from "@/subtitles";
 
 describe("FFmpeg / ffprobe Media Probing (replacing Mediabunny)", () => {
   const mp4Path = "/tmp/plexy_probe_test.mp4";

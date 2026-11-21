@@ -1,4 +1,4 @@
-import { getApiBase } from "../server-config";
+import { getApiBase } from "@/server-config";
 
 /** Point API-served artwork at the selected Plexy server, including hosted web clients. */
 export function artworkUrl(src: string | null | undefined): string | undefined {

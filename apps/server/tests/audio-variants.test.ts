@@ -5,11 +5,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildApp } from "../src/app";
-import { q, run, runMigrations, type Row } from "../src/db";
-import { initConfig } from "../src/config";
-import { resolveFfmpeg } from "../src/ffmpeg";
-import { stopOptimizer } from "../src/optimize";
+import { buildApp } from "@/app";
+import { q, run, runMigrations, type Row } from "@/db";
+import { initConfig } from "@/config";
+import { resolveFfmpeg } from "@/ffmpeg";
+import { stopOptimizer } from "@/optimize";
 
 const FILE_ID = 7901;
 const ITEM_ID = 7902;

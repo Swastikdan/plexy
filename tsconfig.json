@@ -3,6 +3,8 @@
   "extends": "@plexy/tsconfig/bun.json",
   "compilerOptions": {
     "paths": {
+      "@/*": ["./apps/mobile/src/*"],
+      "@scripts/*": ["./scripts/*"],
       "@plexy/api-client": ["./packages/api-client/src/index.ts"],
       "@plexy/api-client/*": ["./packages/api-client/src/*"],
       "@plexy/local-library": ["./packages/local-library/src/library.ts"],

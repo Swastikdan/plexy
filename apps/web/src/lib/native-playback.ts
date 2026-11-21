@@ -3,7 +3,7 @@
 /// The native player exists only in the Electron desktop app. Everything here
 /// degrades to "not available" in a browser so the existing browser player
 /// stays untouched for website visitors.
-import { getApiBase, getConfiguredServerBase, isLoopbackHostname } from "../server-config";
+import { getApiBase, getConfiguredServerBase, isLoopbackHostname } from "@/server-config";
 
 export type PlayerEngine = "native" | "browser";
 

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { fetchMobilePolicy, isUpdateRequired, manifestUpdate, mergeMobilePolicy, MOBILE_POLICY_URL, parseMobileManifest, type MobileUpdateManifest } from "../src/features/settings/lib/mobile-update-manifest";
-import { nextMobileVersion, mobileVersionCode } from "../../../scripts/native/mobile-version";
-import { selectUpdate } from "../src/features/settings/lib/update-policy";
+import { fetchMobilePolicy, isUpdateRequired, manifestUpdate, mergeMobilePolicy, MOBILE_POLICY_URL, parseMobileManifest, type MobileUpdateManifest } from "@/features/settings/lib/mobile-update-manifest";
+import { nextMobileVersion, mobileVersionCode } from "@scripts/native/mobile-version";
+import { selectUpdate } from "@/features/settings/lib/update-policy";
 
 function policy(version = "1.0.9", minimum = "1.0.0", updateType: MobileUpdateManifest["updateType"] = "optional"): MobileUpdateManifest {
   return { schemaVersion: 1, platform: "android", channel: "stable", latestVersion: version,
@@ -11,20 +11,20 @@ function policy(version = "1.0.9", minimum = "1.0.0", updateType: MobileUpdateMa
     apkUrl: `https://github.com/Swastikdan/plexy/releases/download/mobile-v${version}/Plexy-mobile-v${version}-Android.apk`, sha256: "a".repeat(64) };
 }
 
-test("the Android policy prefers the mirror and falls back to GitHub if the mirror is invalid", async () => {
+test("the Android policy prefers GitHub and falls back to the mirror if GitHub is invalid", async () => {
   const urls: string[] = [];
   const origin = "https://updates.example.com";
-  let validMirror = true;
+  let validGitHub = true;
   const request = (async (url) => {
     urls.push(String(url));
-    return Response.json(String(url) === MOBILE_POLICY_URL || validMirror ? policy() : {});
+    return Response.json(String(url) !== MOBILE_POLICY_URL || validGitHub ? policy() : {});
   }) as typeof fetch;
   expect((await fetchMobilePolicy(undefined, request, origin))?.latestVersion).toBe("1.0.9");
-  expect(urls).toEqual([`${origin}/android/mobile-update.json`]);
-  validMirror = false;
+  expect(urls).toEqual([MOBILE_POLICY_URL]);
+  validGitHub = false;
   urls.length = 0;
   expect((await fetchMobilePolicy(undefined, request, origin))?.latestVersion).toBe("1.0.9");
-  expect(urls).toEqual([`${origin}/android/mobile-update.json`, MOBILE_POLICY_URL]);
+  expect(urls).toEqual([MOBILE_POLICY_URL, `${origin}/android/mobile-update.json`]);
 });
 
 test("optional and feature releases inform without imposing a new requirement", () => {
@@ -83,7 +83,7 @@ test("allocator reserves Git tags without drafts and preserves the mandatory cut
   const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { prepareMobileRelease } = await import("../../../scripts/native/prepare-mobile-release");
+  const { prepareMobileRelease } = await import("@scripts/native/prepare-mobile-release");
   const root = await mkdtemp(join(tmpdir(), "plexy-mobile-version-"));
   try {
     await mkdir(join(root, "apps/mobile"), { recursive: true });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getConfig, redactedView, save, APP_VERSION } from "../src/config";
+import { getConfig, redactedView, save, APP_VERSION } from "@/config";
 
 describe("Server Config & Versioning (PRD 5.1)", () => {
   test("redactedView projects safe settings without leaking secrets", async () => {

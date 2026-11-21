@@ -1,6 +1,6 @@
 import {expect,test} from "bun:test";
-import {fetchMetadata, type MetadataIO} from "../src/metadata";
-import type {LocalRecord} from "../src/library";
+import {fetchMetadata, type MetadataIO} from "@plexy/local-library/metadata";
+import type {LocalRecord} from "@plexy/local-library/library";
 function record(tv=false):LocalRecord {return {id:1,root:"file:///videos",file:{uri:"file:///videos/test.mkv",name:"Example.S01E02.mkv",relativePath:tv ? "Example/Season 01/Example.S01E02.mkv" : "Example.2024.mkv",size:100,modified:1},metadataAt:0,cast:[],card:{id:1,publicId:"local-1",kind:tv ? "episode" : "movie",name:"Example",parentId:tv ? 2 : null,parentTitle:tv ? "Example" : null,year:2024,seasonNumber:tv ? 1 : null,episodeNumber:tv ? 2 : null,fileId:1,poster:null,backdrop:null,overview:null,rating:null,runtime:null,genres:[],matchStatus:"unmatched",watch:null}};}
 function fixture() {
  const paths:string[]=[];

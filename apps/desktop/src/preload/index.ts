@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ElectronAPI } from "../types";
+import type { ElectronAPI } from "@/types";
 
 const api: ElectronAPI = {
   isElectron: true,

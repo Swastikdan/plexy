@@ -1,11 +1,11 @@
 /// Search, per-user flags, collections, and age-rating helpers.
 import { beforeAll, describe, expect, test } from "bun:test";
-import { buildApp } from "../src/app";
-import { run, runMigrations } from "../src/db";
-import { initConfig } from "../src/config";
-import { createUser } from "../src/accounts";
-import { createDevice } from "../src/auth";
-import { certificationFromDetail } from "../src/tmdb";
+import { buildApp } from "@/app";
+import { run, runMigrations } from "@/db";
+import { initConfig } from "@/config";
+import { createUser } from "@/accounts";
+import { createDevice } from "@/auth";
+import { certificationFromDetail } from "@/tmdb";
 
 const LIBRARY_ID = 9801;
 const MOVIE_ID = 9801;

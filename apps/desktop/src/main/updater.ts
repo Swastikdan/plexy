@@ -124,8 +124,9 @@ export async function getUpdateStatus(): Promise<UpdateStatus> {
 }
 
 /** Small control files (release metadata, checksum lists). */
-async function fetchBytes(url: string, maxBytes: number): Promise<Buffer> {
+async function fetchBytes(url: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
   const response = await fetch(url, {
+    signal,
     headers: {
       "User-Agent": "Plexy-Desktop-Updater",
       Accept: "application/octet-stream",
@@ -297,30 +298,48 @@ export async function checkForUpdates(
     let handedOffToInstaller = false;
     try {
       const archivePath = path.join(tempDir, zip.name!);
-      const archive = await fetchToFile(
-        zip.browser_download_url,
-        archivePath,
-        MAX_DOWNLOAD_BYTES,
-        (downloadedBytes, totalBytes) =>
-          onProgress?.({ phase: "downloading", downloadedBytes, totalBytes }),
-        zip.size,
-      );
-      onProgress?.({
-        phase: "verifying",
-        downloadedBytes: archive.bytes,
-        totalBytes: archive.bytes,
-      });
       const checksumFile = sums?.browser_download_url
         ? await fetchBytes(sums.browser_download_url, 100_000)
         : null;
       const expected = updateChecksum(zip, checksumFile?.toString("utf8") ?? null);
-      const actual = archive.sha256;
-      if (
-        !expected ||
-        !/^[a-f0-9]{64}$/i.test(expected) ||
-        actual !== expected.toLowerCase()
-      )
-        throw new Error("The downloaded update failed its SHA-256 check.");
+      if (!expected || !/^[a-f0-9]{64}$/i.test(expected))
+        throw new Error("This release is missing its update checksum.");
+
+      const channel = version.includes("-beta.") ? "mac-arm64-zip-beta" : "mac-arm64-zip";
+      const mirror = release.assets?.find(
+        (asset) => asset.name === `itch-${channel}.json`,
+      );
+      const source = mirror?.browser_download_url
+        ? await fetchBytes(mirror.browser_download_url, 4096, AbortSignal.timeout(5_000))
+          .then((bytes) => {
+            const url = new URL(JSON.parse(bytes.toString("utf8")).url);
+            return url.protocol === "https:" && !url.username && !url.password &&
+              url.pathname === `/${channel}/${tag}` && !url.search && !url.hash
+              ? url.href : undefined;
+          }).catch(() => undefined)
+        : undefined;
+
+      const download = async (url: string) => {
+        const archive = await fetchToFile(
+          url,
+          archivePath,
+          MAX_DOWNLOAD_BYTES,
+          (downloadedBytes, totalBytes) =>
+            onProgress?.({ phase: "downloading", downloadedBytes, totalBytes }),
+          zip.size,
+        );
+        onProgress?.({
+          phase: "verifying",
+          downloadedBytes: archive.bytes,
+          totalBytes: archive.bytes,
+        });
+        if (archive.sha256 !== expected.toLowerCase())
+          throw new Error("The downloaded update failed its SHA-256 check.");
+        return archive;
+      };
+      const archive = source && source !== zip.browser_download_url
+        ? await download(source).catch(() => download(zip.browser_download_url!))
+        : await download(zip.browser_download_url);
       onProgress?.({
         phase: "waiting-for-approval",
         downloadedBytes: archive.bytes,

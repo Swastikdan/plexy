@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { initConfig } from "../src/config";
-import { q, run, runMigrations } from "../src/db";
+import { initConfig } from "@/config";
+import { q, run, runMigrations } from "@/db";
 import {
   createUser,
   devAdminUsesDefaultPassword,
   ensureDevAdmin,
   loginUser,
   setupState,
-} from "../src/accounts";
+} from "@/accounts";
 
 beforeAll(async () => {
   await runMigrations();

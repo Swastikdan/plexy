@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Film, MonitorPlay, Star, Tv } from "lucide-react";
-import type { ItemCard } from "../client";
-import { cx } from "../lib/cx";
-import { artworkUrl } from "../lib/artwork-url";
+import type { ItemCard } from "@/client";
+import { cx } from "@/lib/cx";
+import { artworkUrl } from "@/lib/artwork-url";
 
 /** "S02E03 · Chapter 3" → "Chapter 3"; falls back to the raw name. */
 function episodeName(item: ItemCard): string {

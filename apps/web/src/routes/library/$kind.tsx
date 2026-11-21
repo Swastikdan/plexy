@@ -1,22 +1,72 @@
-/// Library dashboard (PRD 5.9, 10.2): a featured hero, the tabs, genres,
-/// Top 10, continue watching, recently added, then the complete grid.
+/// Library dashboard (PRD 5.9, 10.2): the kind switch, genre cards, Top 10,
+/// continue watching, recently added, then the complete grid.
 ///
-/// The hero and shelves follow the cinema reference; the grid stays the
-/// canonical place to browse every title, with the same filters and sort.
+/// The shelves follow the cinema reference; the grid stays the canonical place
+/// to browse every title, with the same filters and sort.
 import { useMemo, useState } from "react";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ListBox, Select } from "@heroui/react";
-import { ArrowRight, FolderOpen, TrendingUp, X } from "lucide-react";
-import { queries } from "../../queries";
-import { LibraryHero } from "../../components/library-hero";
-import { Poster } from "../../components/poster";
-import { RankedPoster } from "../../components/ranked-poster";
-import { Row } from "../../components/row";
-import { artworkUrl } from "../../lib/artwork-url";
-import { cx } from "../../lib/cx";
-import { Page } from "../../components/page";
+import {
+  ArrowRight,
+  Baby,
+  Clapperboard,
+  Drama,
+  Eye,
+  Film,
+  FolderOpen,
+  Ghost,
+  Heart,
+  Landmark,
+  Laugh,
+  Music,
+  Rocket,
+  Shield,
+  Sparkles,
+  Sun,
+  Swords,
+  TrendingUp,
+  WandSparkles,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { queries } from "@/queries";
+import { Poster } from "@/components/poster";
+import { RankedPoster } from "@/components/ranked-poster";
+import { Row } from "@/components/row";
+import { cx } from "@/lib/cx";
+import { Page } from "@/components/page";
 import { State } from "@/components/state";
+
+type GenreVisual = { icon: LucideIcon; glow: string };
+
+/// Genre cards are a visual index, not another poster shelf. Match the common
+/// TMDB genres to one icon and one tint so the grid reads at a glance.
+const GENRE_VISUALS: { match: string[]; visual: GenreVisual }[] = [
+  { match: ["action", "adventure"], visual: { icon: Swords, glow: "#3b82f6" } },
+  { match: ["anime", "animation"], visual: { icon: Sparkles, glow: "#a855f7" } },
+  { match: ["comedy"], visual: { icon: Laugh, glow: "#eab308" } },
+  { match: ["documentary"], visual: { icon: Clapperboard, glow: "#14b8a6" } },
+  { match: ["drama"], visual: { icon: Drama, glow: "#f97316" } },
+  { match: ["fantasy"], visual: { icon: WandSparkles, glow: "#8b5cf6" } },
+  { match: ["horror"], visual: { icon: Ghost, glow: "#22c55e" } },
+  { match: ["kids", "family"], visual: { icon: Baby, glow: "#f59e0b" } },
+  { match: ["mystery", "thriller"], visual: { icon: Eye, glow: "#6366f1" } },
+  { match: ["romance"], visual: { icon: Heart, glow: "#ec4899" } },
+  { match: ["science fiction", "sci-fi"], visual: { icon: Rocket, glow: "#0ea5e9" } },
+  { match: ["music"], visual: { icon: Music, glow: "#d946ef" } },
+  { match: ["war", "crime"], visual: { icon: Shield, glow: "#64748b" } },
+  { match: ["history"], visual: { icon: Landmark, glow: "#a16207" } },
+  { match: ["western"], visual: { icon: Sun, glow: "#ea580c" } },
+];
+
+function genreVisual(name: string): GenreVisual {
+  const needle = name.toLowerCase();
+  for (const entry of GENRE_VISUALS) {
+    if (entry.match.some((word) => needle.includes(word))) return entry.visual;
+  }
+  return { icon: Film, glow: "#64748b" };
+}
 
 const SORTS = [
   { value: "added", label: "Recently added" },
@@ -35,56 +85,37 @@ function LibraryRoute() {
 
   const kindIsTv = kind === "tv" || kind === "series";
   const kindIsAll = kind === "all";
+  const serverKind = kindIsAll ? undefined : kindIsTv ? "series" : "movie";
   const { data, isLoading, isFetching, isError } = useQuery(
-    queries.items({ sort: "added", limit: visibleLimit, unwatched, genre }),
+    queries.items({ kind: serverKind, sort: "added", limit: visibleLimit, unwatched, genre }),
   );
   const home = useQuery(queries.home());
+  // Counts tell the kind switch whether both shelves are worth offering even
+  // when only the first page of the catalog has loaded.
+  const movieCount = useQuery(queries.items({ kind: "movie", limit: 1 }));
+  const showCount = useQuery(queries.items({ kind: "series", limit: 1 }));
 
-  const allItems = useMemo(
+  const items = useMemo(
     () => (data?.items ?? []).filter((item) => item.kind === "movie" || item.kind === "series"),
     [data],
   );
-  const movies = allItems.filter((item) => item.kind === "movie");
-  const shows = allItems.filter((item) => item.kind === "series");
-  const items = kindIsAll ? allItems : kindIsTv ? shows : movies;
-
-  // The catalog card carries artwork and facts; only the home payload knows the
-  // episode a series should start. Merge that play target into the matching
-  // card so the hero's Play button is real, not a second Details button.
-  const featured = useMemo(() => {
-    const pool = [...items].sort(
-      (a, b) => Number(Boolean(b.logo)) - Number(Boolean(a.logo)),
-    );
-    const homeFeatured = home.data?.featured;
-    if (homeFeatured) {
-      const match = pool.findIndex((item) => item.publicId === homeFeatured.publicId);
-      if (match >= 0) {
-        const [item] = pool.splice(match, 1);
-        pool.unshift({
-          ...item,
-          playFileId: homeFeatured.playFileId,
-          playSubtitle: homeFeatured.playSubtitle,
-          playWatch: homeFeatured.playWatch,
-        });
-      }
-    }
-    return pool.slice(0, Math.min(3, Math.max(1, pool.length)));
-  }, [items, home.data]);
 
   const genreEntries = useMemo(() => {
-    const map = new Map<string, typeof items>();
+    const counts = new Map<string, number>();
     for (const item of items) {
       for (const name of item.genres) {
-        const list = map.get(name) ?? [];
-        list.push(item);
-        map.set(name, list);
+        counts.set(name, (counts.get(name) ?? 0) + 1);
       }
     }
-    return [...map.entries()]
-      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
-      .slice(0, 6)
-      .map(([name, list]) => ({ name, items: list.slice(0, 2), count: list.length }));
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count }));
   }, [items]);
+
+  // Only offer the kind switch when both shelves have something to show.
+  // A lone Movies or TV tab would lead to an empty page with no way back.
+  const showKindSwitch =
+    (movieCount.data?.total ?? 0) > 0 && (showCount.data?.total ?? 0) > 0;
 
   const topRated = useMemo(
     () =>
@@ -123,19 +154,18 @@ function LibraryRoute() {
     return (
       <Page>
         <div className="space-y-8">
-          <div className="skeleton h-[clamp(25rem,52vh,35rem)] rounded-[calc(var(--radius)*2.2)]" />
           <div className="flex items-center justify-between">
             <div className="skeleton h-10 w-64 rounded-full" />
             <div className="skeleton h-9 w-40 rounded-lg" />
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }, (_, index) => (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {Array.from({ length: 10 }, (_, index) => (
               <div key={index} className="skeleton aspect-[2/1] rounded-2xl" />
             ))}
           </div>
           <div className="flex gap-3">
             {Array.from({ length: 6 }, (_, index) => (
-              <div key={index} className="skeleton aspect-[2/3] w-44 rounded-xl" />
+              <div key={index} className="skeleton aspect-video w-64 rounded-xl" />
             ))}
           </div>
         </div>
@@ -160,8 +190,23 @@ function LibraryRoute() {
       <Page>
         <State
           icon={FolderOpen}
-          title={kindIsAll ? "No titles yet" : `No ${kindIsTv ? "TV shows" : "movies"} yet`}
-          body="Scan a library or wait for a match pass to finish."
+          title={kindIsAll ? "No titles yet" : `No ${kindIsTv ? "TV shows" : "movies"} in this library`}
+          body={
+            kindIsAll
+              ? "Scan a library or wait for a match pass to finish."
+              : "The other titles in your library are still available."
+          }
+          action={
+            kindIsAll ? undefined : (
+              <Link
+                to="/library/$kind"
+                params={{ kind: "all" }}
+                className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-surface-secondary"
+              >
+                Back to the library
+              </Link>
+            )
+          }
         />
       </Page>
     );
@@ -171,26 +216,26 @@ function LibraryRoute() {
     <Page className="pt-4 sm:pt-6">
       <h1 className="sr-only">Library</h1>
       <div className="space-y-9 pb-10 sm:space-y-10">
-        {featured.length > 0 && <LibraryHero items={featured} />}
-
         <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
-          <nav className="segmented max-w-full overflow-x-auto" aria-label="Library kind">
-            <Link to="/library/$kind" params={{ kind: "all" }} aria-current={kindIsAll ? "page" : undefined}>
-              All
-            </Link>
-            <Link
-              to="/library/$kind"
-              params={{ kind: "movies" }}
-              aria-current={!kindIsAll && !kindIsTv ? "page" : undefined}
-            >
-              Movies
-            </Link>
-            <Link to="/library/$kind" params={{ kind: "tv" }} aria-current={kindIsTv ? "page" : undefined}>
-              TV shows
-            </Link>
-          </nav>
+          {showKindSwitch && (
+            <nav className="segmented max-w-full overflow-x-auto" aria-label="Library kind">
+              <Link to="/library/$kind" params={{ kind: "all" }} aria-current={kindIsAll ? "page" : undefined}>
+                All
+              </Link>
+              <Link
+                to="/library/$kind"
+                params={{ kind: "movies" }}
+                aria-current={!kindIsAll && !kindIsTv ? "page" : undefined}
+              >
+                Movies
+              </Link>
+              <Link to="/library/$kind" params={{ kind: "tv" }} aria-current={kindIsTv ? "page" : undefined}>
+                TV shows
+              </Link>
+            </nav>
+          )}
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
             {scan && (
               <span className="inline-flex items-center gap-1.5 text-[11.5px] text-muted" role="status">
                 <span aria-hidden className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-border border-t-accent" />
@@ -257,45 +302,53 @@ function LibraryRoute() {
           <section aria-labelledby="library-genres" className="min-w-0">
             <div className="mb-3.5 flex items-end justify-between gap-4">
               <h2 id="library-genres" className="font-sans text-[19px] font-bold tracking-[-0.025em] text-foreground">
-                Our genres
+                Categories
               </h2>
               <span className="text-[11px] font-medium text-muted">Browse by mood</span>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-              {genreEntries.map((entry) => (
-                <Link
-                  key={entry.name}
-                  to="/library/$kind"
-                  params={{ kind }}
-                  search={{ genre: entry.name }}
-                  className="group relative overflow-hidden rounded-2xl border border-[var(--cinema-line)] bg-[var(--cinema-surface)]"
-                >
-                  <div className="grid aspect-[1.65] grid-cols-2 gap-px bg-black/40">
-                    {entry.items.map((item) => {
-                      const src = artworkUrl(item.poster ?? item.backdrop);
-                      return src ? (
-                        <img
-                          key={item.id}
-                          src={src}
-                          alt=""
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+            <p className="mb-3 text-[13px] font-bold tracking-[-0.01em] text-foreground">Genres</p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {genreEntries.map((entry) => {
+                const { icon: Icon, glow } = genreVisual(entry.name);
+                return (
+                  <Link
+                    key={entry.name}
+                    to="/library/$kind"
+                    params={{ kind }}
+                    search={{ genre: entry.name }}
+                    className="group relative flex aspect-[1.9] min-h-[6.5rem] flex-col justify-between overflow-hidden rounded-2xl border border-[var(--cinema-line)] p-4 transition-[border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-white/25"
+                    style={{
+                      background: `linear-gradient(145deg, ${glow}2e 0%, ${glow}12 36%, #0b0b0c 86%)`,
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute -bottom-5 -right-3 text-white/[0.05] transition-transform duration-300 group-hover:scale-105"
+                    >
+                      <Icon size={84} strokeWidth={1.4} />
+                    </span>
+                    <Icon
+                      size={22}
+                      strokeWidth={1.8}
+                      aria-hidden
+                      className="relative text-white/65 transition-colors duration-200 group-hover:text-white"
+                    />
+                    <div className="relative min-w-0">
+                      <p className="truncate text-[14px] font-bold tracking-[-0.01em] text-white">
+                        {entry.name}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-medium text-white/45">
+                        {entry.count} {entry.count === 1 ? "title" : "titles"}
+                        <ArrowRight
+                          size={10}
+                          className="transition-transform duration-150 group-hover:translate-x-0.5"
+                          aria-hidden
                         />
-                      ) : (
-                        <span key={item.id} className="bg-[var(--cinema-surface)]" />
-                      );
-                    })}
-                    {entry.items.length === 1 && <span className="bg-[var(--cinema-surface)]" />}
-                  </div>
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-3 pt-8">
-                    <p className="truncate text-[13px] font-bold text-white">{entry.name}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[10.5px] text-white/55">
-                      {entry.count} {entry.count === 1 ? "title" : "titles"}
-                      <ArrowRight size={10} className="transition-transform duration-150 group-hover:translate-x-0.5" />
-                    </p>
-                  </div>
-                </Link>
-              ))}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </section>
         )}
@@ -303,12 +356,15 @@ function LibraryRoute() {
         {!genre && topRated.length >= 3 && (
           <section aria-labelledby="library-top-ten" className="min-w-0">
             <div className="mb-3.5 flex items-end justify-between gap-4">
-              <h2 id="library-top-ten" className="inline-flex items-center gap-2 font-sans text-[19px] font-bold tracking-[-0.025em] text-foreground">
+              <h2
+                id="library-top-ten"
+                className="inline-flex items-center gap-2 font-sans text-[17px] font-bold tracking-[-0.025em] text-foreground sm:text-[19px]"
+              >
                 <TrendingUp size={17} className="text-[var(--brand)]" aria-hidden />
                 Top 10 in your library
               </h2>
             </div>
-            <div className="scroll-row flex items-start gap-3 overflow-x-auto pb-1">
+            <div className="scroll-row flex items-start gap-2 overflow-x-auto pb-1 sm:gap-3">
               {topRated.map((item, index) => (
                 <RankedPoster key={item.id} item={item} rank={index + 1} />
               ))}
@@ -337,16 +393,17 @@ function LibraryRoute() {
         )}
 
         <section id="all-titles" aria-labelledby="library-all-titles" className="scroll-mt-24">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 id="library-all-titles" className="font-sans text-[19px] font-bold tracking-[-0.025em] text-foreground">
-                {genre ? genre : "All titles"}
-              </h2>
-              <p className="mt-1 text-[11.5px] text-muted">
-                {filtered.length.toLocaleString()} {filtered.length === 1 ? "title" : "titles"}
-                {isFetching && <span className="ml-2 opacity-70">Updating…</span>}
-              </p>
-            </div>
+          <div className="mb-3.5 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+            <h2
+              id="library-all-titles"
+              className="font-sans text-[17px] font-bold tracking-[-0.025em] text-foreground sm:text-[19px]"
+            >
+              {genre ? genre : "All titles"}
+            </h2>
+            <p className="text-[11.5px] text-muted">
+              {filtered.length.toLocaleString()} {filtered.length === 1 ? "title" : "titles"}
+              {isFetching && <span className="ml-2 opacity-70">Updating…</span>}
+            </p>
           </div>
 
           {filtered.length === 0 ? (

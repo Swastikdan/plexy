@@ -6,7 +6,7 @@
 /// Settings.
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { queries } from "../queries";
+import { queries } from "@/queries";
 import {
   localPrefetchContext,
   PREFETCH_DEFAULTS,

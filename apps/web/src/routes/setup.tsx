@@ -19,12 +19,12 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { accountRequest, type AccountUser, type SetupState } from "../auth";
-import { api, type ServerStatus } from "../client";
-import { queries } from "../queries";
-import { LibraryFolderForm } from "../components/library-folder-form";
+import { accountRequest, type AccountUser, type SetupState } from "@/auth";
+import { api, type ServerStatus } from "@/client";
+import { queries } from "@/queries";
+import { LibraryFolderForm } from "@/components/library-folder-form";
 import { Button, Input } from "@heroui/react";
-import { cx } from "../lib/cx";
+import { cx } from "@/lib/cx";
 
 const STEPS = [
   { label: "Metadata", detail: "Connect TMDB" },

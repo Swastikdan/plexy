@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { X509Certificate } from "node:crypto";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { lanCertificate } from "../src/lan-tls";
-import { resolveDataDir } from "../src/paths";
+import { lanCertificate } from "@/lan-tls";
+import { resolveDataDir } from "@/paths";
 
 test("LAN certificates persist, protect their private key, and establish real HTTPS", async () => {
   const first = await lanCertificate();

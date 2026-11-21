@@ -3,8 +3,8 @@
 /// dialogs so the roster stays scannable.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { accountRequest, type AccountUser } from "../auth";
-import { queries } from "../queries";
+import { accountRequest, type AccountUser } from "@/auth";
+import { queries } from "@/queries";
 import {
   Button,
   Input,

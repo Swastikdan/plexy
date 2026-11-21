@@ -14,7 +14,7 @@ import { TimeSlider, type TimeSliderThumbnails } from '@/components/videojs/ui/t
 import { VolumeControl } from '@/components/videojs/ui/volume-control';
 import { cn } from '@/lib/resolve-class-name';
 
-import { VideoSettingsMenu, type VideoSettingsMenuProps } from '../menus/settings-menu';
+import { VideoSettingsMenu, type VideoSettingsMenuProps } from '@/components/videojs/video/menus/settings-menu';
 import type { Chapter } from '@/components/videojs/ui/chapters-menu';
 import type { Playability } from '@plexy/api-client';
 

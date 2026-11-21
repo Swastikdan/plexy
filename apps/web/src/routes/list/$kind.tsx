@@ -2,11 +2,11 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bookmark, EyeOff, Heart, RotateCcw } from "lucide-react";
-import { api } from "../../client";
-import { queries } from "../../queries";
-import { Poster } from "../../components/poster";
-import { Page } from "../../components/page";
-import { State } from "../../components/state";
+import { api } from "@/client";
+import { queries } from "@/queries";
+import { Poster } from "@/components/poster";
+import { Page } from "@/components/page";
+import { State } from "@/components/state";
 
 type ListKind = "watchlist" | "favorites" | "hidden";
 

@@ -22,7 +22,7 @@ How Plexy's processes, data, auth, and playback fit together. For a file-by-file
 ```
 
 - The **server** (`apps/server`) is one Bun process serving the API and the built web UI. CPU-heavy work (media probing, remux/transcode, trickplay) runs in two child worker processes (`--worker=media`, `--worker=optimize`) so HTTP stays responsive.
-- The **web UI** (`apps/web`) is a static single-file build embedded into (and served by) the server. There is no separate UI server.
+- The **web UI** (`apps/web`) is a static single-file build embedded into (and served by) the server. In development, Vite serves the web UI and proxies `/api/*` to the server.
 - The **desktop app** (`apps/desktop`) is an Electron shell that either spawns the bundled server as a child (local mode) or proxies to a remote server (client mode).
 - The **mobile app** (`apps/mobile`) is architecturally separate: its own on-device SQLite library, no network dependency on the server.
 

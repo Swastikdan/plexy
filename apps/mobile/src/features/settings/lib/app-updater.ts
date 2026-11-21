@@ -1,17 +1,19 @@
 import { File } from "expo-file-system";
 import * as Crypto from "expo-crypto";
 import type { UpdateType } from "./mobile-update-manifest";
+import { fetchUpdateJson } from "./update-request";
 import { fetchUpdateReleases } from "./update-releases";
 import * as Application from "expo-application";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { isCompleteApk, validateApkDownload } from "./update-package";
 import { Platform } from "react-native";
-import { decodeVersionCode } from "../../../shared/lib/build-version";
+import { decodeVersionCode } from "@/shared/lib/build-version";
 import { selectUpdate } from "./update-policy";
 export interface GitHubAsset {
   name: string;
   size: number;
+  digest?: string | null;
   browser_download_url: string;
 }
 export interface GitHubRelease {
@@ -82,6 +84,19 @@ export async function openUnknownAppsSettings(): Promise<void> {
     }
   }
 }
+async function itchApkSource(update: UpdateInfo): Promise<string | undefined> {
+  if (!update.sha256 || !/^mobile-v\d+\.\d+\.\d+$/.test(update.tagName)) return;
+  try {
+    const release = `https://github.com/Swastikdan/plexy/releases/download/${update.tagName}`;
+    const { data } = await fetchUpdateJson(`${release}/itch-android-arm64.json`, {
+      timeoutMs: 4_000, retries: 0,
+    });
+    const url = new URL((data as { url: string }).url);
+    if (url.protocol === "https:" && !url.username && !url.password &&
+        url.pathname === `/android-arm64/${update.tagName}` && !url.search && !url.hash) return url.href;
+  } catch { /* The mirror is optional. */ }
+}
+
 export type InstallationResult = "installed" | "cancelled";
 export async function downloadAndInstallUpdate(
   update: UpdateInfo,
@@ -113,7 +128,9 @@ export async function downloadAndInstallUpdate(
   }
   if (!ready) {
     await FileSystem.deleteAsync(localUri, { idempotent: true });
-    const sources = update.mirrorApkUrl && update.sha256 ? [update.mirrorApkUrl, update.apkUrl] : [update.apkUrl];
+    const itch = await itchApkSource(update);
+    const sources = [itch, update.sha256 ? update.mirrorApkUrl : undefined, update.apkUrl]
+      .filter((url): url is string => Boolean(url));
     for (const url of sources) {
       await FileSystem.deleteAsync(temporaryUri, { idempotent: true });
       onProgress?.(0);

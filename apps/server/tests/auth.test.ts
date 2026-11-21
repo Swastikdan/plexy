@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { buildApp } from "../src/app";
-import { runMigrations, q, run, type Row } from "../src/db";
-import { initConfig } from "../src/config";
-import { createDevice, peekToken, redeemPairingCode } from "../src/auth";
-import { createUser, getUser, setupState } from "../src/accounts";
-import { accessGuard, canAccessItem, certificationAge } from "../src/access";
+import { buildApp } from "@/app";
+import { runMigrations, q, run, type Row } from "@/db";
+import { initConfig } from "@/config";
+import { createDevice, peekToken, redeemPairingCode } from "@/auth";
+import { createUser, getUser, setupState } from "@/accounts";
+import { accessGuard, canAccessItem, certificationAge } from "@/access";
 
 describe("accounts and scoped pairing", () => {
   let app: ReturnType<typeof buildApp>;

@@ -4,7 +4,7 @@ import {
   applyTitleAction,
   type EpisodeAction,
   type TitleAction,
-} from "../lib/title-actions";
+} from "@/features/catalog/lib/title-actions";
 import { useRef } from "react";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";

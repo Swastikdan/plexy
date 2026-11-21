@@ -14,8 +14,9 @@ import {
 } from "lucide-react";
 import { Button, Input } from "@heroui/react";
 import { BackButton } from "./back-button";
-import { isElectronMac } from "../lib/platform";
-import { cx } from "../lib/cx";
+import { isElectronMac } from "@/lib/platform";
+import { useIsFullscreen } from "@/lib/use-fullscreen";
+import { cx } from "@/lib/cx";
 import {
   activateServerUrl,
   forgetServerCandidate,
@@ -28,7 +29,7 @@ import {
   normalizeServerUrl,
   probeServer,
   rememberServerCandidate,
-} from "../server-config";
+} from "@/server-config";
 
 interface ConnectScreenProps {
   /** Error from the automatic probe that showed this screen. */
@@ -50,6 +51,7 @@ export function ConnectScreen({
   onConnected,
   onCancel,
 }: ConnectScreenProps) {
+  const isFullscreen = useIsFullscreen();
   const [value, setValue] = useState(() => initialValue ?? getServerOverride());
   const [busy, setBusy] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -166,7 +168,7 @@ export function ConnectScreen({
       )}
       <div
         className="absolute left-3 top-3 z-10 flex items-center gap-1.5 sm:left-6"
-        style={{ left: isElectronMac() ? 96 : undefined }}
+        style={{ left: isElectronMac() && !isFullscreen ? 96 : undefined }}
       >
         {onCancel && <BackButton onClick={onCancel} label="Back to Plexy" />}
         <span className="truncate font-sans text-sm font-bold tracking-[-0.02em] text-foreground sm:text-[15px]">

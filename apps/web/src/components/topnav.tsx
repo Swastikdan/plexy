@@ -8,12 +8,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Library, Search, Server, Settings as SettingsIcon, FolderHeart, Clock3 } from "lucide-react";
-import { queries } from "../queries";
-import { cx } from "../lib/cx";
-import { useIsFullscreen } from "../lib/use-fullscreen";
-import { isElectronMac } from "../lib/platform";
-import { accountRequest, getSignedInUser, type AccountUser } from "../auth";
+import { Home, Library, Search, Server, FolderHeart, Clock3 } from "lucide-react";
+import { queries } from "@/queries";
+import { cx } from "@/lib/cx";
+import { useIsFullscreen } from "@/lib/use-fullscreen";
+import { isElectronMac } from "@/lib/platform";
+import { accountRequest, getSignedInUser, type AccountUser } from "@/auth";
 import { BackButton } from "./back-button";
 import { UserAvatar } from "./user-avatar";
 
@@ -253,14 +253,9 @@ export function TopNav() {
             <Link
               to="/connect"
               aria-label="Server connection"
+              aria-current={pathname.startsWith("/connect") ? "page" : undefined}
               title="Server connection"
-              className={cx(
-                "cinema-action",
-                !overHero && "cinema-action--surface",
-                overHero
-                  ? "aria-[current=page]:bg-white/10 aria-[current=page]:text-white"
-                  : "aria-[current=page]:bg-surface-tertiary aria-[current=page]:text-foreground",
-              )}
+              className={cx("cinema-action", !overHero && "cinema-action--surface")}
             >
               <Server size={16} strokeWidth={1.9} />
             </Link>
@@ -272,40 +267,17 @@ export function TopNav() {
             title="Search (⌘K)"
             aria-keyshortcuts="Meta+K"
             aria-current={pathname.startsWith("/search") ? "page" : undefined}
-            className={cx(
-              "cinema-action",
-              !overHero && "cinema-action--surface",
-              overHero
-                ? "aria-[current=page]:bg-white/10 aria-[current=page]:text-white"
-                : "aria-[current=page]:bg-surface-tertiary aria-[current=page]:text-foreground",
-            )}
+            className={cx("cinema-action", !overHero && "cinema-action--surface")}
           >
             <Search size={17} strokeWidth={1.9} />
           </Link>
 
           <Link
             to="/settings"
-            search={{ tab: "overview" }}
-            aria-label="Settings"
-            aria-current={pathname.startsWith("/settings") ? "page" : undefined}
-            title="Settings"
-            className={cx(
-              "cinema-action hidden sm:!inline-flex",
-              !overHero && "cinema-action--surface",
-              overHero
-                ? "aria-[current=page]:bg-white/10 aria-[current=page]:text-white"
-                : "aria-[current=page]:bg-surface-tertiary aria-[current=page]:text-foreground",
-            )}
-          >
-            <SettingsIcon size={16} strokeWidth={1.9} />
-          </Link>
-
-          <Link
-            to="/settings"
             search={{ tab: "account" }}
-            aria-label="Account and settings"
+            aria-label="Profile and settings"
             aria-current={pathname.startsWith("/settings") ? "page" : undefined}
-            title="Account and settings"
+            title="Profile and settings"
             className="group ml-0.5 inline-flex h-9 items-center justify-center rounded-full p-0.5 transition-transform duration-150 active:scale-95 aria-[current=page]:ring-2 aria-[current=page]:ring-[var(--brand)] aria-[current=page]:ring-offset-2 aria-[current=page]:ring-offset-background"
           >
             <UserAvatar

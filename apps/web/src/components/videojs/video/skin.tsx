@@ -1,6 +1,6 @@
 'use client';
 
-import '../styles/video/neutral.css';
+import '@/components/videojs/styles/video/neutral.css';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { BufferingIndicator } from '@/components/videojs/ui/buffering-indicator';

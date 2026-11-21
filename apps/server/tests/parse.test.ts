@@ -4,7 +4,7 @@ import {
   normalizeTitle,
   extractExplicitId,
   parsePath,
-} from "../src/parse";
+} from "@/parse";
 
 describe("Media Parser (PRD 5.3)", () => {
   test("cleans release noise and resolution tags", () => {

@@ -1,10 +1,10 @@
 import { beforeAll, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { db, q, run, runMigrations } from "../src/db";
-import { initConfig } from "../src/config";
-import { createUser, loginUser } from "../src/accounts";
-import { createDevice } from "../src/auth";
-import { buildApp } from "../src/app";
+import { db, q, run, runMigrations } from "@/db";
+import { initConfig } from "@/config";
+import { createUser, loginUser } from "@/accounts";
+import { createDevice } from "@/auth";
+import { buildApp } from "@/app";
 const password = "encoded-blob-password-regression-62491";
 beforeAll(async () => {
   await runMigrations();

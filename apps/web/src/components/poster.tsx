@@ -16,11 +16,11 @@ import {
   XCircle,
 } from "lucide-react";
 import { Dropdown } from "@heroui/react";
-import { api, probeBrowserCaps, type ItemCard } from "../client";
-import { queries } from "../queries";
-import { nativeBridge } from "../lib/native-playback";
-import { artworkUrl } from "../lib/artwork-url";
-import { cx } from "../lib/cx";
+import { api, probeBrowserCaps, type ItemCard } from "@/client";
+import { queries } from "@/queries";
+import { nativeBridge } from "@/lib/native-playback";
+import { artworkUrl } from "@/lib/artwork-url";
+import { cx } from "@/lib/cx";
 
 const BROWSER_CAPS = typeof document === "undefined" ? "" : JSON.stringify(probeBrowserCaps());
 

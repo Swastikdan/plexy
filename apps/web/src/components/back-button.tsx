@@ -2,7 +2,7 @@
 /// the app header. Chrome-less screens (connection, setup) reuse it so going
 /// back never looks like a different control.
 import { ArrowLeft } from "lucide-react";
-import { cx } from "../lib/cx";
+import { cx } from "@/lib/cx";
 
 export function BackButton({
   onClick,

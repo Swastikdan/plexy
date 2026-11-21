@@ -1,16 +1,16 @@
-import { getSignedInUser } from "../auth";
+import { getSignedInUser } from "@/auth";
 /// Home: one featured carousel, then the shelves that matter.
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowUpDown, FolderPlus, Plus } from "lucide-react";
-import { queries } from "../queries";
-import { Row } from "../components/row";
-import { HomeHero } from "../components/home-hero";
+import { queries } from "@/queries";
+import { Row } from "@/components/row";
+import { HomeHero } from "@/components/home-hero";
 import { Button, Dropdown } from "@heroui/react";
-import { Page } from "../components/page";
-import { State } from "../components/state";
-import type { ItemCard } from "../client";
+import { Page } from "@/components/page";
+import { State } from "@/components/state";
+import type { ItemCard } from "@/client";
 
 const ROW_META: Record<
   string,

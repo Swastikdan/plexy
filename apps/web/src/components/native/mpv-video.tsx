@@ -7,8 +7,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useAttachMedia, useMediaInstance } from "@videojs/react";
 
-import { nativeBridge, nativeFallbackServerUrl, nativeServerUrl } from "../../lib/native-playback";
-import type { NativePlaybackEvent } from "../../electron";
+import { nativeBridge, nativeFallbackServerUrl, nativeServerUrl } from "@/lib/native-playback";
+import type { NativePlaybackEvent } from "@/electron";
 import { MpvMedia, type MpvSessionController } from "./mpv-media";
 
 /** The subset of the native manifest this component needs. */

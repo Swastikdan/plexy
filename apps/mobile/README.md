@@ -2,6 +2,15 @@
 
 A standalone Android library and player. Files and watch progress stay on the device. Plexy uses TMDB and IntroDB for optional metadata, artwork, and skip markers. Expo delivers compatible app updates and GitHub delivers APKs.
 
+## Run a development build
+
+Follow the [root setup](../../README.md#develop-locally) for Bun and Node.js.
+With JDK 17, the Android SDK, and an emulator or USB-debuggable device available,
+run `bun run android:mobile` from the repo root. Confirm the app opens and can
+select a local media folder. After the development build is installed, use
+`bun run dev:mobile` to start Metro when working on JavaScript. Rebuild the dev
+client after changing native dependencies or Expo plugins.
+
 ## Source layout
 
 - `src/app`: thin Expo Router adapters. `(tabs)` contains Home, Libraries, Search, and Settings; title details and playback use the root stack.

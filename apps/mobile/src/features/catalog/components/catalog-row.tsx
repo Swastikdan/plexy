@@ -1,5 +1,5 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
-import { useTitleActions } from "../hooks/use-title-actions";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { useEffect } from "react";
 import { FlatList,Text,View } from "react-native";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
@@ -8,7 +8,7 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { Card } from "@/shared/ui/media-card";
 import { OpenTitle } from "@/features/catalog/types";
 import { ContinueWatchingCard } from "./continue-watching-card";
-import { useTitlePrefetch } from "../hooks/use-title-prefetch";
+import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
 
 export function CatalogRow({
   title,

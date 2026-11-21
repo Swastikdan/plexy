@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { compareSemver } from "../../apps/mobile/src/features/settings/lib/update-policy";
-import { isVersion, MOBILE_POLICY_URL, parseMobileManifest, type MobileUpdateManifest, type UpdateType } from "../../apps/mobile/src/features/settings/lib/mobile-update-manifest";
+import { compareSemver } from "@/features/settings/lib/update-policy";
+import { isVersion, MOBILE_POLICY_URL, parseMobileManifest, type MobileUpdateManifest, type UpdateType } from "@/features/settings/lib/mobile-update-manifest";
 import { mobileVersionCode, nextMobileVersion } from "./mobile-version";
-import { github, listTagRefs, releaseCommit, reserveTag } from "../release-refs";
+import { github, listTagRefs, releaseCommit, reserveTag } from "@scripts/release-refs";
 
 const projectRoot = resolve(import.meta.dir, "../..");
 const repo = "Swastikdan/plexy";

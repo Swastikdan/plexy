@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { probeMatroskaSubtitles, readMatroskaSubtitles } from "../src/mkv-subtitles";
-import { cuesToVtt, packetToCues } from "../src/subtitles";
+import { probeMatroskaSubtitles, readMatroskaSubtitles } from "@/mkv-subtitles";
+import { cuesToVtt, packetToCues } from "@/subtitles";
 
 /** Minimal EBML writer used to build a tiny, valid Matroska fixture. */
 function vint(value: number): Buffer {

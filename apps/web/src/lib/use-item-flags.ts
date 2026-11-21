@@ -6,7 +6,7 @@
 /// depends on the flags.
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, type ItemCard } from "../client";
+import { api, type ItemCard } from "@/client";
 
 export interface ItemFlags {
   watchlist: boolean;

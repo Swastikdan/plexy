@@ -9,8 +9,8 @@
 ///
 /// mpv still renders subtitles into the video frames; the text track objects
 /// only carry language/title/mode so the captions menu can drive mpv's `sid`.
-import type { NativeAudioTrack, NativePlaybackEvent } from "../../electron";
-import { languageName } from "../../lib/language";
+import type { NativeAudioTrack, NativePlaybackEvent } from "@/electron";
+import { languageName } from "@/lib/language";
 
 type AdapterEventName =
   | "emptied"

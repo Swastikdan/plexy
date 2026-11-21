@@ -9,10 +9,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bookmark, ChevronLeft, ChevronRight, Pause, Play, Star } from "lucide-react";
-import { artworkUrl } from "../lib/artwork-url";
-import { cx } from "../lib/cx";
-import { useItemFlags } from "../lib/use-item-flags";
-import type { ItemCard } from "../client";
+import { artworkUrl } from "@/lib/artwork-url";
+import { cx } from "@/lib/cx";
+import { useItemFlags } from "@/lib/use-item-flags";
+import type { ItemCard } from "@/client";
 
 const ADVANCE_MS = 7000;
 

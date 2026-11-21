@@ -17,12 +17,8 @@ const iconClass = cn(
   'transition-opacity duration-media-base ease-out'
 );
 
-/// Inline volume control: the mute button and the slider share one pill. At
-/// rest the pill is clipped to the icon's own width, so the bar is unchanged.
-/// Hovering or focusing it unclips the pill to the left while the icon travels
-/// left with the new edge, uncovering the slider that was already beside it.
-/// The reveal is clip-path, translate and opacity only, so the control row
-/// never reflows. Touch devices have no hover, so they get the open pill.
+// Keep the mute button anchored and reveal the slider over the time display.
+// Touch devices show the expanded control so the slider can be used directly.
 export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) {
   const volume = usePlayer(selectVolume);
 
@@ -63,7 +59,7 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
 
   return (
     <div
-      className="group/volume relative h-media-control w-media-control shrink-0"
+      className="group/volume relative z-10 h-media-control w-media-control shrink-0"
       style={
         {
           '--volume-reveal': '5rem',
@@ -74,29 +70,20 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
     >
       <div
         className={cn(
-          'absolute inset-y-0 right-0 flex w-(--volume-expanded-width) items-center overflow-hidden rounded-media-control',
-          'bg-media-accent pointer-fine:bg-transparent',
-          'transition-[clip-path,background-color] duration-media-slow ease-[var(--ease-in-out)]',
+          'absolute inset-y-0 left-0 flex w-(--volume-expanded-width) items-center overflow-hidden rounded-media-control',
+          'bg-black pointer-fine:bg-transparent',
+          'transition-[clip-path] duration-media-slow ease-[var(--ease-in-out)]',
           '[clip-path:inset(0_0_0_0)]',
-          'pointer-fine:[clip-path:inset(0_0_0_var(--volume-reveal))]',
+          'pointer-fine:[clip-path:inset(0_var(--volume-reveal)_0_0)]',
           'pointer-fine:group-hover/volume:[clip-path:inset(0_0_0_0)]',
-          'pointer-fine:group-hover/volume:bg-media-accent',
+          'pointer-fine:group-hover/volume:bg-black',
           'pointer-fine:group-focus-within/volume:[clip-path:inset(0_0_0_0)]',
-          'pointer-fine:group-focus-within/volume:bg-media-accent',
+          'pointer-fine:group-focus-within/volume:bg-black',
           'supports-[corner-shape:squircle]:rounded-2xl',
           'motion-reduce:transition-none'
         )}
       >
-        <div
-          className={cn(
-            'flex shrink-0',
-            'transition-[translate] duration-media-slow ease-[var(--ease-in-out)]',
-            'translate-x-0 pointer-fine:translate-x-(--volume-reveal)',
-            'pointer-fine:group-hover/volume:translate-x-0',
-            'pointer-fine:group-focus-within/volume:translate-x-0',
-            'motion-reduce:transition-none'
-          )}
-        >
+        <div className="flex shrink-0">
           {showTooltip ? (
             <Tooltip delay={500} closeDelay={0}>
               <Tooltip.Trigger className="flex" tabIndex={-1}>
@@ -113,7 +100,7 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
 
         <div
           className={cn(
-            'flex h-full w-(--volume-reveal) shrink-0 items-center pe-2 ps-1.5',
+            'flex h-full w-(--volume-reveal) shrink-0 items-center ps-2 pe-3',
             'transition-[opacity,translate] duration-media-base ease-out',
             'pointer-events-auto opacity-100',
             'pointer-fine:pointer-events-none pointer-fine:translate-x-1 pointer-fine:opacity-0',
@@ -141,26 +128,24 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
           >
             <Slider.Track
               className={cn(
-                'relative h-6! w-full! cursor-pointer rounded-media-pill! bg-transparent!',
+                'relative h-6! w-full! cursor-pointer rounded-media-pill! border-x-0! bg-transparent!',
                 'before:pointer-events-none before:absolute before:inset-x-0 before:top-1/2 before:h-1 before:-translate-y-1/2',
                 'before:rounded-media-pill before:bg-white/20 before:content-[\'\']'
               )}
             >
               <Slider.Fill
+                className="top-1/2! h-1! -translate-y-1/2! rounded-media-pill! bg-media-primary!"
+              />
+              <Slider.Thumb
                 className={cn(
-                  'top-1/2! h-1! -translate-y-1/2! rounded-media-pill! bg-media-primary!'
+                  'size-3! rounded-media-control! bg-white! after:hidden!',
+                  'shadow-media-thumb',
+                  'transition-[scale] duration-media-base ease-out',
+                  'data-dragging:scale-90',
+                  'motion-reduce:transition-none'
                 )}
               />
             </Slider.Track>
-            <Slider.Thumb
-              className={cn(
-                'size-3! rounded-media-control! bg-white! after:hidden!',
-                'shadow-media-thumb',
-                'transition-[scale] duration-media-base ease-out',
-                'data-dragging:scale-90',
-                'motion-reduce:transition-none'
-              )}
-            />
           </Slider>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fetchUpdateJson, UpdateTimeoutError } from "../src/features/settings/lib/update-request";
+import { fetchUpdateJson, UpdateTimeoutError } from "@/features/settings/lib/update-request";
 
 const options = { retryDelayMs: 0, timeoutMs: 100 };
 

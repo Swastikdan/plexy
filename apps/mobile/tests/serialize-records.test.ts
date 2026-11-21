@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { serializeRecords } from "../src/core/library/serialize-records";
+import { serializeRecords } from "@/core/library/serialize-records";
 
 test("large libraries yield to input and detect in-place record changes", async () => {
   const records = Array.from({ length: 251 }, (_, id) => ({ id, watch: { position: 0 } }));

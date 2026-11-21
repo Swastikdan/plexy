@@ -15,7 +15,7 @@
 /// A sync is a plain client pull: it calls the same read endpoints the UI uses
 /// and performs no server-side work. It never runs while the player is open.
 import type { HomePayload, ItemCard, PersonDetail, SearchResponse, TitleDetail } from "@plexy/api-client";
-import { api } from "../client";
+import { api } from "@/client";
 import { cacheAssetUrls } from "./asset-prefetch";
 
 const DB_NAME = "plexy-library";

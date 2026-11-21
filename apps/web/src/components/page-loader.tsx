@@ -1,4 +1,4 @@
-import { cx } from "../lib/cx";
+import { cx } from "@/lib/cx";
 
 /// A quiet, branded status line. The ring uses the brand cobalt and the
 /// label stays small; long lists get skeleton rows elsewhere.

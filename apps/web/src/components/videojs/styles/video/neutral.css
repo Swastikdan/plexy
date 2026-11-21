@@ -1,2 +1,2 @@
-@import "../themes/neutral.css";
+@import "@/components/videojs/styles/themes/neutral.css";
 @import "./base.css";

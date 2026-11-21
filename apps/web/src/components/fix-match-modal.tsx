@@ -9,7 +9,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
 } from "@heroui/react";
-import { api } from "../client";
+import { api } from "@/client";
 import { Search, Check, X, Film, Tv, AlertCircle } from "lucide-react";
 
 export function cleanSearchTitle(raw: string): string {

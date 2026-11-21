@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { requiredGradleJvmArgs } from "../../../scripts/native/gradle-jvmargs.cjs";
+import { requiredGradleJvmArgs } from "@scripts/native/gradle-jvmargs.cjs";
 
 const opening = "--add-opens=java.base/java.lang.ref=ALL-UNNAMED";
 test("CI heap overrides retain the module opening required by CMake configuration", () => {

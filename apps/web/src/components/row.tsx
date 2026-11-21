@@ -6,8 +6,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Poster } from "./poster";
-import { cx } from "../lib/cx";
-import type { ItemCard } from "../client";
+import { cx } from "@/lib/cx";
+import type { ItemCard } from "@/client";
 
 export function Row({
   title,

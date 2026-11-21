@@ -3,11 +3,11 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderHeart, Plus, Trash2, X } from "lucide-react";
-import { api, type ItemCard } from "../client";
-import { queries } from "../queries";
-import { Page } from "../components/page";
-import { Poster } from "../components/poster";
-import { State } from "../components/state";
+import { api, type ItemCard } from "@/client";
+import { queries } from "@/queries";
+import { Page } from "@/components/page";
+import { Poster } from "@/components/poster";
+import { State } from "@/components/state";
 
 function CollectionsRoute() {
   const { id } = Route.useSearch();

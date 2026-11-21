@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveFfmpeg } from "../src/ffmpeg";
+import { resolveFfmpeg } from "@/ffmpeg";
 
 test("preparation publishes decoded MP4 and rejects truncated duration", async () => {
   const ffmpeg = resolveFfmpeg();

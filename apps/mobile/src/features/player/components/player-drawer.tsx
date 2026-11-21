@@ -1,4 +1,4 @@
-import type { SleepChoice } from "../hooks/use-sleep-timer";
+import type { SleepChoice } from "@/features/player/hooks/use-sleep-timer";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors , timeLabel, easings } from "@/shared/theme";
 import { X, Eye, Film, Minus, Plus } from "@/shared/ui/icons";
@@ -14,8 +14,8 @@ import {
 } from "react-native";
 import type { EdgeInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
-import type { FitMode } from "../hooks/use-player-gestures";
-import type { PlayerMenu } from "../hooks/use-player-controls";
+import type { FitMode } from "@/features/player/hooks/use-player-gestures";
+import type { PlayerMenu } from "@/features/player/hooks/use-player-controls";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard, Playability } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Camera, Trash2 } from "lucide-react";
 import { Button } from "@heroui/react";
-import { accountRequest, type AccountUser } from "../auth";
+import { accountRequest, type AccountUser } from "@/auth";
 import { UserAvatar } from "./user-avatar";
 
 const AVATAR_SIZE = 256;

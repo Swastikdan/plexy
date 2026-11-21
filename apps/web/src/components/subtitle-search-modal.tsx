@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Modal } from "@heroui/react";
 import { Captions, Check, Download, X } from "lucide-react";
-import { api } from "../client";
+import { api } from "@/client";
 import type { SubtitleSearchResult } from "@plexy/api-client";
 
 export function SubtitleSearchModal({

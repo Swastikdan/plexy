@@ -3,10 +3,10 @@
 /// from the candidate's first episode (or the last watched one) so the client
 /// never has to guess.
 import { beforeAll, describe, expect, test } from "bun:test";
-import { buildApp } from "../src/app";
-import { run, runMigrations } from "../src/db";
-import { initConfig } from "../src/config";
-import { createDevice } from "../src/auth";
+import { buildApp } from "@/app";
+import { run, runMigrations } from "@/db";
+import { initConfig } from "@/config";
+import { createDevice } from "@/auth";
 
 const LIBRARY_ID = 9960;
 const SERIES_ID = 9961;

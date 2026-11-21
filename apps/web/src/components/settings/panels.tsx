@@ -38,20 +38,20 @@ import {
   type AccountUser,
   type AuthDevice,
   type PairingCode,
-} from "../../auth";
-import { api } from "../../client";
-import { queries } from "../../queries";
-import { useTheme } from "../../lib/use-theme";
-import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "../../lib/playback-diagnostics-consent";
+} from "@/auth";
+import { api } from "@/client";
+import { queries } from "@/queries";
+import { useTheme } from "@/lib/use-theme";
+import { isPlaybackDiagnosticsEnabled, setPlaybackDiagnosticsEnabled } from "@/lib/playback-diagnostics-consent";
 import {
   getPlaybackPreferences,
   savePlaybackPreferences,
   type PlaybackPreferences,
-} from "../../lib/playback-preferences";
-import { cx } from "../../lib/cx";
-import { ProfilePhotoEditor } from "../profile-photo";
+} from "@/lib/playback-preferences";
+import { cx } from "@/lib/cx";
+import { ProfilePhotoEditor } from "@/components/profile-photo";
 import { SettingsSection, SettingsToggleRow } from "./section";
-import type { ThemePreference } from "../../theme";
+import type { ThemePreference } from "@/theme";
 
 interface MeResponse {
   user: AccountUser;

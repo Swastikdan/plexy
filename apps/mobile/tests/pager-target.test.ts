@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { pagerTarget } from "../src/shared/lib/pager-target";
+import { pagerTarget } from "@/shared/lib/pager-target";
 
 test("a short flick changes page while a small slow drag snaps back", () => {
   expect(pagerTarget(-400, -12, -500, 400, 4)).toBe(2);

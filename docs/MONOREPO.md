@@ -44,8 +44,9 @@ The arrow points one way. Concretely:
 | `bun run test:packages` | Run shared-package tests |
 | `bun run test:native` | Run mobile and local-library tests |
 | `bun run build:web` | Build the shared browser frontend |
-| `bun run build:check` | Preflight every app: all typechecks, server/desktop/mobile tests, web build, desktop main/preload build, server bundle and mobile Expo bundle |
-| `bun run build:check:mobile` | Preflight only the mobile app |
+| `bun run check` | Run the contributor workflow checks locally |
+| `bun run build:check` | Contributor checks plus desktop main/preload build, server assembly, and mobile Metro export |
+| `bun run build:check:mobile` | Mobile and local-library checks plus mobile Metro export |
 | `bun run build` | Build desktop, server, and mobile deliverables |
 
 `turbo.json` defines task dependencies and cache outputs. On CI, the web build uploads `dist/web` once and the release jobs use the downloaded artifact. Native packaging and server compilation run uncached on their target hosts.

@@ -205,9 +205,10 @@ async function main(): Promise<void> {
   // Bind follows the config: loopback unless LAN viewing was explicitly
   // enabled (PRD 5.10). `0.0.0.0` still accepts loopback traffic.
   const hostname = lanEnabled ? "0.0.0.0" : "127.0.0.1";
-  const port = Number(Bun.env.PORT ?? cfg.port);
+  const requestedPort = Number(Bun.env.PORT ?? cfg.port);
   // Cleartext is confined to this machine. Other devices use a separate HTTPS listener.
-  app.listen({ port, hostname: "127.0.0.1" });
+  app.listen({ port: requestedPort, hostname: "127.0.0.1" });
+  const port = app.server?.port ?? requestedPort;
   let lanApp: ReturnType<typeof buildApp> | undefined;
   const lanPort = Number(Bun.env.PLEXY_LAN_PORT ?? port + 1);
   let stopDiscovery = () => {};

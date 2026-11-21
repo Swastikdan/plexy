@@ -9,20 +9,20 @@ import { VideoPlayer, Video, usePlayer } from "@videojs/react/video";
 import { selectControls } from "@videojs/core/dom";
 
 import { VideoSkin } from "@/components/videojs/video/skin";
-import { api, type Playability, type SubtitleTrack } from "../../client";
+import { api, type Playability, type SubtitleTrack } from "@/client";
 import { probeBrowserCaps, type PlayPath } from "@plexy/api-client";
-import { queries } from "../../queries";
-import { useIsFullscreen } from "../../lib/use-fullscreen";
-import { getPlaybackPreferences } from "../../lib/playback-preferences";
-import { subtitleTrackLabel } from "../../lib/subtitle-label";
-import { segmentAt, skipLabel, type SkipSegmentKind } from "../../lib/skip-segments";
-import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "../../lib/asset-prefetch";
-import { NativeWatchPage } from "../../components/native/native-watch";
+import { queries } from "@/queries";
+import { useIsFullscreen } from "@/lib/use-fullscreen";
+import { getPlaybackPreferences } from "@/lib/playback-preferences";
+import { subtitleTrackLabel } from "@/lib/subtitle-label";
+import { segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "@/lib/asset-prefetch";
+import { NativeWatchPage } from "@/components/native/native-watch";
 import {
   isNativeAvailable,
   PLAYER_ENGINE_EVENT,
   savePlayerEngine,
-} from "../../lib/native-playback";
+} from "@/lib/native-playback";
 
 /// The server prepares every playable file as a plain, byte-range-seekable
 /// MP4 (`api.streamUrl` never emits `.m3u8`; `/api/hls`, `/remux` and

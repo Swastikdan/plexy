@@ -9,15 +9,26 @@ Electron shell for Plexy (macOS ARM64). Bundles the web UI and a child backend p
 
 The mpv window reuses the Plexy player chrome and streams the original over an authenticated loopback relay, bypassing browser preparation.
 
-## Run / build
+## Develop on Apple Silicon macOS
+
+Install Bun, Node.js, and FFmpeg as described in the [root setup](../../README.md#develop-locally).
+From the repo root:
 
 ```sh
-bun run dev                  # root: backend + web dev servers (do this first)
-VITE_DEV_SERVER_URL=http://localhost:5173 bun run dev:desktop
-bun run build:desktop        # root: web build + server compile + DMG/ZIP → dist/mac
+bun run build:web
+PLEXY_DATA_DIR="$PWD/.data/desktop" bun run dev:desktop
 ```
 
-Packaging needs macOS (`electron-builder`, ad-hoc signed). First launch: System Settings → Privacy & Security → Open Anyway.
+Electron starts a local backend that serves the built UI. Open a local title to
+verify the window and API work together. Install mpv (for example with Homebrew)
+before testing native playback. Rebuild the web assets after editing the renderer
+or start `bun run dev` with separate web/server state and set
+`VITE_DEV_SERVER_URL=http://localhost:5173` on the desktop command to load Vite
+and its API proxy.
+
+`bun run build:desktop` packages a macOS ARM64 DMG and ZIP under `dist/mac`.
+See the [release guide](../../README.md#release) for version reservation and
+first-launch instructions.
 
 ## Layout (`src/`)
 

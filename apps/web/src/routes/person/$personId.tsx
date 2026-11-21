@@ -4,12 +4,12 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { UserRound } from "lucide-react";
-import { queries } from "../../queries";
-import { Page } from "../../components/page";
-import { PageLoader } from "../../components/page-loader";
-import { Poster } from "../../components/poster";
-import { State } from "../../components/state";
-import { artworkUrl } from "../../lib/artwork-url";
+import { queries } from "@/queries";
+import { Page } from "@/components/page";
+import { PageLoader } from "@/components/page-loader";
+import { Poster } from "@/components/poster";
+import { State } from "@/components/state";
+import { artworkUrl } from "@/lib/artwork-url";
 
 function PersonRoute() {
   const { personId } = useParams({ from: Route.id });

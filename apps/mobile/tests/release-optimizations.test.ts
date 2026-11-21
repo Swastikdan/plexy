@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   RELEASE_PROPERTIES,
   upsertProperty,
-} from "../../../scripts/native/with-release-optimizations.cjs";
+} from "@scripts/native/with-release-optimizations.cjs";
 
 type Property = { type: string; key: string; value: string };
 

@@ -13,22 +13,22 @@ import { selectControls } from "@videojs/core/dom";
 import { VideoPlayer, usePlayer } from "@videojs/react/video";
 import { ArrowLeft, SkipForward } from "lucide-react";
 
-import { api } from "../../client";
-import { queries } from "../../queries";
-import { getPlaybackPreferences } from "../../lib/playback-preferences";
-import { prefetchAssets } from "../../lib/asset-prefetch";
-import { getApiBase } from "../../server-config";
-import { nativeBridge } from "../../lib/native-playback";
-import { useIsFullscreen } from "../../lib/use-fullscreen";
-import { segmentAt, skipLabel, type SkipSegmentKind } from "../../lib/skip-segments";
-import type { NativeAudioTrack, NativePlaybackEvent } from "../../electron";
-import type { ServerAudioTrack } from "../videojs/ui/audio-track-menu";
-import { BufferingIndicator } from "../videojs/ui/buffering-indicator";
-import { Container } from "../videojs/ui/container";
-import { PlaybackHotkeys } from "../videojs/video/behaviors/playback-hotkeys";
-import { VideoStatusIndicators } from "../videojs/video/display/status-indicators";
-import { NeutralVideoControls } from "../videojs/video/layout/controls";
-import "../videojs/styles/video/neutral.css";
+import { api } from "@/client";
+import { queries } from "@/queries";
+import { getPlaybackPreferences } from "@/lib/playback-preferences";
+import { prefetchAssets } from "@/lib/asset-prefetch";
+import { getApiBase } from "@/server-config";
+import { nativeBridge } from "@/lib/native-playback";
+import { useIsFullscreen } from "@/lib/use-fullscreen";
+import { segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import type { NativeAudioTrack, NativePlaybackEvent } from "@/electron";
+import type { ServerAudioTrack } from "@/components/videojs/ui/audio-track-menu";
+import { BufferingIndicator } from "@/components/videojs/ui/buffering-indicator";
+import { Container } from "@/components/videojs/ui/container";
+import { PlaybackHotkeys } from "@/components/videojs/video/behaviors/playback-hotkeys";
+import { VideoStatusIndicators } from "@/components/videojs/video/display/status-indicators";
+import { NeutralVideoControls } from "@/components/videojs/video/layout/controls";
+import "@/components/videojs/styles/video/neutral.css";
 import { MpvVideo } from "./mpv-video";
 
 /**

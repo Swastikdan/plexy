@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, Modal } from "@heroui/react";
 import { Check, FolderHeart, Plus, X } from "lucide-react";
-import { api, type ItemCard } from "../client";
-import { queries } from "../queries";
+import { api, type ItemCard } from "@/client";
+import { queries } from "@/queries";
 
 export function CollectionPicker({
   item,

@@ -1,6 +1,6 @@
-import { encodeVersionCode } from "../../apps/mobile/src/shared/lib/build-version";
-import { compareSemver } from "../../apps/mobile/src/features/settings/lib/update-policy";
-import { isVersion } from "../../apps/mobile/src/features/settings/lib/mobile-update-manifest";
+import { encodeVersionCode } from "@/shared/lib/build-version";
+import { compareSemver } from "@/features/settings/lib/update-policy";
+import { isVersion } from "@/features/settings/lib/mobile-update-manifest";
 
 export function nextMobileVersion(previous: string, bump: string = "patch", explicit?: string) {
   if (!isVersion(previous)) throw Error("Mobile builds require a stable major.minor.patch version.");

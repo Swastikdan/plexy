@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { canFinishOnboarding, modePreferences, restoredMode } from "../src/core/client/watching-mode";
-import { catalogForMode } from "../src/core/client/mode-catalog";
-import type { LocalCatalog } from "../src/core/library/catalog-api";
+import { canFinishOnboarding, modePreferences, restoredMode } from "@/core/client/watching-mode";
+import { catalogForMode } from "@/core/client/mode-catalog";
+import type { LocalCatalog } from "@/core/library/catalog-api";
 
 test("fresh installs start onboarding and existing configured installs retain Hybrid", () => {
   expect(restoredMode({}, false)).toEqual({ mode: "hybrid", onboardingCompleted: false });

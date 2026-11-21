@@ -8,7 +8,7 @@ import { readMobileDeliveryState } from "./mobile-delivery-state";
  */
 import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { generateIcons } from "../generate-icon";
+import { generateIcons } from "@scripts/generate-icon";
 const root = resolve(import.meta.dir, "../..");
 const tmdbToken = Bun.env.EXPO_PUBLIC_TMDB_TOKEN || Bun.env.TMDB_TOKEN || Bun.env.TMDB_ACCESS_TOKEN || Bun.env.VITE_PUBLIC_TMDB_ACCESS_TOKEN;
 if (!tmdbToken?.trim()) throw new Error("Mobile release requires TMDB_TOKEN (or EXPO_PUBLIC_TMDB_TOKEN) for bundled metadata credentials.");

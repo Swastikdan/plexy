@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { MediaRelay, type RelayFetch } from "../src/main/native-relay";
+import { MediaRelay, type RelayFetch } from "@/main/native-relay";
 
 const relays: MediaRelay[] = [];
 

@@ -2,7 +2,7 @@
 /// roster. Renders the uploaded photo when there is one, and falls back to the
 /// account's initial so every surface has the same calm, consistent shape.
 import { useState } from "react";
-import { cx } from "../lib/cx";
+import { cx } from "@/lib/cx";
 
 export function UserAvatar({
   user,

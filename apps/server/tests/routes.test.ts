@@ -2,11 +2,11 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildApp } from "../src/app";
-import { runMigrations, run } from "../src/db";
-import { initConfig, APP_VERSION, save } from "../src/config";
-import { createUser } from "../src/accounts";
-import { createDevice } from "../src/auth";
+import { buildApp } from "@/app";
+import { runMigrations, run } from "@/db";
+import { initConfig, APP_VERSION, save } from "@/config";
+import { createUser } from "@/accounts";
+import { createDevice } from "@/auth";
 
 describe("Elysia API Routes (PRD 9)", () => {
   let app: ReturnType<typeof buildApp>;

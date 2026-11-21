@@ -4,11 +4,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildApp } from "../src/app";
-import { q, run, runMigrations, type Row } from "../src/db";
-import { initConfig } from "../src/config";
-import { createUser } from "../src/accounts";
-import { createDevice } from "../src/auth";
+import { buildApp } from "@/app";
+import { q, run, runMigrations, type Row } from "@/db";
+import { initConfig } from "@/config";
+import { createUser } from "@/accounts";
+import { createDevice } from "@/auth";
 
 const FILE_ID = 7801;
 const ITEM_ID = 7701;

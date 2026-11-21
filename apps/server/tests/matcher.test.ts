@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { jaroWinkler, scoreCandidate } from "../src/matcher";
+import { jaroWinkler, scoreCandidate } from "@/matcher";
 
 describe("Matching Engine (PRD 5.4)", () => {
   test("jaroWinkler computes high similarity for identical and close titles", () => {

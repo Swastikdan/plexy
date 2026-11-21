@@ -5,7 +5,7 @@ import { HeroUINativeProvider } from "heroui-native/provider";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { useColors } from "@/shared/theme";
-import "../../global.css";
+import "@/global.css";
 import { MobileProvider } from "@/core/mobile-provider";
 import { RemoteProvider } from "@/features/remote/remote-provider";
 export const unstable_settings = { initialRouteName: "(tabs)" };

@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from "react";
 
-function checkIsFullscreen(): boolean {
+function checkDocumentFullscreen(): boolean {
   if (typeof document === "undefined") return false;
   const doc = document as Document & {
     webkitFullscreenElement?: Element | null;
@@ -29,7 +29,12 @@ function checkIsFullscreen(): boolean {
 }
 
 export function useIsFullscreen(): boolean {
-  const [fullscreen, setFullscreen] = useState<boolean>(() => checkIsFullscreen());
+  // Electron's native window fullscreen is reported over IPC, not through the
+  // Document fullscreen API. Keep the two sources separate: a window resize
+  // used to reset the document check to false and clobber the IPC state, so
+  // fullscreen navigation stayed offset for the traffic lights.
+  const [electronFullscreen, setElectronFullscreen] = useState(false);
+  const [documentFullscreen, setDocumentFullscreen] = useState(checkDocumentFullscreen);
 
   useEffect(() => {
     let isSubscribed = true;
@@ -38,17 +43,17 @@ export function useIsFullscreen(): boolean {
       window.electronAPI
         .isFullScreen()
         .then((fs) => {
-          if (isSubscribed) setFullscreen(Boolean(fs));
+          if (isSubscribed) setElectronFullscreen(Boolean(fs));
         })
         .catch(() => {});
     }
 
     const unsubElectron = window.electronAPI?.onFullScreenChange?.((fs) => {
-      if (isSubscribed) setFullscreen(Boolean(fs));
+      if (isSubscribed) setElectronFullscreen(Boolean(fs));
     });
 
     const update = () => {
-      if (isSubscribed) setFullscreen(checkIsFullscreen());
+      if (isSubscribed) setDocumentFullscreen(checkDocumentFullscreen());
     };
 
     const mediaQuery = typeof window !== "undefined" && window.matchMedia
@@ -61,7 +66,6 @@ export function useIsFullscreen(): boolean {
 
     document.addEventListener("fullscreenchange", update);
     document.addEventListener("webkitfullscreenchange", update);
-    window.addEventListener("resize", update);
 
     return () => {
       isSubscribed = false;
@@ -71,9 +75,8 @@ export function useIsFullscreen(): boolean {
       }
       document.removeEventListener("fullscreenchange", update);
       document.removeEventListener("webkitfullscreenchange", update);
-      window.removeEventListener("resize", update);
     };
   }, []);
 
-  return fullscreen;
+  return electronFullscreen || documentFullscreen;
 }

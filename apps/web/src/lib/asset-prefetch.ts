@@ -8,8 +8,8 @@
 /// only URLs that catalog/title/play data already returned, or cue URLs parsed
 /// from an existing trickplay VTT, are ever fetched. Every failure is swallowed
 /// so browsing and playback never depend on the cache.
-import { isLocalPage } from "../auth";
-import { getApiBase, isElectron } from "../server-config";
+import { isLocalPage } from "@/auth";
+import { getApiBase, isElectron } from "@/server-config";
 
 /** Plexy-owned cache names. Any other version is stale and reclaimed. */
 const CACHE_PREFIX = "plexy-prefetch-";

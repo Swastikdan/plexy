@@ -4,8 +4,8 @@ import {
   preferredSubtitleTrack,
   subtitleLanguageName,
   subtitleTrackDisplay,
-} from "../src/features/player/lib/subtitles";
-import { findLanguageTrack, subtitleFilenameLanguage } from "../src/shared/lib/media-language";
+} from "@/features/player/lib/subtitles";
+import { findLanguageTrack, subtitleFilenameLanguage } from "@/shared/lib/media-language";
 
 test("subtitle language codes become readable names", () => {
   expect(subtitleLanguageName("eng")).toBe("English");

@@ -1,19 +1,19 @@
 import { useEventCallback } from "@/shared/hooks/use-event-callback";
 import { easings } from "@/shared/theme";
-import { createPlayerTapController } from "../lib/player-taps";
+import { createPlayerTapController } from "@/features/player/lib/player-taps";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Animated,
   type GestureResponderEvent,
 } from "react-native";
-import { createVideoGestures } from "../lib/video-gestures";
+import { createVideoGestures } from "@/features/player/lib/video-gestures";
 import { useSharedValue, useAnimatedStyle, useAnimatedReaction } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import {
   clampZoom,
   DOUBLE_TAP_MS,
   type PlayerTap,
-} from "../lib/player-interactions";
+} from "@/features/player/lib/player-interactions";
 export type FitMode = "contain" | "cover" | "fill";
 export function usePlayerGestures({
   hasLoaded,

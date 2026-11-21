@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isCompleteApk, validateApkDownload } from "../src/features/settings/lib/update-package";
+import { isCompleteApk, validateApkDownload } from "@/features/settings/lib/update-package";
 
 test("only a complete release asset can be reused for installation", () => {
   expect(isCompleteApk(1000, 1000)).toBe(true);

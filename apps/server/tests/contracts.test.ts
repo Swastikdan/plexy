@@ -3,9 +3,9 @@
 /// Each entry asserts the fields the UI actually reads, so a server handler
 /// cannot silently rename or drop a property that a screen depends on.
 import { beforeAll, describe, expect, test } from "bun:test";
-import { buildApp } from "../src/app";
-import { run, runMigrations } from "../src/db";
-import { initConfig } from "../src/config";
+import { buildApp } from "@/app";
+import { run, runMigrations } from "@/db";
+import { initConfig } from "@/config";
 
 const LIBRARY_ID = 9901;
 const MOVIE_ID = 9901;

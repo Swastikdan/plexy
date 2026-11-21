@@ -4,7 +4,7 @@
 /// as part of the same control room rather than a stack of unrelated cards.
 import { Children, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { cx } from "../../lib/cx";
+import { cx } from "@/lib/cx";
 
 export function SettingsSection({
   title,

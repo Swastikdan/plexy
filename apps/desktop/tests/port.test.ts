@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createServer, type AddressInfo, type Server } from "node:net";
-import { getAvailablePort, isPortFree } from "../src/main/port";
+import { getAvailablePort, isPortFree } from "@/main/port";
 
 const servers: Server[] = [];
 

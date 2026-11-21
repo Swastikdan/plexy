@@ -20,11 +20,11 @@ import {
   Sparkles,
   Tv,
 } from "lucide-react";
-import { accountRequest, listDevices, type AccountUser, type AuthDevice } from "../../auth";
-import { queries } from "../../queries";
-import type { LibraryItem } from "../../client";
-import { cx } from "../../lib/cx";
-import { UserAvatar } from "../user-avatar";
+import { accountRequest, listDevices, type AccountUser, type AuthDevice } from "@/auth";
+import { queries } from "@/queries";
+import type { LibraryItem } from "@/client";
+import { cx } from "@/lib/cx";
+import { UserAvatar } from "@/components/user-avatar";
 
 interface MeResponse {
   user: AccountUser;

@@ -7,7 +7,7 @@ import {
   moveToLocalTrash,
   removeOriginal,
   replacementTargetFor,
-} from "../src/trash";
+} from "@/trash";
 
 const dirs: string[] = [];
 

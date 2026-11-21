@@ -4,7 +4,7 @@
 /// (metadata, network, playback preparation, offline cache, maintenance).
 /// These controls only work from the machine running the server; the server
 /// enforces that boundary and reports `adminAvailable: false` elsewhere.
-import { DesktopServerSettings } from "../../components/desktop-server-settings";
+import { DesktopServerSettings } from "@/components/desktop-server-settings";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,18 +32,18 @@ import {
   Square,
   ShieldOff,
 } from "lucide-react";
-import { api, type LibraryItem, type ReviewEntry } from "../../client";
-import { getApiBase, getConfiguredServerBase, hasServerOverride, serverCandidateKind } from "../../server-config";
-import { queries } from "../../queries";
+import { api, type LibraryItem, type ReviewEntry } from "@/client";
+import { getApiBase, getConfiguredServerBase, hasServerOverride, serverCandidateKind } from "@/server-config";
+import { queries } from "@/queries";
 import { Button, Input, ListBox, Modal, SearchField, Select, Switch } from "@heroui/react";
-import { cx } from "../../lib/cx";
-import { cleanSearchTitle, extractYear } from "../../components/fix-match-modal";
-import { PageLoader } from "../../components/page-loader";
-import { SettingsSection } from "../../components/settings/section";
-import { LibraryFolderForm } from "../../components/library-folder-form";
-import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "../../electron";
-import { clearPrefetchCache, getPrefetchStats, type PrefetchStats } from "../../lib/asset-prefetch";
-import { clearLibraryCache, getLastSyncedAt, syncLibrary } from "../../lib/library-cache";
+import { cx } from "@/lib/cx";
+import { cleanSearchTitle, extractYear } from "@/components/fix-match-modal";
+import { PageLoader } from "@/components/page-loader";
+import { SettingsSection } from "@/components/settings/section";
+import { LibraryFolderForm } from "@/components/library-folder-form";
+import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "@/electron";
+import { clearPrefetchCache, getPrefetchStats, type PrefetchStats } from "@/lib/asset-prefetch";
+import { clearLibraryCache, getLastSyncedAt, syncLibrary } from "@/lib/library-cache";
 
 const ERROR_TEXT = "text-danger-soft-foreground";
 

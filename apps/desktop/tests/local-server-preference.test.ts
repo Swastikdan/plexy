@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   readLocalServerEnabled,
   writeLocalServerEnabled,
-} from "../src/main/local-server-preference";
+} from "@/main/local-server-preference";
 test("local server defaults on and the checkbox preference survives restarts", async () => {
   const directory = await mkdtemp(join(tmpdir(), "plexy-mode-"));
   try {

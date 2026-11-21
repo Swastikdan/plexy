@@ -8,7 +8,7 @@
     "**/*.css"
   ],
   "scripts": {
-    "dev": "vite --host",
+    "dev": "vite",
     "build": "vite build && bun ../../scripts/precompress-web.ts",
     "typecheck": "tsc --noEmit"
   },

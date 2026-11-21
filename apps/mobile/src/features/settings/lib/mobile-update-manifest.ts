@@ -1,4 +1,4 @@
-import { encodeVersionCode } from "../../../shared/lib/build-version";
+import { encodeVersionCode } from "@/shared/lib/build-version";
 import { compareSemver } from "./update-policy";
 import type { UpdateInfo } from "./app-updater";
 import { fetchUpdateJson } from "./update-request";
@@ -15,19 +15,17 @@ function mirrorOrigin(origin = configuredOrigin) {
 }
 
 export async function fetchMobilePolicy(signal?: AbortSignal, request: typeof fetch = fetch, origin = configuredOrigin) {
-  const mirror = mirrorOrigin(origin);
-  if (mirror) {
-    try {
-      const response = await fetchUpdateJson(`${mirror}/android/mobile-update.json`, {
-        signal, request, timeoutMs: 4_000, retries: 0,
-      });
-      if (response.status !== 404) return parseMobileManifest(response.data);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-    }
+  try {
+    const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal, request, timeoutMs: 8_000 });
+    return response.status === 404 ? null : parseMobileManifest(response.data);
+  } catch (error) {
+    const mirror = mirrorOrigin(origin);
+    if (!mirror || signal?.aborted) throw error;
+    const response = await fetchUpdateJson(`${mirror}/android/mobile-update.json`, {
+      signal, request, timeoutMs: 4_000, retries: 0,
+    });
+    return response.status === 404 ? null : parseMobileManifest(response.data);
   }
-  const response = await fetchUpdateJson(MOBILE_POLICY_URL, { signal, request, timeoutMs: 8_000 });
-  return response.status === 404 ? null : parseMobileManifest(response.data);
 }
 
 export interface MobileUpdateManifest {

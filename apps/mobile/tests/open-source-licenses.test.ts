@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import licenses from "../src/features/settings/data/open-source-licenses.json";
+import licenses from "@/features/settings/data/open-source-licenses.json";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { addProject, addApp } = require("../../../scripts/native/with-open-source-licenses.cjs");
+const { addProject, addApp } = require("@scripts/native/with-open-source-licenses.cjs");
 
 describe("mobile open source notices", () => {
   test("every credited dependency has bundled text and a unique versioned identity", () => {

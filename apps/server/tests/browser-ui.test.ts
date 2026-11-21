@@ -2,9 +2,9 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { browserUiEnabled, buildApp } from "../src/app";
-import { runMigrations } from "../src/db";
-import { initConfig } from "../src/config";
+import { browserUiEnabled, buildApp } from "@/app";
+import { runMigrations } from "@/db";
+import { initConfig } from "@/config";
 let directory: string;
 const previous = process.env.PLEXY_WEB_DIR;
 beforeAll(async () => {

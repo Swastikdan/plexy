@@ -12,7 +12,7 @@ import {
   subscribeToSystemTheme,
   type ResolvedTheme,
   type ThemePreference,
-} from "../theme";
+} from "@/theme";
 
 const THEME_EVENT = "plexy-theme";
 

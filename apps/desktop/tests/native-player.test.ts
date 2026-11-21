@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import {
   NativePlayerManager,
   type NativePlaybackEvent,
-} from "../src/main/native-player";
+} from "@/main/native-player";
 
 interface FakeEvent {
   type: "property" | "event" | "error";

@@ -725,6 +725,19 @@
   color: var(--foreground);
 }
 
+/* A selected header action keeps its tint after the pointer leaves. */
+.cinema-action[aria-current="page"] {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--cinema-ink);
+}
+
+.cinema-action.cinema-action--surface[aria-current="page"] {
+  border-color: color-mix(in oklab, var(--accent) 48%, var(--border));
+  background: color-mix(in oklab, var(--accent) 16%, var(--surface-secondary));
+  color: var(--foreground);
+}
+
 .hero-meta {
   display: flex;
   flex-wrap: wrap;

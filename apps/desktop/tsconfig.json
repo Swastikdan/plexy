@@ -1,7 +1,10 @@
 {
   "extends": "@plexy/tsconfig/base.json",
   "compilerOptions": {
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*", "build.ts"]
 }

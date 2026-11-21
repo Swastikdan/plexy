@@ -16,8 +16,8 @@ import { ChevronLeft } from "@/shared/ui/icons";
 import { Card } from "@/shared/ui/media-card";
 import { Notice } from "@/shared/ui/notice";
 import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
-import { usePlayTitle } from "../hooks/use-play-title";
-import { useTitleActions } from "../hooks/use-title-actions";
+import { usePlayTitle } from "@/features/catalog/hooks/use-play-title";
+import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 
 export function TitleBrowser({
   title,

@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { buildApp } from "../src/app";
-import { runMigrations, run } from "../src/db";
-import { initConfig } from "../src/config";
-import { createUser } from "../src/accounts";
-import { createDevice, peekToken } from "../src/auth";
+import { buildApp } from "@/app";
+import { runMigrations, run } from "@/db";
+import { initConfig } from "@/config";
+import { createUser } from "@/accounts";
+import { createDevice, peekToken } from "@/auth";
 
 describe("native remote administration", () => {
   let app: ReturnType<typeof buildApp>;

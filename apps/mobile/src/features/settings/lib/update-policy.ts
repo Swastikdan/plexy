@@ -45,6 +45,7 @@ export function selectUpdate(
       return [{ tagName: release.tag_name, releaseName: release.name || release.tag_name,
         releaseNotes: release.body || "", publishedAt: release.published_at,
         apkUrl: asset.browser_download_url, apkName: asset.name, apkSize: asset.size,
+        sha256: asset.digest?.match(/^sha256:([a-f0-9]{64})$/i)?.[1],
         version: mobileVersion, updateType: "optional" as const }];
     }
     const build = Number(

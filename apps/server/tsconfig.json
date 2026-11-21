@@ -1,4 +1,9 @@
 {
   "extends": "@plexy/tsconfig/bun.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
   "include": ["src/**/*", "tests/**/*"]
 }

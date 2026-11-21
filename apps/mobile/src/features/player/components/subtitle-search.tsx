@@ -6,7 +6,7 @@ import { findLanguageTrack, mediaLanguageName } from "@/shared/lib/media-languag
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
 import { Spinner } from "@/shared/ui/spinner";
-import { downloadSubtitle, searchSubtitles, type SubtitleResult } from "../lib/subtitle-search";
+import { downloadSubtitle, searchSubtitles, type SubtitleResult } from "@/features/player/lib/subtitle-search";
 
 export function SubtitleSearch({ file, language, close, save }: {
   file: Playability;

@@ -4,13 +4,13 @@ import type { ItemCard } from "@/core/library/catalog-api";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { hiddenTitleAction } from "@/shared/ui/hidden-title-action";
-import { useRemote } from "../remote-provider";
+import { useRemote } from "@/features/remote/remote-provider";
 import {
   isRemotePlayed,
   markRemotePlayed,
-} from "../lib/remote-progress";
-import { fetchDetail, type RemoteTitle } from "../lib/tmdb";
-import { parseRemotePublicId } from "../lib/view";
+} from "@/features/remote/lib/remote-progress";
+import { fetchDetail, type RemoteTitle } from "@/features/remote/lib/tmdb";
+import { parseRemotePublicId } from "@/features/remote/lib/view";
 
 export function remoteTitleFromCard(item: ItemCard): RemoteTitle | null {
   const parsed = parseRemotePublicId(item.publicId);

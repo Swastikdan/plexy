@@ -25,20 +25,20 @@ import {
   Download,
   Captions,
 } from "lucide-react";
-import { queries } from "../../queries";
-import { nativeBridge } from "../../lib/native-playback";
-import { api, probeBrowserCaps, type TitleDetail } from "../../client";
+import { queries } from "@/queries";
+import { nativeBridge } from "@/lib/native-playback";
+import { api, probeBrowserCaps, type TitleDetail } from "@/client";
 import { Button, Dropdown, Modal } from "@heroui/react";
-import { TrailerModal } from "../../components/trailer-modal";
-import { FixMatchModal } from "../../components/fix-match-modal";
-import { CollectionPicker } from "../../components/collection-picker";
-import { SubtitleSearchModal } from "../../components/subtitle-search-modal";
-import { Row } from "../../components/row";
-import { Page } from "../../components/page";
-import { State } from "../../components/state";
-import { cx } from "../../lib/cx";
-import { artworkUrl } from "../../lib/artwork-url";
-import { useItemFlags } from "../../lib/use-item-flags";
+import { TrailerModal } from "@/components/trailer-modal";
+import { FixMatchModal } from "@/components/fix-match-modal";
+import { CollectionPicker } from "@/components/collection-picker";
+import { SubtitleSearchModal } from "@/components/subtitle-search-modal";
+import { Row } from "@/components/row";
+import { Page } from "@/components/page";
+import { State } from "@/components/state";
+import { cx } from "@/lib/cx";
+import { artworkUrl } from "@/lib/artwork-url";
+import { useItemFlags } from "@/lib/use-item-flags";
 
 // Capabilities do not change during a session; probing once keeps hover
 // prefetches free of layout work.

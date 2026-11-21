@@ -6,7 +6,7 @@
 /// next to a pre-filled "Movies" library that they did not ask for.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { LibraryItem } from "../client";
+import type { LibraryItem } from "@/client";
 import {
   AlertCircle,
   ArrowLeft,
@@ -25,10 +25,10 @@ import {
   Tv,
   X,
 } from "lucide-react";
-import { api } from "../client";
-import { queries } from "../queries";
+import { api } from "@/client";
+import { queries } from "@/queries";
 import { Button, Input } from "@heroui/react";
-import { cx } from "../lib/cx";
+import { cx } from "@/lib/cx";
 
 type MediaType = "movies" | "tv";
 

@@ -4,8 +4,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { FolderHeart, Home, Library, Clock3, UserRound } from "lucide-react";
-import { cx } from "../lib/cx";
-import { accountRequest, getSignedInUser, type AccountUser } from "../auth";
+import { cx } from "@/lib/cx";
+import { accountRequest, getSignedInUser, type AccountUser } from "@/auth";
 import { UserAvatar } from "./user-avatar";
 
 export function BottomNav({ className }: { className?: string }) {

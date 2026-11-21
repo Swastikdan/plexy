@@ -5,6 +5,8 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "paths": {
+      "@/global.css": ["./global.css"],
+      "@scripts/*": ["../../scripts/*"],
       "@/*": [
         "./src/*"
       ]

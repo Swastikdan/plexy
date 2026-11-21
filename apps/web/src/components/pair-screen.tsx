@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Input } from "@heroui/react";
-import { login, pairDevice } from "../auth";
-import { cx } from "../lib/cx";
+import { login, pairDevice } from "@/auth";
+import { cx } from "@/lib/cx";
 
 export function PairScreen({
   serverUrl,

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { LibraryFolderForm } from "../components/library-folder-form";
+import { LibraryFolderForm } from "@/components/library-folder-form";
 import { Button } from "@heroui/react";
-import { Page } from "../components/page";
+import { Page } from "@/components/page";
 
 function AddLibraryRoute() {
   const navigate = useNavigate();

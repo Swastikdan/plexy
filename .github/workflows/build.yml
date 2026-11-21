@@ -283,8 +283,6 @@ jobs:
       contents: write
     timeout-minutes: 90
     if: inputs.desktop || inputs.macos_backend
-    outputs:
-      desktop_mirror_links: ${{ steps.desktop-mirror.outputs.links }}
     strategy:
       fail-fast: false
       matrix:
@@ -340,19 +338,19 @@ jobs:
             printf '\n%s\n' "$RELEASE_HIGHLIGHTS" >> "$notes"
           fi
           PLEXY_KEEP_RELEASE_NOTES=true bash scripts/publish-release.sh "$notes" release-macos/*
-      - name: Publish macOS installer to itch.io
-        id: desktop-mirror
-        if: matrix.target == 'desktop'
+      - name: Publish artifacts to itch.io
         continue-on-error: true
         env:
+          GH_TOKEN: ${{ github.token }}
           PLEXY_ITCH_PROJECT: ${{ vars.PLEXY_ITCH_PROJECT }}
+          PLEXY_ITCH_DOWNLOAD_ORIGIN: ${{ vars.PLEXY_ITCH_DOWNLOAD_ORIGIN }}
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
-        run: bash scripts/publish-macos-itch.sh release-macos
+        run: bash scripts/publish-itch.sh release-macos
 
   release:
     name: Publish GitHub release
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     needs:
       - plan
       - checks
@@ -441,6 +439,7 @@ jobs:
           fi
 
       - name: Create or update release
+        id: general-release
         if: ${{ !cancelled() && steps.mobile-release.outcome == 'success' }}
         shell: bash
         env:
@@ -513,22 +512,56 @@ jobs:
           fi
           bash scripts/publish-release.sh release-notes.md "${assets[@]}"
 
-  desktop-mirror-links:
+      - name: Publish artifacts to itch.io
+        if: ${{ !cancelled() && steps.general-release.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          PLEXY_BUILD_NUMBER: ${{ needs.plan.outputs.build_number }}
+          PLEXY_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+          MIRROR_ANDROID: ${{ steps.mobile-release.outputs.mirror }}
+          GH_TOKEN: ${{ github.token }}
+          PLEXY_ITCH_PROJECT: ${{ vars.PLEXY_ITCH_PROJECT }}
+          PLEXY_ITCH_DOWNLOAD_ORIGIN: ${{ vars.PLEXY_ITCH_DOWNLOAD_ORIGIN }}
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: bash scripts/publish-itch.sh release
+
+  itch-mirror-links:
     name: Add itch.io download link to release
     needs: [plan, macos, release]
-    if: ${{ !cancelled() && needs.macos.outputs.desktop_mirror_links != '' }}
+    if: ${{ !cancelled() && vars.PLEXY_ITCH_PROJECT != '' && (needs.macos.result == 'success' || needs.release.result == 'success') }}
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: v${{ needs.plan.outputs.version }}-build.${{ needs.plan.outputs.build_number }}
-      MIRROR_LINKS: ${{ needs.macos.outputs.desktop_mirror_links }}
+      ITCH_PROJECT: ${{ vars.PLEXY_ITCH_PROJECT }}
     steps:
       - name: Update release notes
         run: |
           notes="$(mktemp)"
           gh release view "$RELEASE_TAG" --json body --jq .body > "$notes"
-          if ! grep -Fxq '### macOS downloads via itch.io' "$notes"; then
-            printf '\n### macOS downloads via itch.io\n\n%s\n' "$MIRROR_LINKS" >> "$notes"
+          [[ "$ITCH_PROJECT" =~ ^[a-z0-9-]+/[a-z0-9-]+$ ]]
+          page="https://${ITCH_PROJECT%%/*}.itch.io/${ITCH_PROJECT#*/}"
+          if ! grep -Fxq '### Downloads via itch.io' "$notes"; then
+            printf '\n### Downloads via itch.io\n\n%s\n' "- [Browse files on itch.io]($page)" >> "$notes"
+            links="$(mktemp -d)"
+            if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -q '^itch-.*\.json$'; then
+              gh release download "$RELEASE_TAG" --pattern 'itch-*.json' --dir "$links"
+              for file in "$links"/itch-*.json; do
+                channel="${file##*/itch-}"
+                url="$(jq -r .url "$file")"
+                case "${channel%.json}" in
+                  android-arm64) label="Android APK (ARM64)" ;;
+                  mac-arm64-zip*) label="macOS desktop ZIP (Apple Silicon)" ;;
+                  mac-arm64*) label="macOS desktop DMG (Apple Silicon)" ;;
+                  plexy-server-macos-arm64-binary*) label="macOS backend executable (Apple Silicon)" ;;
+                  plexy-server-macos-arm64*) label="macOS backend bundle (Apple Silicon)" ;;
+                  plexy-server-linux-x64-binary*) label="Linux backend executable (x64)" ;;
+                  plexy-server-linux-x64*) label="Linux backend bundle (x64)" ;;
+                  *) continue ;;
+                esac
+                printf -- '- [%s](%s)\n' "$label" "$url" >> "$notes"
+              done
+            fi
             gh release edit "$RELEASE_TAG" --notes-file "$notes"
           fi
