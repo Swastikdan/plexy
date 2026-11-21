@@ -25,8 +25,9 @@ export default {
       if (!uploads.ok) throw new Error("Upload lookup failed.");
       const { uploads: files } = await uploads.json();
       // A channel can move ahead of GitHub or still be processing the update.
-      const file = files.find(({ channelName, build }) => channelName === channel &&
-        build?.userVersion === tag && build.state === "completed");
+      const file = files.find(({ channel_name, channelName, build }) =>
+        (channel_name ?? channelName) === channel &&
+        (build?.user_version ?? build?.userVersion) === tag && build.state === "completed");
       if (!Number.isSafeInteger(file?.build?.id)) return new Response(null, { status: 404, headers });
       const endpoint = new URL(`https://api.itch.io/builds/${file.build.id}/download/unpacked/default`);
       endpoint.searchParams.set("api_key", env.ITCH_API_KEY);

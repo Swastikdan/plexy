@@ -1,6 +1,6 @@
 name = "plexy-itch-downloads"
 main = "worker.mjs"
-compatibility_date = "2026-11-22"
+compatibility_date = "2026-11-20"
 
 [vars]
 ITCH_GAME_ID = "5409721"
