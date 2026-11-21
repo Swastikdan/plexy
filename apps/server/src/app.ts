@@ -6,7 +6,7 @@ import { apiError, isDirectLoopbackContext } from "./essentials";
 /// secrets: `config.ts redactedView` is the only projection. Admin routes
 /// enforce loopback-only access with `essentials.denyIfNotLocal`.
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
 import { Elysia } from "elysia";
@@ -251,6 +251,105 @@ function resolveDistDir(): string {
 }
 
 /**
+ * One built index.html, retained between requests. The identity (path, mtime,
+ * size) is checked on every request so a rebuilt `dist/web` is picked up
+ * without a restart; encoded copies are read from the build output once, and
+ * only generated in memory when the build did not emit them.
+ */
+interface EncodedBody {
+  body: Uint8Array<ArrayBuffer>;
+  etag: string;
+}
+
+interface CachedIndex {
+  path: string;
+  mtimeMs: number;
+  size: number;
+  body: Uint8Array<ArrayBuffer>;
+  etag: string;
+  gzip: EncodedBody;
+  brotli: EncodedBody | null;
+}
+
+let cachedIndex: CachedIndex | null = null;
+
+function contentEtag(body: Uint8Array): string {
+  return `"${body.byteLength.toString(16)}-${Bun.hash(body).toString(16)}"`;
+}
+
+function acceptsEncoding(header: string | null, encoding: "gzip" | "br"): boolean {
+  if (!header) return false;
+  let wildcard = false;
+  for (const part of header.split(",")) {
+    const [name, ...params] = part.trim().toLowerCase().split(";");
+    const q = params.find((param) => param.trim().startsWith("q="));
+    const accepted = !q || Number(q.trim().slice(2)) > 0;
+    if (name === encoding) return accepted; // an explicit entry wins
+    if (name === "*") wildcard = accepted;
+  }
+  return wildcard;
+}
+
+function etagMatches(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  return header
+    .split(",")
+    .some((value) => value.trim() === "*" || value.trim() === etag);
+}
+
+/** Read a build-time `.br`/`.gz` sibling when it is not older than the source. */
+async function readEncoded(
+  indexPath: string,
+  suffix: "br" | "gz",
+  sourceMtimeMs: number,
+): Promise<EncodedBody | null> {
+  const path = `${indexPath}.${suffix}`;
+  const stat = statSync(path, { throwIfNoEntry: false });
+  if (!stat?.isFile() || stat.mtimeMs + 1_000 < sourceMtimeMs) return null;
+  const body = new Uint8Array(await readFile(path));
+  return {
+    body,
+    etag: `${contentEtag(body).slice(0, -1)}-${suffix === "br" ? "br" : "gzip"}"`,
+  };
+}
+
+async function cachedIndexFor(indexPath: string): Promise<CachedIndex | null> {
+  const stat = statSync(indexPath, { throwIfNoEntry: false });
+  if (!stat?.isFile()) return null;
+  if (
+    cachedIndex &&
+    cachedIndex.path === indexPath &&
+    cachedIndex.mtimeMs === stat.mtimeMs &&
+    cachedIndex.size === stat.size
+  ) {
+    return cachedIndex;
+  }
+  // Copy out of Bun's pooled Buffer into a plain ArrayBuffer-backed view:
+  // Response bodies must not reference shared/pooled memory.
+  const body = new Uint8Array(await readFile(indexPath));
+  const etag = contentEtag(body);
+  const precompressed = await Promise.all([
+    readEncoded(indexPath, "br", stat.mtimeMs),
+    readEncoded(indexPath, "gz", stat.mtimeMs),
+  ]);
+  const gzip =
+    precompressed[1] ?? {
+      body: new Uint8Array(Bun.gzipSync(body)),
+      etag: `${etag.slice(0, -1)}-gzip"`,
+    };
+  cachedIndex = {
+    path: indexPath,
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    body,
+    etag,
+    gzip,
+    brotli: precompressed[0],
+  };
+  return cachedIndex;
+}
+
+/**
  * Embedded SPA (PRD 7): serve `dist/web` with an index.html fallback for
  * client-side routing. Dev runs Vite itself; a missing dist answers with a
  * one-line pointer so the API is still testable with curl.
@@ -272,32 +371,53 @@ async function staticFallback({
     );
   }
   if (url.pathname === "/" || !/\.[a-z0-9]+$/i.test(url.pathname)) {
-    const indexPath = join(distDir, "index.html");
-    if (existsSync(indexPath)) {
-      const index = await readFile(indexPath);
-      return new Response(index, {
+    const index = await cachedIndexFor(join(distDir, "index.html"));
+    if (index) {
+      const accept = request.headers.get("accept-encoding");
+      const brotli = index.brotli && acceptsEncoding(accept, "br") ? index.brotli : null;
+      const gzip = !brotli && acceptsEncoding(accept, "gzip") ? index.gzip : null;
+      const encoded = brotli ?? gzip;
+      const etag = encoded?.etag ?? index.etag;
+      const headers: Record<string, string> = {
+        ETag: etag,
+        "Cache-Control": "no-cache",
+        // Origin is part of the CORS plugin's contract; keep it alongside the
+        // compression variant so shared caches never mix origins or encodings.
+        Vary: "Origin, Accept-Encoding",
+      };
+      if (etagMatches(request.headers.get("if-none-match"), etag)) {
+        return new Response(null, { status: 304, headers });
+      }
+      if (brotli) headers["Content-Encoding"] = "br";
+      else if (gzip) headers["Content-Encoding"] = "gzip";
+      return new Response(encoded?.body ?? index.body, {
         headers: {
+          ...headers,
           "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-cache",
         },
       });
     }
   }
   // Assets: prevent traversal, then serve with a cache lifetime. Vite output
   // under /assets is content-hashed, so it can be cached forever; the rest is
-  // short-lived so a rebuild is picked up.
+  // short-lived so a rebuild is picked up. The weak validator is derived from
+  // file metadata, so serving an asset never reads its bytes into memory.
   const rel = url.pathname.replace(/^\/+/, "").replace(/\.\./g, "");
   const file = Bun.file(join(distDir, rel));
   if (await file.exists()) {
     const immutable = url.pathname.startsWith("/assets/");
-    return new Response(file, {
-      headers: {
-        ...(file.type ? { "Content-Type": file.type } : {}),
-        "Cache-Control": immutable
-          ? "public, max-age=31536000, immutable"
-          : "public, max-age=3600",
-      },
-    });
+    const etag = `W/"${file.size.toString(16)}-${Math.trunc(file.lastModified).toString(16)}"`;
+    const headers: Record<string, string> = {
+      ...(file.type ? { "Content-Type": file.type } : {}),
+      ETag: etag,
+      "Cache-Control": immutable
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=3600",
+    };
+    if (etagMatches(request.headers.get("if-none-match"), etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+    return new Response(file, { headers });
   }
   return apiError("Not found", 404);
 }

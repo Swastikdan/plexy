@@ -2,10 +2,6 @@
 
 import type { MouseEventHandler } from 'react';
 import { FullscreenButton as FullscreenButtonPrimitive } from '@videojs/react';
-import {
-  FullscreenEnterIcon as FullscreenEnterIconPrimitive,
-  FullscreenExitIcon as FullscreenExitIconPrimitive,
-} from '@videojs/react/icons/neutral';
 
 import { Button } from '@/components/videojs/ui/button';
 import { cn } from '@/lib/resolve-class-name';
@@ -16,19 +12,54 @@ export interface FullscreenButtonProps {
   onClick?: MouseEventHandler<HTMLButtonElement>;
 }
 
+/// Two diagonal arrows with right-angle heads: pointing out to enter, in to
+/// leave. This matches the reference glyph without the focus ring drawn on top.
+function FullscreenGlyph({ exit, className }: { exit: boolean; className?: string }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn('size-media-icon drop-shadow-media-icon [text-shadow:inherit]', className)}
+    >
+      {exit ? (
+        <>
+          <path d="M18.5 5.5 13 11" />
+          <path d="M17 11h-4V7" />
+          <path d="M5.5 18.5 11 13" />
+          <path d="M7 13h4v4" />
+        </>
+      ) : (
+        <>
+          <path d="M13 11 18.5 5.5" />
+          <path d="M14 5.5h4.5V10" />
+          <path d="M11 13 5.5 18.5" />
+          <path d="M10 18.5H5.5V14" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function FullscreenIcons() {
   return (
     <>
-      <FullscreenEnterIconPrimitive
+      <FullscreenGlyph
+        exit={false}
         className={cn(
-          'col-start-1 row-start-1 size-media-icon drop-shadow-media-icon [text-shadow:inherit]',
+          'col-start-1 row-start-1',
           'transition-[opacity,scale] duration-media-base ease-out',
           'opacity-0 group-not-data-fullscreen/fullscreen:scale-100 group-not-data-fullscreen/fullscreen:opacity-100'
         )}
       />
-      <FullscreenExitIconPrimitive
+      <FullscreenGlyph
+        exit
         className={cn(
-          'col-start-1 row-start-1 size-media-icon drop-shadow-media-icon [text-shadow:inherit]',
+          'col-start-1 row-start-1',
           'transition-[opacity,scale] duration-media-base ease-out',
           'opacity-0 group-data-fullscreen/fullscreen:scale-100 group-data-fullscreen/fullscreen:opacity-100'
         )}

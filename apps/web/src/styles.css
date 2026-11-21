@@ -11,9 +11,80 @@
  * Corners follow HeroUI's radii everywhere, matching the native app; there is
  * no per-shell geometry override.
  */
-@import "@heroui/styles";
-@import "@fontsource-variable/archivo";
-@import "@fontsource/anton";
+/* HeroUI ships every component and the full theme through its root stylesheet.
+ * The viewer only renders the components imported from `@heroui/react`, so load
+ * the shared base + the component CSS they actually compose. Keep HeroUI's
+ * cascade order (`theme, base, components, utilities`) intact. */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss";
+
+@import "@heroui/styles/base" layer(base);
+@import "@heroui/styles/base/scrollbar.css" layer(base);
+
+/* Shared field primitives (label/description/error rows used by TextField,
+ * Input, Select, Switch and SearchField). */
+@import "@heroui/styles/components/label.css" layer(components);
+@import "@heroui/styles/components/description.css" layer(components);
+@import "@heroui/styles/components/error-message.css" layer(components);
+@import "@heroui/styles/components/field-error.css" layer(components);
+
+/* Button, Input, Modal, ListBox, Select, Switch, Dropdown, SearchField,
+ * TextField, ToggleButton, ToggleButtonGroup, Slider, Tooltip — plus the
+ * subcomponents each one composes (button groups, menu/list rows, popover and
+ * menu surfaces, scroll shadows, close button, surface). */
+@import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/button-group.css" layer(components);
+@import "@heroui/styles/components/close-button.css" layer(components);
+@import "@heroui/styles/components/dropdown.css" layer(components);
+@import "@heroui/styles/components/input.css" layer(components);
+@import "@heroui/styles/components/list-box.css" layer(components);
+@import "@heroui/styles/components/list-box-item.css" layer(components);
+@import "@heroui/styles/components/list-box-section.css" layer(components);
+@import "@heroui/styles/components/menu-item.css" layer(components);
+@import "@heroui/styles/components/menu-section.css" layer(components);
+@import "@heroui/styles/components/menu.css" layer(components);
+@import "@heroui/styles/components/modal.css" layer(components);
+@import "@heroui/styles/components/popover.css" layer(components);
+@import "@heroui/styles/components/search-field.css" layer(components);
+@import "@heroui/styles/components/select.css" layer(components);
+@import "@heroui/styles/components/slider.css" layer(components);
+@import "@heroui/styles/components/surface.css" layer(components);
+@import "@heroui/styles/components/switch.css" layer(components);
+@import "@heroui/styles/components/textfield.css" layer(components);
+@import "@heroui/styles/components/toggle-button.css" layer(components);
+@import "@heroui/styles/components/toggle-button-group.css" layer(components);
+@import "@heroui/styles/components/tooltip.css" layer(components);
+@import "@heroui/styles/components/scroll-shadow.css" layer(components);
+
+/* Theme tokens and HeroUI's custom utilities/variants used by those components. */
+@import "@heroui/styles/themes/default" layer(theme);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
+
+/* Only the Latin cut of each family is ever needed by the English UI. Anton's
+ * package also ships `.woff` fallbacks; every target browser reads woff2. */
+@font-face {
+  font-family: "Archivo Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/archivo/files/archivo-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Anton";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/anton/files/anton-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 /* Utility-class scanning for the app. HeroUI's own component CSS is shipped
  * precompiled, so only our source needs to be scanned. */

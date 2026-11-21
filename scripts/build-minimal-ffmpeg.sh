@@ -3,6 +3,11 @@ set -euo pipefail
 
 # Build an arm64 macOS FFmpeg for Plexy's packaged desktop app. This is a
 # deliberately LGPL-only configuration: do not add GPL libraries such as x264.
+#
+# Verified against a generated H.264/AAC/SRT Matroska: probe, remux, audio
+# transcode, full VideoToolbox transcode, trickplay sprite, and WebVTT subtitle
+# extraction. The result is ~4.8 MB versus ~59.8 MB for node-av. Opt in with
+# `PLEXY_FFMPEG_VARIANT=custom` (scripts/build-desktop.ts, scripts/build-server.ts).
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FFMPEG_VERSION="${FFMPEG_VERSION:-8.1}"
 WORK_DIR="${FFMPEG_WORK_DIR:-$ROOT_DIR/.build/ffmpeg}"
@@ -62,9 +67,9 @@ export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
   --enable-audiotoolbox \
   --enable-protocol=file,pipe \
   --enable-demuxer=avi,matroska,mov,mpeg,mpegts,webm \
-  --enable-muxer=hls,image2,mov,mp4,mpegts,null \
-  --enable-decoder=h264,hevc,aac,ac3,eac3,flac,mp3,opus,pcm_s16le,pcm_s24le,pcm_s32le,truehd,vorbis \
-  --enable-encoder=aac,h264_videotoolbox,mjpeg \
+  --enable-muxer=hls,image2,mov,mp4,mpegts,null,webvtt \
+  --enable-decoder=h264,hevc,aac,ac3,eac3,flac,mp3,opus,pcm_s16le,pcm_s24le,pcm_s32le,truehd,vorbis,dts,alac,vp8,vp9,subrip,ass,webvtt,mov_text \
+  --enable-encoder=aac,h264_videotoolbox,mjpeg,webvtt \
   --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox \
   --enable-parser=h264,hevc,aac,ac3,flac,mpegaudio,opus,vorbis \
   --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb \

@@ -25,7 +25,20 @@ async function buildServer(): Promise<void> {
   await copyFile(join(root, "apps/server/dist/plexy-server"), join(outDir, "plexy-server"));
 
   console.log("· Bundling FFmpeg");
-  const ffmpegSource = await findFfmpeg(root);
+  // Match the desktop packaging option: use the 4.8 MB minimal build when the
+  // caller opts in, otherwise the full node-av binary (broader codec coverage).
+  const customFfmpeg = join(root, "dist", "bin", "ffmpeg-custom");
+  let ffmpegSource: string | null;
+  if (process.env.PLEXY_FFMPEG_VARIANT === "custom") {
+    if (!existsSync(customFfmpeg)) {
+      throw new Error(
+        "Custom FFmpeg missing; run `bun run ffmpeg:minimal` before building the server.",
+      );
+    }
+    ffmpegSource = customFfmpeg;
+  } else {
+    ffmpegSource = await findFfmpeg(root);
+  }
   if (!ffmpegSource) {
     throw new Error(
       "FFmpeg binary missing; install the project dependencies before building the server.",

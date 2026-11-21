@@ -1,11 +1,11 @@
 import { useUniwind } from "uniwind";
-import {
-Archivo_400Regular,
-Archivo_500Medium,
-Archivo_700Bold,
-Archivo_900Black,
-useFonts,
-} from "@expo-google-fonts/archivo";
+// Import weights directly: the package barrel re-exports all 18 Archivo
+// variants, and Metro treats every require() in it as a bundled asset.
+import { Archivo_400Regular } from "@expo-google-fonts/archivo/400Regular";
+import { Archivo_500Medium } from "@expo-google-fonts/archivo/500Medium";
+import { Archivo_700Bold } from "@expo-google-fonts/archivo/700Bold";
+import { Archivo_900Black } from "@expo-google-fonts/archivo/900Black";
+import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import React,{ useEffect,useState } from "react";
 import { AppState,StatusBar,View } from "react-native";

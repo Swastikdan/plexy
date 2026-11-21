@@ -12,6 +12,25 @@ bun run --filter @plexy/server start  # bun src/main.ts
 
 `PORT` (default `8765`) sets the port. `PLEXY_DATA_DIR` selects the database dir, `PLEXY_LOG_LEVEL` the log level. `--no-ui` / `PLEXY_NO_UI=1` serves API only. `--version` / `--help` exit without booting.
 
+### Development owner (`--dev-admin`)
+
+For quick checks, `--dev-admin` (or `PLEXY_DEV_ADMIN=1`) creates an admin account `admin` / `admin`, bypassing the normal 12-character password rule, and marks setup complete. It is deliberately narrow:
+
+- **Once per database.** A `dev_bootstrap` marker is written when the account is created. Later runs never reset the password, promote an existing account, or recreate a deleted one. If a user named `admin` already exists it is left untouched.
+- **Bun dev server only.** The server refuses the flag on compiled binaries (`./plexy-server`), when `NODE_ENV=production`, and when LAN access is enabled. Desktop mode ignores it with a warning.
+- **Loopback only.** With LAN disabled, the weak credentials cannot be reached from another machine.
+- **LAN is blocked while the password is still `admin`.** Enabling LAN access in Settings returns 409 until the dev admin's password is changed; a copied dev database that already has the marker also logs a warning at boot.
+
+From the repo root:
+
+```sh
+bun run dev:admin
+# or, server only:
+PLEXY_DEV_ADMIN=1 bun run --filter @plexy/server dev
+```
+
+The account is created once per database. To start over, point `PLEXY_DATA_DIR` at a fresh directory; the marker intentionally prevents recreating it in the same database. Never enable it on an exposed server.
+
 ## Layout (`src/`)
 
 | File(s) | Responsibility |

@@ -32,6 +32,24 @@ export interface ElectronAPI {
   ) => Promise<{ version: string; setupComplete: boolean }>;
   getServerUrl: () => Promise<string>;
   setServerUrl: (url: string) => Promise<void>;
+  getServerCandidates: () => Promise<
+    Array<{
+      url: string;
+      label: string;
+      kind: "lan" | "remote" | "manual";
+      serverId?: string;
+      lastUsedAt?: string;
+    }>
+  >;
+  setServerCandidates: (
+    candidates: Array<{
+      url: string;
+      label: string;
+      kind: "lan" | "remote" | "manual";
+      serverId?: string;
+      lastUsedAt?: string;
+    }>,
+  ) => Promise<void>;
   onNavigate: (callback: (route: string) => void) => () => void;
   isFullScreen?: () => Promise<boolean>;
   setFullScreen?: (value: boolean) => Promise<boolean>;

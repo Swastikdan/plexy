@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "vite --host",
-    "build": "vite build",
+    "build": "vite build && bun ../../scripts/precompress-web.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

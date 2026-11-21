@@ -56,6 +56,9 @@ plexy-exact/
 .animation-plans/
 
 .turbo/
+# Performance/architecture measurement scratch (baseline + after reports, CDP
+# profiles, temp data dirs). Never commit generated numbers or check output.
+/.perf/
 .taste-skill/*
 skills/*
 docs/design/*

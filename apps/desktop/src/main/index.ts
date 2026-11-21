@@ -145,6 +145,70 @@ function writeServerPreference(raw: string): void {
   writeFileSync(file, JSON.stringify({ url }, null, 2));
 }
 
+interface StoredServerCandidate {
+  url: string;
+  label: string;
+  kind: "lan" | "remote" | "manual";
+  serverId?: string;
+  lastUsedAt?: string;
+}
+
+function serverCandidatesFile(): string {
+  return path.join(app.getPath("userData"), "server-candidates.json");
+}
+
+function readServerCandidates(): StoredServerCandidate[] {
+  try {
+    const raw = JSON.parse(readFileSync(serverCandidatesFile(), "utf8")) as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((entry): StoredServerCandidate[] => {
+      if (!entry || typeof entry !== "object") return [];
+      const record = entry as Record<string, unknown>;
+      const url = typeof record.url === "string" ? record.url.trim().replace(/\/+$/, "") : "";
+      if (!isValidServerUrl(url)) return [];
+      const kind = record.kind === "lan" || record.kind === "remote" || record.kind === "manual"
+        ? record.kind
+        : "manual";
+      return [{
+        url,
+        label: typeof record.label === "string" && record.label.trim()
+          ? record.label.trim().slice(0, 80)
+          : "Saved server",
+        kind,
+        serverId: typeof record.serverId === "string" ? record.serverId.trim().slice(0, 120) : undefined,
+        lastUsedAt: typeof record.lastUsedAt === "string" ? record.lastUsedAt : undefined,
+      }];
+    }).slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+function writeServerCandidates(value: unknown): void {
+  if (!Array.isArray(value)) throw new Error("Invalid server list");
+  const list = value.flatMap((entry): StoredServerCandidate[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const url = typeof record.url === "string" ? record.url.trim().replace(/\/+$/, "") : "";
+    if (!isValidServerUrl(url)) return [];
+    const kind = record.kind === "lan" || record.kind === "remote" || record.kind === "manual"
+      ? record.kind
+      : "manual";
+    return [{
+      url,
+      label: typeof record.label === "string" && record.label.trim()
+        ? record.label.trim().slice(0, 80)
+        : "Saved server",
+      kind,
+      serverId: typeof record.serverId === "string" ? record.serverId.trim().slice(0, 120) : undefined,
+      lastUsedAt: typeof record.lastUsedAt === "string" ? record.lastUsedAt : undefined,
+    }];
+  }).slice(0, 12);
+  const file = serverCandidatesFile();
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(list, null, 2), { mode: 0o600 });
+}
+
 function resolvePreloadPath(): string {
   const candidates = [
     path.join(app.getAppPath(), "dist", "preload.cjs"),
@@ -380,6 +444,11 @@ function setupIpcHandlers() {
     // preference can point the next request somewhere else.
     await nativePlayer.stop();
     writeServerPreference(typeof value === "string" ? value : "");
+  });
+
+  ipcMain.handle("app:get-server-candidates", () => readServerCandidates());
+  ipcMain.handle("app:set-server-candidates", (_event, value: unknown) => {
+    writeServerCandidates(value);
   });
 
   ipcMain.handle("app:get-local-server-enabled", () => localServerEnabled());

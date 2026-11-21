@@ -58,8 +58,9 @@ Landed in this pass:
   trickplay strip.
 - **Mobile watchlist & search:** a local watchlist page and home row, plus local search across parent series
   names.
-- **Connection resilience:** faster mDNS discovery with reachability/latency, retrying probes, smarter API
-  retry/health thresholds, and direct remote native playback with a local-proxy fallback.
+- **Connection resilience:** saved LAN/remote profiles with automatic failover, smooth switch overlays, faster
+  mDNS discovery with reachability/latency, retrying probes, smarter API retry/health thresholds, and direct
+  remote native playback with a local-proxy fallback.
 
 Still open from the audit (next passes): local `Extras/` folder indexing/UI, artwork picker,
 theme music, local intro detection/manual marker editor, backup/restore, activity stats, mobile Plexy-server
@@ -320,7 +321,7 @@ This is the core of the audit: the gap between "the code works" and "this is com
 | Extras | All TMDB trailers/teasers/featurettes/clips in “More videos” | Local `Extras/` folder indexing and playback |
 | Sessions/admin | Active session list, stop requests, device revoke/remove, scan SSE, match queue, logs/crashes, optimizer | Playback stats, activity log, backup/restore, scheduled tasks, webhooks |
 | Mobile | Local-first scan/play, Next Up, watchlist page + row, parent-series search, local chapters/subtitles, family PIN, hidden titles | Plexy-server mode, server downloads, sync collections |
-| Desktop | Server toggle, remote proxy, improved mDNS discovery, native mpv (direct remote with proxy fallback), updater | 10-foot mode, tray/mini-player/media keys, Windows/Linux native player |
+| Desktop | Server toggle, remote proxy, saved LAN/remote profiles with failover, improved mDNS discovery, native mpv (direct remote with proxy fallback), updater | 10-foot mode, tray/mini-player/media keys, Windows/Linux native player |
 | Access | Multi-user, roles, library/folder/item rules, maturity filters, default grants | Per-request `IN (...)` enumeration performance, concurrent limits, schedules/time limits, 2FA/invites |
 | New surfaces | — | Music, photos, books, Live TV/DVR, TV/console clients, relay/remote access, plugin runtime |
 

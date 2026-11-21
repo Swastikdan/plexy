@@ -438,6 +438,7 @@ export function enqueueAudioVariant(fileId: number, audioIndex: number): void {
   }
 
   variantQueued.add(key);
+  cancelIdleWorkerStop();
   variantQueue.unshift({ fileId, audioIndex });
   upsertVariant(row, audioIndex, "queued", {
     progress: 0,
@@ -493,6 +494,7 @@ async function pumpVariants(): Promise<void> {
     variantCurrentKey = null;
     variantCancelRequested = false;
     if (!variantStopping) void pumpVariants();
+    scheduleIdleWorkerStop();
   }
 }
 
@@ -589,6 +591,41 @@ let current: {
   etaSeconds: number | null;
 } | null = null;
 
+/**
+ * Preparation runs in a child process that costs ~40 MB while alive. Keep it
+ * warm through a batch, then release it when the catalog has been idle long
+ * enough. The next job pays a ~10–20 ms respawn, which is invisible next to a
+ * remux or transcode.
+ */
+const IDLE_WORKER_STOP_MS = 5 * 60_000;
+let idleWorkerTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelIdleWorkerStop(): void {
+  if (!idleWorkerTimer) return;
+  clearTimeout(idleWorkerTimer);
+  idleWorkerTimer = null;
+}
+
+function scheduleIdleWorkerStop(): void {
+  if (idleWorkerTimer) return;
+  if (
+    running || current || queue.length > 0 ||
+    variantRunning || variantQueue.length > 0 ||
+    paused || stopping
+  ) return;
+  idleWorkerTimer = setTimeout(() => {
+    idleWorkerTimer = null;
+    if (
+      running || current || queue.length > 0 ||
+      variantRunning || variantQueue.length > 0 ||
+      paused || stopping
+    ) return;
+    log.debug("optimizer", "releasing idle worker");
+    void shutdownOptimizeWorker(true).catch(() => {});
+  }, IDLE_WORKER_STOP_MS);
+  idleWorkerTimer.unref?.();
+}
+
 function queuePosition(fileId: number): number | null {
   if (current?.fileId === fileId) return 0;
   const index = queue.indexOf(fileId);
@@ -605,6 +642,7 @@ export function resumeOptimizer(reason = "manual"): void {
   pauseReasons.delete(reason);
   paused = pauseReasons.size > 0;
   if (!paused) {
+    cancelIdleWorkerStop();
     void pump();
     void pumpVariants();
   }
@@ -635,6 +673,7 @@ function markStatus(fileId: number, status: string, patch: Record<string, unknow
  * the queue and simply resumes later, so nothing is lost.
  */
 export function enqueueOptimization(fileId: number, options: { urgent?: boolean } = {}): void {
+  cancelIdleWorkerStop();
   if (queuedIds.has(fileId)) {
     if (options.urgent) {
       urgentIds.add(fileId);
@@ -753,6 +792,7 @@ async function pump(): Promise<void> {
     }
     running = false;
     void pump();
+    scheduleIdleWorkerStop();
   }
 }
 
@@ -1260,6 +1300,7 @@ export async function stopOptimizer(): Promise<void> {
   stopping = true;
   variantStopping = true;
   paused = true;
+  cancelIdleWorkerStop();
   queue.length = 0;
   queuedIds.clear();
   urgentIds.clear();

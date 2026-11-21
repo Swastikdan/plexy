@@ -34,7 +34,7 @@
       }
 
       :scope[data-theme="neutral"][data-controls-visible] video {
-        --media-caption-track-y: calc(var(--media-spacing) * -17);
+        --media-caption-track-y: calc(var(--media-spacing) * -21);
       }
     }
   }

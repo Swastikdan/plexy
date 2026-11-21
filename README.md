@@ -118,6 +118,7 @@ Then open the printed URL (`http://localhost:8765/setup` on first run) to create
 | Command | Purpose |
 | --- | --- |
 | `bun run dev` | Backend + frontend dev servers (`PORT` moves both; the Vite proxy follows it) |
+| `bun run dev:admin` | Same, plus a one-time development owner `admin` / `admin` (Bun dev server on loopback only; never expose this) |
 | `bun run dev:desktop` | Electron shell (run `bun run dev` first and set `VITE_DEV_SERVER_URL=http://localhost:5173`) |
 | `bun run dev:mobile` | Expo dev server |
 | `bun run android:mobile` | Generate and run the Android dev app |
@@ -128,6 +129,8 @@ Then open the printed URL (`http://localhost:8765/setup` on first run) to create
 | `bun run test:desktop` | Desktop API proxy tests |
 | `bun run test:packages` | Shared-package tests |
 | `bun run test:native` | Local-library + mobile logic tests |
+| `bun run perf:check` | Artifact budgets + server boot/RSS/transfer probe |
+| `bun run arch:check` | One-way workspace dependencies, no app-to-app edges, no cycles |
 
 ## Build
 
@@ -138,6 +141,12 @@ Then open the printed URL (`http://localhost:8765/setup` on first run) to create
 | `bun run build:mobile` | ARM64 Android APK under `.build/native` |
 | `bun run build` | All three (reuses one frontend build) |
 | `bun run build:web` | Internal frontend build at `dist/web` |
+
+`bun run ffmpeg:minimal` builds a 4.8 MB decode/transcode FFmpeg (versus the
+57 MB node-av binary); `bun run build:desktop:minimal` packages the desktop app
+with it (399.7 MiB app / 178.0 MiB DMG versus 451.2 MiB / 199.0 MiB) and
+`bun run build:server:minimal` builds a 98.6 MB server bundle (versus 143 MB). See
+`docs/PERFORMANCE.md` for the verified codec matrix.
 
 Desktop packaging needs macOS; server builds target the host; Android builds need JDK 17 + Android SDK (`PLEXY_ANDROID_ARCHITECTURES`, `PLEXY_GRADLE_WORKERS` tune ABIs/workers). Icons are generated from SVG for desktop; mobile icon/splash stay checked in for Linux CI.
 
@@ -198,6 +207,7 @@ In desktop **Settings** (or the connection screen), **Run local server** starts/
 | `docs/native-playback.md` | Native playback contract details |
 | `docs/MONOREPO.md` | Workspace layout, dependency rules, adding apps/packages |
 | `docs/CODE_HEALTH.md` | Build/dev layout, line budget, guardrails |
+| `docs/PERFORMANCE.md` | Size/memory/latency budgets, measurement recipes, next steps |
 | `docs/APP_FEATURE_AUDIT.md` | Current feature status (what is/isn't implemented) |
 | `docs/TESTING.md` | How to run each test suite |
 | `apps/mobile/README.md` | Mobile source layout, build/verify, OTA + APK versioning |

@@ -28,6 +28,9 @@ const api: ElectronAPI = {
   probeServer: (url) => ipcRenderer.invoke("app:probe-server", url),
   getServerUrl: () => ipcRenderer.invoke("app:get-server-url"),
   setServerUrl: (url: string) => ipcRenderer.invoke("app:set-server-url", url),
+  getServerCandidates: () => ipcRenderer.invoke("app:get-server-candidates"),
+  setServerCandidates: (candidates) =>
+    ipcRenderer.invoke("app:set-server-candidates", candidates),
   isFullScreen: () => ipcRenderer.invoke("app:is-fullscreen"),
   setFullScreen: (value: boolean) =>
     ipcRenderer.invoke("app:set-fullscreen", Boolean(value)),

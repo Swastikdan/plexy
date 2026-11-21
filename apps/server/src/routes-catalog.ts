@@ -21,6 +21,7 @@ import { reportSession } from "./sessions";
 import {
   ensureSearchIndex,
   fallbackIds,
+  removeFromSearchIndex,
   searchIds,
   searchPeople,
 } from "./search-index";
@@ -962,6 +963,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
         run(`DELETE FROM media_files WHERE id IN (${placeholders})`, ...fileIds);
       }
       run("DELETE FROM items WHERE id=?", itemId);
+      removeFromSearchIndex(itemId);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

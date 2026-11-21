@@ -53,7 +53,7 @@
       color-mix(in oklab, var(--media-backdrop) 20%, transparent) calc(var(--media-spacing) * 12),
       transparent
     );
-    --media-caption-controls-y: calc(var(--media-spacing) * -14);
+    --media-caption-controls-y: calc(var(--media-spacing) * -20);
     --media-slider-preview-offset: calc(var(--media-spacing) * 11);
   }
 

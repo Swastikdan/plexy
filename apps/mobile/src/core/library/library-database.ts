@@ -50,12 +50,13 @@ export async function loadLibrary(): Promise<LocalState | null> {
     const rows = await db.getAllAsync<{ value: string }>(
       "SELECT value FROM media ORDER BY id",
     );
-    const headerJson = JSON.stringify(JSON.parse(header.value));
     const records = rows.map((r) => JSON.parse(r.value) as LocalState["records"][number]);
     // Prime the incremental-save cache so the first save after launch only
-    // writes what actually changed.
-    savedHeaderJson = headerJson;
-    savedRecords = new Map(records.map((r) => [r.id, JSON.stringify(r)]));
+    // writes what actually changed. The stored strings are already the exact
+    // canonical JSON written by serializeRecords and the header save above, so
+    // re-serializing every record here only burns boot time.
+    savedHeaderJson = header.value;
+    savedRecords = new Map(rows.map((r, index) => [records[index]!.id, r.value]));
     return { ...JSON.parse(header.value), records };
   }
   const legacy = await AsyncStorage.getItem("plexy.local-library.v1");

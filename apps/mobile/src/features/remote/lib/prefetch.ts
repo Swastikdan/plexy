@@ -12,6 +12,17 @@ const requested = new Set<string>();
 const imageQueue: string[] = [];
 let imagesInFlight = 0;
 
+// These sets only exist to skip speculative duplicate work. Long browsing
+// sessions can touch thousands of URLs, so keep them bounded instead of
+// retaining every title/artwork key for the lifetime of the process.
+const REQUEST_MEMORY_LIMIT = 512;
+function rememberRequest(set: Set<string>, value: string) {
+  if (set.has(value)) return;
+  set.add(value);
+  if (set.size > REQUEST_MEMORY_LIMIT)
+    set.delete(set.values().next().value!);
+}
+
 // Background shelves must not saturate connections and decode work while a
 // title's visible artwork is loading. Limit speculative requests globally.
 function drainImages() {
@@ -42,7 +53,7 @@ export function prefetchImages(
   for (const url of urls) {
     if (!url || requested.has(url)) continue;
     if (count >= limit) break;
-    requested.add(url);
+    rememberRequest(requested, url);
     count += 1;
     imageQueue.push(url);
   }
@@ -110,7 +121,7 @@ export function prefetchDetails(
     const cached = peekDetail(title.mediaType, title.tmdbId);
     if (!cached && requestedDetails.has(key)) continue;
     if (!cached) {
-      requestedDetails.add(key);
+      rememberRequest(requestedDetails, key);
       count += 1;
     }
     if (cached && !withSeason) continue;
@@ -121,7 +132,7 @@ export function prefetchDetails(
       tmdbId: title.tmdbId,
       season: withSeason,
     });
-    if (withSeason) requestedSeasons.add(seasonKey);
+    if (withSeason) rememberRequest(requestedSeasons, seasonKey);
   }
   drainDetails();
 }

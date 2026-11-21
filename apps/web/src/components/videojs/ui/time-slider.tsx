@@ -64,7 +64,7 @@ export function TimeSlider({
               render={<SliderTrack />}
               className={cn(
                 'transition-[height,width] duration-media-slow ease-out',
-                'data-[orientation=horizontal]:!h-[3px]',
+                'data-[orientation=horizontal]:!h-1',
                 'data-[orientation=horizontal]:before:clip-media-chapter-track-x data-[orientation=vertical]:before:clip-media-chapter-track-y',
                 'group-data-highlighted/chapter:data-[orientation=horizontal]:h-1.75',
                 'group-data-highlighted/chapter:data-[orientation=vertical]:w-1.75'
@@ -90,11 +90,7 @@ export function TimeSlider({
       ></TimeSliderPrimitive.Chapters>
       <TimeSliderPrimitive.Thumb
         render={<SliderThumb />}
-        className={cn(
-          'opacity-0 data-interactive:opacity-100 focus-visible:opacity-100',
-          'pointer-fine:group-hover/slider:scale-100 pointer-fine:group-hover/slider:opacity-100',
-          'scale-70 data-interactive:scale-100'
-        )}
+        className={cn('opacity-100 data-interactive:scale-100')}
       />
       <TimeSliderPrimitive.Preview
         className={cn(

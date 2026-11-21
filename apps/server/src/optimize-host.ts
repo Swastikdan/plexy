@@ -192,15 +192,21 @@ export async function cancelOptimize(): Promise<void> {
 }
 
 /** Terminate the worker (shutdown or a wedged job). Rejects in-flight jobs. */
-export async function shutdownOptimizeWorker(): Promise<void> {
+export async function shutdownOptimizeWorker(idle = false): Promise<void> {
   const proc = child;
   shuttingDown = true;
   child = null;
   rejectAll("optimizer worker stopped");
-  if (!proc) return;
+  if (!proc) {
+    if (idle) shuttingDown = false;
+    return;
+  }
   await new Promise<void>((resolve) => {
     proc.once("exit", () => resolve());
     proc.kill("SIGTERM");
     setTimeout(resolve, 2000);
   });
+  // An idle reap is not process shutdown: the next job must spawn a fresh
+  // worker and a later crash must be reported normally.
+  if (idle) shuttingDown = false;
 }

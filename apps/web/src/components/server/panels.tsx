@@ -33,7 +33,7 @@ import {
   ShieldOff,
 } from "lucide-react";
 import { api, type LibraryItem, type ReviewEntry } from "../../client";
-import { getApiBase, hasServerOverride } from "../../server-config";
+import { getApiBase, getConfiguredServerBase, hasServerOverride, serverCandidateKind } from "../../server-config";
 import { queries } from "../../queries";
 import { Button, Input, ListBox, Modal, SearchField, Select, Switch } from "@heroui/react";
 import { cx } from "../../lib/cx";
@@ -603,6 +603,13 @@ export function ServerPreferencesPanel() {
     );
   }
   const s = data.settings;
+  const connectedServer = getConfiguredServerBase();
+  const connectedKind = serverCandidateKind(connectedServer);
+  const connectionLabel = connectedKind === "lan"
+    ? "local network"
+    : connectedKind === "remote"
+      ? "remote"
+      : "saved";
   return (
     <div className="space-y-3">
       <DesktopServerSettings />
@@ -1038,7 +1045,8 @@ export function ServerPreferencesPanel() {
             </h2>
             <p className="mt-1 text-xs text-muted">
               This client is connected to{" "}
-              <span className="font-medium text-foreground">{getApiBase()}</span>.
+              <span className="font-medium text-foreground">{connectedServer}</span>{" "}
+              via {connectionLabel}.
               {hasServerOverride()
                 ? " The address is saved on this device."
                 : " It follows the address this page was opened from."}

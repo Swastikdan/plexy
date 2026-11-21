@@ -16,6 +16,15 @@ export function DesktopServerSettings() {
   if (!desktop?.setLocalServerEnabled) return null;
   return (
     <div className="my-4 space-y-2 rounded-2xl border border-border bg-surface p-4">
+      {busy && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-3 bg-background/95 backdrop-blur-sm" role="status" aria-live="polite">
+          <span className="h-7 w-7 animate-spin rounded-full border-2 border-border border-t-foreground" />
+          <p className="text-sm font-semibold text-foreground">Switching server mode…</p>
+          <p className="max-w-xs text-center text-xs text-muted">
+            Starting or stopping the bundled server and rebuilding the connection.
+          </p>
+        </div>
+      )}
       <Switch
         isSelected={enabled === true}
         isDisabled={busy || enabled === null}
@@ -25,6 +34,7 @@ export function DesktopServerSettings() {
           try {
             await desktop.setLocalServerEnabled(isSelected);
             setEnabled(isSelected);
+            window.setTimeout(() => setBusy(false), 8_000);
           } catch {
             setError("Could not change server mode.");
             setBusy(false);

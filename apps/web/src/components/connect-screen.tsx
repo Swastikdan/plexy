@@ -17,13 +17,17 @@ import { BackButton } from "./back-button";
 import { isElectronMac } from "../lib/platform";
 import { cx } from "../lib/cx";
 import {
+  activateServerUrl,
+  forgetServerCandidate,
   getApiBase,
+  getConfiguredServerBase,
+  getServerCandidates,
   getServerOverride,
   isLoopbackServerUrl,
   isSecurePage,
   normalizeServerUrl,
   probeServer,
-  setServerUrl,
+  rememberServerCandidate,
 } from "../server-config";
 
 interface ConnectScreenProps {
@@ -48,6 +52,8 @@ export function ConnectScreen({
 }: ConnectScreenProps) {
   const [value, setValue] = useState(() => initialValue ?? getServerOverride());
   const [busy, setBusy] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [saved, setSaved] = useState(() => getServerCandidates());
   const [discovered, setDiscovered] = useState<
     Array<{ id: string; name: string; url: string; reachable?: boolean; latencyMs?: number | null }>
   >([]);
@@ -76,6 +82,7 @@ export function ConnectScreen({
     normalized.startsWith("http://") &&
     !isLoopbackServerUrl(normalized);
   const attempted = safeBase();
+  const activeSaved = normalizeServerUrl(getConfiguredServerBase());
   const attemptedIsPageOrigin =
     Boolean(attempted) &&
     attempted === normalizeServerUrl(window.location.origin);
@@ -90,7 +97,7 @@ export function ConnectScreen({
     else window.location.reload();
   }
 
-  async function connect(url = value) {
+  async function connect(url = value, label?: string) {
     const target = normalizeServerUrl(url);
     if (!target) {
       setError(
@@ -110,29 +117,53 @@ export function ConnectScreen({
       return;
     }
 
-    setServerUrl(target);
-    if (
-      window.electronAPI &&
-      (await window.electronAPI.getLocalServerEnabled())
-    ) {
-      await window.electronAPI.setServerUrl(target);
-      await window.electronAPI.setLocalServerEnabled(false);
-      return;
+    setSwitching(true);
+    try {
+      await activateServerUrl(target);
+      rememberServerCandidate(target, label, result.status.serverId);
+      setSaved(getServerCandidates());
+      if (
+        window.electronAPI &&
+        (await window.electronAPI.getLocalServerEnabled())
+      ) {
+        await window.electronAPI.setLocalServerEnabled(false);
+        return;
+      }
+      setConnectedVersion(result.status.version);
+      // Reload so the API client, image URLs and stream URLs are rebuilt against
+      // the chosen server. A tiny delay lets the success state register.
+      window.setTimeout(finish, 220);
+      window.setTimeout(() => {
+        setSwitching(false);
+        setBusy(false);
+      }, 8_000);
+    } catch (cause) {
+      setSwitching(false);
+      setBusy(false);
+      setError(cause instanceof Error ? cause.message : "Could not switch servers.");
     }
-    setConnectedVersion(result.status.version);
-    // Reload so the API client, image URLs and stream URLs are rebuilt against
-    // the chosen server. A tiny delay lets the success state register.
-    window.setTimeout(finish, 220);
   }
 
   function useOrigin() {
     if (!originUrl) return;
-    setServerUrl(originUrl);
-    finish();
+    setSwitching(true);
+    void activateServerUrl(originUrl).then(finish).catch(() => {
+      setSwitching(false);
+      setError("Could not switch to this server.");
+    });
   }
 
   return (
     <main className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
+      {switching && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-3 bg-background/95 backdrop-blur-sm" role="status" aria-live="polite">
+          <Loader2 size={28} className="animate-spin text-muted" />
+          <p className="text-sm font-semibold text-foreground">Switching server…</p>
+          <p className="max-w-xs text-center text-xs text-muted">
+            Verifying the new address and rebuilding the connection.
+          </p>
+        </div>
+      )}
       <div
         className="absolute left-3 top-3 z-10 flex items-center gap-1.5 sm:left-6"
         style={{ left: isElectronMac() ? 96 : undefined }}
@@ -167,6 +198,62 @@ export function ConnectScreen({
             className="space-y-3"
           >
             <div className="space-y-2">
+              {saved.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    Saved servers
+                  </span>
+                  {saved.map((candidate) => {
+                    const active = candidate.url === activeSaved;
+                    return (
+                      <div
+                        key={candidate.url}
+                        className={cx(
+                          "flex items-center gap-2 rounded-lg border p-1.5 pl-3 text-left",
+                          active ? "border-success/30 bg-success/5" : "border-border",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          disabled={busy || switching}
+                          onClick={() => void connect(candidate.url, candidate.label)}
+                          className="min-w-0 flex-1 py-1.5 text-left disabled:opacity-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="truncate text-xs font-semibold text-foreground">
+                              {candidate.label}
+                            </span>
+                            {active && (
+                              <span className="rounded-full bg-success/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-success-soft-foreground">
+                                Active
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[10.5px] text-muted">
+                            {candidate.url}
+                          </span>
+                        </button>
+                        {!active && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              forgetServerCandidate(candidate.url);
+                              setSaved(getServerCandidates());
+                            }}
+                            className="inline-flex h-7 shrink-0 items-center rounded-md px-2 text-[10px] font-semibold text-muted transition-colors hover:bg-danger/10 hover:text-danger-soft-foreground"
+                          >
+                            Forget
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <p className="text-[10px] leading-relaxed text-muted">
+                    Plexy tries the active address first and falls back to another
+                    saved address if it stops responding.
+                  </p>
+                </div>
+              )}
               {window.electronAPI?.discoverServers && (
                 <div className="flex items-center justify-between gap-2">
                   <button
@@ -193,8 +280,9 @@ export function ConnectScreen({
                 <button
                   type="button"
                   key={server.id}
-                  onClick={() => setValue(server.url)}
-                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-surface-secondary"
+                  disabled={busy || switching}
+                  onClick={() => void connect(server.url, server.name)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-surface-secondary disabled:opacity-50"
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold">

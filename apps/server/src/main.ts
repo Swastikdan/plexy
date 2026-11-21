@@ -39,11 +39,17 @@ function printServerCli(argv: string[]): boolean {
   console.log(
     "      --no-ui     Serve the API only; disable browser UI and static assets",
   );
+  console.log(
+    "      --dev-admin Create the one-time development owner admin/admin",
+  );
   console.log("  -h, --help      Print this help and exit");
   console.log("");
   console.log("Environment:");
   console.log(
     "  PLEXY_NO_UI             1 disables browser UI (same as --no-ui)",
+  );
+  console.log(
+    "  PLEXY_DEV_ADMIN         1 enables the --dev-admin bootstrap",
   );
   console.log("  PORT                    Listen port (default 8765)");
   console.log("  PLEXY_DATA_DIR          Data and database directory");
@@ -95,6 +101,76 @@ async function main(): Promise<void> {
   const envLevel = Bun.env.PLEXY_LOG_LEVEL as Level | undefined;
   setLogLevel(envLevel ?? cfg.logLevel);
 
+  const lanEnabled =
+    !process.env.PLEXY_LOCAL_ONLY && cfg.bindAddress === "0.0.0.0";
+
+  // A dev bootstrap marker can outlive the flag (the account is one-time and
+  // never reset). If LAN is later enabled, say so loudly even when the flag is
+  // not passed on this boot.
+  if (lanEnabled) {
+    try {
+      const { devAdminUsesDefaultPassword } = await import("./accounts");
+      if (await devAdminUsesDefaultPassword()) {
+        console.warn(
+          "⚠ A development admin account exists while LAN access is enabled; change its password or disable LAN.",
+        );
+        log.warn("server", "dev admin account exists with LAN enabled");
+      }
+    } catch {
+      /* an ancient DB without the marker table; the flag path reports it */
+    }
+  }
+
+  const devAdminRequested =
+    process.argv.includes("--dev-admin") ||
+    ["1", "true", "yes"].includes(
+      String(Bun.env.PLEXY_DEV_ADMIN ?? "").toLowerCase(),
+    );
+  if (devAdminRequested) {
+    if (process.env.PLEXY_DESKTOP === "1") {
+      // The desktop shell must keep working even if the environment leaks the
+      // flag; never create weak credentials in its data directory.
+      console.warn("▸ PLEXY_DEV_ADMIN ignored in desktop mode.");
+      log.warn("server", "PLEXY_DEV_ADMIN ignored in desktop mode");
+    } else {
+      // The bootstrap is a development convenience, so gate it to the Bun dev
+      // server on loopback: packaged binaries, production mode and LAN mode
+      // refuse instead of silently creating admin/admin.
+      const isBunDevServer =
+        /(^|[/\\])bun(\.exe)?$/.test(process.execPath) &&
+        /(^|[/\\])src[/\\]main\.ts$/.test(process.argv[1] ?? "");
+      if (!isBunDevServer) {
+        throw new Error(
+          "Refusing --dev-admin: only the Bun dev server supports it. Run `bun run dev:admin`.",
+        );
+      }
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("Refusing --dev-admin: NODE_ENV=production.");
+      }
+      if (lanEnabled) {
+        throw new Error(
+          "Refusing --dev-admin: LAN access is enabled. Disable LAN access or run without the flag.",
+        );
+      }
+      const { ensureDevAdmin } = await import("./accounts");
+      const outcome = await ensureDevAdmin();
+      if (outcome.created) {
+        console.log(
+          "▸ Dev admin created: admin / admin (one-time, development only)",
+        );
+        log.warn("server", "dev admin created with default credentials");
+      } else if (outcome.alreadyApplied) {
+        console.log(
+          "▸ Dev admin bootstrap already applied; account left unchanged.",
+        );
+      } else if (outcome.usernameTaken) {
+        console.warn(
+          "▸ Dev admin skipped: a user named admin already exists; account left unchanged.",
+        );
+      }
+    }
+  }
+
   // Maintenance: upgrade artwork URLs, link matched series episodes, clear stale image config
   try {
     const { run, q } = await import("./db");
@@ -128,10 +204,7 @@ async function main(): Promise<void> {
   const app = buildApp();
   // Bind follows the config: loopback unless LAN viewing was explicitly
   // enabled (PRD 5.10). `0.0.0.0` still accepts loopback traffic.
-  const hostname =
-    !process.env.PLEXY_LOCAL_ONLY && cfg.bindAddress === "0.0.0.0"
-      ? "0.0.0.0"
-      : "127.0.0.1";
+  const hostname = lanEnabled ? "0.0.0.0" : "127.0.0.1";
   const port = Number(Bun.env.PORT ?? cfg.port);
   // Cleartext is confined to this machine. Other devices use a separate HTTPS listener.
   app.listen({ port, hostname: "127.0.0.1" });

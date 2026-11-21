@@ -8,6 +8,7 @@ import { CastButton } from '@/components/videojs/ui/cast-button';
 import { FullscreenButton } from '@/components/videojs/ui/fullscreen-button';
 import { PiPButton } from '@/components/videojs/ui/pip-button';
 import { PlayButton } from '@/components/videojs/ui/play-button';
+import { PlaybackRateMenu } from '@/components/videojs/ui/playback-rate-menu';
 import { SeekBackwardButton, SeekForwardButton } from '@/components/videojs/ui/seek-buttons';
 import { TimeSlider, type TimeSliderThumbnails } from '@/components/videojs/ui/time-slider';
 import { VolumeControl } from '@/components/videojs/ui/volume-control';
@@ -41,12 +42,10 @@ export interface NeutralVideoControlsProps {
   onSelectVersion?: (fileId: number) => void;
 }
 
-/// Cinema controls: title and time at the bottom corners, a hairline seek
-/// track, then transport on the left and utilities on the right. This mirrors
-/// the Plexy player reference rather than a generic video.js control bar.
+/// Cinema controls matching the Plexy player reference: one full-width seek
+/// line with the elapsed/total time beside the transport, then a single row
+/// of utilities on the right. Each player page owns its own title chrome.
 export function NeutralVideoControls({
-  title,
-  subtitle,
   renderThumbnail,
   thumbnails,
   onSeekDragStart,
@@ -79,7 +78,8 @@ export function NeutralVideoControls({
           'video-controls',
           'group/controls text-media-controls-foreground text-shadow-media',
           'duration-media-controls-enter ease-out',
-          'absolute inset-x-0 bottom-0 z-30 flex flex-col items-stretch gap-0 px-4 pb-2 pt-7 sm:px-5',
+          'absolute inset-x-0 bottom-0 z-30 flex flex-col items-stretch px-4 pb-1.5',
+          '[--media-primary:var(--accent)] [--media-primary-foreground:var(--accent-foreground)]',
           'transition-[filter,opacity,translate]',
           'not-data-visible:pointer-events-none not-data-visible:opacity-0',
           'not-data-visible:duration-media-controls',
@@ -87,28 +87,6 @@ export function NeutralVideoControls({
         )}
       >
         <Tooltip.Provider>
-          <div className="flex items-end justify-between gap-4 px-1 pb-1.5">
-            <div className="min-w-0">
-              {title && (
-                <p className="truncate text-[15px] font-semibold leading-tight text-white drop-shadow">
-                  {title}
-                </p>
-              )}
-              {subtitle && (
-                <p className="mt-0.5 truncate text-[11px] font-medium leading-tight text-white/55">
-                  {subtitle}
-                </p>
-              )}
-            </div>
-            <Time.Group className="flex shrink-0 items-center gap-1 pb-0.5 text-[11px] tabular-nums text-white/75">
-              <Time.Value type="current" className="tabular-nums text-white/85" />
-              <span aria-hidden className="text-white/35">
-                /
-              </span>
-              <Time.Value type="duration" className="tabular-nums text-white/55" />
-            </Time.Group>
-          </div>
-
           <div className="px-0.5">
             <TimeSlider
               previewOverflow="clamp"
@@ -116,24 +94,41 @@ export function NeutralVideoControls({
               thumbnails={thumbnails}
               onDragStart={onSeekDragStart}
               onDragEnd={onSeekDragEnd}
-              className="[--media-slider-height:0.5rem]"
+              className="[--media-slider-height:1.5rem]"
             />
           </div>
 
-          <div className="flex items-center justify-between gap-2 pt-0.5">
-            <Controls.Group className="flex items-center gap-0.5 rtl:flex-row-reverse">
+          <div className="flex items-center justify-between gap-2 pt-1.5 [--media-control-size:2.75rem] [--media-icon-size:1.375rem]">
+            <Controls.Group className="flex items-center gap-0 text-white/70 rtl:flex-row-reverse [&_button:hover]:text-white [&_button:focus-visible]:text-white">
+              <SeekBackwardButton seconds={-10} />
               <ButtonTooltip side="top">
                 <PlayButton />
               </ButtonTooltip>
-              <SeekBackwardButton seconds={-10} />
               <SeekForwardButton seconds={10} />
+              <VolumeControl showTooltip />
+              <Time.Group className="flex shrink-0 items-center gap-1.5 pl-2.5 text-[15px] font-semibold leading-none tabular-nums text-white/70">
+                <Time.Value type="current" className="tabular-nums" />
+                <span aria-hidden className="text-white/35">
+                  /
+                </span>
+                <Time.Value type="duration" className="tabular-nums" />
+              </Time.Group>
             </Controls.Group>
 
-            <Controls.Group className="flex items-center justify-end gap-0.5 rtl:flex-row-reverse">
-              <VolumeControl showTooltip />
+            <Controls.Group className="flex items-center justify-end gap-0 text-white/70 rtl:flex-row-reverse [&_button:hover]:text-white [&_button:focus-visible]:text-white">
               <ButtonTooltip side="top">
-                <CaptionsButton className="media-max-xs:hidden" />
+                <CastButton />
               </ButtonTooltip>
+              <ButtonTooltip side="top">
+                <AirPlayButton />
+              </ButtonTooltip>
+              <ButtonTooltip side="top">
+                <PiPButton />
+              </ButtonTooltip>
+              <ButtonTooltip side="top">
+                <CaptionsButton />
+              </ButtonTooltip>
+              <PlaybackRateMenu />
               <VideoSettingsMenu
                 serverAudioTracks={serverAudioTracks}
                 selectedAudioIndex={selectedAudioIndex}
@@ -150,15 +145,6 @@ export function NeutralVideoControls({
                 selectedFileId={selectedFileId}
                 onSelectVersion={onSelectVersion}
               />
-              <ButtonTooltip side="top">
-                <CastButton />
-              </ButtonTooltip>
-              <ButtonTooltip side="top">
-                <AirPlayButton />
-              </ButtonTooltip>
-              <ButtonTooltip side="top">
-                <PiPButton />
-              </ButtonTooltip>
               <ButtonTooltip side="top">
                 <FullscreenButton />
               </ButtonTooltip>

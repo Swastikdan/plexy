@@ -1,5 +1,5 @@
 /// Fullscreen Cinema Player using Video.js 10 and Plexy playback engine.
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
 import { createFileRoute, useParams, useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,12 +24,11 @@ import {
   savePlayerEngine,
 } from "../../lib/native-playback";
 
-/// hls.js is only needed when the server hands back a converted (`.m3u8`)
-/// stream. Importing it statically put the whole library into the watch route
-/// chunk, so direct-play viewers downloaded a parser they never used.
-const HlsJsVideo = lazy(() =>
-  import("@videojs/react/media/hlsjs-video").then((module) => ({ default: module.HlsJsVideo })),
-);
+/// The server prepares every playable file as a plain, byte-range-seekable
+/// MP4 (`api.streamUrl` never emits `.m3u8`; `/api/hls`, `/remux` and
+/// `/transcode` return 409), so the supplied `streamUrl` always feeds the
+/// native `<video>` element. The former lazy hls.js branch was unreachable and
+/// pulled the whole parser into the single-file bundle.
 
 const NEXT_SKIP_KEY = "plexy:next-episode-skips:v1";
 const SEGMENT_SKIP_KEY = "plexy:segment-skips:v1";
@@ -442,7 +441,6 @@ function BrowserWatchRoute() {
     };
   }, [streamUrl]);
 
-  const isHls = Boolean(streamUrl && streamUrl.includes(".m3u8"));
   const duration = knownDuration ?? play.data?.watch?.duration ?? undefined;
 
   const isFullscreen = useIsFullscreen();
@@ -1259,57 +1257,29 @@ function BrowserWatchRoute() {
                 )}
 
                 {streamUrl && (
-                  isHls ? (
-                    <Suspense fallback={null}>
-                    <HlsJsVideo
-                      key={`${fileId}:${mediaRetryKey}`}
-                      ref={(el: HTMLVideoElement | null) => {
-                        videoRef.current = el;
-                      }}
-                      src={streamUrl}
-                      autoPlay={mediaRetryKey === 0 ? restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current : restartPlaybackRef.current}
-                      playsInline
-                      crossOrigin="anonymous"
-                      onLoadedMetadata={handleLoadedMetadata}
-                      onLoadedData={handleLoadedData}
-                      onEnded={handleEnded}
-                      onTimeUpdate={handleTimeUpdate}
-                      onPlay={hideBuffering}
-                      onWaiting={showBufferingAfterDelay}
-                      onStalled={showBufferingAfterDelay}
-                      onCanPlay={hideBuffering}
-                      onPlaying={hideBuffering}
-                      onError={handleMediaError}
-                      className="h-full w-full object-contain"
-                    >
-                      {mediaTrackElements}
-                    </HlsJsVideo>
-                    </Suspense>
-                  ) : (
-                    <Video
-                      key={`${fileId}:${mediaRetryKey}`}
-                      ref={(el: HTMLVideoElement | null) => {
-                        videoRef.current = el;
-                      }}
-                      src={streamUrl}
-                      autoPlay={mediaRetryKey === 0 ? restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current : restartPlaybackRef.current}
-                      playsInline
-                      crossOrigin="anonymous"
-                      onLoadedMetadata={handleLoadedMetadata}
-                      onLoadedData={handleLoadedData}
-                      onEnded={handleEnded}
-                      onTimeUpdate={handleTimeUpdate}
-                      onPlay={hideBuffering}
-                      onWaiting={showBufferingAfterDelay}
-                      onStalled={showBufferingAfterDelay}
-                      onCanPlay={hideBuffering}
-                      onPlaying={hideBuffering}
-                      onError={handleMediaError}
-                      className="h-full w-full object-contain"
-                    >
-                      {mediaTrackElements}
-                    </Video>
-                  )
+                  <Video
+                    key={`${fileId}:${mediaRetryKey}`}
+                    ref={(el: HTMLVideoElement | null) => {
+                      videoRef.current = el;
+                    }}
+                    src={streamUrl}
+                    autoPlay={mediaRetryKey === 0 ? restartAt?.fileId !== Number(fileId) || restartPlaybackRef.current : restartPlaybackRef.current}
+                    playsInline
+                    crossOrigin="anonymous"
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onLoadedData={handleLoadedData}
+                    onEnded={handleEnded}
+                    onTimeUpdate={handleTimeUpdate}
+                    onPlay={hideBuffering}
+                    onWaiting={showBufferingAfterDelay}
+                    onStalled={showBufferingAfterDelay}
+                    onCanPlay={hideBuffering}
+                    onPlaying={hideBuffering}
+                    onError={handleMediaError}
+                    className="h-full w-full object-contain"
+                  >
+                    {mediaTrackElements}
+                  </Video>
                 )}
               </VideoSkin>
             </VideoPlayer>

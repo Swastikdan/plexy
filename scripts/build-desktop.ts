@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { generateIcons } from "./generate-icon";
 import { generateDmgBackground } from "./generate-dmg-background";
-import { bundleMpv } from "./bundle-mpv";
 import { bundleLibmpv } from "./bundle-libmpv";
 import { findFfmpeg } from "./find-ffmpeg";
 import { listTagRefs, releaseCommit, releaseVersion, reserveBuildNumber } from "./release-refs";
@@ -84,12 +83,10 @@ async function buildDesktop() {
   await chmod(ffmpegOut, 0o755);
   console.log(`✓ FFmpeg bundled: ${ffmpegOut}`);
 
-  // Required native playback engine (mpv CLI used by the server probes)
-  console.log("Bundling native playback engine...");
-  if (!await bundleMpv(rootDir)) {
-    throw new Error("Desktop requires mpv. Set PLEXY_MPV_PATH or configure scripts/mpv-manifest.json before packaging.");
-  }
-
+  // Required in-process native playback engine (libmpv). The standalone mpv
+  // CLI is not part of the desktop payload: the player loads libmpv directly
+  // and the server probes media with its own FFmpeg/FFprobe.
+  console.log("Bundling libmpv...");
   if (!await bundleLibmpv(rootDir)) {
     throw new Error("Desktop requires libmpv. Set PLEXY_LIBMPV_SOURCE to a libmpv.2.dylib before packaging.");
   }

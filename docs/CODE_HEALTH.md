@@ -193,3 +193,6 @@ second packaging path left in the repo.
   can be shown to agree.
 - Before handoff: `bun run typecheck`, `bun run test`, and
   `bun run build:check:mobile` (the last one also runs lint and the Metro export).
+- Size, memory, and latency budgets live in `docs/PERFORMANCE.md`; run
+  `bun run perf:check` after a build, and `bun run arch:check` after adding a
+  workspace or an import across `apps/`/`packages/`.

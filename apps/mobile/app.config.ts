@@ -60,6 +60,7 @@ const config: ExpoConfig = {
     "../../scripts/native/with-shared-build-inputs.cjs",
     "../../scripts/native/with-open-source-licenses.cjs",
     "../../scripts/native/with-gradle-jvmargs.cjs",
+    "../../scripts/native/with-release-optimizations.cjs",
     "expo-sqlite",
     [
       "expo-splash-screen",

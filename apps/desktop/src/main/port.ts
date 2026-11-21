@@ -4,21 +4,51 @@
 /// LAN bookmarks (`http://192.168.x.x:<port>`) and hid the server's address
 /// from the owner. Prefer the stable Plexy port and only fall back to a random
 /// one when something else already owns it.
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 
 /** Preferred port so LAN bookmarks (`http://<ip>:8765`) survive a relaunch. */
 export const PREFERRED_PORT = 8765;
 
-/** True when `port` can be bound on every interface (nothing else owns it). */
-function isPortFree(port: number): Promise<boolean> {
+/** The backend binds loopback only in desktop mode. */
+const LOOPBACK = "127.0.0.1";
+
+/**
+ * An existing listener is the real question, not whether a probe bind succeeds.
+ * On macOS a `0.0.0.0` probe succeeds while another process holds
+ * `127.0.0.1:<port>` (SO_REUSEADDR), which let a second backend start on the
+ * same port. Connect first, then bind the exact address the server will use.
+ */
+function isListening(port: number, timeoutMs = 300): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ port, host: LOOPBACK });
+    let settled = false;
+    const done = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
+function canBind(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const srv = createServer();
     srv.unref();
     srv.once("error", () => resolve(false));
-    srv.listen(port, "0.0.0.0", () => {
+    srv.listen(port, LOOPBACK, () => {
       srv.close(() => resolve(true));
     });
   });
+}
+
+/** True when nothing is listening on loopback and the exact bind succeeds. */
+export async function isPortFree(port: number): Promise<boolean> {
+  if (await isListening(port)) return false;
+  return canBind(port);
 }
 
 /** Pick a random free port on loopback. */
@@ -27,7 +57,7 @@ function randomPort(): Promise<number> {
     const srv = createServer();
     srv.unref();
     srv.on("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
+    srv.listen(0, LOOPBACK, () => {
       const address = srv.address();
       if (address && typeof address === "object") {
         const port = address.port;

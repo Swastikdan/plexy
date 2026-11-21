@@ -8,7 +8,7 @@ import {
 } from "./release-policy";
 import { app, dialog } from "electron";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -123,12 +123,47 @@ export async function getUpdateStatus(): Promise<UpdateStatus> {
   }
 }
 
-async function fetchBytes(
+/** Small control files (release metadata, checksum lists). */
+async function fetchBytes(url: string, maxBytes: number): Promise<Buffer> {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Plexy-Desktop-Updater",
+      Accept: "application/octet-stream",
+    },
+  });
+  if (!response.ok) throw new Error(`Download failed (${response.status})`);
+  const length = Number(response.headers.get("content-length") ?? 0);
+  if (length > maxBytes) throw new Error("The file is too large.");
+  if (!response.body) throw new Error("The download returned no data.");
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let downloaded = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      downloaded += value.byteLength;
+      if (downloaded > maxBytes) throw new Error("The file is too large.");
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, downloaded);
+}
+
+/**
+ * Stream the update archive to disk while hashing it. Buffering the whole ZIP
+ * (up to 196 MiB today, with a 2 GB safety cap) made installing an update the
+ * single largest memory spike in the desktop app.
+ */
+async function fetchToFile(
   url: string,
+  destination: string,
   maxBytes: number,
   onProgress?: (downloadedBytes: number, totalBytes: number | null) => void,
   expectedTotalBytes?: number,
-): Promise<Buffer> {
+): Promise<{ bytes: number; sha256: string }> {
   const response = await fetch(url, {
     headers: {
       "User-Agent": "Plexy-Desktop-Updater",
@@ -142,7 +177,8 @@ async function fetchBytes(
 
   const totalBytes = length || expectedTotalBytes || null;
   const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
+  const hash = createHash("sha256");
+  const file = await open(destination, "w", 0o600);
   let downloadedBytes = 0;
   let lastReportedAt = 0;
   onProgress?.(0, totalBytes);
@@ -153,7 +189,18 @@ async function fetchBytes(
       downloadedBytes += value.byteLength;
       if (downloadedBytes > maxBytes)
         throw new Error("The update file is too large.");
-      chunks.push(Buffer.from(value));
+      const chunk = Buffer.from(value);
+      hash.update(chunk);
+      let offset = 0;
+      while (offset < chunk.length) {
+        const { bytesWritten } = await file.write(
+          chunk,
+          offset,
+          chunk.length - offset,
+        );
+        if (bytesWritten <= 0) throw new Error("Could not write the update file.");
+        offset += bytesWritten;
+      }
       const now = Date.now();
       if (
         now - lastReportedAt >= 100 ||
@@ -163,11 +210,16 @@ async function fetchBytes(
         lastReportedAt = now;
       }
     }
+  } catch (error) {
+    await file.close().catch(() => {});
+    await rm(destination, { force: true }).catch(() => {});
+    throw error;
   } finally {
     reader.releaseLock();
   }
+  await file.close();
   onProgress?.(downloadedBytes, totalBytes);
-  return Buffer.concat(chunks, downloadedBytes);
+  return { bytes: downloadedBytes, sha256: hash.digest("hex") };
 }
 
 function shellQuote(value: string): string {
@@ -244,8 +296,10 @@ export async function checkForUpdates(
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "plexy-update-"));
     let handedOffToInstaller = false;
     try {
-      const archive = await fetchBytes(
+      const archivePath = path.join(tempDir, zip.name!);
+      const archive = await fetchToFile(
         zip.browser_download_url,
+        archivePath,
         MAX_DOWNLOAD_BYTES,
         (downloadedBytes, totalBytes) =>
           onProgress?.({ phase: "downloading", downloadedBytes, totalBytes }),
@@ -253,14 +307,14 @@ export async function checkForUpdates(
       );
       onProgress?.({
         phase: "verifying",
-        downloadedBytes: archive.length,
-        totalBytes: archive.length,
+        downloadedBytes: archive.bytes,
+        totalBytes: archive.bytes,
       });
       const checksumFile = sums?.browser_download_url
         ? await fetchBytes(sums.browser_download_url, 100_000)
         : null;
       const expected = updateChecksum(zip, checksumFile?.toString("utf8") ?? null);
-      const actual = createHash("sha256").update(archive).digest("hex");
+      const actual = archive.sha256;
       if (
         !expected ||
         !/^[a-f0-9]{64}$/i.test(expected) ||
@@ -269,11 +323,9 @@ export async function checkForUpdates(
         throw new Error("The downloaded update failed its SHA-256 check.");
       onProgress?.({
         phase: "waiting-for-approval",
-        downloadedBytes: archive.length,
-        totalBytes: archive.length,
+        downloadedBytes: archive.bytes,
+        totalBytes: archive.bytes,
       });
-      const archivePath = path.join(tempDir, zip.name!);
-      await writeFile(archivePath, archive, { mode: 0o600 });
 
       const listing = await run("/usr/bin/unzip", ["-Z1", archivePath]);
       if (listing.code !== 0 || !listing.stdout.trim())
@@ -350,8 +402,8 @@ export async function checkForUpdates(
 
       onProgress?.({
         phase: "installing",
-        downloadedBytes: archive.length,
-        totalBytes: archive.length,
+        downloadedBytes: archive.bytes,
+        totalBytes: archive.bytes,
       });
 
       if (

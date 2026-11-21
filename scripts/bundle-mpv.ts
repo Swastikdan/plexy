@@ -1,14 +1,16 @@
-/// Bundle a native mpv engine into the desktop app's resources.
+/// Standalone developer tool: download and prepare an mpv CLI build.
 ///
-/// Native playback is required for desktop releases. Supply one of:
+/// The packaged desktop app no longer bundles this CLI — native playback loads
+/// the in-process libmpv closure from `bundle-libmpv.ts` instead. Supply one of:
 ///
 ///   PLEXY_MPV_PATH=/path/to/mpv     copy a local build (development shortcut)
 ///   PLEXY_MPV_URL + PLEXY_MPV_SHA256
 ///   scripts/mpv-manifest.json      { version, url, sha256 }
 ///
-/// Downloads are refused without a checksum. The engine is copied to
-/// `dist/bin/mpv` with its dylibs in `dist/bin/lib`; official macOS builds are
-/// app bundles, so their `lib/` and Vulkan ICD files are preserved too.
+/// Downloads are refused without a checksum. The CLI is copied into
+/// `dist/bin` with its dylibs in a sibling `lib` directory; official macOS
+/// builds are app bundles, so their libraries and Vulkan ICD files are
+/// preserved too. Nothing here is consumed by `build-desktop.ts`.
 import { chmod, copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";

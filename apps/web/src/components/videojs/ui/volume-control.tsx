@@ -2,12 +2,8 @@
 
 import { Button, Slider, Tooltip } from '@heroui/react';
 import { selectVolume } from '@videojs/core/dom';
-import {
-  VolumeHighIcon,
-  VolumeLowIcon,
-  VolumeOffIcon,
-} from '@videojs/react/icons/neutral';
 import { usePlayer } from '@videojs/react/video';
+import { Volume1, VolumeX } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
 import { cn } from '@/lib/resolve-class-name';
@@ -33,7 +29,6 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
   if (!volume || volume.volumeAvailability !== 'available') return null;
 
   const muted = volume.muted;
-  const level = muted ? 'off' : volume.volume < 0.5 ? 'low' : 'high';
   const percent = muted ? 0 : Math.round(volume.volume * 100);
 
   const setPercent = (next: number) => {
@@ -55,17 +50,13 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
         '[&_svg]:m-0!'
       )}
     >
-      <VolumeOffIcon
+      <VolumeX
         aria-hidden
         className={cn(iconClass, muted ? 'opacity-100' : 'opacity-0')}
       />
-      <VolumeLowIcon
+      <Volume1
         aria-hidden
-        className={cn(iconClass, level === 'low' ? 'opacity-100' : 'opacity-0')}
-      />
-      <VolumeHighIcon
-        aria-hidden
-        className={cn(iconClass, level === 'high' ? 'opacity-100' : 'opacity-0')}
+        className={cn(iconClass, muted ? 'opacity-0' : 'opacity-100')}
       />
     </Button>
   );

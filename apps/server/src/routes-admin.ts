@@ -1,4 +1,4 @@
-import { setupState } from "./accounts";
+import { devAdminUsesDefaultPassword, setupState } from "./accounts";
 import { requestUser } from "./auth";
 import { canAccessItem } from "./access";
 /// Admin routes (PRD 5.1, 5.2, 9).
@@ -27,6 +27,7 @@ import { getLiveBinding } from "./runtime";
 import { refreshMissingSkipSegments } from "./skip-segments";
 import { listSessions, stopSession } from "./sessions";
 import { enqueueMissingTrickplay, trickplayStatus } from "./trickplay";
+import { invalidateSearchIndex } from "./search-index";
 
 const startedAt = Date.now();
 
@@ -147,6 +148,15 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   .put("/settings", async ({ body, server, request }) => {
     const denied = denyIfNotLocal({ server, request });
     if (denied) return denied;
+    if (
+      body.bindAddress === "0.0.0.0" &&
+      (await devAdminUsesDefaultPassword())
+    ) {
+      return apiError(
+        "Change the development admin password before enabling LAN access.",
+        409,
+      );
+    }
     const patch: Record<string, unknown> = {};
     if (body.logLevel) setLogLevel(body.logLevel);
     if (body.metadataLanguage) patch.metadataLanguage = body.metadataLanguage;
@@ -259,6 +269,7 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       try {
         run("DELETE FROM media_files");
         run("DELETE FROM items");
+        invalidateSearchIndex();
         run("DELETE FROM scans");
         run("DELETE FROM people");
         clearTmdbCache();

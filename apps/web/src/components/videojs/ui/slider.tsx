@@ -11,7 +11,7 @@ export function SliderTrack({ className, ...props }: SliderTrackProps) {
   return (
     <div
       className={cn(
-        'relative isolate w-full select-none rounded-media-pill before:pointer-events-none before:absolute before:inset-0 before:rounded-media-control before:bg-current/20',
+        'relative isolate w-full select-none rounded-media-pill before:pointer-events-none before:absolute before:inset-0 before:rounded-media-control before:bg-current/30',
         'data-[orientation=horizontal]:h-1 data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1',
         className
       )}
@@ -69,13 +69,13 @@ export function SliderThumb({ className, ...props }: SliderThumbProps) {
   return (
     <div
       className={cn(
-        'absolute z-10 top-1/2 left-(--media-slider-fill,0%) size-3 -translate-x-1/2 -translate-y-1/2 rounded-media-control bg-white',
+        'absolute z-10 top-1/2 left-(--media-slider-fill,0%) size-[0.8125rem] -translate-x-1/2 -translate-y-1/2 rounded-media-control bg-media-primary',
         'select-none transition-[opacity,height,width,outline-offset,scale] duration-media-slider ease-out',
         'group-data-dragging/slider:scale-90',
         'data-[orientation=vertical]:top-[calc(100%-var(--media-slider-fill,0%))] data-[orientation=vertical]:left-1/2',
         'group-data-dragging/slider:data-[orientation=horizontal]:left-(--media-slider-pointer)',
         'group-data-dragging/slider:data-[orientation=vertical]:top-[calc(100%-var(--media-slider-pointer))]',
-        'outline-transparent shadow-media-thumb',
+        'outline-transparent shadow-[0_0_0_1px_rgb(0_0_0/0.18),0_0_10px_color-mix(in_oklab,var(--media-primary)_55%,transparent)]',
         'focus-ring-media',
         'focus-visible:outline-media-ring focus-visible:outline-offset-2',
         className

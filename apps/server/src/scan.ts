@@ -239,8 +239,9 @@ async function runScan(libraryIds: number[]): Promise<void> {
   pauseOptimizer("scan");
 
   const seen = { count: 0 };
-  const cfg = await getConfig();
   // The probe worker enforces the same ceiling internally.
+  const cfg = await getConfig();
+  let removedRecords = 0;
   Bun.env.PLEXY_PROBE_CONCURRENCY = String(cfg.probeConcurrency);
   const pool = createProbePool(cfg.probeConcurrency);
 
@@ -287,6 +288,7 @@ async function runScan(libraryIds: number[]): Promise<void> {
       // Inaccessible folders and failed file probes keep existing records.
       if (roots.length > 0 && rootsComplete && progress.issues === issuesBeforeLibrary) {
         const removed = await removeMissingLibraryFiles(library.id, seenPaths);
+        removedRecords += removed;
         if (removed) log.info("scanner", "removed missing media records", {
           libraryId: library.id, count: removed,
         });
@@ -312,7 +314,9 @@ async function runScan(libraryIds: number[]): Promise<void> {
     log.info("scanner", "scan complete", {
       files: progress.filesSeen, updated: progress.filesUpdated, issues: progress.issues,
     });
-    rebuildSearchIndex();
+    // A no-op walk must not rewrite the FTS table (40 ms + WAL churn at 20k
+    // items). Hydration already refreshes individual rows via `indexItem`.
+    if (progress.filesUpdated > 0 || removedRecords > 0) rebuildSearchIndex();
     void pruneTmdbCacheSoon();
   } catch (err) {
     progress.status = "failed";

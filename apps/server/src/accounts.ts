@@ -54,14 +54,14 @@ export async function createUser(
   password: string,
   role: User["role"] = "user",
   first = false,
+  /** Only the explicit `--dev-admin` bootstrap passes true. */
+  skipValidation = false,
 ): Promise<User> {
-  const invalid = validateCredentials(username, password);
-  if (invalid) throw new Error(invalid);
-  const passwordHash = await Bun.password.hash(password, {
-    algorithm: "argon2id",
-    memoryCost: 65536,
-    timeCost: 3,
-  });
+  if (!skipValidation) {
+    const invalid = validateCredentials(username, password);
+    if (invalid) throw new Error(invalid);
+  }
+  const passwordHash = await hashPassword(password);
   return db.transaction(() => {
     if (first && hasOwner())
       throw new Error("The server already has an owner.");
@@ -78,6 +78,91 @@ export async function createUser(
     return userView(row);
   })();
 }
+
+function hashPassword(password: string): Promise<string> {
+  return Bun.password.hash(password, {
+    algorithm: "argon2id",
+    memoryCost: 65536,
+    timeCost: 3,
+  });
+}
+
+export const DEV_ADMIN_USERNAME = "admin";
+export const DEV_ADMIN_PASSWORD = "admin";
+
+export interface DevAdminResult {
+  created: boolean;
+  alreadyApplied: boolean;
+  usernameTaken?: boolean;
+}
+
+/**
+ * Explicit development bootstrap (`--dev-admin` / PLEXY_DEV_ADMIN=1).
+ *
+ * Creates an admin account named `admin` with password `admin` exactly once
+ * per database, even though that password is shorter than the normal
+ * 12-character rule. The `dev_bootstrap` marker makes this a one-shot action:
+ * later runs never reset the password, never promote an existing account, and
+ * never recreate a deleted one. If a user named `admin` already exists it is
+ * left untouched.
+ *
+ * `main.ts` refuses the flag on packaged, desktop, production, or LAN-enabled
+ * servers and only reaches this function from the Bun dev server on loopback.
+ */
+export async function ensureDevAdmin(): Promise<DevAdminResult> {
+  if (q("SELECT id FROM dev_bootstrap WHERE id=1").get()) {
+    return { created: false, alreadyApplied: true };
+  }
+  if (q("SELECT id FROM users WHERE username=? LIMIT 1").get(DEV_ADMIN_USERNAME)) {
+    // Never take over an existing account, even one with the same name.
+    return { created: false, alreadyApplied: false, usernameTaken: true };
+  }
+  const user = await createUser(
+    DEV_ADMIN_USERNAME,
+    DEV_ADMIN_PASSWORD,
+    "admin",
+    !hasOwner(),
+    true,
+  );
+  run("INSERT INTO dev_bootstrap(id, user_id) VALUES(1, ?)", user.id);
+  run(
+    "UPDATE server_setup SET step=4, completed_at=COALESCE(completed_at, datetime('now')) WHERE id=1",
+  );
+  return { created: true, alreadyApplied: false };
+}
+
+/**
+ * True while the one-shot dev admin still uses the published default
+ * password. Settings uses this to refuse enabling LAN access until it changes.
+ */
+export async function devAdminUsesDefaultPassword(): Promise<boolean> {
+  const marker = q<Row>(
+    `SELECT u.password_hash FROM dev_bootstrap d
+     JOIN users u ON u.id = d.user_id
+     WHERE d.id = 1`,
+  ).get();
+  // Fall back to an admin literally named `admin`: a dev database from before
+  // the marker existed may already hold those credentials.
+  const row =
+    marker ??
+    q<Row>(
+      "SELECT password_hash FROM users WHERE username=? AND role='admin' LIMIT 1",
+    ).get(DEV_ADMIN_USERNAME);
+  if (!row) return false;
+  const stored = row.password_hash;
+  const hash = typeof stored === "string"
+    ? stored
+    : stored instanceof Uint8Array
+      ? Buffer.from(stored).toString("utf8")
+      : null;
+  if (!hash) return false;
+  try {
+    return await Bun.password.verify(DEV_ADMIN_PASSWORD, hash);
+  } catch {
+    return false;
+  }
+}
+
 // Equal-cost verification for unknown accounts avoids disclosing usernames via timing.
 let dummyHash: Promise<string> | undefined;
 export async function loginUser(

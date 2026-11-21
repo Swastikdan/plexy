@@ -10,7 +10,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { ConnectScreen } from "./connect-screen";
 import { PairScreen } from "./pair-screen";
-import { getApiBase, probeServer, setServerUrl } from "../server-config";
+import {
+  activateServerUrl,
+  findReachableAlternative,
+  getApiBase,
+  getConfiguredServerBase,
+  probeServer,
+  rememberServerCandidate,
+  setServerUrl,
+} from "../server-config";
 import { getClientRuntime } from "../runtime-config";
 import { accountRequest, isLocalPage, type SetupState, getAuthDevice } from "../auth";
 import { reportConnectionHealth, subscribeConnectionHealth, type ConnectionHealth } from "../lib/connection-health";
@@ -20,6 +28,24 @@ type GateState =
   | { phase: "ready" }
   | { phase: "auth"; serverUrl: string }
   | { phase: "down"; error?: string; originUrl?: string };
+
+/** Prevent a reload loop when two saved addresses both answer but disagree. */
+function autoSwitchAllowed(): boolean {
+  try {
+    const last = Number(sessionStorage.getItem("plexy:last-server-switch") ?? 0);
+    return !Number.isFinite(last) || Date.now() - last > 60_000;
+  } catch {
+    return true;
+  }
+}
+
+function markAutoSwitch(): void {
+  try {
+    sessionStorage.setItem("plexy:last-server-switch", String(Date.now()));
+  } catch {
+    /* private mode */
+  }
+}
 
 export function ServerGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -37,6 +63,11 @@ export function ServerGate({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       if (primary.ok) {
+        rememberServerCandidate(
+          getConfiguredServerBase(),
+          undefined,
+          primary.status.serverId,
+        );
         const setup = await accountRequest<SetupState>("/setup").catch(() => null);
         const setupPage = window.location.pathname === "/setup";
         const clientPage = window.location.pathname === "/connect";
@@ -52,6 +83,19 @@ export function ServerGate({ children }: { children: ReactNode }) {
         }
         setState({ phase: "ready" });
         return;
+      }
+
+      // If an explicit address is wrong but another saved address for this
+      // server answers, switch to it instead of showing a dead-end screen.
+      if (window.location.pathname !== "/connect") {
+        const alternative = await findReachableAlternative(getConfiguredServerBase());
+        if (cancelled) return;
+        if (alternative && autoSwitchAllowed()) {
+          markAutoSwitch();
+          await activateServerUrl(alternative.candidate.url);
+          if (!cancelled) window.location.reload();
+          return;
+        }
       }
 
       // If an explicit address is wrong but the page itself is being served by
@@ -125,6 +169,11 @@ export function ServerGate({ children }: { children: ReactNode }) {
       probing = false;
       if (cancelled) return;
       if (result.ok) {
+        rememberServerCandidate(
+          getConfiguredServerBase(),
+          undefined,
+          result.status.serverId,
+        );
         const device = await getAuthDevice();
         if (cancelled) return;
         if (!device) {
@@ -134,6 +183,19 @@ export function ServerGate({ children }: { children: ReactNode }) {
         reportConnectionHealth("online");
         await queryClient.invalidateQueries();
         return;
+      }
+      // While the active address is down, try the other saved addresses before
+      // backing off. This is what turns a network change into a short pause
+      // instead of a dead connection screen.
+      if (window.location.pathname !== "/connect") {
+        const alternative = await findReachableAlternative(getConfiguredServerBase());
+        if (cancelled) return;
+        if (alternative && autoSwitchAllowed()) {
+          markAutoSwitch();
+          await activateServerUrl(alternative.candidate.url);
+          if (!cancelled) window.location.reload();
+          return;
+        }
       }
       delay = Math.min(delay * 1.6, 15_000);
       schedule(delay);
