@@ -94,7 +94,10 @@ function manifestResponse(overrides: Record<string, unknown> = {}): Response {
   );
 }
 
-function setup(manifest = manifestResponse()) {
+function setup(
+  manifest = manifestResponse(),
+  fetch = async () => manifest.clone(),
+) {
   const events: NativePlaybackEvent[] = [];
   const embeds: FakeEmbed[] = [];
   const manager = new NativePlayerManager(
@@ -103,7 +106,7 @@ function setup(manifest = manifestResponse()) {
       platform: "darwin",
       libmpv: "/fake/libmpv.2.dylib",
       surface: () => ({ handle: Buffer.alloc(8), width: 1280, height: 820 }),
-      fetch: async () => manifest.clone(),
+      fetch,
       createEmbed: (libPath, onEvent) => {
         const embed = new FakeEmbed(libPath, onEvent);
         embeds.push(embed);
@@ -270,4 +273,33 @@ test("a failed load tears down the relay and surface", async () => {
   ).rejects.toThrow("engine failed");
   expect(embeds[0]!.destroyed).toBe(true);
   await manager.dispose();
+});
+
+test("a delayed open cannot replace a newer paused session", async () => {
+  const delayedManifest = Promise.withResolvers<Response>();
+  let requests = 0;
+  const { manager, embeds } = setup(manifestResponse(), async () => {
+    return ++requests === 1 ? delayedManifest.promise : manifestResponse();
+  });
+  const request = {
+    fileId: 7,
+    serverUrl: "http://127.0.0.1:8765",
+    serverOrigin: "http://127.0.0.1:8765",
+  };
+
+  const stale = manager.play(request).catch((error: unknown) => error);
+  try {
+    const { sessionId } = await manager.play(request);
+    await manager.command({ sessionId, action: "pause" });
+
+    delayedManifest.resolve(manifestResponse());
+    expect(await stale).toEqual(new Error("Playback request was superseded"));
+
+    expect(embeds).toHaveLength(1);
+    expect(embeds[0]?.calls.at(-1)).toBe("set:pause=true");
+    expect(embeds[0]?.destroyed).toBe(false);
+  } finally {
+    delayedManifest.resolve(manifestResponse());
+    await manager.dispose();
+  }
 });

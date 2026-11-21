@@ -108,7 +108,7 @@ export function SearchResultCard({ item }: { item: ItemCard }) {
           <div className="mt-0.5 flex items-center gap-2 text-[10.5px] text-muted/80">
             {item.year != null && <span>{item.year}</span>}
             {item.rating != null && (
-              <span className="inline-flex items-center gap-0.5 font-medium text-[#e0b258]">
+              <span className="inline-flex items-center gap-0.5 font-medium text-warning">
                 <Star size={9} fill="currentColor" aria-hidden />
                 {item.rating.toFixed(1)}
               </span>

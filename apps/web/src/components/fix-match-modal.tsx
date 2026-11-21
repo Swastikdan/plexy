@@ -35,6 +35,7 @@ export function FixMatchModal({
   initialTitle,
   initialYear,
   kind,
+  currentTmdbId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -42,6 +43,8 @@ export function FixMatchModal({
   initialTitle: string;
   initialYear?: number | null;
   kind?: string;
+  /** The match already stored for this title, when there is one. */
+  currentTmdbId?: number | null;
 }) {
   const queryClient = useQueryClient();
   const isSeries = kind === "series";
@@ -177,6 +180,23 @@ export function FixMatchModal({
                     <p className="text-sm text-danger-soft-foreground">
                       TMDB search failed. Verify the server has a TMDB token configured.
                     </p>
+                  )}
+
+                  {currentTmdbId != null && type === (isSeries ? "tv" : "movie") && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-secondary/45 px-3 py-2 text-xs text-muted">
+                      <span>
+                        Current match: <span className="font-semibold text-foreground">TMDB {currentTmdbId}</span>
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onPress={() => applyMutation.mutate(currentTmdbId)}
+                        isDisabled={applyMutation.isPending}
+                      >
+                        <Check size={14} />
+                        Correct
+                      </Button>
+                    </div>
                   )}
 
                   <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">

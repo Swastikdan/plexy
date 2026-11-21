@@ -3,20 +3,32 @@
 import type { SliderPreviewOverflow } from '@videojs/core';
 import { Slider as SliderPrimitive, TimeSlider as TimeSliderPrimitive } from '@videojs/react';
 import { SpinnerIcon as SpinnerIconPrimitive } from '@videojs/react/icons/neutral';
+import type { ComponentProps } from 'react';
 
 import { SliderBuffer, SliderFill, SliderThumb, SliderTrack } from '@/components/videojs/ui/slider';
 import { cn, resolveClassName } from '@/lib/resolve-class-name';
+
+export type TimeSliderThumbnails = NonNullable<
+  ComponentProps<typeof SliderPrimitive.Thumbnail.Root>['thumbnails']
+>;
 
 export interface TimeSliderProps extends Omit<TimeSliderPrimitive.RootProps, 'children'> {
   previewOverflow?: SliderPreviewOverflow | undefined;
   /** Draws the thumbnail preview image in place of the one the skin renders. */
   renderThumbnail?: SliderPrimitive.Thumbnail.ImageProps['render'];
+  /**
+   * Thumbnail sprite entries supplied directly instead of through a metadata
+   * track. Native playback has no `<video>` element to carry a `<track>`, so
+   * its trickplay VTT is resolved into this shape by the player route.
+   */
+  thumbnails?: TimeSliderThumbnails;
 }
 
 export function TimeSlider({
   className,
   previewOverflow = 'visible',
   renderThumbnail,
+  thumbnails,
   ...props
 }: TimeSliderProps = {}) {
   return (
@@ -106,6 +118,7 @@ export function TimeSlider({
         overflow={previewOverflow}
       >
         <SliderPrimitive.Thumbnail.Root
+          thumbnails={thumbnails}
           className={cn(
             'absolute max-w-(--media-slider-preview-max-width) -translate-x-1/2 translate-y-media-hidden-preview-offset scale-media-hidden-preview opacity-0',
             'origin-bottom blur-media-hidden',

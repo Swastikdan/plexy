@@ -197,6 +197,7 @@ export class MpvMedia extends EventTarget {
   private mutedValue = false;
   private rateValue = 1;
   private cachedAhead = 0;
+  private buffering = false;
   private pendingSeek = false;
   private controller: MpvSessionController | null = null;
 
@@ -294,7 +295,7 @@ export class MpvMedia extends EventTarget {
     this.pausedValue = false;
     this.controller?.resume();
     this.dispatch("play");
-    this.dispatch("playing");
+    this.dispatch(this.buffering ? "waiting" : "playing");
     return Promise.resolve();
   }
 
@@ -333,6 +334,7 @@ export class MpvMedia extends EventTarget {
     this.seekingValue = false;
     this.pendingSeek = false;
     this.cachedAhead = 0;
+    this.buffering = false;
     this.readyState = 0;
     this.error = null;
     this.dispatch("loadstart");
@@ -352,7 +354,7 @@ export class MpvMedia extends EventTarget {
   apply(event: NativePlaybackEvent): void {
     switch (event.type) {
       case "ready":
-        this.readyState = 4;
+        this.readyState = this.buffering ? 2 : 4;
         this.error = null;
         this.dispatch("loadedmetadata");
         this.dispatch("durationchange");
@@ -392,15 +394,13 @@ export class MpvMedia extends EventTarget {
         if (paused === this.pausedValue) return;
         this.pausedValue = paused;
         this.dispatch(paused ? "pause" : "play");
-        if (!paused) this.dispatch("playing");
+        if (!paused) this.dispatch(this.buffering ? "waiting" : "playing");
         return;
       }
       case "buffering": {
-        if (!event.buffering) {
-          this.dispatch("playing");
-          return;
-        }
-        this.dispatch("waiting");
+        this.buffering = Boolean(event.buffering);
+        if (this.readyState > 0) this.readyState = this.buffering ? 2 : 4;
+        if (!this.pausedValue) this.dispatch(this.buffering ? "waiting" : "playing");
         return;
       }
       case "ended":

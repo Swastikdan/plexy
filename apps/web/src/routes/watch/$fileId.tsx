@@ -1087,7 +1087,7 @@ function BrowserWatchRoute() {
                       aria-valuemax={100}
                     >
                       <div
-                        className="h-full origin-left rounded-full bg-[#E50914] transition-transform duration-500 ease-out"
+                        className="h-full origin-left rounded-full bg-accent transition-transform duration-500 ease-out"
                         style={{ transform: `scaleX(${Math.max(2, preparationPercent) / 100})` }}
                       />
                     </div>

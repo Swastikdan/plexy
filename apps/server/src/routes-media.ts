@@ -433,8 +433,9 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       /* malformed chapter metadata must not block playback */
     }
 
-    // Lazy, idempotent: the first play starts one background FFmpeg pass.
-    // Thumbnail extraction is queued by scanning, never by playback.
+    // Lazy, idempotent: the first trickplay VTT read starts one background
+    // FFmpeg pass. Browser playback loads that track; native playback asks for
+    // it once so its scrubber gets the same sprite thumbnails.
     const trickplay = trickplayView(row);
 
     log.debug("player", "play manifest", {

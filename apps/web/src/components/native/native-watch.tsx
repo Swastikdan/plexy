@@ -16,6 +16,8 @@ import { ArrowLeft, SkipForward } from "lucide-react";
 import { api } from "../../client";
 import { queries } from "../../queries";
 import { getPlaybackPreferences } from "../../lib/playback-preferences";
+import { prefetchAssets } from "../../lib/asset-prefetch";
+import { getApiBase } from "../../server-config";
 import { nativeBridge } from "../../lib/native-playback";
 import { useIsFullscreen } from "../../lib/use-fullscreen";
 import { segmentAt, skipLabel, type SkipSegmentKind } from "../../lib/skip-segments";
@@ -23,7 +25,6 @@ import type { NativeAudioTrack, NativePlaybackEvent } from "../../electron";
 import type { ServerAudioTrack } from "../videojs/ui/audio-track-menu";
 import { BufferingIndicator } from "../videojs/ui/buffering-indicator";
 import { Container } from "../videojs/ui/container";
-import { ErrorDialog } from "../videojs/ui/error-dialog";
 import { PlaybackHotkeys } from "../videojs/video/behaviors/playback-hotkeys";
 import { VideoStatusIndicators } from "../videojs/video/display/status-indicators";
 import { NeutralVideoControls } from "../videojs/video/layout/controls";
@@ -169,7 +170,19 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const preferences = useMemo(() => getPlaybackPreferences(), []);
-  const play = useQuery(queries.playNative(fileId));
+  const play = useQuery({
+    ...queries.playNative(fileId),
+    retry: 1,
+    // Extraction is queued by the scanner. Poll while it runs so the scrubber
+    // gains thumbnails without restarting the native session.
+    refetchInterval: (query) => {
+      const trickplay = query.state.data?.trickplay;
+      if (!trickplay || trickplay.ready) return false;
+      if (trickplay.status === "queued" || trickplay.status === "running") return 5_000;
+      // A fresh file starts at "none" until the VTT request above enqueues it.
+      return trickplay.status === "none" ? 15_000 : false;
+    },
+  });
   const skipSegments = useQuery({
     queryKey: ["skip-segments", fileId],
     queryFn: () => api.skipSegments(fileId),
@@ -178,9 +191,12 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
 
   const manifest = play.data;
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const manifestError = play.isLoadingError && !play.isFetching
+    ? (play.error instanceof Error ? play.error.message : "Could not load this title.")
+    : null;
+  const error = sessionError ?? manifestError;
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState<number | null>(null);
   const [ended, setEnded] = useState(false);
@@ -194,6 +210,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
   const lastSaveRef = useRef(0);
   const itemIdRef = useRef<number | null>(null);
   const endedRef = useRef(false);
+  const trickplayRequestedRef = useRef<number | null>(null);
 
   itemIdRef.current = manifest?.itemId ?? null;
   if (durationRef.current == null && manifest?.duration) durationRef.current = manifest.duration;
@@ -208,18 +225,19 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     return () => root.classList.remove("plexy-native-video");
   }, []);
 
+  // Browser playback triggers extraction as a side effect of loading the
+  // trickplay `<track>`. Native playback has no such track, so ask for the VTT
+  // once; the server enqueues a sheet and the play query poll picks it up.
   useEffect(() => {
-    if (!play.isError) return;
-    // A failed manifest can arrive just before mpv's first ready event (for
-    // example while a fresh session is still opening). Hold the fatal overlay
-    // briefly so a transient error never flashes over a player that is about
-    // to start; a real failure still surfaces.
-    const timer = window.setTimeout(() => {
-      setError(play.error instanceof Error ? play.error.message : "Could not load this title.");
-      setStarting(false);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [play.error, play.isError]);
+    const trickplay = manifest?.trickplay;
+    if (!trickplay || trickplay.ready || trickplay.status !== "none") return;
+    if (trickplayRequestedRef.current === fileId) return;
+    trickplayRequestedRef.current = fileId;
+    void fetch(api.trickplayTrackUrl(fileId), {
+      credentials: "include",
+      cache: "no-store",
+    }).catch(() => {});
+  }, [fileId, manifest?.trickplay?.ready, manifest?.trickplay?.status]);
 
   const invalidateProgress = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["home"] });
@@ -241,49 +259,41 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     [invalidateProgress],
   );
 
-  // Bridge events feed progress and the page chrome; the Video.js store is fed
-  // by MpvVideo itself.
-  useEffect(() => {
-    const bridge = nativeBridge();
-    if (!bridge) return;
-    return bridge.onEvent((event: NativePlaybackEvent) => {
-      if (event.fileId !== fileId) return;
-      switch (event.type) {
-        case "ready":
-          setStarting(false);
-          setError(null);
-          break;
-        case "time": {
-          if (event.position != null) {
-            positionRef.current = event.position;
-            setPosition(event.position);
-          }
-          if (event.duration != null) {
-            durationRef.current = event.duration;
-            setDuration(event.duration);
-          }
-          break;
+  const onPlaybackEvent = useCallback((event: NativePlaybackEvent) => {
+    switch (event.type) {
+      case "ready":
+        setStarting(false);
+        break;
+      case "time": {
+        if (event.position != null) {
+          positionRef.current = event.position;
+          setPosition(event.position);
         }
-        case "duration":
-          if (event.duration != null) {
-            durationRef.current = event.duration;
-            setDuration(event.duration);
-          }
-          break;
-        case "ended":
-          setEnded(true);
-          endedRef.current = true;
-          if (event.position != null) positionRef.current = event.position;
-          saveProgress(true);
-          break;
-        case "tracks":
-          setAudioTracks(event.audioTracks ?? []);
-          break;
-        default:
-          break;
+        if (event.duration != null) {
+          durationRef.current = event.duration;
+          setDuration(event.duration);
+        }
+        break;
       }
-    });
-  }, [fileId, saveProgress]);
+      case "duration":
+        if (event.duration != null) {
+          durationRef.current = event.duration;
+          setDuration(event.duration);
+        }
+        break;
+      case "ended":
+        setEnded(true);
+        endedRef.current = true;
+        if (event.position != null) positionRef.current = event.position;
+        saveProgress(true);
+        break;
+      case "tracks":
+        setAudioTracks(event.audioTracks ?? []);
+        break;
+      default:
+        break;
+    }
+  }, [saveProgress]);
 
   // Periodic progress writes while playing (mirrors the browser reporter).
   useEffect(() => {
@@ -352,6 +362,52 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     audioTracks.findIndex((track) => track.selected),
   );
 
+  // Native playback has no media element, so the browser's `<track>`-based
+  // trickplay path cannot load its WebVTT. Crop the same sprite sheets here and
+  // hand the slider the resolved entries directly.
+  const trickplayThumbnails = useMemo(() => {
+    const trickplay = manifest?.trickplay;
+    if (!trickplay?.ready || !trickplay.sprites?.length || !trickplay.frameCount) return undefined;
+    const interval = trickplay.interval > 0 ? trickplay.interval : 10;
+    const framesPerSheet = trickplay.framesPerSheet ?? 100;
+    const columns = trickplay.columns ?? 10;
+    const rows = trickplay.rows ?? 10;
+    const durationSeconds = duration ?? manifest?.duration ?? null;
+    const base = getApiBase();
+    const entries = [];
+
+    for (let index = 0; index < trickplay.frameCount; index++) {
+      const sprite = trickplay.sprites[Math.floor(index / framesPerSheet)];
+      if (!sprite) break;
+      const position = index % framesPerSheet;
+      const column = position % columns;
+      const row = Math.floor(position / columns);
+      if (row >= rows) break;
+      const startTime = index * interval;
+      const endTime = Math.min(
+        startTime + interval,
+        durationSeconds && durationSeconds > startTime ? durationSeconds : startTime + interval,
+      );
+      entries.push({
+        url: new URL(sprite, base).toString(),
+        startTime,
+        endTime,
+        width: trickplay.width,
+        height: trickplay.height,
+        coords: { x: column * trickplay.width, y: row * trickplay.height },
+      });
+    }
+
+    return entries.length > 0 ? entries : undefined;
+  }, [duration, manifest?.duration, manifest?.trickplay]);
+
+  useEffect(() => {
+    const sprites = manifest?.trickplay?.sprites;
+    if (!sprites?.length) return;
+    const base = getApiBase();
+    prefetchAssets(sprites.map((sprite) => new URL(sprite, base).toString()));
+  }, [manifest?.trickplay?.sprites]);
+
   const handleSelectAudio = useCallback(
     (index: number) => {
       const track = audioTracks[index];
@@ -364,7 +420,6 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
   );
 
   // The session id is owned by MpvVideo; mirror it for audio selection.
-  sessionIdRef.current = sessionId;
 
   const isFullscreen = useIsFullscreen();
 
@@ -403,6 +458,14 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     /^(?:S\d+E\d+|E\d+|\d+x\d+|Episode\s+\d+|Ep\.?\s*\d+)\s*[·\-:–—]\s*/i,
     "",
   ).trim();
+  // "Lupin · Season 1, Episode 5 · Chapter 5" reads better above the controls
+  // than the bare S01E05 token the manifest carries.
+  const seasonLine =
+    manifest?.seasonNumber != null && manifest?.episodeNumber != null
+      ? `Season ${manifest.seasonNumber}, Episode ${manifest.episodeNumber}${
+          cleanSubtitle ? ` · ${cleanSubtitle}` : ""
+        }`
+      : cleanSubtitle || subtitleEp;
   const total = duration ?? manifest?.duration ?? null;
   const activeSegment = useMemo((): { kind: SkipSegmentKind; end: number } | null => {
     const data = skipSegments.data;
@@ -424,11 +487,10 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           className="h-full w-full bg-transparent [--media-background:transparent]"
         >
           <ControlsVisibility onChange={setControlsVisible} />
-          <BufferingIndicator />
-          <ErrorDialog />
+          {!starting && !error && <BufferingIndicator />}
           <NeutralVideoControls
-            title={title}
-            subtitle={cleanSubtitle || subtitleEp}
+            thumbnails={trickplayThumbnails}
+            volumePlacement="right"
             serverAudioTracks={serverAudioTracks}
             selectedAudioIndex={selectedAudioIndex}
             onSelectAudioTrack={handleSelectAudio}
@@ -456,7 +518,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           <PlayerGestures />
           <VideoStatusIndicators />
 
-          {manifest && (
+          {manifest && !sessionError && (
             <MpvVideo
               key={`${fileId}:${retryNonce}`}
               source={{
@@ -468,10 +530,12 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
               }}
               autoSubtitles={preferences.autoSubtitles}
               subtitleLanguage={preferences.subtitleLanguage}
-              onSession={setSessionId}
+              onSession={(id) => { sessionIdRef.current = id; }}
+              onEvent={onPlaybackEvent}
               onFatal={(message) => {
                 setStarting(false);
-                setError(message);
+                sessionIdRef.current = null;
+                setSessionError(message);
               }}
             />
           )}
@@ -492,6 +556,17 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
             >
               <ArrowLeft size={20} />
             </button>
+
+            <div className="pointer-events-none absolute left-1/2 top-3.5 w-[min(68vw,46rem)] -translate-x-1/2 text-center">
+              <p className="truncate text-[15px] font-semibold leading-tight text-white drop-shadow-[0_1px_10px_rgba(0,0,0,0.65)]">
+                {title}
+              </p>
+              {seasonLine && (
+                <p className="mt-1 truncate text-[11px] font-medium leading-tight text-white/60 drop-shadow-[0_1px_8px_rgba(0,0,0,0.6)]">
+                  {seasonLine}
+                </p>
+              )}
+            </div>
           </div>
 
           {activeSegment && !ended && (
@@ -565,13 +640,18 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
 
           {error && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-6">
-              <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#181818] p-6 text-center text-white">
+              <div className="w-full max-w-md rounded-2xl border border-media-border bg-media-popover p-6 text-center text-white backdrop-blur-xl">
                 <p className="font-display text-lg font-bold">Playback unavailable</p>
                 <p className="mt-2 text-sm text-ink-muted">{error}</p>
                 <div className="mt-5 flex items-center justify-center gap-3">
                   <button
                     onClick={() => {
-                      setError(null);
+                      if (!manifest) {
+                        void play.refetch();
+                        return;
+                      }
+                      sessionIdRef.current = null;
+                      setSessionError(null);
                       setStarting(true);
                       setEnded(false);
                       endedRef.current = false;

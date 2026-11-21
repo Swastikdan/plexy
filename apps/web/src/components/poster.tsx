@@ -318,7 +318,7 @@ export function Poster({
             {item.year && item.rating != null && <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted/50" />}
             {item.rating != null && (
               <span className="inline-flex items-center gap-0.5 tabular-nums">
-                <Star size={8} fill="currentColor" className="text-[#e0b258]" aria-hidden />
+                <Star size={8} fill="currentColor" className="text-warning" aria-hidden />
                 {item.rating.toFixed(1)}
               </span>
             )}

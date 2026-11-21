@@ -6,7 +6,7 @@
 /// card floating on it, the whole slide opens the title page, and the dots and
 /// arrows stay secondary. Slides advance on their own, pause whenever the
 /// pointer or keyboard is on the carousel, and can be stopped.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bookmark, ChevronLeft, ChevronRight, Pause, Play, Star } from "lucide-react";
 import { artworkUrl } from "../lib/artwork-url";
@@ -126,7 +126,7 @@ function HeroSlide({ item }: { item: ItemCard }) {
               <>
                 <span className="meta-dot" aria-hidden />
                 <span className="inline-flex items-center gap-1">
-                  <Star size={11} fill="currentColor" className="text-[#f0c56a]" aria-hidden />
+                  <Star size={11} fill="currentColor" className="text-warning" aria-hidden />
                   <strong>{item.rating.toFixed(1)}</strong>
                 </span>
               </>
@@ -195,6 +195,14 @@ function HeroSlide({ item }: { item: ItemCard }) {
 export function HomeHero({ items }: { items: ItemCard[] }) {
   const count = items.length;
   const reducedMotion = usePrefersReducedMotion();
+  const sectionRef = useRef<HTMLElement>(null);
+  // Any pointer or keyboard interaction buys a quiet window. This closes the
+  // race where the carousel advanced between the pointer entering the hero and
+  // React committing `hovered`, so a click could land on the next slide.
+  const holdUntilRef = useRef(0);
+  const hold = () => {
+    holdUntilRef.current = Date.now() + ADVANCE_MS * 2;
+  };
   const [active, setActive] = useState(0);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -209,7 +217,13 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
   useEffect(() => {
     if (count < 2 || paused) return;
     const timer = window.setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden || Date.now() < holdUntilRef.current) return;
+      // The DOM is the source of truth here: state can lag one frame behind a
+      // pointer that is already resting on a control, and advancing then would
+      // swap the button under the click.
+      if (sectionRef.current?.matches(":hover")) return;
+      const focusedElement = document.activeElement;
+      if (focusedElement && sectionRef.current?.contains(focusedElement)) return;
       setActive((index) => (index + 1) % count);
     }, ADVANCE_MS);
     return () => window.clearInterval(timer);
@@ -222,13 +236,18 @@ export function HomeHero({ items }: { items: ItemCard[] }) {
 
   return (
     <section
+      ref={sectionRef}
       role="region"
       aria-roledescription="carousel"
       aria-label="Featured titles"
       data-paused={paused || undefined}
+      onPointerDownCapture={hold}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onFocusCapture={() => setFocused(true)}
+      onFocusCapture={() => {
+        hold();
+        setFocused(true);
+      }}
       onBlurCapture={(event) => {
         const next = event.relatedTarget;
         if (!(next instanceof Node) || !event.currentTarget.contains(next)) setFocused(false);

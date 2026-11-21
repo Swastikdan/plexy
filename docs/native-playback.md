@@ -16,10 +16,11 @@ Native playback is **macOS arm64 first**.
 - Clicking Play opens the original file in the app window. There is no second
   window and no preparation screen.
 - The player chrome is the same Video.js skin as the website: play/pause, ±10s,
-  volume popover, time slider with buffered range, audio track menu, captions
-  menu, settings (audio, speed, captions), fullscreen, and the same auto-hide
-  behaviour. Left/right arrow keys seek ±10s and accelerate while held (up to
-  120s per step); double-tap left/right still seeks.
+  volume popover (beside the icon on desktop), time slider with buffered range
+  and trickplay thumbnails, audio track menu, captions menu, settings (audio,
+  speed, captions), fullscreen, and the same auto-hide behaviour. Left/right
+  arrow keys seek ±10s and accelerate while held (up to 120s per step);
+  double-tap left/right still seeks.
 - Fullscreen expands the native window. HTML element fullscreen is deliberately
   not used: Chromium puts the page in its own opaque compositor surface, which
   hides the embedded video surface (a black screen).

@@ -60,6 +60,10 @@ export interface Trickplay {
   interval: number;
   width: number;
   height: number;
+  /** Frames per sprite sheet, and the sheet's grid, for direct thumbnails. */
+  framesPerSheet?: number;
+  columns?: number;
+  rows?: number;
   frameCount: number | null;
   error: string | null;
 }

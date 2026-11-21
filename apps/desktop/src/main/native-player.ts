@@ -270,6 +270,7 @@ function mapTrack(track: MpvTrack): NativeAudioTrack {
 
 export class NativePlayerManager {
   private session: Session | null = null;
+  private playRequest = 0;
 
   constructor(
     private readonly emit: (event: NativePlaybackEvent) => void,
@@ -341,12 +342,13 @@ export class NativePlayerManager {
     const surface = this.options.surface?.() ?? null;
     if (!surface) throw new Error("The Plexy window is not ready for playback.");
 
+    const playRequest = ++this.playRequest;
     const manifest = await this.fetchManifest(serverUrl, fileId);
     const libmpv = this.options.libmpv ?? resolveLibmpv();
     const Addon = this.options.createEmbed ?? loadEmbedAddon();
     if (!libmpv || !Addon) throw new Error(info.reason ?? "The native playback engine is not installed");
 
-    await this.stop();
+    if (playRequest !== this.playRequest) throw new Error("Playback request was superseded");
 
     const relay = new MediaRelay(serverUrl.origin);
     await relay.start();
@@ -385,6 +387,16 @@ export class NativePlayerManager {
     } catch (error) {
       await relay.close();
       throw error;
+    }
+
+    // Preparing a relay can overlap another play or a window teardown.
+    // Only the latest request can replace the session after those awaits.
+    if (playRequest === this.playRequest && this.session) {
+      await this.stop(this.session.id);
+    }
+    if (playRequest !== this.playRequest) {
+      await relay.close();
+      throw new Error("Playback request was superseded");
     }
 
     this.session = session;
@@ -475,6 +487,7 @@ export class NativePlayerManager {
   }
 
   async stop(sessionId?: string): Promise<void> {
+    if (!sessionId) this.playRequest++;
     const session = this.session;
     if (!session) return;
     if (sessionId && session.id !== sessionId) return;
@@ -532,12 +545,9 @@ export class NativePlayerManager {
     if (event.type === "event") {
       switch (event.name) {
         case "loaded": {
-          session.paused = false;
-          this.afterLoad(session).catch((error) =>
-            this.emitEvent(session, {
-              type: "error",
-              message: error instanceof Error ? error.message : String(error),
-            }));
+          // Track discovery and sidecar setup are optional once mpv has
+          // loaded the file. Their failures must not replace playback.
+          void this.afterLoad(session).catch(() => {});
           this.emitEvent(session, { type: "ready" });
           return;
         }
@@ -642,8 +652,9 @@ export class NativePlayerManager {
       session.embed.command(["seek", resume.toFixed(3), "absolute+exact"]);
     }
     await this.selectAudio(session).catch(() => {});
+    if (session.stopping) return;
     await this.addSidecarSubtitles(session).catch(() => {});
-    this.refreshTracks(session);
+    if (!session.stopping) this.refreshTracks(session);
   }
 
   private async selectAudio(session: Session): Promise<void> {

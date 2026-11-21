@@ -220,27 +220,20 @@
   /* Shared page gutter for poster scrollers (3 == px-3). */
   --row-inset: calc(var(--spacing) * 3);
 
-  /* One brand accent across every surface. HeroUI's default blue is replaced
-   * by the cinema reference's indigo, so primary buttons, focus rings, selected
-   * tabs and progress fills all agree with the home/library art direction. */
-  --accent: #5045e6;
-  --accent-foreground: #ffffff;
-  --focus: #5045e6;
-
-  /* Cinema surfaces. Home, library, title and the player share a darker,
-   * poster-forward surface than the admin/settings shell. The brand indigo is
-   * the one accent across them; danger/success keep their HeroUI roles. */
-  --cinema-canvas: #080808;
-  --cinema-surface: #141416;
-  --cinema-raised: #1d1f21;
-  --cinema-ink: #f7f8f8;
-  --cinema-muted: #9aa0a3;
-  --cinema-line: rgba(255, 255, 255, 0.1);
-  --cinema-glass: rgba(255, 255, 255, 0.08);
-  --cinema-glass-line: rgba(255, 255, 255, 0.16);
-  --brand: #5045e6;
-  --brand-hover: #6a60ff;
-  --brand-ink: #ffffff;
+  /* HeroUI's built-in accent is the only brand colour. Primary buttons, focus
+   * rings, selected tabs and progress fills all inherit the theme's blue, so
+   * light and dark stay in step with the rest of the component library. */
+  --cinema-canvas: var(--eclipse);
+  --cinema-surface: color-mix(in oklab, var(--eclipse) 90%, var(--snow) 10%);
+  --cinema-raised: color-mix(in oklab, var(--eclipse) 82%, var(--snow) 18%);
+  --cinema-ink: var(--snow);
+  --cinema-muted: color-mix(in oklab, var(--snow) 64%, var(--eclipse) 36%);
+  --cinema-line: color-mix(in oklab, var(--snow) 12%, transparent);
+  --cinema-glass: color-mix(in oklab, var(--snow) 8%, transparent);
+  --cinema-glass-line: color-mix(in oklab, var(--snow) 16%, transparent);
+  --brand: var(--accent);
+  --brand-hover: var(--accent-hover);
+  --brand-ink: var(--accent-foreground);
   --font-display: "Anton", "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -467,8 +460,8 @@
   overflow: hidden;
   border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
   border-radius: calc(var(--radius) * 3);
-  background: #0b0d12;
-  color: #f7f5ef;
+  background: var(--cinema-canvas);
+  color: var(--cinema-ink);
 }
 
 /* Home banner: the artwork is part of the page rather than a card floating on
@@ -644,18 +637,18 @@
   gap: 0.55rem;
   font-size: 0.75rem;
   font-weight: 500;
-  color: rgba(247, 245, 239, 0.72);
+  color: color-mix(in oklab, var(--snow) 72%, transparent);
 }
 
 .hero-meta .meta-dot {
   width: 3px;
   height: 3px;
   border-radius: 999px;
-  background: rgba(247, 245, 239, 0.36);
+  background: color-mix(in oklab, var(--snow) 36%, transparent);
 }
 
 .hero-meta strong {
-  color: #f7f5ef;
+  color: var(--snow);
   font-weight: 600;
 }
 
@@ -689,7 +682,7 @@
   border-radius: 999px;
   border: 1px solid var(--cinema-glass-line);
   background: var(--cinema-glass);
-  color: #f7f5ef;
+  color: var(--snow);
   padding-inline: 1.3rem;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -697,7 +690,10 @@
   -webkit-backdrop-filter: blur(14px);
   transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
 }
-.hero-secondary:hover { background: rgba(247, 245, 239, 0.16); border-color: rgba(247, 245, 239, 0.36); }
+.hero-secondary:hover {
+  background: color-mix(in oklab, var(--snow) 16%, transparent);
+  border-color: color-mix(in oklab, var(--snow) 36%, transparent);
+}
 .hero-secondary:active { transform: scale(0.975); }
 
 .hero-icon {
@@ -707,16 +703,22 @@
   height: 2.75rem;
   width: 2.75rem;
   border-radius: 999px;
-  border: 1px solid rgba(247, 245, 239, 0.2);
-  background: rgba(247, 245, 239, 0.07);
-  color: rgba(247, 245, 239, 0.9);
+  border: 1px solid color-mix(in oklab, var(--snow) 20%, transparent);
+  background: color-mix(in oklab, var(--snow) 7%, transparent);
+  color: color-mix(in oklab, var(--snow) 90%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), transform 160ms var(--ease-out);
 }
-.hero-icon:hover { background: rgba(247, 245, 239, 0.15); color: #ffffff; }
+.hero-icon:hover {
+  background: color-mix(in oklab, var(--snow) 15%, transparent);
+  color: var(--snow);
+}
 .hero-icon:active { transform: scale(0.94); }
-.hero-icon[data-selected="true"] { background: rgba(247, 245, 239, 0.9); color: #0b0d12; }
+.hero-icon[data-selected="true"] {
+  background: color-mix(in oklab, var(--snow) 90%, transparent);
+  color: var(--eclipse);
+}
 
 .chip {
   display: inline-flex;

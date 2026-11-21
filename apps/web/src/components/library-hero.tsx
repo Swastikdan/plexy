@@ -92,7 +92,7 @@ function HeroSlide({ item }: { item: ItemCard }) {
               <>
                 <span className="meta-dot" aria-hidden />
                 <span className="inline-flex items-center gap-1">
-                  <Star size={11} fill="currentColor" className="text-[#f0c56a]" aria-hidden />
+                  <Star size={11} fill="currentColor" className="text-warning" aria-hidden />
                   <strong>{item.rating.toFixed(1)}</strong>
                 </span>
               </>

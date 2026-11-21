@@ -9,7 +9,7 @@ import { FullscreenButton } from '@/components/videojs/ui/fullscreen-button';
 import { PiPButton } from '@/components/videojs/ui/pip-button';
 import { PlayButton } from '@/components/videojs/ui/play-button';
 import { SeekBackwardButton, SeekForwardButton } from '@/components/videojs/ui/seek-buttons';
-import { TimeSlider } from '@/components/videojs/ui/time-slider';
+import { TimeSlider, type TimeSliderThumbnails } from '@/components/videojs/ui/time-slider';
 import { VolumePopover } from '@/components/videojs/ui/volume-popover';
 import { cn } from '@/lib/resolve-class-name';
 
@@ -21,6 +21,10 @@ export interface NeutralVideoControlsProps {
   title?: string | null;
   subtitle?: string | null;
   renderThumbnail?: NonNullable<ComponentProps<typeof TimeSlider>>['renderThumbnail'];
+  /** Direct trickplay entries for surfaces without a `<video>` text-track host. */
+  thumbnails?: TimeSliderThumbnails;
+  /** `right` puts the volume rail beside the icon; `above` is the web default. */
+  volumePlacement?: 'above' | 'right';
   onSeekDragStart?: () => void;
   onSeekDragEnd?: () => void;
   serverAudioTracks?: VideoSettingsMenuProps['serverAudioTracks'];
@@ -46,6 +50,8 @@ export function NeutralVideoControls({
   title,
   subtitle,
   renderThumbnail,
+  thumbnails,
+  volumePlacement = 'above',
   onSeekDragStart,
   onSeekDragEnd,
   serverAudioTracks,
@@ -110,6 +116,7 @@ export function NeutralVideoControls({
             <TimeSlider
               previewOverflow="clamp"
               renderThumbnail={renderThumbnail}
+              thumbnails={thumbnails}
               onDragStart={onSeekDragStart}
               onDragEnd={onSeekDragEnd}
               className="[--media-slider-height:0.5rem]"
@@ -126,7 +133,11 @@ export function NeutralVideoControls({
             </Controls.Group>
 
             <Controls.Group className="flex items-center justify-end gap-0.5 rtl:flex-row-reverse">
-              <VolumePopover showTooltip side="top" orientation="horizontal" />
+              <VolumePopover
+                showTooltip
+                side={volumePlacement === 'right' ? 'right' : 'top'}
+                orientation={volumePlacement === 'right' ? 'vertical' : 'horizontal'}
+              />
               <ButtonTooltip side="top">
                 <CaptionsButton className="media-max-xs:hidden" />
               </ButtonTooltip>

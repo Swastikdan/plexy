@@ -39,6 +39,10 @@ export interface TrickplayView {
   interval: number;
   width: number;
   height: number;
+  /** Sprite-sheet geometry, so clients without a WebVTT track can crop tiles. */
+  framesPerSheet: number;
+  columns: number;
+  rows: number;
   frameCount: number | null;
   error: string | null;
 }
@@ -106,6 +110,9 @@ export function trickplayView(row: Row): TrickplayView {
     interval: entry?.interval != null ? Number(entry.interval) : intervalFor(row.duration as number | null),
     width: entry?.width != null ? Number(entry.width) : TRICKPLAY_WIDTH,
     height: entry?.height != null ? Number(entry.height) : TRICKPLAY_HEIGHT,
+    framesPerSheet: SPRITE_SIZE,
+    columns: SPRITE_COLS,
+    rows: SPRITE_ROWS,
     frameCount: entry?.frame_count == null ? null : Number(entry.frame_count),
     error: entry?.error == null ? null : String(entry.error),
   };
@@ -340,7 +347,12 @@ export async function trickplayFrame(row: Row, index: number): Promise<string | 
 /** Build the WebVTT thumbnails track on demand (tiny; no disk file needed). */
 export function trickplayVtt(row: Row): string {
   const entry = currentRow(row, rowFor(Number(row.id)));
-  if (!entry || entry.status !== "done") return "WEBVTT\n\n";
+  if (!entry || entry.status !== "done") {
+    // Loading the track is the lazy trigger for a new or stale file. The
+    // enqueue is idempotent and respects in-flight and recent-failure states.
+    enqueueTrickplay(row);
+    return "WEBVTT\n\n";
+  }
   const count = Number(entry.frame_count ?? 0);
   const interval = Number(entry.interval) > 0 ? Number(entry.interval) : DEFAULT_INTERVAL;
   const duration = entry.duration != null ? Number(entry.duration) : null;

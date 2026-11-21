@@ -132,14 +132,15 @@ export function ConnectScreen({
 
   return (
     <main className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
-      {onCancel && (
-        <div
-          className="absolute left-3 top-3 z-10 sm:left-6"
-          style={{ left: isElectronMac() ? 96 : undefined }}
-        >
-          <BackButton onClick={onCancel} label="Back to Plexy" />
-        </div>
-      )}
+      <div
+        className="absolute left-3 top-3 z-10 flex items-center gap-1.5 sm:left-6"
+        style={{ left: isElectronMac() ? 96 : undefined }}
+      >
+        {onCancel && <BackButton onClick={onCancel} label="Back to Plexy" />}
+        <span className="truncate font-sans text-sm font-bold tracking-[-0.02em] text-foreground sm:text-[15px]">
+          Server
+        </span>
+      </div>
 
       <section className="relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">

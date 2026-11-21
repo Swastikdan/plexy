@@ -168,7 +168,7 @@ function LibraryRoute() {
   }
 
   return (
-    <Page className="!pt-4 sm:!pt-5">
+    <Page className="pt-4 sm:pt-6">
       <h1 className="sr-only">Library</h1>
       <div className="space-y-9 pb-10 sm:space-y-10">
         {featured.length > 0 && <LibraryHero items={featured} />}

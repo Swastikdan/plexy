@@ -130,6 +130,7 @@ function SearchRoute() {
             <SearchField.Group className="h-11 rounded-full border-border/70 bg-surface-secondary/45 px-4">
               <SearchField.Input
                 placeholder="Search your films and shows…"
+                aria-label="Search your films and shows"
                 className="text-[14px]"
               />
               {isFetching ? (

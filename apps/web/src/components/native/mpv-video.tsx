@@ -48,6 +48,7 @@ export function MpvVideo({
   );
   const attachRef = useAttachMedia(media);
   const sessionRef = useRef<string | null>(null);
+  const pendingPauseAction = useRef<"pause" | "resume" | null>(null);
 
   // Stable callbacks so the session is not restarted on every render.
   const callbacks = useRef({ onEvent, onSession, onFatal });
@@ -57,10 +58,15 @@ export function MpvVideo({
     const send = (action: Parameters<NonNullable<ReturnType<typeof nativeBridge>>["command"]>[0]["action"], value?: number) => {
       const bridge = nativeBridge();
       const sessionId = sessionRef.current;
-      if (!bridge || !sessionId) return;
-      void bridge.command({ sessionId, action, value }).catch((cause) => {
-        callbacks.current.onFatal?.(cause instanceof Error ? cause.message : String(cause));
-      });
+      if (!bridge) return;
+      if (!sessionId) {
+        if (action === "pause" || action === "resume") pendingPauseAction.current = action;
+        return;
+      }
+      // Commands race with teardown and hover playback. A late seek or volume
+      // write against an already-closed session must not tear down a healthy
+      // player; session-level errors arrive through the event stream instead.
+      void bridge.command({ sessionId, action, value }).catch(() => {});
     };
     return {
       resume: () => send("resume"),
@@ -75,9 +81,21 @@ export function MpvVideo({
   }, []);
 
   const fileId = source.fileId;
-  const resume = source.watch && !source.watch.played && source.watch.position > 15
-    ? source.watch.position
-    : 0;
+  // The manifest is refetched while trickplay is generated and as progress is
+  // saved. Its watch position therefore changes during playback; only the
+  // value from the first manifest for this file may start a session, or the
+  // player would stop and reopen itself every time the query refreshes.
+  const resumeRef = useRef<{ fileId: number; seconds: number } | null>(null);
+  if (!resumeRef.current || resumeRef.current.fileId !== fileId) {
+    resumeRef.current = {
+      fileId,
+      seconds:
+        source.watch && !source.watch.played && source.watch.position > 15
+          ? source.watch.position
+          : 0,
+    };
+  }
+  const resume = resumeRef.current.seconds;
 
   useEffect(() => {
     const bridge = nativeBridge();
@@ -90,19 +108,31 @@ export function MpvVideo({
     sessionRef.current = null;
     media.begin(controller, { title: source.title });
 
-    const off = bridge.onEvent((event: NativePlaybackEvent) => {
-      if (event.fileId !== fileId) return;
-      if (sessionRef.current && event.sessionId !== sessionRef.current) return;
+    const pendingEvents = new Map<string, NativePlaybackEvent[]>();
+    const applyEvent = (event: NativePlaybackEvent) => {
       if (event.type === "error") {
         callbacks.current.onFatal?.(event.message ?? "Playback failed");
         return;
       }
       if (event.type === "closed") {
-        if (!media.ended) callbacks.current.onFatal?.("The player closed unexpectedly.");
+        if (media.ended) return;
+        callbacks.current.onFatal?.("The player closed unexpectedly.");
         return;
       }
       media.apply(event);
       callbacks.current.onEvent?.(event);
+    };
+    const off = bridge.onEvent((event) => {
+      if (event.fileId !== fileId) return;
+      const sessionId = sessionRef.current;
+      if (sessionId) {
+        if (event.sessionId === sessionId) applyEvent(event);
+        return;
+      }
+      // mpv can report tracks, readiness or failure before the IPC reply.
+      const events = pendingEvents.get(event.sessionId) ?? [];
+      events.push(event);
+      pendingEvents.set(event.sessionId, events);
     });
 
     bridge
@@ -121,8 +151,16 @@ export function MpvVideo({
         sessionRef.current = result.sessionId;
         callbacks.current.onSession?.(result.sessionId);
         if (result.title) media.contentData = { title: result.title };
+        const events = pendingEvents.get(result.sessionId);
+        pendingEvents.clear();
+        events?.forEach(applyEvent);
+        const action = pendingPauseAction.current;
+        pendingPauseAction.current = null;
+        if (action === "pause") media.pause();
+        if (action === "resume") void media.play();
       })
       .catch((cause) => {
+        pendingEvents.clear();
         if (!cancelled) {
           callbacks.current.onFatal?.(cause instanceof Error ? cause.message : String(cause));
         }
@@ -131,8 +169,10 @@ export function MpvVideo({
     return () => {
       cancelled = true;
       off();
+      pendingEvents.clear();
       const sessionId = sessionRef.current;
       sessionRef.current = null;
+      pendingPauseAction.current = null;
       media.end();
       if (sessionId) void bridge.stop({ sessionId }).catch(() => {});
     };

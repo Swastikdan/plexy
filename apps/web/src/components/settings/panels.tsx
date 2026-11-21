@@ -141,7 +141,7 @@ function ThemeSwatch({ mode }: { mode: ThemePreference }) {
       <span className={cx("h-full w-2 rounded-sm", mode === "light" ? "bg-[#eaeaeb]" : "bg-[#232325]")} />
       <span className={cx("h-3 w-2 rounded-sm", mode === "light" ? "bg-[#efeff0]" : "bg-[#262728]")} />
       <span className={cx("h-5 w-2 rounded-sm", mode === "light" ? "bg-[#eaeaeb]" : "bg-[#18181b]")} />
-      <span className="ml-auto h-6 w-6 rounded-full bg-[#5045e6]" />
+      <span className="ml-auto h-6 w-6 rounded-full bg-accent" />
     </span>
   );
 }

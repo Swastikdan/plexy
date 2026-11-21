@@ -255,7 +255,7 @@ function DetailView({
               </Link>
             )}
             {unmatched && item.kind !== "episode" && (
-              <div className="flex items-center gap-3 rounded-lg border border-[#e8bd6a]/30 bg-[#e8bd6a]/10 px-3 py-1.5 text-[11px] text-[#f0d7a1] backdrop-blur-md">
+              <div className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px] text-warning-soft-foreground backdrop-blur-md">
                 <Sparkles size={13} className="shrink-0" aria-hidden />
                 <span>
                   Not identified yet{matchReason ? `: ${matchReason}` : ""}
@@ -324,7 +324,7 @@ function DetailView({
                         size={15}
                         strokeWidth={1.4}
                         fill={index < Math.round((rating / 10) * 5) ? "currentColor" : "none"}
-                        className={index < Math.round((rating / 10) * 5) ? "text-[#f0c56a]" : "text-white/35"}
+                        className={index < Math.round((rating / 10) * 5) ? "text-warning" : "text-white/35"}
                       />
                     ))}
                   </span>
@@ -348,7 +348,7 @@ function DetailView({
                         onClick={() => setRating(flags.rating === star ? null : star)}
                         aria-label={`${selected ? "Remove" : "Set"} ${star}-star rating`}
                         title={`${star} star${star === 1 ? "" : "s"}`}
-                        className="rounded p-0.5 text-[#f0c56a] transition-transform active:scale-90"
+                        className="rounded p-0.5 text-warning transition-transform active:scale-90"
                       >
                         <Star
                           size={15}
@@ -516,10 +516,10 @@ function DetailView({
               </div>
 
               {refreshMutation.isError && (
-                <p className="mt-3 text-xs text-[#f0a8a8]">{refreshMutation.error.message}</p>
+                <p className="mt-3 text-xs text-danger-soft-foreground">{refreshMutation.error.message}</p>
               )}
               {refreshMutation.isSuccess && (
-                <p className="mt-3 text-xs text-[#a9dfb5]">Metadata refreshed from TMDB.</p>
+                <p className="mt-3 text-xs text-success-soft-foreground">Metadata refreshed from TMDB.</p>
               )}
             </div>
           </div>
@@ -826,6 +826,7 @@ function DetailView({
         initialTitle={item.name}
         initialYear={item.year}
         kind={item.kind}
+        currentTmdbId={item.tmdbId}
       />
 
       <Modal isOpen={deleteOpen} onOpenChange={setDeleteOpen}>

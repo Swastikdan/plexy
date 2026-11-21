@@ -13,6 +13,7 @@
 #import <OpenGL/gl3.h>
 #include <dlfcn.h>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <atomic>
 #include <mutex>
@@ -323,9 +324,13 @@ void MpvEmbed::destroyRenderContext() {
 void MpvEmbed::handleEvent(mpv_event *event) {
   switch (event->event_id) {
     case MPV_EVENT_LOG_MESSAGE: {
+      // libmpv reports recoverable problems (a malformed subtitle packet, a
+      // decoder fallback, a failed cover-art probe) at error level while
+      // playback continues. They belong in the console, not in the player's
+      // fatal dialog; only renderer/end-file failures below are user-facing.
       auto *message = (mpv_event_log_message *)event->data;
       if (message && message->level && strcmp(message->level, "error") == 0) {
-        postError(std::string(message->text ? message->text : "Playback error"));
+        fprintf(stderr, "[Plexy mpv] %s\n", message->text ? message->text : "Playback error");
       }
       break;
     }

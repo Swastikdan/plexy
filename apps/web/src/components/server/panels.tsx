@@ -405,15 +405,28 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
             {entry.tmdbId ? ` (TMDB ${entry.tmdbId})` : ""}. Choosing another result replaces and locks it.
           </p>
         )}
-        <Link
-          to="/title/$itemId"
-          params={{ itemId: String(entry.id) }}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-muted hover:underline"
-        >
-          Open title page <ExternalLink size={12} aria-hidden />
-        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <Link
+            to="/title/$itemId"
+            params={{ itemId: String(entry.id) }}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-muted hover:underline"
+          >
+            Open title page <ExternalLink size={12} aria-hidden />
+          </Link>
+          {entry.matchStatus === "matched" && entry.tmdbId != null && (
+            <Button
+              variant="secondary"
+              size="sm"
+              isDisabled={apply.isPending}
+              onPress={() => apply.mutate({ tmdbId: entry.tmdbId! })}
+            >
+              <Check size={13} />
+              Correct
+            </Button>
+          )}
+        </div>
       </div>
 
       <form
