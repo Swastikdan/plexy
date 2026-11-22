@@ -17,6 +17,13 @@
     "typecheck:tests": "tsc --noEmit -p tests/tsconfig.json",
     "apk": "cd ../.. && bun scripts/native/build-preview.ts"
   },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": ["expo-video"]
+      }
+    }
+  },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
     "@expo-google-fonts/geist": "^0.4.2",
