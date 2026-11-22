@@ -110,7 +110,7 @@ add("server ffmpeg", sizeMB(join(root, "dist/server/ffmpeg")), "MB", 62);
 add("server web bundle", sizeMB(join(root, "dist/server/web/index.html")), "MB", 2.15);
 
 // --- Desktop artifact ----------------------------------------------------------
-const appRoot = join(root, "dist/mac/mac-arm64/Plexy Beta.app");
+const appRoot = join(root, "dist/mac/mac-arm64/Plexy.app");
 if (existsSync(appRoot)) {
   const du = (path: string): number => {
     let total = 0;
@@ -138,7 +138,7 @@ if (existsSync(appRoot)) {
     add("desktop DMG", sizeMB(dmgs[0]), "MB", 230, "max", dmgs[0].split("/").pop());
   }
 } else {
-  missing.push("dist/mac/mac-arm64/Plexy Beta.app (run bun run build:desktop)");
+  missing.push("dist/mac/mac-arm64/Plexy.app (run bun run build:desktop)");
 }
 
 // --- Mobile artifact -----------------------------------------------------------

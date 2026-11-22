@@ -453,11 +453,7 @@ jobs:
 
           version="$PLEXY_RELEASE_VERSION"
           tag="v${version}-build.${PLEXY_BUILD_NUMBER}"
-          if [[ "$version" == *-beta.* ]]; then
-            release_title="Plexy Beta ${tag}"
-          else
-            release_title="Plexy ${tag}"
-          fi
+          release_title="Plexy ${tag}"
 
           mac_paragraph="_macOS assets are attached separately when Apple Silicon builds succeed._"
 

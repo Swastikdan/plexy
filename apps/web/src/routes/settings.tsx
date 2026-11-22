@@ -102,11 +102,16 @@ function SettingsRoute() {
     queryKey: ["account"],
     queryFn: () => accountRequest<{ user: AccountUser; device: AuthDevice }>("/me"),
   });
-  const status = useQuery(queries.serverStatus());
+  const status = useQuery({
+    ...queries.serverStatus(),
+    // Only the admin gate matters here. Without a narrowed selection, the
+    // uptime field would re-render the entire settings tree on every poll.
+    select: (data) => data.adminAvailable,
+  });
   const runtime = getClientRuntime();
   const role = me.data?.user.role ?? getSignedInUser()?.role;
   const admin =
-    role === "admin" && (status.data?.adminAvailable ?? runtime.canManageServer);
+    role === "admin" && (status.data ?? runtime.canManageServer);
 
   const serverTab = SERVER_TABS.some((entry) => entry.key === tab);
   const effectiveTab: SettingsTab = serverTab && !admin ? "overview" : (tab as SettingsTab);

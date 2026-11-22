@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { runMigrations, run, q, type Row } from "@/db";
 import { initConfig, save } from "@/config";
-import { hydrateMissingEpisodes } from "@/hydrate";
+import { hydrateItemMetadata, hydrateMissingEpisodes } from "@/hydrate";
 
 const originalFetch = globalThis.fetch;
 
@@ -29,6 +29,23 @@ describe("Episode Hydration (PRD 5.5)", () => {
             backdrop_sizes: ["w300", "w780", "w1280", "original"],
             still_sizes: ["w300", "original"],
             profile_sizes: ["w185", "h632", "original"],
+          },
+        });
+      }
+      if (url.includes("/movie/4242")) {
+        return json({
+          id: 4242,
+          title: "Zebra Movie",
+          overview: "A movie in a franchise.",
+          runtime: 120,
+          vote_average: 7.5,
+          release_date: "2024-01-01",
+          genres: [{ id: 18, name: "Drama" }],
+          poster_path: "/zebra-poster.jpg",
+          backdrop_path: "/zebra-backdrop.jpg",
+          belongs_to_collection: {
+            id: 7700,
+            name: "Zebra Collection",
           },
         });
       }
@@ -91,5 +108,22 @@ describe("Episode Hydration (PRD 5.5)", () => {
     expect(artwork.find((row) => row.kind === "thumb")?.url).toBe(
       "https://image.tmdb.org/t/p/w300/test_still.jpg",
     );
+  });
+
+  test("stores the TMDB franchise collection for a movie", async () => {
+    run("INSERT INTO libraries (id, name, type, language) VALUES (98, 'Movie Lib', 'movies', 'en-US')");
+    run(
+      `INSERT INTO items (id, library_id, kind, name, sort_title, match_status, tmdb_id, tmdb_type)
+       VALUES (910, 98, 'movie', 'Zebra Movie', 'zebra movie', 'matched', 4242, 'movie')`,
+    );
+
+    await hydrateItemMetadata(910, "movie", 4242);
+
+    const metadata = q<Row>(
+      "SELECT collection_id, collection_name, collection_checked_at FROM item_metadata WHERE item_id = 910",
+    ).get();
+    expect(metadata?.collection_id).toBe(7700);
+    expect(metadata?.collection_name).toBe("Zebra Collection");
+    expect(metadata?.collection_checked_at).toBeTruthy();
   });
 });

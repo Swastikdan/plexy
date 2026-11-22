@@ -54,6 +54,12 @@ const Detail = z.object({
   popularity: z.number().nullish(),
   poster_path: z.string().nullish(),
   backdrop_path: z.string().nullish(),
+  belongs_to_collection: z.object({
+    id: z.number(),
+    name: z.string().optional(),
+    poster_path: z.string().nullish(),
+    backdrop_path: z.string().nullish(),
+  }).nullish(),
   seasons: z.array(z.object({
     id: z.number(),
     name: z.string().optional(),
@@ -130,23 +136,21 @@ export interface ImageConfig {
 const CONFIG_CACHE_KEY = "tmdb/images/config";
 const imageConfigFlights = new Map<string, Promise<ImageConfig>>();
 
-/** Image base URL + sizes, from TMDB's configuration endpoint (24 h cache). */
+/** Image base URL + display sizes, from TMDB's configuration endpoint (24 h cache). */
 export async function imageConfig(): Promise<ImageConfig> {
-  const cfg = await getConfig();
-  const cacheKey = `${CONFIG_CACHE_KEY}/${cfg.imageQuality}`;
-  const active = imageConfigFlights.get(cacheKey);
+  const active = imageConfigFlights.get(CONFIG_CACHE_KEY);
   if (active) return active;
 
-  const request = loadImageConfig(cfg, cacheKey).catch((error) => {
-    imageConfigFlights.delete(cacheKey);
+  const request = loadImageConfig().catch((error) => {
+    imageConfigFlights.delete(CONFIG_CACHE_KEY);
     throw error;
   });
-  imageConfigFlights.set(cacheKey, request);
+  imageConfigFlights.set(CONFIG_CACHE_KEY, request);
   return request;
 }
 
-async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cacheKey: string): Promise<ImageConfig> {
-  const cached = await cacheGet(cacheKey);
+async function loadImageConfig(): Promise<ImageConfig> {
+  const cached = await cacheGet(CONFIG_CACHE_KEY);
   if (cached) {
     try {
       const parsed = JSON.parse(cached) as ImageConfig;
@@ -156,21 +160,20 @@ async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cache
     } catch { /* re-fetch */ }
   }
   const json = ImagesConfig.parse(await requestJson("/configuration", "", 10_000));
-  const wanted = cfg.imageQuality;
   const pSizes = json.images.poster_sizes;
   const bSizes = json.images.backdrop_sizes;
   const sSizes = json.images.still_sizes ?? ["w300", "original"];
   const prSizes = json.images.profile_sizes ?? ["h632", "w185", "original"];
   const lSizes = json.images.logo_sizes ?? ["w500", "original"];
 
-  // Poster: crisp w780 by default on high-res screens
-  const posterSize = (wanted && pSizes.includes(wanted))
-    ? wanted
-    : pSizes.includes("w780")
-      ? "w780"
-      : pSizes.includes("w500")
-        ? "w500"
-        : "original";
+  // These are the sizes stored in `artwork` / returned to matching views. The
+  // image route always caches the largest TMDB original and serves responsive
+  // derivatives from it, so this is only a sensible starting URL, not a cap.
+  const posterSize = pSizes.includes("w780")
+    ? "w780"
+    : pSizes.includes("w500")
+      ? "w500"
+      : "original";
 
   // Backdrop: 16:9 hero banner needs w1280 (or original/w780), NEVER low-res w300
   const backdropSize = bSizes.includes("w1280")
@@ -211,7 +214,7 @@ async function loadImageConfig(cfg: Awaited<ReturnType<typeof getConfig>>, cache
     profileSize,
     logoSize,
   };
-  await cachePut(cacheKey, "configuration", JSON.stringify(value), 24 * 3600_000);
+  await cachePut(CONFIG_CACHE_KEY, "configuration", JSON.stringify(value), 24 * 3600_000);
   return value;
 }
 

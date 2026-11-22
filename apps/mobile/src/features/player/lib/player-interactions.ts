@@ -42,6 +42,16 @@ export function pinchZoom(
     : startZoom;
 }
 
+/**
+ * A seek has "landed" when the player is within a few seconds of the request.
+ * Codecs and containers snap to keyframes, so an exact match is not expected.
+ */
+export const SEEK_LANDED_TOLERANCE_SECONDS = 5;
+
+export function seekLanded(target: number, actual: number): boolean {
+  return Math.abs(actual - target) <= SEEK_LANDED_TOLERANCE_SECONDS;
+}
+
 /** Seeking/rebuffering must never replace controls after the source has opened. */
 export function shouldShowPlayerLoading(
   status: string,

@@ -33,6 +33,7 @@ function summary(collectionId: number, itemId?: number): CollectionSummary {
     description: collection?.description == null ? null : String(collection.description),
     count,
     poster: posterFor(collectionId),
+    source: "custom",
     ...(itemId == null
       ? {}
       : {
@@ -42,6 +43,50 @@ function summary(collectionId: number, itemId?: number): CollectionSummary {
           ),
         }),
   };
+}
+
+/**
+ * TMDB collections are read from the movie metadata and exposed with negative
+ * ids (`-tmdbCollectionId`) so they can share the collection routes without
+ * ever colliding with a user-created positive id. They are read-only.
+ */
+function smartSummary(collectionId: number): CollectionSummary | null {
+  const row = q<Row>(
+    `SELECT MAX(m.collection_name) AS name, COUNT(*) AS count
+     FROM item_metadata m
+     JOIN items i ON i.id = m.item_id AND i.kind = 'movie'
+     WHERE m.collection_id = ?`,
+  ).get(collectionId);
+  if (!row) return null;
+  const poster = q<Row>(
+    `SELECT a.id FROM item_metadata m
+     JOIN artwork a ON a.item_id = m.item_id AND a.kind = 'poster'
+     WHERE m.collection_id = ?
+     ORDER BY COALESCE(m.popularity, 0) DESC, a.id
+     LIMIT 1`,
+  ).get(collectionId);
+  return {
+    id: -collectionId,
+    name: String(row.name ?? "Collection"),
+    description: null,
+    count: Number(row.count ?? 0),
+    poster: poster ? `/api/images/${Number(poster.id)}?w=500` : null,
+    source: "tmdb",
+  };
+}
+
+function smartSummaries(): CollectionSummary[] {
+  const rows = q<Row>(
+    `SELECT m.collection_id AS id
+     FROM item_metadata m
+     JOIN items i ON i.id = m.item_id AND i.kind = 'movie'
+     WHERE m.collection_id IS NOT NULL
+     GROUP BY m.collection_id
+     ORDER BY MIN(m.collection_name) COLLATE NOCASE`,
+  ).all();
+  return rows
+    .map((row) => smartSummary(Number(row.id)))
+    .filter((entry): entry is CollectionSummary => entry != null);
 }
 
 function signedIn(request: Request) {
@@ -57,8 +102,11 @@ export const collectionRoutes = new Elysia({ prefix: "/api", normalize: "typebox
     const itemId = query.itemId == null ? undefined : Number(query.itemId);
     if (itemId != null && !Number.isFinite(itemId)) return apiError("Invalid item id.");
     const rows = q<Row>("SELECT id FROM collections ORDER BY updated_at DESC, id DESC").all();
+    const custom = rows.map((row) => summary(Number(row.id), itemId));
     return {
-      collections: rows.map((row) => summary(Number(row.id), itemId)),
+      // The add-to-collection picker asks for a single item and must only offer
+      // writable, user-created collections. Browse surfaces get both kinds.
+      collections: itemId == null ? [...smartSummaries(), ...custom] : custom,
     };
   }, {
     query: t.Object({ itemId: t.Optional(t.Numeric()) }),
@@ -68,7 +116,19 @@ export const collectionRoutes = new Elysia({ prefix: "/api", normalize: "typebox
     const user = signedIn(request);
     if (!user) return apiError("Sign in required.", 401);
     const id = Number(params.id);
-    if (!Number.isInteger(id) || id <= 0) return apiError("Invalid collection id.");
+    if (!Number.isInteger(id) || id === 0) return apiError("Invalid collection id.");
+    if (id < 0) {
+      const collection = smartSummary(-id);
+      if (!collection) return apiError("Collection not found.", 404);
+      const rows = q<Row>(
+        `SELECT i.* FROM items i
+         JOIN item_metadata m ON m.item_id = i.id
+         WHERE m.collection_id = ? AND i.kind = 'movie'
+         ORDER BY COALESCE(m.popularity, 0) DESC, i.year, i.sort_title`,
+      ).all(-id);
+      const items = await attachArt(rows, request);
+      return { collection, items };
+    }
     if (!q<Row>("SELECT id FROM collections WHERE id = ?").get(id)) {
       return apiError("Collection not found.", 404);
     }

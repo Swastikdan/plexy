@@ -13,10 +13,12 @@ import { api, type Playability, type SubtitleTrack } from "@/client";
 import { probeBrowserCaps, type PlayPath } from "@plexy/api-client";
 import { queries } from "@/queries";
 import { useIsFullscreen } from "@/lib/use-fullscreen";
+import { useScreenWakeLock } from "@/lib/use-screen-wake-lock";
 import { getPlaybackPreferences } from "@/lib/playback-preferences";
 import { subtitleTrackLabel } from "@/lib/subtitle-label";
-import { segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import { creditsStart, segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "@/lib/asset-prefetch";
+import { NextEpisodeCard } from "@/components/player/next-episode-card";
 import { NativeWatchPage } from "@/components/native/native-watch";
 import {
   isNativeAvailable,
@@ -126,6 +128,8 @@ function BrowserWatchRoute() {
   const [isBuffering, setIsBuffering] = useState(true);
   const [showMediaError, setShowMediaError] = useState(false);
   const [sessionStopped, setSessionStopped] = useState(false);
+  const [playbackActive, setPlaybackActive] = useState(false);
+  useScreenWakeLock(playbackActive && !sessionStopped);
   const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryAttemptsRef = useRef(0);
@@ -174,9 +178,9 @@ function BrowserWatchRoute() {
   const appliedCueOffsetRef = useRef<number>(0);
   // Vertical placement of the caption track, in pixels (positive lifts it up).
   const [subtitlePosition, setSubtitlePosition] = useState<number>(0);
-  const [showNextPrompt, setShowNextPrompt] = useState(false);
+  const [upNext, setUpNext] = useState(false);
+  const [nextDismissed, setNextDismissed] = useState(false);
   const [activeSkipSegment, setActiveSkipSegment] = useState<SkipSegmentKind | null>(null);
-  const nextPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showBufferingAfterDelay = useCallback(() => {
     if (waitingSinceRef.current == null) waitingSinceRef.current = performance.now();
@@ -236,11 +240,12 @@ function BrowserWatchRoute() {
     recoveryTargetRef.current = null;
     setMediaRetryKey(0);
     setShowMediaError(false);
+    setPlaybackActive(false);
     setKnownDuration(null);
-    setShowNextPrompt(false);
+    setUpNext(false);
+    setNextDismissed(false);
     setActiveSkipSegment(null);
     autoAdvanceTriggeredRef.current = false;
-    if (nextPromptTimerRef.current) clearTimeout(nextPromptTimerRef.current);
     return () => {
       if (restartDebounceRef.current) {
         clearTimeout(restartDebounceRef.current);
@@ -776,6 +781,7 @@ function BrowserWatchRoute() {
   }, [recoverPlayback]);
 
   const handleMediaError = useCallback(() => {
+    setPlaybackActive(false);
     if (recoveryAttemptsRef.current > 0) {
       void api.reportPlaybackDiagnostic({
         kind: "error",
@@ -792,6 +798,7 @@ function BrowserWatchRoute() {
   }, [recoverPlayback]);
 
   const handleEnded = useCallback(() => {
+    setPlaybackActive(false);
     const next = play.data?.nextFileId;
     if (!next) return;
     const series = play.data?.next?.title;
@@ -805,7 +812,10 @@ function BrowserWatchRoute() {
     if (!next) return;
     const series = play.data?.next?.title;
     if (series) rememberNextSkip(series);
-    setShowNextPrompt(false);
+    // Close the up-next card immediately; the destination may take a moment to
+    // mount and the ended/credits overlay must not stay on top of the new file.
+    setNextDismissed(true);
+    setUpNext(false);
     void navigate({ to: "/watch/$fileId", params: { fileId: String(next) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
   }, [navigate, play.data?.nextFileId, play.data?.next?.title]);
 
@@ -818,7 +828,7 @@ function BrowserWatchRoute() {
     const series = play.data?.next?.title ?? play.data?.title ?? "";
     const skipKind = segmentAt(markers, video.currentTime);
     setActiveSkipSegment(skipKind);
-    // Auto-skip only intros/recaps. Credits are left to the ending button so
+    // Auto-skip only intros/recaps. Credits are left to the up-next card so
     // the viewer can still see the last scene before the next episode starts.
     if (skipKind && skipKind !== "outro" && series && segmentSkipCount(series, skipKind) >= 3) {
       const marker = markers?.[skipKind];
@@ -828,12 +838,14 @@ function BrowserWatchRoute() {
       }
     }
     if (!total || !play.data?.nextFileId) {
-      setShowNextPrompt(false);
+      setUpNext(false);
       return;
     }
-    const shouldShow = markers?.outro
-      ? video.currentTime >= markers.outro.start
-      : video.currentTime >= total - 90;
+    // A real credits marker is exact; without one, assume the last chunk of
+    // the runtime is credits rather than waiting for the final 90 seconds.
+    const creditsFrom = creditsStart(markers, total);
+    const inCredits = creditsFrom != null && video.currentTime >= creditsFrom;
+    setUpNext(inCredits);
     if (
       markers?.outro && video.currentTime >= markers.outro.start
       && series
@@ -845,18 +857,6 @@ function BrowserWatchRoute() {
       void navigate({ to: "/watch/$fileId", params: { fileId: String(play.data.nextFileId) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
       return;
     }
-    setShowNextPrompt((visible) => {
-      if (shouldShow && !visible) {
-        if (nextPromptTimerRef.current) clearTimeout(nextPromptTimerRef.current);
-        nextPromptTimerRef.current = setTimeout(() => setShowNextPrompt(false), 15_000);
-        return true;
-      }
-      if (!shouldShow && visible) {
-        if (nextPromptTimerRef.current) clearTimeout(nextPromptTimerRef.current);
-        return false;
-      }
-      return visible;
-    });
   }, [duration, hideBuffering, navigate, play.data?.nextFileId, play.data?.next?.title, play.data?.title, skipSegmentsQuery.data]);
 
   const skipCurrentSegment = useCallback(() => {
@@ -1224,28 +1224,16 @@ function BrowserWatchRoute() {
                   </button>
                 </div>
 
-                {play.data?.nextFileId && showNextPrompt && !activeSkipSegment && (
-                  <div className="pointer-events-none absolute bottom-24 right-6 z-40 flex flex-col items-end gap-2 sm:bottom-20 sm:right-8">
-                    {nextEpisode && (
-                      <div className="flex max-w-64 items-center gap-2 rounded-lg border border-white/15 bg-black/75 p-2 text-white shadow-xl backdrop-blur-md">
-                        {nextEpisode.poster && <img src={nextEpisode.poster} alt="" className="h-10 w-16 rounded-sm object-cover" />}
-                        <span className="min-w-0">
-                          <span className="block truncate text-xs font-semibold">{nextEpisode.subtitle}</span>
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(event) => { event.stopPropagation(); playNextEpisode(); }}
-                      aria-label="Play next episode"
-                      className={`pointer-events-auto inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black shadow-xl transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "opacity-80"}`}
-                    >
-                      <SkipForward size={17} /> Next episode
-                    </button>
-                  </div>
+                {nextEpisode && (
+                  <NextEpisodeCard
+                    next={nextEpisode}
+                    upNext={upNext}
+                    visible={!nextDismissed}
+                    onPlay={playNextEpisode}
+                  />
                 )}
 
-                {activeSkipSegment && (
+                {activeSkipSegment && !(activeSkipSegment === "outro" && nextEpisode) && (
                   <button
                     type="button"
                     onClick={(event) => { event.stopPropagation(); skipCurrentSegment(); }}
@@ -1270,11 +1258,18 @@ function BrowserWatchRoute() {
                     onLoadedData={handleLoadedData}
                     onEnded={handleEnded}
                     onTimeUpdate={handleTimeUpdate}
-                    onPlay={hideBuffering}
+                    onPlay={() => {
+                      setPlaybackActive(true);
+                      hideBuffering();
+                    }}
+                    onPause={() => setPlaybackActive(false)}
                     onWaiting={showBufferingAfterDelay}
                     onStalled={showBufferingAfterDelay}
                     onCanPlay={hideBuffering}
-                    onPlaying={hideBuffering}
+                    onPlaying={() => {
+                      setPlaybackActive(true);
+                      hideBuffering();
+                    }}
                     onError={handleMediaError}
                     className="h-full w-full object-contain"
                   >

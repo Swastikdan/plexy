@@ -147,8 +147,14 @@ function LibraryRoute() {
     [sorted, genre],
   );
 
-  const status = useQuery(queries.serverStatus());
-  const scan = status.data?.scan?.status === "running" ? status.data.scan : null;
+  const status = useQuery({
+    ...queries.serverStatus(),
+    // Scan state is the only thing this page needs from the polled status.
+    // Keeping the rest out of the observer avoids re-rendering the whole grid
+    // when only the uptime counter changes.
+    select: (data) => data.scan,
+  });
+  const scan = status.data?.status === "running" ? status.data : null;
 
   if (isLoading && !data) {
     return (
@@ -214,7 +220,14 @@ function LibraryRoute() {
 
   return (
     <Page className="pt-4 sm:pt-6">
-      <h1 className="sr-only">Library</h1>
+      <header className="pb-6">
+        <h1 className="font-sans text-[1.8rem] font-extrabold tracking-[-0.04em] text-foreground">
+          Library
+        </h1>
+        <p className="mt-1.5 text-[12px] text-muted">
+          Browse every movie and show in your libraries.
+        </p>
+      </header>
       <div className="space-y-9 pb-10 sm:space-y-10">
         <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
           {showKindSwitch && (
@@ -415,11 +428,15 @@ function LibraryRoute() {
               <div
                 className={cx(
                   "grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-x-4 gap-y-7 transition-opacity duration-150",
+                  // Keep the desktop grid on the shelf's poster size instead of
+                  // stretching the columns: the Row card is a 2:3 poster at
+                  // 16rem tall, so its width is 16rem × 2/3.
+                  "lg:grid-cols-[repeat(auto-fill,calc(16rem*2/3))]",
                   isFetching && "opacity-70",
                 )}
               >
                 {filtered.map((item) => (
-                  <Poster key={item.id} item={item} />
+                  <Poster key={item.id} item={item} sizes="(min-width: 1024px) 171px, 190px" className="aspect-[2/3] h-auto w-full" />
                 ))}
               </div>
               {(data?.total ?? filtered.length) > filtered.length && (

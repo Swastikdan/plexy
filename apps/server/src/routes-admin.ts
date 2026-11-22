@@ -162,7 +162,6 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
     if (body.metadataLanguage) patch.metadataLanguage = body.metadataLanguage;
     if (body.preferredAudioLanguage) patch.preferredAudioLanguage = body.preferredAudioLanguage;
     if (body.metadataRegion) patch.metadataRegion = body.metadataRegion;
-    if (body.imageQuality) patch.imageQuality = body.imageQuality;
     if (body.autoOptimize !== undefined) patch.autoOptimize = body.autoOptimize;
     if (body.skipSegmentsEnabled !== undefined) patch.skipSegmentsEnabled = body.skipSegmentsEnabled;
     if (body.optimizeMaxCacheGb !== undefined) patch.optimizeMaxCacheGb = body.optimizeMaxCacheGb;
@@ -198,7 +197,6 @@ export const adminRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
       metadataLanguage: t.Optional(t.String()),
       preferredAudioLanguage: t.Optional(t.String()),
       metadataRegion: t.Optional(t.String()),
-      imageQuality: t.Optional(t.Union([t.Literal("w342"), t.Literal("w500"), t.Literal("w780"), t.Literal("original")])),
       autoOptimize: t.Optional(t.Boolean()),
       skipSegmentsEnabled: t.Optional(t.Boolean()),
       optimizeMaxCacheGb: t.Optional(t.Numeric()),

@@ -9,7 +9,7 @@ import {
 } from "@/main/release-policy";
 const digest = "a".repeat(64);
 test("late Mac assets use GitHub's digest when the manifest lists only servers", () => {
-  const asset = { name: "Plexy.Beta-1.0.7-arm64.zip", digest: `sha256:${digest}` };
+  const asset = { name: "Plexy-1.0.7-arm64.zip", digest: `sha256:${digest}` };
   const serverManifest = `${"b".repeat(64)}  plexy-server-linux-x64.tar.gz\n`;
   expect(updateChecksum(asset, serverManifest)).toBe(digest);
   expect(updateChecksum(asset, null)).toBe(digest);
@@ -29,11 +29,11 @@ function release(tag: string, names: string[], withDigest = false): Release {
 }
 test("the actual 2036 version mismatch is rejected and matching desktop packages are selected", () => {
   const broken = release("v1.0.5-build.2036", [
-    "Plexy.Beta-1.0.2-arm64.zip",
+    "Plexy-1.0.2-arm64.zip",
     "SHA256SUMS",
   ]);
   const fixed = release("v1.0.5-build.2037", [
-    "Plexy.Beta-1.0.5-arm64.zip",
+    "Plexy-1.0.5-arm64.zip",
     "SHA256SUMS",
   ]);
   expect(desktopUpdateAssets(broken).verified).toBe(false);
@@ -41,7 +41,7 @@ test("the actual 2036 version mismatch is rejected and matching desktop packages
 });
 test("newer mobile-only releases cannot mask the latest desktop update", () => {
   const desktop = release("v1.0.5-build.2037", [
-    "Plexy.Beta-1.0.5-arm64.zip",
+    "Plexy-1.0.5-arm64.zip",
     "SHA256SUMS",
   ]);
   const mobile = release("v1.0.6-build.2038", [
@@ -54,26 +54,26 @@ test("newer mobile-only releases cannot mask the latest desktop update", () => {
 test("requires an integrity source and accepts GitHub's asset digest", () => {
   expect(
     selectDesktopRelease([
-      release("v1.0.5-build.2037", ["Plexy.Beta-1.0.5-arm64.zip"]),
+      release("v1.0.5-build.2037", ["Plexy-1.0.5-arm64.zip"]),
     ]),
   ).toBeNull();
   const signed = release(
     "v1.0.5-build.2037",
-    ["Plexy.Beta-1.0.5-arm64.zip"],
+    ["Plexy-1.0.5-arm64.zip"],
     true,
   );
   expect(selectDesktopRelease([signed])).toBe(signed);
 });
 test("checksum lookup handles local spaces and uploaded dots without using another asset's checksum", () => {
-  const sums = `${digest}  Plexy Beta-1.0.5-arm64.zip\r\n${"b".repeat(64)}  Plexy-mobile-v1.0.5-Android.apk`;
-  expect(checksumForAsset(sums, "Plexy.Beta-1.0.5-arm64.zip")).toBe(digest);
+  const sums = `${digest}  Plexy Desktop-1.0.5-arm64.zip\r\n${"b".repeat(64)}  Plexy-mobile-v1.0.5-Android.apk`;
+  expect(checksumForAsset(sums, "Plexy.Desktop-1.0.5-arm64.zip")).toBe(digest);
   expect(
     checksumForAsset(
-      `${digest} *Plexy.Beta-1.0.5-arm64.zip`,
-      "Plexy Beta-1.0.5-arm64.zip",
+      `${digest} *Plexy.Desktop-1.0.5-arm64.zip`,
+      "Plexy Desktop-1.0.5-arm64.zip",
     ),
   ).toBe(digest);
-  expect(checksumForAsset(sums, "Plexy.Beta-1.0.2-arm64.zip")).toBeUndefined();
+  expect(checksumForAsset(sums, "Plexy.Desktop-1.0.2-arm64.zip")).toBeUndefined();
 });
 test("stable versions and numbered builds sort correctly for old installed clients", () => {
   expect(

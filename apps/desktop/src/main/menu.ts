@@ -9,7 +9,9 @@ export function setupApplicationMenu(getMainWindow: () => BrowserWindow | null):
     ...(isMac
       ? [
           {
-            label: app.name,
+            // The packaged package name is the internal @plexy/desktop; keep the
+            // macOS menu on the product name.
+            label: "Plexy",
             submenu: [
               { role: "about" },
               { type: "separator" },

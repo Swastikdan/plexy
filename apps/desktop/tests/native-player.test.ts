@@ -97,6 +97,7 @@ function manifestResponse(overrides: Record<string, unknown> = {}): Response {
 function setup(
   manifest = manifestResponse(),
   fetch = async () => manifest.clone(),
+  onPlaybackActiveChange?: (active: boolean) => void,
 ) {
   const events: NativePlaybackEvent[] = [];
   const embeds: FakeEmbed[] = [];
@@ -107,6 +108,7 @@ function setup(
       libmpv: "/fake/libmpv.2.dylib",
       surface: () => ({ handle: Buffer.alloc(8), width: 1280, height: 820 }),
       fetch,
+      onPlaybackActiveChange,
       createEmbed: (libPath, onEvent) => {
         const embed = new FakeEmbed(libPath, onEvent);
         embeds.push(embed);
@@ -141,6 +143,32 @@ test("play attaches the in-window surface and loads the relayed original file", 
 
   await manager.dispose();
   expect(embed.destroyed).toBe(true);
+});
+
+test("display-sleep activity follows playback, pause and completion", async () => {
+  const active: boolean[] = [];
+  const { manager, embeds } = setup(
+    manifestResponse(),
+    async () => manifestResponse(),
+    (next) => active.push(next),
+  );
+  const { sessionId } = await manager.play({
+    fileId: 7,
+    serverUrl: "http://127.0.0.1:8765",
+    serverOrigin: "http://127.0.0.1:8765",
+  });
+  const embed = embeds[0]!;
+  expect(active).toEqual([true]);
+
+  embed.emit({ type: "property", name: "pause", value: true });
+  expect(active).toEqual([true, false]);
+  embed.emit({ type: "property", name: "pause", value: false });
+  expect(active).toEqual([true, false, true]);
+
+  embed.emit({ type: "event", name: "ended" });
+  expect(active).toEqual([true, false, true, false]);
+  await manager.stop(sessionId);
+  expect(active).toEqual([true, false, true, false]);
 });
 
 test("mpv property events become player events", async () => {

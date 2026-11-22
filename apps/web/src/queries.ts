@@ -52,13 +52,14 @@ export const queries = {
       queryKey: ["server-status"],
       queryFn: api.serverStatus,
       refetchInterval: (q) => {
-        // Poll faster while a scan or preparation job is running. A light idle
-        // cadence keeps background scans from leaving stale screens behind;
-        // the status call is one cheap local read.
+        // Poll fast only while a scan or preparation job is running. The idle
+        // cadence is deliberately slow: the response advances uptimeSeconds on
+        // every poll, so a fast idle loop is enough to re-render every
+        // subscribed screen even when a quiet server has nothing new to show.
         const data = q.state.data;
         if (data?.scan?.status === "running") return 1500;
         if (data?.optimizer?.running || (data?.optimizer?.queued ?? 0) > 0) return 2500;
-        return 5_000;
+        return 20_000;
       },
     }),
 

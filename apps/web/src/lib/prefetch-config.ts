@@ -65,7 +65,11 @@ export function usePrefetchRuntime(): void {
  * whenever a scan finishes. The player route is skipped by `syncLibrary`.
  */
 export function useLibrarySync(): void {
-  const { data: status } = useQuery({ ...queries.serverStatus(), staleTime: 5_000 });
+  const { data: scanStatus } = useQuery({
+    ...queries.serverStatus(),
+    staleTime: 5_000,
+    select: (status) => status.scan?.status ?? null,
+  });
   const previousScan = useRef<string | null>(null);
 
   useEffect(() => {
@@ -74,10 +78,9 @@ export function useLibrarySync(): void {
   }, []);
 
   useEffect(() => {
-    const scan = status?.scan?.status ?? null;
-    if (previousScan.current === "running" && scan !== "running") {
+    if (previousScan.current === "running" && scanStatus !== "running") {
       void syncLibrary();
     }
-    previousScan.current = scan;
-  }, [status?.scan?.status]);
+    previousScan.current = scanStatus ?? null;
+  }, [scanStatus]);
 }

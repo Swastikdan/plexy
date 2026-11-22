@@ -64,6 +64,7 @@ import { bufferOptionsForDuration } from "./lib/player-buffer";
 import {
   HOLD_TO_BOOST_MS,
   SEEK_BURST_MS,
+  seekLanded,
   shouldShowPlayerLoading,
 } from "./lib/player-interactions";
 import { usePlayerSubtitles } from "./hooks/use-player-subtitles";
@@ -309,6 +310,8 @@ export function PlaybackScreen({
   const offset = useRef(0);
   const currentPosition = useRef(0);
   const pendingSeek = useRef<{ target: number; until: number } | null>(null);
+  const seekWatchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seekUnsupported = useRef(false);
   const scrubRef = useRef(scrub);
   useLayoutEffect(() => { scrubRef.current = scrub; }, [scrub]);
   const durationRef = useRef(duration);
@@ -462,6 +465,60 @@ export function PlaybackScreen({
   const finishSleepTimer = sleep.finish;
   useLayoutEffect(() => { endCastSleepTimer.current = finishSleepTimer; }, [finishSleepTimer]);
   const seekBurst = useRef({ seconds: 0, at: 0 });
+  // Some containers (notably Matroska files without a usable cue index) make
+  // ExoPlayer snap back to the start instead of honouring a seek. Check where
+  // the player actually landed; retry once with a nearest-keyframe tolerance,
+  // then tell the viewer instead of leaving the timeline on a false position.
+  const verifySeek = useEventCallback((target: number, attempt: number) => {
+    const check = (nextAttempt: number) => {
+      if (seekWatchdog.current) clearTimeout(seekWatchdog.current);
+      seekWatchdog.current = setTimeout(() => {
+        seekWatchdog.current = null;
+        if (!mounted.current || casting.current) return;
+        let actual = 0;
+        try {
+          actual = player.currentTime;
+        } catch {
+          return;
+        }
+        if (seekLanded(target, actual)) {
+          try {
+            updateNativePlayer(player, "seekTolerance", {
+              toleranceBefore: 0.5,
+              toleranceAfter: 0.5,
+            });
+          } catch {
+            /* The player was released while the check was pending. */
+          }
+          return;
+        }
+        if (nextAttempt === 0) {
+          try {
+            updateNativePlayer(player, "seekTolerance", {
+              toleranceBefore: 3,
+              toleranceAfter: 3,
+            });
+          } catch {
+            /* Fall through to the retry below. */
+          }
+          pendingSeek.current = { target, until: Date.now() + 2500 };
+          updateNativePlayer(player, "currentTime", target);
+          check(1);
+          return;
+        }
+        pendingSeek.current = null;
+        currentPosition.current = actual;
+        setPosition(actual);
+        if (!seekUnsupported.current) {
+          seekUnsupported.current = true;
+          setMessage(
+            "This video’s format can’t seek on this device. Playback will continue from where it is.",
+          );
+        }
+      }, nextAttempt === 0 ? 1800 : 2200);
+    };
+    check(attempt);
+  });
   const seek = useEventCallback((seconds: number) => {
     const target = Math.max(
       0,
@@ -481,6 +538,7 @@ export function PlaybackScreen({
     updateNativePlayer(player, "currentTime", target);
     currentPosition.current = target;
     setPosition(target);
+    verifySeek(target, 0);
   });
   const seekWithFeedback = useEventCallback((seconds: number) => {
     const now = Date.now();
@@ -502,6 +560,7 @@ export function PlaybackScreen({
   useEffect(
     () => () => {
       if (seekNoticeTimer.current) clearTimeout(seekNoticeTimer.current);
+      if (seekWatchdog.current) clearTimeout(seekWatchdog.current);
     },
     [],
   );
@@ -520,8 +579,16 @@ export function PlaybackScreen({
         setBufferedPosition(Math.max(0, e.bufferedPosition));
         if (scrubRef.current != null) return;
         const pending = pendingSeek.current;
-        if (pending && Date.now() < pending.until && Math.abs(value - pending.target) > 2) return;
-        pendingSeek.current = null;
+        if (pending && Date.now() < pending.until && !seekLanded(pending.target, value)) return;
+        if (pending && seekLanded(pending.target, value)) {
+          pendingSeek.current = null;
+          if (seekWatchdog.current) {
+            clearTimeout(seekWatchdog.current);
+            seekWatchdog.current = null;
+          }
+        } else {
+          pendingSeek.current = null;
+        }
         currentPosition.current = value;
         setPosition(value);
         if (Date.now() - lastSaved.current > 5000) {
@@ -561,10 +628,18 @@ export function PlaybackScreen({
         setHasLoaded(true);
         loadAudioTracks(e.availableAudioTracks);
         loadSubtitleTracks(e.availableSubtitleTracks);
-        const value = Math.max(0, chosenStart.current - offset.current);
+        // A source can be reloaded while a seek is in flight (for example after
+        // a decoder restart). Keep the requested target instead of falling back
+        // to the initial resume point and looking like playback restarted.
+        const pending = pendingSeek.current;
+        const start =
+          pending && Date.now() < pending.until
+            ? pending.target
+            : chosenStart.current;
+        const value = Math.max(0, start - offset.current);
         updateNativePlayer(player, "currentTime", value);
-        currentPosition.current = chosenStart.current;
-        setPosition(chosenStart.current);
+        currentPosition.current = start;
+        setPosition(start);
         if (!durationRef.current && e.duration > 0) setDuration(e.duration);
         initialized.current = true;
         setEnded(false);
@@ -597,6 +672,20 @@ export function PlaybackScreen({
     if (!started || choice.path === "unsupported") return;
     let live = true;
     initialized.current = false;
+    pendingSeek.current = null;
+    seekUnsupported.current = false;
+    if (seekWatchdog.current) {
+      clearTimeout(seekWatchdog.current);
+      seekWatchdog.current = null;
+    }
+    try {
+      updateNativePlayer(player, "seekTolerance", {
+        toleranceBefore: 0.5,
+        toleranceAfter: 0.5,
+      });
+    } catch {
+      /* The player is being recreated. */
+    }
     offset.current = 0;
     chosenStart.current = choice.start;
     const uri = externalSource ?? api.stream(manifest.fileId);

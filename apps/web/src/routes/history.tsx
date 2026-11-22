@@ -64,13 +64,7 @@ function HistoryRoute() {
     <Page className="pt-4 sm:pt-6">
       <header className="flex flex-wrap items-end justify-between gap-4 pb-6">
         <div>
-          <div className="flex items-center gap-2 text-muted">
-            <Clock3 size={15} aria-hidden />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
-              Your library
-            </span>
-          </div>
-          <h1 className="mt-2 font-sans text-[1.8rem] font-extrabold tracking-[-0.04em] text-foreground">
+          <h1 className="font-sans text-[1.8rem] font-extrabold tracking-[-0.04em] text-foreground">
             History
           </h1>
           <p className="mt-1.5 text-[12px] text-muted">
@@ -108,7 +102,7 @@ function HistoryRoute() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-x-4 gap-y-7">
           {items.map((item) => (
             <div key={item.id} className="group relative">
-              <Poster item={item} />
+              <Poster item={item} sizes="(min-width: 1280px) 220px, (min-width: 768px) 200px, 180px" />
               <div className="flex items-center justify-between gap-2 pr-1 pt-0.5">
                 <p className="text-[10px] text-muted">{watchedLabel(item.watchedAt)}</p>
                 <button

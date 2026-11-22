@@ -248,7 +248,7 @@ administrative trust layer (sessions, stats, backups), not the transcoding pipel
 
 - Server status: version, uptime, bind address, LAN URLs, restart-required, scan state, recent scans, optimizer
   state, setup state (`routes-admin.ts:96-139`).
-- Settings: metadata language/region, image size, audio language, log level, LAN bind, auto-optimize, skip
+- Settings: metadata language/region, audio language, log level, LAN bind, auto-optimize, skip
   markers, optimizer cache size/storage, replace-original, Trash, probe concurrency, TMDB token, prefetch
   limits (`routes-admin.ts:140-204`).
 - Libraries: list with counts, create/update/delete, folder browser, scan one/all, SSE progress

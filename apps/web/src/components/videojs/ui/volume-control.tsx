@@ -3,7 +3,7 @@
 import { Button, Slider, Tooltip } from '@heroui/react';
 import { selectVolume } from '@videojs/core/dom';
 import { usePlayer } from '@videojs/react/video';
-import { Volume1, VolumeX } from 'lucide-react';
+import { VolumeX } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
 import { cn } from '@/lib/resolve-class-name';
@@ -17,6 +17,41 @@ const iconClass = cn(
   'transition-opacity duration-media-base ease-out'
 );
 
+/** Speaker with three waves so the current loudness is readable at a glance. */
+function VolumeLevelIcon({ level }: { level: 0 | 1 | 2 | 3 }) {
+  if (level === 0) return <VolumeX aria-hidden className={iconClass} />;
+
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={iconClass}
+    >
+      <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+      <path
+        d="M16 9a5 5 0 0 1 0 6"
+        opacity={level >= 1 ? 1 : 0.2}
+        className="transition-opacity duration-media-base ease-out"
+      />
+      <path
+        d="M19.364 18.364a9 9 0 0 0 0-12.728"
+        opacity={level >= 2 ? 1 : 0.2}
+        className="transition-opacity duration-media-base ease-out"
+      />
+      <path
+        d="M22.2 21.4a12.8 12.8 0 0 0 0-18.8"
+        opacity={level >= 3 ? 1 : 0.2}
+        className="transition-opacity duration-media-base ease-out"
+      />
+    </svg>
+  );
+}
+
 // Keep the mute button anchored and reveal the slider over the time display.
 // Touch devices show the expanded control so the slider can be used directly.
 export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) {
@@ -26,10 +61,25 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
 
   const muted = volume.muted;
   const percent = muted ? 0 : Math.round(volume.volume * 100);
+  const silent = muted || percent === 0;
+  const level: 0 | 1 | 2 | 3 = silent ? 0 : percent <= 33 ? 1 : percent <= 66 ? 2 : 3;
 
   const setPercent = (next: number) => {
     if (volume.muted && next > 0) volume.setMuted(false);
     volume.setVolume(next / 100);
+  };
+
+  const toggleMute = () => {
+    if (muted) {
+      volume.setMuted(false);
+      if (volume.volume <= 0.001) volume.setVolume(0.5);
+      return;
+    }
+    if (volume.volume <= 0.001) {
+      volume.setVolume(0.5);
+      return;
+    }
+    volume.setMuted(true);
   };
 
   const button = (
@@ -37,8 +87,8 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
       type="button"
       isIconOnly
       variant="tertiary"
-      aria-label={muted ? 'Unmute' : 'Mute'}
-      onPress={() => volume.setMuted(!volume.muted)}
+      aria-label={silent ? 'Unmute' : 'Mute'}
+      onPress={toggleMute}
       className={cn(
         'grid! size-media-control! shrink-0 place-items-center rounded-media-control p-0! text-inherit',
         '[--button-bg:transparent] [--button-bg-hover:transparent] [--button-bg-pressed:transparent]',
@@ -46,14 +96,7 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
         '[&_svg]:m-0!'
       )}
     >
-      <VolumeX
-        aria-hidden
-        className={cn(iconClass, muted ? 'opacity-100' : 'opacity-0')}
-      />
-      <Volume1
-        aria-hidden
-        className={cn(iconClass, muted ? 'opacity-0' : 'opacity-100')}
-      />
+      <VolumeLevelIcon level={level} />
     </Button>
   );
 

@@ -125,6 +125,8 @@ export interface CollectionSummary {
   description: string | null;
   count: number;
   poster: string | null;
+  /** User-created collections are editable; TMDB collections are automatic. */
+  source?: "custom" | "tmdb";
   /** Present when the request included `itemId`. */
   contains?: boolean;
 }

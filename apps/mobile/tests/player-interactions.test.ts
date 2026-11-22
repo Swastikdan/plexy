@@ -3,6 +3,8 @@ import {
   clampZoom,
   doubleTapSeek,
   pinchZoom,
+  seekLanded,
+  SEEK_LANDED_TOLERANCE_SECONDS,
   SEEK_SECONDS,
 } from "@/features/player/lib/player-interactions";
 
@@ -35,6 +37,15 @@ test("a new pinch starts from the viewer's current manual zoom and stays within 
   expect(clampZoom(0.2)).toBe(0.75);
   expect(clampZoom(4)).toBe(3);
   expect(clampZoom(1.05 + 0.05)).toBe(1.1);
+});
+
+test("seek checks accept keyframe snapping but detect a restart from zero", () => {
+  expect(SEEK_LANDED_TOLERANCE_SECONDS).toBe(5);
+  expect(seekLanded(1200, 1202)).toBe(true);
+  expect(seekLanded(1200, 1197)).toBe(true);
+  // An unseekable file snaps back to its first frame instead.
+  expect(seekLanded(1200, 0)).toBe(false);
+  expect(seekLanded(1200, 600)).toBe(false);
 });
 
 test("only the initial open uses a blocking spinner; seeking keeps controls", async () => {

@@ -49,11 +49,11 @@ export function upgradeArtworkUrl(url: string | null, kind: string): string | nu
   return url;
 }
 
-const ART_WIDTH: Record<string, number> = { poster: 500, backdrop: 1600, thumb: 300, logo: 800 };
-
-/** Request exactly the pixels a card renders, not the full-size original. */
-function sizedImageUrl(artworkId: number, kind: string): string {
-  return `/api/images/${artworkId}?w=${ART_WIDTH[kind] ?? 500}`;
+/** Artwork route for a row. The client asks for the resolution it renders. */
+function artworkUrl(artworkId: number, kind: string): string {
+  // Logos are not part of the responsive poster/backdrop pipeline yet; keep
+  // them at a crisp hero width instead of shipping multi-megabyte originals.
+  return kind === "logo" ? `/api/images/${artworkId}?w=1600` : `/api/images/${artworkId}`;
 }
 
 /**
@@ -116,7 +116,7 @@ export async function attachArt(rows: Row[], request: Request): Promise<ItemCard
     const id = Number(a.item_id);
     const m = art.get(id) ?? {};
     const kind = String(a.kind);
-    m[kind] = sizedImageUrl(Number(a.id), kind);
+    m[kind] = artworkUrl(Number(a.id), kind);
     art.set(id, m);
   }
   const meta = new Map(metaRows.map((m) => [Number(m.item_id), m]));
@@ -763,7 +763,7 @@ export const catalogRoutes = new Elysia({ prefix: "/api", normalize: "typebox" }
     const logoRow = q<Row>(
       "SELECT id, source, url FROM artwork WHERE item_id = ? AND kind = 'logo' LIMIT 1",
     ).get(id);
-    const logo = logoRow ? `/api/images/${Number(logoRow.id)}` : null;
+    const logo = logoRow ? `/api/images/${Number(logoRow.id)}?w=1600` : null;
 
     return Response.json({
       item: card,

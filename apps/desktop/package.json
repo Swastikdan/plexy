@@ -1,7 +1,7 @@
 {
   "name": "@plexy/desktop",
   "version": "1.0.8",
-  "description": "Plexy Beta desktop app for macOS",
+  "description": "Plexy desktop app for macOS",
   "author": "Plexy",
   "private": true,
   "main": "dist/main.cjs",

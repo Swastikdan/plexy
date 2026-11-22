@@ -81,7 +81,7 @@ function PersonRoute() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(142px,1fr))] sm:gap-x-4 sm:gap-y-6 lg:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]">
           {items.map((item) => (
-            <Poster key={item.id} item={item} className="aspect-[2/3] w-full" />
+            <Poster key={item.id} item={item} sizes="(min-width: 1024px) 158px, (min-width: 640px) 142px, 112px" className="aspect-[2/3] w-full" />
           ))}
         </div>
       )}

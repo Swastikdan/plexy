@@ -50,6 +50,7 @@ import { beginSession } from "./sessions";
 import {
   trickplayFilePath, trickplayFrame, trickplayVtt, trickplayView,
 } from "./trickplay";
+import type { ArtworkMeta } from "./artwork";
 
 // --- helpers -----------------------------------------------------------------
 
@@ -216,14 +217,19 @@ function episodeSubtitle(name: string, season: number, episode: number): string 
   return name.toUpperCase().startsWith(label) ? name : `${label} · ${name}`;
 }
 
-/** Poster/thumb for one item, sized for the player's up-next card. */
-function itemPoster(itemId: number): string | null {
-  const art = q<{ id: number }, [number]>(
+/**
+ * Poster/thumb for one item, sized for the player's up-next card. Episodes
+ * sometimes carry no still of their own, so the series artwork is a better
+ * answer than an empty card.
+ */
+function itemPoster(itemId: number, fallbackItemId: number | null = null): string | null {
+  const pick = (id: number) => q<{ id: number }, [number]>(
     `SELECT id FROM artwork
-     WHERE item_id = ? AND kind IN ('thumb','poster')
-     ORDER BY CASE kind WHEN 'thumb' THEN 0 ELSE 1 END, id
+     WHERE item_id = ? AND kind IN ('thumb','poster','backdrop')
+     ORDER BY CASE kind WHEN 'thumb' THEN 0 WHEN 'poster' THEN 1 ELSE 2 END, id
      LIMIT 1`,
-  ).get(itemId);
+  ).get(id);
+  const art = pick(itemId) ?? (fallbackItemId == null ? null : pick(fallbackItemId));
   return art ? `/api/images/${Number(art.id)}?w=300` : null;
 }
 
@@ -291,7 +297,10 @@ function itemContext(row: Row): ItemContext {
           Number(nextRow.season_number ?? 0),
           Number(nextRow.episode_number ?? 0),
         ),
-        poster: itemPoster(Number(nextRow.item_id)),
+        poster: itemPoster(
+          Number(nextRow.item_id),
+          item.parent_id == null ? null : Number(item.parent_id),
+        ),
         seasonNumber: nextRow.season_number == null ? null : Number(nextRow.season_number),
         episodeNumber: nextRow.episode_number == null ? null : Number(nextRow.episode_number),
       }
@@ -308,6 +317,90 @@ function itemContext(row: Row): ItemContext {
     parentItemId: Number(item.parent_id),
     parentPublicId: parent?.public_id ? String(parent.public_id) : null,
   };
+}
+
+// --- artwork responses -------------------------------------------------------
+
+/** Highest display width the server will synthesize; `original` bypasses it. */
+const MAX_IMAGE_WIDTH = 3840;
+
+type ArtworkWidth = number | "original";
+
+/**
+ * Parse the `w` query. `original` (and an omitted value) means "the file the
+ * server stored", not a resized copy, so posters and backdrops can render at
+ * their true maximum resolution on high-DPI displays.
+ */
+function parseArtworkWidth(raw: string | undefined, fallback: ArtworkWidth): ArtworkWidth {
+  if (!raw) return fallback;
+  if (raw.trim().toLowerCase() === "original") return "original";
+  const value = Math.round(Number(raw));
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.min(Math.max(value, 32), MAX_IMAGE_WIDTH);
+}
+
+function artworkMime(format: string): string {
+  const value = format.toLowerCase();
+  if (value.includes("png")) return "image/png";
+  if (value.includes("webp")) return "image/webp";
+  if (value.includes("avif")) return "image/avif";
+  if (value.includes("gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+function artworkResponse(path: string, format: string, cacheControl: string): Response {
+  return new Response(Bun.file(path), {
+    headers: { "Content-Type": artworkMime(format), "Cache-Control": cacheControl },
+  });
+}
+
+async function serveCachedArtwork(meta: ArtworkMeta, targetWidth: ArtworkWidth): Promise<Response> {
+  const cache = "public, max-age=31536000, immutable";
+  if (targetWidth === "original" || targetWidth >= meta.width) {
+    return artworkResponse(meta.originalPath, meta.format, cache);
+  }
+  const { getOrCreateDerivative } = await import("./artwork");
+  const derivedFile = await getOrCreateDerivative(meta.originalPath, targetWidth);
+  return artworkResponse(
+    derivedFile,
+    derivedFile.endsWith(".webp") ? "webp" : meta.format,
+    cache,
+  );
+}
+
+function artworkPlaceholder(kind: string, width: ArtworkWidth): Response {
+  const size = width === "original" ? (kind === "backdrop" ? 1600 : 500) : width;
+  const landscape = kind === "backdrop" || kind === "thumb";
+  const height = Math.round(size * (landscape ? 0.5625 : 1.5));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${height}" viewBox="0 0 ${size} ${height}">
+      <rect width="100%" height="100%" fill="#16181d"/>
+    </svg>`;
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "public, max-age=60",
+    },
+  });
+}
+
+/** Fetch TMDB's small rendition when the original is not ready or unavailable. */
+async function fetchArtworkPreview(remote: string, cacheControl: string): Promise<Response | null> {
+  const response = await fetch(remote, {
+    headers: { "User-Agent": "Plexy/1.0" },
+    signal: AbortSignal.timeout(2500),
+  }).catch(() => null);
+  if (!response?.ok) return null;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType && !contentType.startsWith("image/")) return null;
+  const body = await response.arrayBuffer();
+  if (!body.byteLength) return null;
+  return new Response(body, {
+    headers: {
+      "Content-Type": contentType || "image/jpeg",
+      "Cache-Control": cacheControl,
+    },
+  });
 }
 
 // --- routes ------------------------------------------------------------------
@@ -647,60 +740,78 @@ export const mediaRoutes = new Elysia({ prefix: "/api", normalize: "typebox" })
   /**
    * Serve artwork locally. Local sidecars are served directly; TMDB images are
    * served from locally cached originals and Bun.Image-generated derivatives
-   * so artwork remains available even when completely offline. `?w=` asks for
-   * a display-sized derivative (posters 500, backdrops 1600, thumbs 300).
+   * so artwork remains available even when completely offline.
+   *
+   * `?w=original` (or no `w`) serves the highest-resolution original. Passing
+   * `?w=<pixels>&preview=1` asks for a small placeholder that can be shown
+   * immediately while the original is still downloading.
    */
   .get("/images/:artworkId", async (ctx) => {
     const row = q<Row, [number]>("SELECT id, kind, source, url FROM artwork WHERE id = ?")
       .get(Number(ctx.params.artworkId));
     if (!row) return apiError("Not found", 404);
 
-    const widthParam = ctx.query.w ? Number(ctx.query.w) : null;
-    const defaultWidth = row.kind === "backdrop" ? 1600 : row.kind === "thumb" ? 300 : 500;
-    const targetWidth = widthParam && widthParam > 50 && widthParam <= 3840 ? widthParam : defaultWidth;
+    const kind = String(row.kind);
+    const preview = ctx.query.preview === "1" || ctx.query.preview === "true";
+    const targetWidth = parseArtworkWidth(
+      ctx.query.w,
+      preview ? (kind === "backdrop" ? 1600 : 500) : "original",
+    );
 
     if (row.source === "local") {
       const path = String(row.url);
       try {
         const st = await stat(path);
         if (!st.isFile()) throw new Error("not a file");
-        const ext = path.toLowerCase().match(/\.(jpe?g|png|webp|avif|gif)$/)?.[1] ?? "";
-        const mime = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", avif: "image/avif", gif: "image/gif" }[ext] ?? "image/jpeg";
-        return new Response(Bun.file(path), {
-          headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
-        });
+        if (targetWidth === "original") {
+          const ext = path.toLowerCase().match(/\.(jpe?g|png|webp|avif|gif)$/)?.[1] ?? "jpg";
+          return artworkResponse(path, ext, "public, max-age=86400");
+        }
+        const { getOrCreateDerivative } = await import("./artwork");
+        const derivedFile = await getOrCreateDerivative(path, targetWidth, String(Math.round(st.mtimeMs)));
+        const derivedFormat = derivedFile.endsWith(".webp")
+          ? "webp"
+          : derivedFile.toLowerCase().match(/\.(jpe?g|png|webp|avif|gif)$/)?.[1] ?? "jpg";
+        return artworkResponse(derivedFile, derivedFormat, "public, max-age=86400");
       } catch {
         return apiError("Not found", 404);
       }
     }
 
-    const { cacheArtworkOriginal, getOrCreateDerivative } = await import("./artwork");
-    const meta = await cacheArtworkOriginal(String(row.url));
-    if (meta) {
-      const derivedFile = await getOrCreateDerivative(meta.originalPath, targetWidth);
-      return new Response(Bun.file(derivedFile), {
-        headers: {
-          "Content-Type": derivedFile.endsWith(".webp") ? "image/webp" : "image/jpeg",
-          "Cache-Control": "public, max-age=31536000, immutable",
-        },
-      });
+    const {
+      cacheArtworkOriginal,
+      getCachedArtworkOriginal,
+      previewImageUrl,
+    } = await import("./artwork");
+
+    const cached = await getCachedArtworkOriginal(String(row.url));
+    if (cached) return serveCachedArtwork(cached, targetWidth);
+
+    if (preview) {
+      // A first paint must never wait on a multi-megabyte original. Proxy
+      // TMDB's small rendition now; the full-size request fills the local
+      // original cache and every later view is served from disk.
+      const small = await fetchArtworkPreview(
+        previewImageUrl(String(row.url), kind),
+        "public, max-age=86400",
+      );
+      return small ?? artworkPlaceholder(kind, targetWidth);
     }
 
-    const isBackdrop = row.kind === "backdrop";
-    const h = isBackdrop ? Math.round(targetWidth * 0.5625) : Math.round(targetWidth * 1.5);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${h}" viewBox="0 0 ${targetWidth} ${h}">
-      <rect width="100%" height="100%" fill="#16181d"/>
-    </svg>`;
-    return new Response(svg, {
-      status: 200,
-      headers: {
-        "Content-Type": "image/svg+xml",
-        "Cache-Control": "public, max-age=60",
-      },
-    });
+    const meta = await cacheArtworkOriginal(String(row.url));
+    if (meta) return serveCachedArtwork(meta, targetWidth);
+
+    // The original could not be stored (offline, rejected, or too large).
+    // A low-resolution rendition still beats a blank card; retry the original
+    // soon instead of caching this fallback as immutable.
+    const fallback = await fetchArtworkPreview(
+      previewImageUrl(String(row.url), kind),
+      "public, max-age=300",
+    );
+    return fallback ?? artworkPlaceholder(kind, targetWidth);
   }, {
     params: t.Object({ artworkId: t.Numeric() }),
-    query: t.Object({ w: t.Optional(t.Numeric()) }),
+    query: t.Object({ w: t.Optional(t.String()), preview: t.Optional(t.String()) }),
   })
 
   /** Cast & crew profile photos served locally from originals/derived cache. */

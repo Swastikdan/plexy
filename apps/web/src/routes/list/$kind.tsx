@@ -46,13 +46,7 @@ function ListRoute() {
   return (
     <Page className="pt-4 sm:pt-6">
       <header className="pb-6">
-        <div className="flex items-center gap-2 text-muted">
-          <Icon size={15} aria-hidden />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
-            Your library
-          </span>
-        </div>
-        <h1 className="mt-2 font-sans text-[1.8rem] font-extrabold tracking-[-0.04em] text-foreground">
+        <h1 className="font-sans text-[1.8rem] font-extrabold tracking-[-0.04em] text-foreground">
           {meta.title}
         </h1>
         <p className="mt-1.5 text-[12px] text-muted">
@@ -74,7 +68,7 @@ function ListRoute() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-x-4 gap-y-7">
           {items.map((item) => (
             <div key={item.id} className="relative">
-              <Poster item={item} />
+              <Poster item={item} sizes="(min-width: 1280px) 220px, (min-width: 768px) 200px, 180px" />
               {kind === "hidden" && (
                 <button
                   type="button"

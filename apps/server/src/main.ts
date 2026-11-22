@@ -192,7 +192,7 @@ async function main(): Promise<void> {
     run(`UPDATE items SET match_status = 'matched', matched_by = 'series', tmdb_type = 'tv', score = 1
          WHERE kind = 'episode' AND match_status != 'matched'
            AND parent_id IN (SELECT id FROM items WHERE kind = 'series' AND match_status = 'matched')`);
-    run(`DELETE FROM tmdb_cache WHERE key = 'tmdb/images/config'`);
+    run(`DELETE FROM tmdb_cache WHERE key = 'tmdb/images/config' OR key LIKE 'tmdb/images/config/%'`);
     // Self-healing: reset any failed analysis files where video_codec is missing
     run(
       `UPDATE media_files SET analysis_status = 'pending', analysis_error = NULL WHERE (analysis_status = 'analysis_failed' OR analysis_status = 'pending') AND video_codec IS NULL`,
@@ -247,6 +247,14 @@ async function main(): Promise<void> {
       .then(({ backfillCertifications }) => backfillCertifications(100))
       .catch(() => {});
   }, 7_000);
+
+  // Movies matched before automatic collections existed can join their TMDB
+  // franchise group without waiting for a full rescan.
+  setTimeout(() => {
+    void import("./hydrate")
+      .then(({ backfillCollections }) => backfillCollections(50))
+      .catch(() => {});
+  }, 9_000);
 
   // Backfill community skip markers for libraries indexed before the cache
   // existed. Scans and playbacks refresh stale rows from here on.

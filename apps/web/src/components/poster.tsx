@@ -19,10 +19,13 @@ import { Dropdown } from "@heroui/react";
 import { api, probeBrowserCaps, type ItemCard } from "@/client";
 import { queries } from "@/queries";
 import { nativeBridge } from "@/lib/native-playback";
-import { artworkUrl } from "@/lib/artwork-url";
 import { cx } from "@/lib/cx";
+import { ArtworkImage } from "./artwork-image";
 
 const BROWSER_CAPS = typeof document === "undefined" ? "" : JSON.stringify(probeBrowserCaps());
+
+const POSTER_SIZES = "(min-width: 1024px) 171px, (min-width: 768px) 155px, (min-width: 640px) 139px, 123px";
+const WIDE_SIZES = "(min-width: 1024px) 327px, (min-width: 768px) 299px, (min-width: 640px) 256px, 213px";
 
 export interface PosterItem {
   id: number;
@@ -87,6 +90,7 @@ export function Poster({
   directPlay = false,
   caption = false,
   overlayTitle = true,
+  sizes,
 }: {
   item: PosterItem;
   className?: string;
@@ -96,12 +100,12 @@ export function Poster({
   caption?: boolean;
   /** Draw the title over wide artwork; turn off when a caption sits below. */
   overlayTitle?: boolean;
+  /** Responsive slot size; defaults to the home-shelf card dimensions. */
+  sizes?: string;
 }) {
-  const imgSrc = artworkUrl(
-    wide
-      ? item.still ?? item.backdrop ?? item.poster
-      : item.poster ?? item.backdrop,
-  );
+  const imageSrc = wide
+    ? item.still ?? item.backdrop ?? item.poster
+    : item.poster ?? item.backdrop;
   const showTitleBelow = !wide || caption;
   const showOverlay = wide && overlayTitle;
   const queryClient = useQueryClient();
@@ -196,10 +200,12 @@ export function Poster({
           aria-label={wide && item.kind === "episode" ? `${primaryTitle}, ${episodeTitle}` : item.name}
         />
 
-        {imgSrc ? (
-          <img
-            src={imgSrc}
+        {imageSrc ? (
+          <ArtworkImage
+            src={imageSrc}
+            kind={wide ? "backdrop" : "poster"}
             alt={item.name}
+            sizes={sizes ?? (wide ? WIDE_SIZES : POSTER_SIZES)}
             loading="lazy"
             decoding="async"
             className="media-art h-full w-full object-cover pointer-events-none"

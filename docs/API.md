@@ -59,15 +59,20 @@ different server.
   local genre/cast affinity recommendations.
 - `GET /api/search?q=` searches titles, episodes, people, and genres through
   SQLite FTS5 (with a LIKE fallback) and returns grouped results.
+- `GET /api/images/:artworkId` serves cached artwork. Omit `w` or pass
+  `?w=original` for the full-resolution original; numeric values (up to 3840)
+  request a display derivative. `?w=<pixels>&preview=1` returns a small
+  placeholder immediately while the original is still downloading.
 - `PUT /api/items/:id/flags` sets the signed-in user's `watchlist`, `favorite`,
   `hidden`, and 1–5 `rating` flags.
 - `GET /api/history?limit=&offset=` lists the signed-in user's watched movies
   and episodes. `DELETE /api/history/:itemId` removes one entry (and its resume
   point); `DELETE /api/history` clears the account's history.
-- `GET /api/collections` lists collections (optionally with membership for
-  `?itemId=`), `POST /api/collections` creates one, `GET /api/collections/:id`
-  returns its items, and `POST|DELETE /api/collections/:id/items[/:itemId]`
-  adds or removes a title.
+- `GET /api/collections` lists user collections plus read-only TMDB franchise
+  groups (negative ids, `source: "tmdb"`); with `?itemId=` it only returns
+  writable custom collections with membership. `POST /api/collections` creates
+  one, `GET /api/collections/:id` returns its items, and
+  `POST|DELETE /api/collections/:id/items[/:itemId]` adds or removes a title.
 - `POST /api/libraries` accepts `language`; `PATCH /api/libraries/:id` accepts
   the same per-library metadata language. Changing it refreshes matched titles
   in the background.

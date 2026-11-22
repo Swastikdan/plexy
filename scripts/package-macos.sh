@@ -17,7 +17,7 @@ case "${MACOS_TARGET:?}" in
     export CSC_IDENTITY_AUTO_DISCOVERY=false
     node scripts/install-ffmpeg.mjs
     bun run build:desktop
-    app="dist/mac/mac-arm64/Plexy Beta.app"
+    app="dist/mac/mac-arm64/Plexy.app"
     expected="${PLEXY_RELEASE_VERSION:?Missing release version}"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$expected"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$PLEXY_BUILD_NUMBER"

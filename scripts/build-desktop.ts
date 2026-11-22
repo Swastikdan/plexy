@@ -44,7 +44,7 @@ async function buildDesktop() {
   const distMac = join(distDir, "mac");
 
   console.log("\n========================================================");
-  console.log("  Plexy Beta Electron Desktop Build for macOS");
+  console.log("  Plexy Electron Desktop Build for macOS");
   console.log("========================================================\n");
   const releasePackage = JSON.parse(
     await readFile(join(rootDir, "package.json"), "utf8"),
@@ -108,7 +108,7 @@ async function buildDesktop() {
   console.log(
     "\nPackaging macOS Electron Application with electron-builder...",
   );
-  detachStaleInstallerVolumes("Plexy Beta");
+  detachStaleInstallerVolumes("Plexy");
   execSync(
     `./node_modules/.bin/electron-builder --config apps/desktop/electron-builder.json --mac --publish never -c.extraMetadata.version=${version} -c.extraMetadata.plexyBuildNumber=${buildNumber} -c.buildVersion=${buildNumber} -c.afterPack="${join(rootDir, "scripts", "after-pack-mpv.cjs")}"`,
     {
@@ -118,7 +118,7 @@ async function buildDesktop() {
   );
 
   // Verify and refresh app bundle resources
-  const appBundle = join(distMac, "mac-arm64", "Plexy Beta.app");
+  const appBundle = join(distMac, "mac-arm64", "Plexy.app");
   const appResources = join(appBundle, "Contents", "Resources");
   try {
     await copyFile(
@@ -133,13 +133,13 @@ async function buildDesktop() {
   } catch {}
 
   console.log("\n========================================================");
-  console.log("  Plexy Beta macOS Electron Build Complete!");
+  console.log("  Plexy macOS Electron Build Complete!");
   console.log(
-    `  • macOS DMG Disk    : dist/mac/Plexy Beta-${version}-arm64.dmg`,
+    `  • macOS DMG Disk    : dist/mac/Plexy-${version}-arm64.dmg`,
   );
-  console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy Beta.app`);
+  console.log(`  • macOS App Bundle  : dist/mac/mac-arm64/Plexy.app`);
   console.log(
-    `  • macOS ZIP Archive : dist/mac/Plexy Beta-${version}-arm64.zip`,
+    `  • macOS ZIP Archive : dist/mac/Plexy-${version}-arm64.zip`,
   );
   console.log("========================================================\n");
 }

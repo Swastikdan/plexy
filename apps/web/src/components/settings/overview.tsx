@@ -37,7 +37,6 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
     queryFn: () => accountRequest<MeResponse>("/me"),
   });
   const libraries = useQuery(queries.libraries());
-  const status = useQuery(queries.serverStatus());
   const devices = useQuery({ queryKey: ["my-devices"], queryFn: listDevices });
 
   const libraryList = libraries.data ?? [];
@@ -251,7 +250,15 @@ function QuickActions({ admin }: { admin: boolean }) {
 }
 
 function ServerHealth({ admin }: { admin: boolean }) {
-  const status = useQuery(queries.serverStatus());
+  const status = useQuery({
+    ...queries.serverStatus(),
+    select: (data) => ({
+      version: data.version,
+      uptimeSeconds: data.uptimeSeconds,
+      address: data.bind ? `${data.bind}:${data.port}` : null,
+      scanRunning: data.scan?.status === "running",
+    }),
+  });
   const data = status.data;
   return (
     <section className="panel flex h-full flex-col p-4 sm:p-5">
@@ -265,8 +272,8 @@ function ServerHealth({ admin }: { admin: boolean }) {
       <dl className="mt-4 grid flex-1 grid-cols-2 gap-x-4 gap-y-3.5">
         <HealthItem label="Version" value={data?.version ? `v${data.version}` : "…"} />
         <HealthItem label="Uptime" value={data?.uptimeSeconds != null ? formatUptime(data.uptimeSeconds) : "…"} />
-        <HealthItem label="Address" value={data?.bind ? `${data.bind}:${data.port}` : "…"} mono />
-        <HealthItem label="Scan" value={data?.scan?.status === "running" ? "Running" : "Idle"} />
+        <HealthItem label="Address" value={data?.address ?? "…"} mono />
+        <HealthItem label="Scan" value={data?.scanRunning ? "Running" : "Idle"} />
       </dl>
       {admin && (
         <Link

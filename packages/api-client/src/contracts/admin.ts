@@ -71,7 +71,6 @@ export interface ServerSettings {
   metadataLanguage: string;
   preferredAudioLanguage: string;
   metadataRegion: string;
-  imageQuality: string;
   autoOptimize: boolean;
   skipSegmentsEnabled: boolean;
   optimizeMaxCacheGb: number;

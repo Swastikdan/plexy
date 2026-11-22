@@ -51,7 +51,10 @@ const ERROR_TEXT = "text-danger-soft-foreground";
 
 export function LibrariesPanel() {
   const { data, isLoading, isError } = useQuery(queries.libraries());
-  const status = useQuery(queries.serverStatus());
+  const status = useQuery({
+    ...queries.serverStatus(),
+    select: (data) => data.scan?.status === "running",
+  });
   const queryClient = useQueryClient();
   const [scanning, setScanning] = useState<number | null>(null);
   const [editing, setEditing] = useState<LibraryItem | null>(null);
@@ -79,7 +82,7 @@ export function LibrariesPanel() {
     return <p className={`text-sm ${ERROR_TEXT}`}>Administrative tools work only on the machine running Plexy.</p>;
   }
 
-  const scanRunning = status.data?.scan?.status === "running";
+  const scanRunning = status.data ?? false;
 
   return (
     <div className="space-y-4">
@@ -515,7 +518,17 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
 
 export function ServerPreferencesPanel() {
   const { data, isError, isLoading } = useQuery(queries.settings());
-  const status = useQuery(queries.serverStatus());
+  const status = useQuery({
+    ...queries.serverStatus(),
+    // Keep the polled uptime counter out of this large settings panel.
+    select: (data) => ({
+      port: data.port,
+      bind: data.bind,
+      restartRequired: data.restartRequired,
+      lanUrls: data.lanUrls,
+      version: data.version,
+    }),
+  });
   const playbackDiagnostics = useQuery(queries.playbackDiagnostics());
   const queryClient = useQueryClient();
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
@@ -651,7 +664,7 @@ export function ServerPreferencesPanel() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {([
             {
               label: "Metadata language",
@@ -679,17 +692,6 @@ export function ServerPreferencesPanel() {
                 { value: "JP", label: "Japan" },
               ],
               update: (value: string) => save.mutate({ metadataRegion: value }),
-            },
-            {
-              label: "Poster image size",
-              value: s.imageQuality,
-              options: [
-                { value: "w342", label: "342 px wide" },
-                { value: "w500", label: "500 px wide" },
-                { value: "w780", label: "780 px wide" },
-                { value: "original", label: "Original size" },
-              ],
-              update: (value: string) => save.mutate({ imageQuality: value }),
             },
           ] as const).map((setting) => {
             const options = setting.options.some((option) => option.value === setting.value)
@@ -734,7 +736,7 @@ export function ServerPreferencesPanel() {
         </div>
 
         <p className="text-xs leading-relaxed text-muted">
-          The selected width is the TMDB poster source size: <strong className="font-semibold text-foreground">w500</strong> means about 500 pixels wide. Larger sources look sharper on big displays and use more storage. Changes apply when metadata is refreshed; existing cached images are kept until then.
+          Plexy downloads the original artwork from TMDB and keeps it on this machine, then renders the exact size each screen needs. A small preview appears first while the full-resolution image loads, so posters and backdrops stay sharp on large and high-DPI displays without a blank card.
         </p>
 
         <div className="flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1252,7 +1254,7 @@ function DesktopUpdateSettings() {
     <section className="rounded-2xl border border-border/70 bg-surface p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="font-display text-base font-bold text-foreground">Plexy Beta app updates</h2>
+          <h2 className="font-display text-base font-bold text-foreground">Plexy app updates</h2>
           <p className="mt-1 text-xs text-muted">Installed version: {installedVersion ?? "…"}{currentBuild ? ` · build ${currentBuild}` : ""}</p>
           {updateStatus?.latestVersion && <p className="mt-1 text-xs text-muted">Latest release: {updateStatus.latestVersion}{latestBuild ? ` · build ${latestBuild}` : ""}</p>}
         </div>
@@ -1305,7 +1307,7 @@ function DesktopUpdateSettings() {
       )}
       {updateStatus?.requiresAdministrator && (
         <p className="mt-3 text-xs text-muted">
-          Because Plexy is in the shared /Applications folder, macOS asks for administrator approval for each update. For password-free updates, move Plexy Beta.app to your user Applications folder (~/Applications) and open it from there. Plexy never stores your password.
+          Because Plexy is in the shared /Applications folder, macOS asks for administrator approval for each update. For password-free updates, move Plexy.app to your user Applications folder (~/Applications) and open it from there. Plexy never stores your password.
         </p>
       )}
       {message && <p role="status" className={`mt-3 text-xs ${message.startsWith("Could not") || message.includes("missing") ? "text-warning-soft-foreground" : "text-muted"}`}>{message}</p>}

@@ -20,7 +20,6 @@ const ConfigSchema = z.object({
   metadataLanguage: z.string().default("en-US"),
   preferredAudioLanguage: z.string().default("en"),
   metadataRegion: z.string().default("US"),
-  imageQuality: z.enum(["w342", "w500", "w780", "original"]).default("w780"),
   // Keep new installs quiet until the owner opts into library-wide background
   // preparation. Manual "Prepare Now" remains available.
   /** Prepare files that cannot play directly as soon as they are probed. */

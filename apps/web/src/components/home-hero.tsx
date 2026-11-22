@@ -12,6 +12,7 @@ import { Bookmark, ChevronLeft, ChevronRight, Pause, Play, Star } from "lucide-r
 import { artworkUrl } from "@/lib/artwork-url";
 import { cx } from "@/lib/cx";
 import { useItemFlags } from "@/lib/use-item-flags";
+import { ArtworkImage } from "./artwork-image";
 import type { ItemCard } from "@/client";
 
 const ADVANCE_MS = 7000;
@@ -37,7 +38,7 @@ function slidePlayback(item: ItemCard) {
 
 function HeroSlide({ item }: { item: ItemCard }) {
   const navigate = useNavigate();
-  const backdrop = artworkUrl(item.backdrop ?? item.poster);
+  const backdrop = item.backdrop ?? item.poster;
   const logo = artworkUrl(item.logo);
   const { resuming, fileId, canPlay } = slidePlayback(item);
   const { flags, toggleWatchlist } = useItemFlags(item);
@@ -64,9 +65,11 @@ function HeroSlide({ item }: { item: ItemCard }) {
   return (
     <article className="relative h-full w-full shrink-0 overflow-hidden">
       {backdrop ? (
-        <img
+        <ArtworkImage
           src={backdrop}
+          kind="backdrop"
           alt=""
+          sizes="(min-width: 1696px) 1696px, 100vw"
           fetchPriority="high"
           loading="eager"
           decoding="async"

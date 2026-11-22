@@ -68,6 +68,45 @@ const inFlightOriginals = new Map<string, Promise<ArtworkMeta | null>>();
 const inFlightDerivatives = new Map<string, Promise<string>>();
 
 /**
+ * A tiny TMDB rendition used only until the full original has been cached.
+ * Placeholders are deliberately cheap so a first paint never waits on a
+ * multi-megabyte original.
+ */
+export function previewImageUrl(tmdbOrRemoteUrl: string, kind: string): string {
+  const url = tmdbOrRemoteUrl.trim();
+  if (!url.includes("image.tmdb.org/t/p/")) return url;
+  const size = kind === "backdrop" ? "w300" : kind === "logo" ? "w300" : "w185";
+  return url.replace(/\/t\/p\/(?:w\d+|h\d+|original)\//, `/t/p/${size}/`);
+}
+
+/** Read the local cache without touching the network. */
+async function cachedArtworkMeta(canonicalUrl: string, originalUrl: string): Promise<ArtworkMeta | null> {
+  try {
+    const cached = q<Row>("SELECT * FROM local_artwork WHERE url = ? OR url = ? LIMIT 1").get(canonicalUrl, originalUrl);
+    if (!cached) return null;
+    const exists = await Bun.file(String(cached.original_path)).exists();
+    if (!exists) return null;
+    return {
+      hash: String(cached.hash),
+      originalPath: String(cached.original_path),
+      width: Number(cached.width),
+      height: Number(cached.height),
+      format: String(cached.format),
+      sizeBytes: Number(cached.size_bytes),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The cached original for a TMDB/remote URL, or null when it is not local yet. */
+export async function getCachedArtworkOriginal(tmdbOrRemoteUrl: string): Promise<ArtworkMeta | null> {
+  await ensureDirs();
+  const { canonicalUrl, originalUrl } = normalizeArtworkUrl(tmdbOrRemoteUrl);
+  return cachedArtworkMeta(canonicalUrl, originalUrl);
+}
+
+/**
  * Fetch and retain the largest original artwork in Plexy's app data directory.
  * Deduplicates by SHA-256 hash, validates pixel bounds, and decodes with Bun.Image.
  * Returns metadata or null if offline / fetch failed.
@@ -78,22 +117,8 @@ export async function cacheArtworkOriginal(tmdbOrRemoteUrl: string): Promise<Art
   const { canonicalUrl, originalUrl } = normalizeArtworkUrl(tmdbOrRemoteUrl);
 
   // Check if already cached in DB and file exists on disk (enables 100% offline access)
-  try {
-    const cached = q<Row>("SELECT * FROM local_artwork WHERE url = ? OR url = ? LIMIT 1").get(canonicalUrl, originalUrl);
-    if (cached) {
-      const exists = await Bun.file(String(cached.original_path)).exists();
-      if (exists) {
-        return {
-          hash: String(cached.hash),
-          originalPath: String(cached.original_path),
-          width: Number(cached.width),
-          height: Number(cached.height),
-          format: String(cached.format),
-          sizeBytes: Number(cached.size_bytes),
-        };
-      }
-    }
-  } catch {}
+  const cached = await cachedArtworkMeta(canonicalUrl, originalUrl);
+  if (cached) return cached;
 
   // Deduplicate concurrent in-flight requests for the same image
   const existingFlight = inFlightOriginals.get(canonicalUrl);
@@ -182,19 +207,21 @@ export async function cacheArtworkOriginal(tmdbOrRemoteUrl: string): Promise<Art
 
 /**
  * Get or create a resized display derivative WebP using Bun.Image.
- * Returns the path to the derived WebP file.
+ * Returns the path to the derived WebP file. `variant` keeps derivatives of
+ * mutable local sidecars from going stale when the source file is replaced.
  */
-export async function getOrCreateDerivative(originalPath: string, targetWidth: number): Promise<string> {
+export async function getOrCreateDerivative(originalPath: string, targetWidth: number, variant?: string): Promise<string> {
   await ensureDirs();
 
   const baseHash = originalPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "unknown";
-  const derivedPath = join(resolveDerivedDir(), `${baseHash}_w${targetWidth}.webp`);
+  const suffix = variant ? `_${variant}` : "";
+  const derivedPath = join(resolveDerivedDir(), `${baseHash}${suffix}_w${targetWidth}.webp`);
 
   if (await Bun.file(derivedPath).exists()) {
     return derivedPath;
   }
 
-  const flightKey = `${baseHash}_${targetWidth}`;
+  const flightKey = `${baseHash}${suffix}_${targetWidth}`;
   const existingFlight = inFlightDerivatives.get(flightKey);
   if (existingFlight) return existingFlight;
 
@@ -202,6 +229,10 @@ export async function getOrCreateDerivative(originalPath: string, targetWidth: n
     try {
       const raw = await Bun.file(originalPath).arrayBuffer();
       const img = new Bun.Image(raw);
+      const metadata = await img.metadata().catch(() => null);
+      // Never upscale: if the requested width is already at or beyond the
+      // source, the original file is the highest-resolution answer.
+      if (metadata?.width && targetWidth >= metadata.width) return originalPath;
       img.resize(targetWidth);
       img.webp();
       const derivedBytes = await img.bytes();

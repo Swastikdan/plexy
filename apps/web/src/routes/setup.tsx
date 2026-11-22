@@ -192,6 +192,7 @@ function SetupRoute() {
   const status = useQuery({
     ...queries.serverStatus(),
     enabled: setup.data?.ownerCreated === true,
+    select: (data) => ({ lanUrls: data.lanUrls }),
   });
   const [step, setStepLocal] = useState(0);
   const [error, setError] = useState("");
@@ -442,7 +443,7 @@ function ReadyStep({
   status,
   onAddLibrary,
 }: {
-  status: ServerStatus | undefined;
+  status: Pick<ServerStatus, "lanUrls"> | undefined;
   onAddLibrary: () => void;
 }) {
   const [error, setError] = useState("");

@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Film, MonitorPlay, Star, Tv } from "lucide-react";
 import type { ItemCard } from "@/client";
 import { cx } from "@/lib/cx";
-import { artworkUrl } from "@/lib/artwork-url";
+import { ArtworkImage } from "@/components/artwork-image";
 
 /** "S02E03 · Chapter 3" → "Chapter 3"; falls back to the raw name. */
 function episodeName(item: ItemCard): string {
@@ -28,8 +28,7 @@ function MetaDot() {
 export function SearchResultCard({ item }: { item: ItemCard }) {
   const isEpisode = item.kind === "episode";
   const title = isEpisode ? episodeName(item) : item.name;
-  const rawImage = item.backdrop ?? item.poster;
-  const image = artworkUrl(rawImage);
+  const image = item.backdrop ?? item.poster;
   const stamp =
     isEpisode && item.seasonNumber != null && item.episodeNumber != null
       ? `S${String(item.seasonNumber).padStart(2, "0")}E${String(item.episodeNumber).padStart(2, "0")}`
@@ -49,9 +48,11 @@ export function SearchResultCard({ item }: { item: ItemCard }) {
     >
       <div className="relative aspect-video w-[7.5rem] shrink-0 overflow-hidden rounded-lg bg-surface-secondary sm:w-[9.5rem]">
         {image ? (
-          <img
+          <ArtworkImage
             src={image}
+            kind="backdrop"
             alt=""
+            sizes="(min-width: 640px) 152px, 120px"
             loading="lazy"
             decoding="async"
             className="media-art h-full w-full object-cover"

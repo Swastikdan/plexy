@@ -31,19 +31,27 @@ export async function hydrateItemMetadata(
   const certification = tmdb.certificationFromDetail(full, tmdbType, cfg.metadataRegion);
   const year = Number((full.release_date ?? full.first_air_date ?? "").slice(0, 4)) || null;
 
+  const collection = full.belongs_to_collection;
   run(
     `INSERT INTO item_metadata
-       (item_id, overview, tagline, runtime, rating, certification, genres, poster_path, backdrop_path, popularity, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       (item_id, overview, tagline, runtime, rating, certification, genres, poster_path, backdrop_path, popularity,
+        collection_id, collection_name, collection_checked_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(item_id) DO UPDATE SET
        overview=excluded.overview, tagline=excluded.tagline, runtime=excluded.runtime,
        rating=excluded.rating, certification=excluded.certification, genres=excluded.genres,
        poster_path=excluded.poster_path, backdrop_path=excluded.backdrop_path,
-       popularity=excluded.popularity, updated_at=excluded.updated_at`,
+       popularity=excluded.popularity,
+       collection_id=excluded.collection_id, collection_name=excluded.collection_name,
+       collection_checked_at=excluded.collection_checked_at,
+       updated_at=excluded.updated_at`,
     itemId, full.overview ?? null, full.tagline ?? null, full.runtime ?? null,
     full.vote_average ?? null, certification,
     JSON.stringify((full.genres ?? []).map((g) => g.name)),
     full.poster_path ?? null, full.backdrop_path ?? null, full.popularity ?? null,
+    collection?.id ?? null,
+    collection?.name?.trim() || null,
+    new Date().toISOString(),
     new Date().toISOString(),
   );
 
@@ -544,4 +552,46 @@ export async function backfillCertifications(
     backfillingCertifications = false;
   }
   return { checked, updated };
+}
+
+let backfillingCollections = false;
+/**
+ * Group older matched movies into their TMDB collections. Hydration stores the
+ * collection for every new match; this fills the libraries that were indexed
+ * before automatic collections existed, a bounded batch per startup pass.
+ */
+export async function backfillCollections(limit = 50): Promise<number> {
+  if (backfillingCollections) return 0;
+  backfillingCollections = true;
+  let updated = 0;
+  try {
+    const { getConfig } = await import("./config");
+    const cfg = await getConfig();
+    if (!cfg.tmdbToken) return 0;
+    const rows = q<{ id: number; tmdb_id: number }>(
+      `SELECT i.id, i.tmdb_id
+       FROM items i
+       LEFT JOIN item_metadata m ON m.item_id = i.id
+       WHERE i.kind = 'movie' AND i.tmdb_type = 'movie'
+         AND i.tmdb_id IS NOT NULL
+         AND m.collection_checked_at IS NULL
+       ORDER BY i.added_at DESC, i.id DESC
+       LIMIT ?`,
+    ).all(Math.max(1, Math.min(200, limit)));
+    for (const row of rows) {
+      try {
+        await hydrateItemMetadata(Number(row.id), "movie", Number(row.tmdb_id));
+        updated++;
+      } catch {
+        // Offline or rate-limited: leave the row for the next pass.
+        break;
+      }
+    }
+    if (updated) log.debug("tmdb", "backfilled movie collections", { updated });
+  } catch {
+    /* offline startup: the next pass retries */
+  } finally {
+    backfillingCollections = false;
+  }
+  return updated;
 }

@@ -408,6 +408,65 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(text).toContain("<svg");
   });
 
+  test("GET /api/images/:id serves the cached original at full resolution", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "plexy-artwork-original-"));
+    const originalPath = join(dir, "original.png");
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    await Bun.write(originalPath, bytes);
+    const remote = "https://image.tmdb.org/t/p/w780/route-original-test.png";
+    const { getArtworkStorageStats } = await import("@/artwork");
+    await getArtworkStorageStats();
+    run("INSERT OR REPLACE INTO local_artwork (url, hash, original_path, width, height, format, size_bytes) VALUES (?,?,?,?,?,?,?)",
+      remote, "route-original-hash", originalPath, 1, 1, "png", bytes.byteLength);
+    run("INSERT OR REPLACE INTO artwork (id, item_id, kind, source, url) VALUES (980, 1, 'poster', 'tmdb', ?)", remote);
+    try {
+      for (const query of ["?w=original", ""]) {
+        const res = await app.handle(new Request(`http://localhost:8765/api/images/980${query}`));
+        expect(res.status).toBe(200);
+        expect(res.headers.get("content-type")).toContain("image/png");
+        expect((await res.arrayBuffer()).byteLength).toBe(bytes.byteLength);
+      }
+    } finally {
+      run("DELETE FROM artwork WHERE id = 980");
+      run("DELETE FROM local_artwork WHERE url = ?", remote);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("GET /api/images/:id serves a fast derivative for local sidecar artwork", async () => {
+    const source = join(import.meta.dir, "../../web/public/icons/pwa-192.png");
+    run("INSERT OR REPLACE INTO artwork (id, item_id, kind, source, url) VALUES (982, 1, 'poster', 'local', ?)", source);
+    try {
+      const preview = await app.handle(new Request("http://localhost:8765/api/images/982?w=64&preview=1"));
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get("content-type")).toContain("image/webp");
+      expect((await preview.arrayBuffer()).byteLength).toBeGreaterThan(0);
+
+      const original = await app.handle(new Request("http://localhost:8765/api/images/982?w=original"));
+      expect(original.status).toBe(200);
+      expect(original.headers.get("content-type")).toContain("image/png");
+    } finally {
+      run("DELETE FROM artwork WHERE id = 982");
+    }
+  });
+
+  test("catalog cards leave artwork sizing to the client", async () => {
+    run("INSERT OR IGNORE INTO items (id, library_id, kind, name, sort_title) VALUES (32, 1, 'movie', 'Artwork Size Test', 'artwork size test')");
+    run("INSERT OR REPLACE INTO artwork (id, item_id, kind, source, url) VALUES (981, 32, 'poster', 'tmdb', 'https://image.tmdb.org/t/p/w780/route-size-test.jpg')");
+    try {
+      const res = await app.handle(new Request("http://localhost:8765/api/items?limit=2000"));
+      const data = await res.json();
+      const item = data.items.find((entry: { id: number }) => entry.id === 32);
+      expect(item.poster).toBe("/api/images/981");
+    } finally {
+      run("DELETE FROM artwork WHERE id = 981");
+      run("DELETE FROM items WHERE id = 32");
+    }
+  });
+
   test("PUT /api/settings persists offline-cache preferences and rejects out-of-range values", async () => {
     try {
       const res = await app.handle(
@@ -488,6 +547,47 @@ describe("Elysia API Routes (PRD 9)", () => {
           }),
         }),
       );
+    }
+  });
+
+  test("play manifest previews the next episode with series artwork as a fallback", async () => {
+    run("INSERT OR REPLACE INTO items (id, library_id, kind, name, sort_title) VALUES (7100, 1, 'series', 'Next Show', 'next show')");
+    run(
+      `INSERT OR REPLACE INTO items
+         (id, library_id, parent_id, kind, name, sort_title, season_number, episode_number)
+       VALUES (7101, 1, 7100, 'episode', 'S01E01 · First', 'next show s01e01', 1, 1),
+              (7102, 1, 7100, 'episode', 'S01E02 · Second', 'next show s01e02', 1, 2)`,
+    );
+    const insertFile = (id: number, itemId: number, path: string) =>
+      run(
+        `INSERT OR REPLACE INTO media_files
+           (id, library_id, item_id, path, folder_key, size, mtime, container, video_codec,
+            audio_json, analysis_status)
+         VALUES (?, 1, ?, ?, 'next-show', 1, 1, 'mp4', 'h264', ?, 'probed')`,
+        id, itemId, path, JSON.stringify([{ codec: "aac", channels: 2 }]),
+      );
+    insertFile(7103, 7101, "/tmp/plexy-next-show-s01e01.mp4");
+    insertFile(7104, 7102, "/tmp/plexy-next-show-s01e02.mp4");
+    try {
+      // Episode stills are not guaranteed; the series poster keeps the card full.
+      run("INSERT INTO artwork (item_id, kind, url) VALUES (7100, 'poster', 'https://example.test/series.jpg')");
+      const fromSeries = await (await app.handle(
+        new Request("http://localhost:8765/api/play/7103?native=1"),
+      )).json();
+      expect(fromSeries.next?.subtitle).toBe("S01E02 · Second");
+      expect(fromSeries.next?.poster).toMatch(/^\/api\/images\/\d+\?w=300$/);
+
+      // A real episode still wins over the series fallback.
+      run("INSERT INTO artwork (item_id, kind, url) VALUES (7102, 'thumb', 'https://example.test/episode.jpg')");
+      const fromEpisode = await (await app.handle(
+        new Request("http://localhost:8765/api/play/7103?native=1"),
+      )).json();
+      expect(fromEpisode.next?.poster).toMatch(/^\/api\/images\/\d+\?w=300$/);
+      expect(fromEpisode.next?.poster).not.toBe(fromSeries.next?.poster);
+    } finally {
+      run("DELETE FROM artwork WHERE item_id IN (7100, 7102)");
+      run("DELETE FROM media_files WHERE id IN (7103, 7104)");
+      run("DELETE FROM items WHERE id IN (7101, 7102, 7100)");
     }
   });
 

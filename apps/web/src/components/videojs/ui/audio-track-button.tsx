@@ -72,8 +72,8 @@ export function AudioTrackButton({
           'data-starting-style:filter-none',
           'bg-media-popover text-media-popover-foreground surface-media after:surface-media-inset',
           'after:hidden',
-          'm-0 min-w-44 max-w-(--media-menu-available-width) overflow-hidden! rounded-media-popup border-0 p-1 [--media-popup-side-offset:var(--media-popover-side-offset)]',
-          'max-h-[min(var(--media-menu-available-height,--spacing(56)),--spacing(56))] overscroll-none',
+          'z-50 m-0 min-w-44 max-w-(--media-menu-available-width) overflow-hidden! rounded-media-popup border-0 p-1 [--media-popup-side-offset:var(--media-popover-side-offset)]',
+          'max-h-[min(var(--media-menu-available-height,--spacing(80)),--spacing(80))] overscroll-none',
           'h-(--media-menu-height) w-(--media-menu-width)',
           'transition-media-popup media-transitioning:transition-media-popup',
           'transition-media-menu-resize'

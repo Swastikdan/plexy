@@ -20,7 +20,9 @@ import { prefetchAssets } from "@/lib/asset-prefetch";
 import { getApiBase } from "@/server-config";
 import { nativeBridge } from "@/lib/native-playback";
 import { useIsFullscreen } from "@/lib/use-fullscreen";
-import { segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import { useScreenWakeLock } from "@/lib/use-screen-wake-lock";
+import { creditsStart, segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import { NextEpisodeCard } from "@/components/player/next-episode-card";
 import type { NativeAudioTrack, NativePlaybackEvent } from "@/electron";
 import type { ServerAudioTrack } from "@/components/videojs/ui/audio-track-menu";
 import { BufferingIndicator } from "@/components/videojs/ui/buffering-indicator";
@@ -204,6 +206,9 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
   const [audioTracks, setAudioTracks] = useState<NativeAudioTrack[]>([]);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [nextDismissed, setNextDismissed] = useState(false);
+  const [playbackActive, setPlaybackActive] = useState(false);
+  useScreenWakeLock(playbackActive && !ended && !sessionError && !stoppedByAdmin);
 
   const sessionIdRef = useRef<string | null>(null);
   const positionRef = useRef(0);
@@ -275,6 +280,10 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     switch (event.type) {
       case "ready":
         setStarting(false);
+        setPlaybackActive(true);
+        break;
+      case "pause":
+        setPlaybackActive(!event.paused);
         break;
       case "time": {
         if (event.position != null) {
@@ -294,10 +303,15 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
         }
         break;
       case "ended":
+        setPlaybackActive(false);
         setEnded(true);
         endedRef.current = true;
         if (event.position != null) positionRef.current = event.position;
         saveProgress(true);
+        break;
+      case "error":
+      case "closed":
+        setPlaybackActive(false);
         break;
       case "tracks":
         setAudioTracks(event.audioTracks ?? []);
@@ -487,8 +501,25 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
     return kind && end != null ? { kind, end } : null;
   }, [position, skipSegments.data]);
 
-  const showNextPrompt =
-    Boolean(manifest?.nextFileId) && total != null && position > 0 && position >= total - 90;
+  const nextEpisode = manifest?.next ?? null;
+  const creditsFrom = creditsStart(skipSegments.data, total);
+  const upNext =
+    Boolean(manifest?.nextFileId) && position > 0 && creditsFrom != null && position >= creditsFrom;
+
+  const playNext = useCallback(() => {
+    if (!manifest?.nextFileId) return;
+    // Close the finished/up-next chrome immediately so it cannot linger over
+    // the next episode while its manifest and mpv session are still opening.
+    setNextDismissed(true);
+    setEnded(false);
+    endedRef.current = false;
+    void navigate({
+      to: "/watch/$fileId",
+      params: { fileId: String(manifest.nextFileId) },
+      replace: true,
+      state: (previous) => ({ playerFromTitle: previous.playerFromTitle }),
+    });
+  }, [manifest?.nextFileId, navigate]);
 
   return (
     <VideoPlayer>
@@ -556,6 +587,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
               onSession={(id) => { sessionIdRef.current = id; }}
               onEvent={onPlaybackEvent}
               onFatal={(message) => {
+                setPlaybackActive(false);
                 setStarting(false);
                 sessionIdRef.current = null;
                 setSessionError(message);
@@ -592,7 +624,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
             </div>
           </div>
 
-          {activeSegment && !ended && (
+          {activeSegment && !ended && !(activeSegment.kind === "outro" && nextEpisode) && (
             <button
               type="button"
               onClick={() => {
@@ -613,36 +645,26 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
             </button>
           )}
 
-          {showNextPrompt && !ended && !activeSegment && manifest?.nextFileId && (
-            <button
-              type="button"
-              onClick={() => {
-                void navigate({
-                  to: "/watch/$fileId",
-                  params: { fileId: String(manifest.nextFileId) },
-                  replace: true,
-                  state: (previous) => ({ playerFromTitle: previous.playerFromTitle }),
-                });
-              }}
-              className="pointer-events-auto absolute bottom-28 right-6 z-40 inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black shadow-xl transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:bottom-24 sm:right-8"
-            >
-              <SkipForward size={17} /> Next episode
-            </button>
+          {nextEpisode && (
+            <NextEpisodeCard
+              next={nextEpisode}
+              upNext={upNext}
+              visible={!ended && !nextDismissed}
+              onPlay={playNext}
+            />
           )}
 
           {ended && (
             <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/55">
               <p className="font-display text-xl font-bold">Finished</p>
+              {nextEpisode && (
+                <p className="max-w-[min(84vw,28rem)] truncate text-sm text-white/70">
+                  {nextEpisode.subtitle}
+                </p>
+              )}
               {manifest?.nextFileId && (
                 <button
-                  onClick={() =>
-                    void navigate({
-                      to: "/watch/$fileId",
-                      params: { fileId: String(manifest.nextFileId) },
-                      replace: true,
-                      state: (previous) => ({ playerFromTitle: previous.playerFromTitle }),
-                    })
-                  }
+                  onClick={playNext}
                   className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black transition hover:bg-white/85"
                 >
                   <SkipForward size={17} /> Next episode

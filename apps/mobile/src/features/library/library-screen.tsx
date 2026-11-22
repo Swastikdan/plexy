@@ -31,6 +31,7 @@ import {
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
+  Plus,
   X,
 } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
@@ -52,6 +53,7 @@ import { certificationFor, fetchDetail } from "@/features/remote/lib/tmdb";
 import { parseRemotePublicId, remotePublicId, toItemCard } from "@/features/remote/lib/view";
 import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
 import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
+import { useCollections } from "@/features/collections/collections-store";
 
 const genres = [
   "Action", "Action & Adventure", "Adventure", "Animation", "Comedy", "Crime",
@@ -60,6 +62,26 @@ const genres = [
   "Science Fiction", "Soap", "Talk", "Thriller", "TV Movie", "War",
   "War & Politics", "Western",
 ];
+
+type CollectionRow =
+  | {
+      key: string;
+      kind: "automatic";
+      id: number;
+      name: string;
+      count: number;
+      poster: string | null;
+      items: ItemCard[];
+    }
+  | {
+      key: string;
+      kind: "custom";
+      id: string;
+      name: string;
+      count: number;
+      poster: string | null;
+      titleIds: string[];
+    };
 
 export function LibraryScreen({
   open,
@@ -90,15 +112,16 @@ export function LibraryScreen({
   const [offlineOnly, setOfflineOnly] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [collection, setCollection] = useState<{
-    id: number;
     name: string;
+    items: ItemCard[];
   } | null>(null);
   const [, updateCollections] = useState(0);
   useEffect(
     () => runtime.subscribe(() => updateCollections((n) => n + 1)),
     [runtime],
   );
-  const collections = api.collections();
+  const automaticCollections = api.collections();
+  const customCollections = useCollections();
   // One scan for tab availability instead of three paginated queries that each
   // sort the whole library.
   const counts = api.counts();
@@ -150,6 +173,68 @@ export function LibraryScreen({
       18,
     );
   }, [savedOnline]);
+  // Automatic collections merge the local TMDB metadata with the saved online
+  // catalog. Local collections only include titles on this device; online
+  // collections include the saved titles in the group.
+  const automaticCollectionRows = React.useMemo<CollectionRow[]>(() => {
+    const groups = new Map<
+      number,
+      { name: string; poster: string | null; items: ItemCard[] }
+    >();
+    for (const entry of automaticCollections) {
+      groups.set(entry.id, {
+        name: entry.name,
+        poster: entry.poster,
+        items: api.collectionItems(entry.id),
+      });
+    }
+    if (online) {
+      const savedCards = new Map(savedOnline.map((item) => [item.publicId, item]));
+      for (const entry of saved) {
+        if (entry.title.mediaType !== "movie" || !entry.title.collection) continue;
+        const card = savedCards.get(
+          remotePublicId(entry.title.mediaType, entry.title.tmdbId),
+        );
+        if (!card) continue;
+        const group = groups.get(entry.title.collection.id) ?? {
+          name: entry.title.collection.name,
+          poster: null,
+          items: [],
+        };
+        if (!group.items.some((item) => item.publicId === card.publicId)) {
+          group.items.push(card);
+        }
+        group.poster ||= card.poster;
+        groups.set(entry.title.collection.id, group);
+      }
+    }
+    return [...groups.entries()]
+      .map(([id, group]) => ({
+        key: `automatic-${id}`,
+        kind: "automatic" as const,
+        id,
+        name: group.name,
+        count: group.items.length,
+        poster: group.poster,
+        items: group.items,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [api, automaticCollections, online, saved, savedOnline]);
+  const collectionRows = React.useMemo<CollectionRow[]>(
+    () => [
+      ...automaticCollectionRows,
+      ...customCollections.map((entry) => ({
+        key: `custom-${entry.id}`,
+        kind: "custom" as const,
+        id: entry.id,
+        name: entry.name,
+        count: entry.titleIds.length,
+        poster: null,
+        titleIds: entry.titleIds,
+      })),
+    ],
+    [automaticCollectionRows, customCollections],
+  );
   const libraryEmpty =
     preferences.familyLevel === "off" &&
     counts.movie + counts.series === 0 &&
@@ -213,14 +298,13 @@ export function LibraryScreen({
     if (publicId.startsWith("remote:")) return;
     open(publicId);
   };
-  const libraryTabs = React.useMemo(() => {
-    // Keep the three browse tabs together even when one side of the library is
-    // empty today. A library with only shows still offers Movies (and vice
-    // versa) instead of silently collapsing to "All" + "TV Shows".
-    const base: LibraryTab[] = ["all", "movie", "series"];
-    if (collections.length) base.push("collection");
-    return base;
-  }, [collections.length]);
+  // Collections are part of the library rather than a separate destination.
+  // Keeping the tab available even when the list is empty gives the page a
+  // place to explain automatic TMDB groups and to create the first custom one.
+  const libraryTabs = React.useMemo<LibraryTab[]>(
+    () => ["all", "movie", "series", "collection"],
+    [],
+  );
   if (!libraryTabs.includes(activeTab)) setActiveTab("all");
   const tabScroll = useRef<ScrollView>(null);
   const tabLayouts = useRef<Record<string, { x: number; width: number }>>({});
@@ -283,29 +367,20 @@ export function LibraryScreen({
         }
       />
 
-      <View className="flex-row flex-wrap gap-2 px-5 pb-2">
-        <Pressable accessibilityRole="button" onPress={() => router.push("/settings/folders")}
-          className="flex-row items-center gap-2 rounded-full border border-border px-4 py-2">
-          <Folder size={16} color={colors.muted} />
-          <Text className="font-archivo-medium text-foreground">Media folders</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => router.push("/custom-collections")}
-          className="rounded-full border border-border px-4 py-2">
-          <Text className="font-archivo-medium text-foreground">Custom collections</Text>
-        </Pressable>
       {online ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push("/episode-calendar")}
-          className="rounded-full border border-border px-4 py-2"
-        >
-          <Text className="font-archivo-medium text-foreground">Episode calendar</Text>
-        </Pressable>
+        <View className="flex-row px-5 pb-2">
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/episode-calendar")}
+            className="rounded-full border border-border px-4 py-2"
+          >
+            <Text className="font-archivo-medium text-foreground">Episode calendar</Text>
+          </Pressable>
+        </View>
       ) : null}
-      </View>
       <TitleBrowser
         title={collection?.name ?? null}
-        items={collection ? api.collectionItems(collection.id) : []}
+        items={collection?.items ?? []}
         close={() => setCollection(null)}
         open={open}
         play={play}
@@ -378,9 +453,10 @@ export function LibraryScreen({
         renderPage={(index) =>
           libraryTabs[index] === "collection" ? (
             <FlatList
-              data={collections}
-              keyExtractor={(c) => String(c.id)}
+              data={collectionRows}
+              keyExtractor={(entry) => entry.key}
               contentContainerStyle={{
+                flexGrow: 1,
                 gap: 10,
                 paddingHorizontal: 20,
                 paddingBottom: 24,
@@ -389,10 +465,17 @@ export function LibraryScreen({
               renderItem={({ item }) => (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Open collection ${item.name}`}
+                  accessibilityLabel={`Open ${item.kind === "automatic" ? "automatic" : "custom"} collection ${item.name}`}
                   onPress={() => {
                     triggerHaptic("light");
-                    setCollection(item);
+                    if (item.kind === "automatic") {
+                      setCollection({ name: item.name, items: item.items });
+                    } else {
+                      router.push({
+                        pathname: "/custom-collections",
+                        params: { id: item.id },
+                      });
+                    }
                   }}
                   className="flex-row items-center gap-3 rounded-[18px] bg-surface p-3 active:opacity-70"
                 >
@@ -403,7 +486,11 @@ export function LibraryScreen({
                     />
                   ) : (
                     <View className="h-[64px] w-[44px] items-center justify-center rounded-[8px] bg-surface-secondary">
-                      <Film size={20} color={colors.quiet} />
+                      {item.kind === "automatic" ? (
+                        <Film size={20} color={colors.quiet} />
+                      ) : (
+                        <Folder size={20} color={colors.quiet} />
+                      )}
                     </View>
                   )}
                   <View className="flex-1 gap-0.5">
@@ -414,7 +501,13 @@ export function LibraryScreen({
                       {item.name}
                     </Text>
                     <Text className="font-archivo-regular text-[12px] text-muted">
-                      {item.count === 1 ? "1 movie" : `${item.count} movies`}
+                      {item.kind === "automatic"
+                        ? item.count === 1
+                          ? "1 movie · Automatic"
+                          : `${item.count} movies · Automatic`
+                        : item.count === 1
+                          ? "1 title · Custom"
+                          : `${item.count} titles · Custom`}
                     </Text>
                   </View>
                   <ChevronRight
@@ -425,7 +518,48 @@ export function LibraryScreen({
                 </Pressable>
               )}
               ListEmptyComponent={
-                <Notice message="No collections yet. Identified movie collections appear here." />
+                <View className="flex-1 items-center justify-center px-6 py-16">
+                  <View className="h-16 w-16 items-center justify-center rounded-full border border-border bg-surface">
+                    <Folder size={28} color={colors.muted} strokeWidth={1.8} />
+                  </View>
+                  <Text className="mt-5 text-center font-archivo-bold text-[22px] text-foreground">
+                    No collections yet
+                  </Text>
+                  <Text className="mt-2 max-w-[320px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
+                    Franchise collections appear here automatically from TMDB.
+                    Create your own to group titles for a mood or a movie night.
+                  </Text>
+                  <Button
+                    primary
+                    label="Create collection"
+                    onPress={() =>
+                      router.push({
+                        pathname: "/custom-collections",
+                        params: { create: "1" },
+                      })
+                    }
+                    style={{ marginTop: 22, minWidth: 170 }}
+                  />
+                </View>
+              }
+              ListFooterComponent={
+                collectionRows.length > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push({
+                        pathname: "/custom-collections",
+                        params: { create: "1" },
+                      })
+                    }
+                    className="mt-2 flex-row items-center justify-center gap-2 rounded-[18px] border border-border px-4 py-3 active:opacity-70"
+                  >
+                    <Plus size={16} color={colors.ink} strokeWidth={2} />
+                    <Text className="font-archivo-medium text-[14px] text-foreground">
+                      New collection
+                    </Text>
+                  </Pressable>
+                ) : null
               }
             />
           ) : (

@@ -143,14 +143,38 @@ async function staleWhileRevalidate(request) {
 }
 
 async function readThroughArtwork(request) {
+  let cache;
   try {
-    const cache = await caches.open(PREFETCH_CACHE);
+    cache = await caches.open(PREFETCH_CACHE);
     const hit = await cache.match(request, { ignoreVary: true });
     if (hit) return hit;
   } catch {
     // Cache Storage disabled: fall through to the network.
+    return fetch(request);
   }
-  return fetch(request);
+
+  // Online, the server always has the freshest copy. Only look for another
+  // cached width after the network fails, so a large cache never taxes every
+  // image request with a key scan.
+  const response = await fetch(request).catch(() => null);
+  if (response?.ok) return response;
+
+  // Responsive artwork asks for the exact width its layout needs. The
+  // prefetch may have saved another width for the same artwork id; any
+  // resolution is better than a broken image when the server is unreachable.
+  try {
+    const target = new URL(request.url);
+    const keys = await cache.keys();
+    for (const key of keys) {
+      const candidate = new URL(key.url);
+      if (candidate.pathname !== target.pathname) continue;
+      const variant = await cache.match(key, { ignoreVary: true });
+      if (variant) return variant;
+    }
+  } catch {
+    /* no usable cached variant */
+  }
+  return response || new Response("", { status: 504 });
 }
 
 /// Shown only when the shell was never cached and the server is unreachable.

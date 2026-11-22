@@ -45,7 +45,13 @@ function HomeSkeleton() {
 function HomeRoute() {
   const navigate = useNavigate();
   const [continueSort, setContinueSort] = useState<"recent" | "title">("recent");
-  const status = useQuery(queries.serverStatus());
+  const status = useQuery({
+    ...queries.serverStatus(),
+    select: (data) => ({
+      setupComplete: data.setupComplete,
+      adminAvailable: data.adminAvailable,
+    }),
+  });
   const { data, isLoading, isError } = useQuery(queries.home());
 
   // The server's featured title leads the carousel; the recently-added rows

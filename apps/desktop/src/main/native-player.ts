@@ -272,6 +272,7 @@ function mapTrack(track: MpvTrack): NativeAudioTrack {
 export class NativePlayerManager {
   private session: Session | null = null;
   private playRequest = 0;
+  private playbackActive = false;
 
   constructor(
     private readonly emit: (event: NativePlaybackEvent) => void,
@@ -286,8 +287,20 @@ export class NativePlayerManager {
       /** Overrides for tests: a fake engine and module factory. */
       libmpv?: string;
       createEmbed?: (libmpvPath: string, onEvent: (event: MpvEmbedEvent) => void) => MpvEmbedHandle;
+      /** Drives the desktop display-sleep blocker while video is playing. */
+      onPlaybackActiveChange?: (active: boolean) => void;
     } = {},
   ) {}
+
+  /**
+   * Keep the OS display assertion in sync with actual playback. Pausing,
+   * ending, failing, or closing native playback releases it immediately.
+   */
+  private setPlaybackActive(active: boolean): void {
+    if (this.playbackActive === active) return;
+    this.playbackActive = active;
+    this.options.onPlaybackActiveChange?.(active);
+  }
 
   info(): NativePlaybackInfo {
     const platform = this.options.platform ?? process.platform;
@@ -429,6 +442,7 @@ export class NativePlayerManager {
       session.position = resume;
       embed.load(streamUrl, resume, session.title, session.preferredAudioLanguage);
     } catch (error) {
+      this.setPlaybackActive(false);
       this.session = null;
       session.stopping = true;
       session.cleaned = true;
@@ -442,6 +456,7 @@ export class NativePlayerManager {
     }
 
     this.refreshTracks(session);
+    this.setPlaybackActive(true);
     return { sessionId: session.id, fileId, title: session.title };
   }
 
@@ -506,8 +521,12 @@ export class NativePlayerManager {
   async stop(sessionId?: string): Promise<void> {
     if (!sessionId) this.playRequest++;
     const session = this.session;
-    if (!session) return;
+    if (!session) {
+      this.setPlaybackActive(false);
+      return;
+    }
     if (sessionId && session.id !== sessionId) return;
+    this.setPlaybackActive(false);
     this.session = null;
     if (session.stopping) return;
     session.stopping = true;
@@ -556,6 +575,7 @@ export class NativePlayerManager {
   private handleEmbedEvent(session: Session, event: MpvEmbedEvent): void {
     if (session.stopping) return;
     if (event.type === "error") {
+      this.setPlaybackActive(false);
       this.emitEvent(session, { type: "error", message: redact(event.message ?? "Native playback failed") });
       return;
     }
@@ -569,12 +589,14 @@ export class NativePlayerManager {
           return;
         }
         case "ended":
+          this.setPlaybackActive(false);
           this.emitEvent(session, { type: "ended", position: session.duration ?? session.position });
           return;
         case "video-reconfig":
           this.refreshTracks(session);
           return;
         case "stopped":
+          this.setPlaybackActive(false);
           return;
         default:
           return;
@@ -600,6 +622,7 @@ export class NativePlayerManager {
       }
       case "pause": {
         session.paused = Boolean(event.value);
+        this.setPlaybackActive(!session.paused);
         this.emitEvent(session, { type: "pause", paused: session.paused, position: session.position });
         return;
       }

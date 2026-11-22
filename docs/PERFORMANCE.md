@@ -17,7 +17,7 @@ produced them.
 | Server boot / RSS / throughput | `PLEXY_DATA_DIR=.perf/data PORT=8898 ./dist/server/plexy-server --no-ui`, then `ab -n 3000 -c 50`, `ps -o rss=` |
 | Web first-load transfer | `curl -sI -H 'Accept-Encoding: gzip' http://127.0.0.1:8898/` |
 | Web boot heap/CPU | Chrome DevTools Protocol, procedure below |
-| Desktop bundle composition | `du -sh "dist/mac/mac-arm64/Plexy Beta.app/Contents/"*` |
+| Desktop bundle composition | `du -sh "dist/mac/mac-arm64/Plexy.app/Contents/"*` |
 | Desktop memory | launch the packaged app with `PLEXY_DATA_DIR`, sum `ps -o rss=` for its processes |
 | Mobile APK composition | `unzip -lv .build/native/*.apk`, `aapt2 dump resources`, `apksigner verify` |
 | Mobile startup/memory | `adb shell am start -W`, `adb shell dumpsys meminfo app.plexy.mobile` |

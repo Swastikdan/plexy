@@ -11,6 +11,7 @@ import {
   dialog,
   ipcMain,
   nativeImage,
+  powerSaveBlocker,
   shell,
   net,
 } from "electron";
@@ -36,6 +37,28 @@ let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 let stopStaticUi: (() => Promise<void>) | null = null;
 
+// macOS dims and then sleeps the display on its own schedule. mpv playback is
+// not tied to Chromium's media heuristics, so hold an explicit display-sleep
+// assertion while the embedded player is actually running.
+let nativePlaybackActive = false;
+let browserPlaybackActive = false;
+let displaySleepBlockerId: number | null = null;
+
+function syncDisplaySleepBlocker(): void {
+  if (nativePlaybackActive || browserPlaybackActive) {
+    if (displaySleepBlockerId == null || !powerSaveBlocker.isStarted(displaySleepBlockerId)) {
+      displaySleepBlockerId = powerSaveBlocker.start("prevent-display-sleep");
+    }
+    return;
+  }
+  if (displaySleepBlockerId != null) {
+    if (powerSaveBlocker.isStarted(displaySleepBlockerId)) {
+      powerSaveBlocker.stop(displaySleepBlockerId);
+    }
+    displaySleepBlockerId = null;
+  }
+}
+
 const nativePlayer = new NativePlayerManager(
   (event) => {
     const target = mainWindow;
@@ -60,6 +83,10 @@ const nativePlayer = new NativePlayerManager(
       } catch {
         return [];
       }
+    },
+    onPlaybackActiveChange: (active) => {
+      nativePlaybackActive = active;
+      syncDisplaySleepBlocker();
     },
   },
 );
@@ -341,10 +368,28 @@ function createWindow(serverUrl: string): BrowserWindow {
     win.webContents.send("fullscreen-change", false);
   });
 
+  // Browser-engine playback also needs the display assertion. Electron emits
+  // these for any HTML media element, including the web player.
+  win.webContents.on("media-started-playing", () => {
+    browserPlaybackActive = true;
+    syncDisplaySleepBlocker();
+  });
+  win.webContents.on("media-paused", () => {
+    browserPlaybackActive = false;
+    syncDisplaySleepBlocker();
+  });
+  win.on("closed", () => {
+    browserPlaybackActive = false;
+    syncDisplaySleepBlocker();
+  });
+
   // A renderer reload or navigation ends any embedded playback: libmpv's
   // surface belongs to the window, not the document that asked for it.
   win.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) void nativePlayer.stop();
+    if (!isMainFrame || isInPlace) return;
+    browserPlaybackActive = false;
+    syncDisplaySleepBlocker();
+    void nativePlayer.stop();
   });
 
   win.webContents.on(

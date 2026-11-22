@@ -39,6 +39,8 @@ export interface RemoteTitle {
   releaseDate?: string | null;
   /** Age rating for the selected region, when a detail response resolved it. */
   certification?: string | null;
+  /** The TMDB movie collection this title belongs to, when known. */
+  collection?: { id: number; name: string } | null;
 }
 
 /** Region and maturity settings used to filter the online catalog. */

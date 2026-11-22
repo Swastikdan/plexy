@@ -1,6 +1,6 @@
 {
   "appId": "com.plexy.desktop",
-  "productName": "Plexy Beta",
+  "productName": "Plexy",
   "artifactName": "${productName}-${version}-${arch}.${ext}",
   "directories": {
     "app": "apps/desktop",

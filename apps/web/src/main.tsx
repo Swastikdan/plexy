@@ -31,30 +31,38 @@ const queryClient = new QueryClient({
 
 /** Refresh catalog queries when a background or manual scan completes. */
 function ScanCatalogRefresh() {
-  const { data } = useQuery(queries.serverStatus());
+  const { data } = useQuery({
+    ...queries.serverStatus(),
+    // Only scan transitions matter here. Uptime changes every poll, but the
+    // selected values stay equal, so React Query keeps the previous result.
+    select: (status) => ({
+      scanStatus: status.scan?.status,
+      latestScan: status.recentScans?.[0],
+    }),
+  });
   const queryClient = useQueryClient();
   const scanWasRunning = useRef(false);
   const lastSeenScan = useRef("");
 
   useEffect(() => {
-    if (data?.scan?.status === "running") {
+    if (data?.scanStatus === "running") {
       scanWasRunning.current = true;
       return;
     }
-    if (scanWasRunning.current && data?.scan?.status) {
+    if (scanWasRunning.current && data?.scanStatus) {
       scanWasRunning.current = false;
       void queryClient.invalidateQueries({ queryKey: ["items"] });
       void queryClient.invalidateQueries({ queryKey: ["home"] });
       void queryClient.invalidateQueries({ queryKey: ["title"] });
       void queryClient.invalidateQueries({ queryKey: ["search"] });
     }
-  }, [data?.scan?.status, queryClient]);
+  }, [data?.scanStatus, queryClient]);
 
   // Fast scans can finish between two polls, so a running→idle transition is
   // not always observed. The newest scans-table row is authoritative: a new id
   // (or a newly finished row) also marks the catalog as changed.
   useEffect(() => {
-    const latest = data?.recentScans?.[0];
+    const latest = data?.latestScan;
     if (!latest || latest.status === "running") return;
     const fingerprint = `${latest.id}:${latest.finished_at ?? ""}`;
     const previous = lastSeenScan.current;
@@ -65,7 +73,7 @@ function ScanCatalogRefresh() {
       void queryClient.invalidateQueries({ queryKey: ["search"] });
     }
     lastSeenScan.current = fingerprint;
-  }, [data?.recentScans, queryClient]);
+  }, [data?.latestScan, queryClient]);
 
   return null;
 }

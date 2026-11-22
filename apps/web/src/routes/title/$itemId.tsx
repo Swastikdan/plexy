@@ -36,6 +36,7 @@ import { SubtitleSearchModal } from "@/components/subtitle-search-modal";
 import { Row } from "@/components/row";
 import { Page } from "@/components/page";
 import { State } from "@/components/state";
+import { ArtworkImage } from "@/components/artwork-image";
 import { cx } from "@/lib/cx";
 import { artworkUrl } from "@/lib/artwork-url";
 import { useItemFlags } from "@/lib/use-item-flags";
@@ -230,16 +231,15 @@ function DetailView({
   return (
     <div className="staggered space-y-8">
       <section className="hero-shell flex min-h-[30rem] flex-col sm:min-h-[34rem] lg:min-h-[35rem]">
-        <img
-          src={artworkUrl(item.backdrop ?? item.poster) ?? ""}
+        <ArtworkImage
+          src={item.backdrop ?? item.poster}
+          kind="backdrop"
+          sizes="(min-width: 1696px) 1696px, 100vw"
           alt=""
           fetchPriority="high"
           loading="eager"
           decoding="async"
           className="hero-media absolute inset-0 h-full w-full object-cover object-[center_24%] sm:object-[center_28%]"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
         />
 
         <div className="relative z-10 flex flex-1 flex-col justify-between gap-8 p-5 sm:p-8 lg:p-11">
@@ -593,9 +593,11 @@ function DetailView({
                           className="relative aspect-video w-[7.5rem] shrink-0 overflow-hidden rounded-md border border-border/50 bg-surface-secondary focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 min-[420px]:w-32 sm:w-36"
                         >
                           {ep.poster || ep.backdrop ? (
-                            <img
-                              src={artworkUrl(ep.poster ?? ep.backdrop) ?? ""}
+                            <ArtworkImage
+                              src={ep.poster ?? ep.backdrop}
+                              kind="thumb"
                               alt=""
+                              sizes="(min-width: 640px) 144px, (min-width: 420px) 128px, 120px"
                               loading="lazy"
                               decoding="async"
                               className="zoom-on-hover-strong h-full w-full object-cover"

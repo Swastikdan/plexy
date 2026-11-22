@@ -16,7 +16,7 @@ import type { UpdateProgress, UpdateStatus } from "@plexy/desktop-bridge";
 
 const RELEASE_API =
   "https://api.github.com/repos/Swastikdan/plexy/releases?per_page=100";
-const PRODUCT_NAME = "Plexy Beta";
+const PRODUCT_NAME = "Plexy";
 const APP_BUNDLE_NAME = `${PRODUCT_NAME}.app`;
 const MAX_DOWNLOAD_BYTES = 2_000_000_000;
 
@@ -76,9 +76,7 @@ function installedAppPath(): string {
 
 function installedInSystemApplications(): boolean {
   const target = installedAppPath();
-  return (
-    target.startsWith("/Applications/") || target === "/Applications/Plexy.app"
-  );
+  return target.startsWith("/Applications/");
 }
 
 export async function getUpdateStatus(): Promise<UpdateStatus> {
@@ -364,10 +362,7 @@ export async function checkForUpdates(
         throw new Error("The update archive contains unexpected files.");
       }
       const target = installedAppPath();
-      if (
-        !target.endsWith("/Plexy.app") &&
-        !target.endsWith(`/${APP_BUNDLE_NAME}`)
-      )
+      if (!target.endsWith(`/${APP_BUNDLE_NAME}`))
         throw new Error(
           "Could not determine the installed Plexy application path.",
         );
@@ -425,10 +420,7 @@ export async function checkForUpdates(
         totalBytes: archive.bytes,
       });
 
-      if (
-        target.startsWith("/Applications/") ||
-        target === "/Applications/Plexy.app"
-      ) {
+      if (target.startsWith("/Applications/")) {
         const appleScript = `do shell script ${JSON.stringify(`/bin/bash ${shellQuote(installScript)}`)} with administrator privileges`;
         const child = spawn("/usr/bin/osascript", ["-e", appleScript], {
           detached: true,

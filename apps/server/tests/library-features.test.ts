@@ -173,6 +173,40 @@ describe("catalog feature layer", () => {
     expect(removed.status).toBe(200);
   });
 
+  test("TMDB movie collections are grouped automatically and stay read-only", async () => {
+    run(
+      `UPDATE item_metadata
+       SET collection_id = 9800, collection_name = 'Zebra Collection',
+           collection_checked_at = datetime('now')
+       WHERE item_id = ?`,
+      MOVIE_ID,
+    );
+
+    const list = await request(app, "/collections", token);
+    expect(list.status).toBe(200);
+    const body = await list.json();
+    const automatic = body.collections.find((entry: any) => entry.source === "tmdb");
+    expect(automatic).toMatchObject({
+      id: -9800,
+      name: "Zebra Collection",
+      count: 1,
+      source: "tmdb",
+    });
+
+    const detail = await request(app, "/collections/-9800", token);
+    expect(detail.status).toBe(200);
+    const detailBody = await detail.json();
+    expect(detailBody.collection.source).toBe("tmdb");
+    expect(detailBody.items.map((item: any) => item.id)).toContain(MOVIE_ID);
+
+    // The add-to-collection picker only offers writable, user-created lists.
+    const picker = await request(app, `/collections?itemId=${MOVIE_ID}`, token);
+    const pickerBody = await picker.json();
+    expect(
+      pickerBody.collections.every((entry: any) => entry.source === "custom"),
+    ).toBe(true);
+  });
+
   test("a multi-episode file resolves for its later episode", async () => {
     const detail = await request(app, `/items/${EPISODE_TWO_ID}`, token);
     expect(detail.status).toBe(200);

@@ -10,7 +10,7 @@ export type Release = {
   draft?: boolean;
   assets?: ReleaseAsset[];
 };
-const PRODUCT_NAME = "Plexy Beta";
+const PRODUCT_NAME = "Plexy";
 export function versionFromTag(tag: string): string | null {
   return (
     tag.match(/^v?(\d+\.\d+\.\d+(?:-beta\.\d+)?)(?:-build\.\d+)?$/)?.[1] ?? null
