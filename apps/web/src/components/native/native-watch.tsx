@@ -21,8 +21,8 @@ import { getApiBase } from "@/server-config";
 import { nativeBridge } from "@/lib/native-playback";
 import { useIsFullscreen } from "@/lib/use-fullscreen";
 import { useScreenWakeLock } from "@/lib/use-screen-wake-lock";
-import { creditsStart, segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
-import { NextEpisodeCard } from "@/components/player/next-episode-card";
+import { segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import { NextEpisodeButton } from "@/components/player/next-episode-button";
 import type { NativeAudioTrack, NativePlaybackEvent } from "@/electron";
 import type { ServerAudioTrack } from "@/components/videojs/ui/audio-track-menu";
 import { BufferingIndicator } from "@/components/videojs/ui/buffering-indicator";
@@ -492,7 +492,6 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           cleanSubtitle ? ` · ${cleanSubtitle}` : ""
         }`
       : cleanSubtitle || subtitleEp;
-  const total = duration ?? manifest?.duration ?? null;
   const activeSegment = useMemo((): { kind: SkipSegmentKind; end: number } | null => {
     const data = skipSegments.data;
     if (!data?.enabled) return null;
@@ -502,14 +501,10 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
   }, [position, skipSegments.data]);
 
   const nextEpisode = manifest?.next ?? null;
-  const creditsFrom = creditsStart(skipSegments.data, total);
-  const upNext =
-    Boolean(manifest?.nextFileId) && position > 0 && creditsFrom != null && position >= creditsFrom;
 
   const playNext = useCallback(() => {
     if (!manifest?.nextFileId) return;
-    // Close the finished/up-next chrome immediately so it cannot linger over
-    // the next episode while its manifest and mpv session are still opening.
+    // Hide the button and completion message while the next episode opens.
     setNextDismissed(true);
     setEnded(false);
     endedRef.current = false;
@@ -598,7 +593,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
           {/* Top chrome lives inside the skin so it survives fullscreen. */}
           <div
             style={{ paddingLeft: needsMacOffset && !isFullscreen ? "88px" : undefined }}
-            className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
+            className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
               controlsVisible ? "opacity-100" : "opacity-0"
             }`}
           >
@@ -612,7 +607,7 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
               <ArrowLeft size={20} />
             </button>
 
-            <div className="pointer-events-none absolute left-1/2 top-3.5 w-[min(68vw,46rem)] -translate-x-1/2 text-center">
+            <div className="min-w-0 flex-1">
               <p className="truncate text-[15px] font-semibold leading-tight text-white drop-shadow-[0_1px_10px_rgba(0,0,0,0.65)]">
                 {title}
               </p>
@@ -622,6 +617,9 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
                 </p>
               )}
             </div>
+            {controlsVisible && manifest?.nextFileId && !nextDismissed && (
+              <NextEpisodeButton next={nextEpisode} onPlay={playNext} />
+            )}
           </div>
 
           {activeSegment && !ended && !(activeSegment.kind === "outro" && nextEpisode) && (
@@ -645,31 +643,9 @@ export function NativeWatchPage({ fileId }: { fileId: number }) {
             </button>
           )}
 
-          {nextEpisode && (
-            <NextEpisodeCard
-              next={nextEpisode}
-              upNext={upNext}
-              visible={!ended && !nextDismissed}
-              onPlay={playNext}
-            />
-          )}
-
           {ended && (
-            <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/55">
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/55">
               <p className="font-display text-xl font-bold">Finished</p>
-              {nextEpisode && (
-                <p className="max-w-[min(84vw,28rem)] truncate text-sm text-white/70">
-                  {nextEpisode.subtitle}
-                </p>
-              )}
-              {manifest?.nextFileId && (
-                <button
-                  onClick={playNext}
-                  className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black transition hover:bg-white/85"
-                >
-                  <SkipForward size={17} /> Next episode
-                </button>
-              )}
             </div>
           )}
 
