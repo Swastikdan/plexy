@@ -80,3 +80,74 @@ index 665adefa37834affc5ec88ddbd706b1477b0c288..e53d85f9985cb21588ae8d1ee15367a7
    /**
     * A video player instance. Use [`useVideoPlayer()`](#usevideoplayersource-setup) hook to create one.
     */
+diff --git a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
+--- a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
++++ b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
+@@ -261,7 +261,8 @@
+             duration.toDouble(),
+             availableVideoTracks,
+             newSubtitleTracks,
+-            newAudioTracks
++            newAudioTracks,
++            player.isCurrentMediaItemSeekable
+           )
+         )
+         isLoadingNewSource = false
+diff --git a/android/src/main/java/expo/modules/video/player/PlayerEvent.kt b/android/src/main/java/expo/modules/video/player/PlayerEvent.kt
+--- a/android/src/main/java/expo/modules/video/player/PlayerEvent.kt
++++ b/android/src/main/java/expo/modules/video/player/PlayerEvent.kt
+@@ -117,7 +117,8 @@
+     val duration: Double,
+     val availableVideoTracks: List<VideoTrack>,
+     val availableSubtitleTracks: List<SubtitleTrack>,
+-    val availableAudioTracks: List<AudioTrack>
++    val availableAudioTracks: List<AudioTrack>,
++    val isSeekable: Boolean
+   ) : PlayerEvent() {
+     override val name = "sourceLoad"
+     override val jsEventPayload = VideoSourceLoadedEventPayload(
+@@ -125,6 +126,7 @@
+       duration,
+       availableVideoTracks,
+       availableSubtitleTracks,
+-      availableAudioTracks
++      availableAudioTracks,
++      isSeekable
+     )
+   }
+diff --git a/android/src/main/java/expo/modules/video/records/VideoEventPayloads.kt b/android/src/main/java/expo/modules/video/records/VideoEventPayloads.kt
+--- a/android/src/main/java/expo/modules/video/records/VideoEventPayloads.kt
++++ b/android/src/main/java/expo/modules/video/records/VideoEventPayloads.kt
+@@ -75,5 +75,6 @@
+   @Field val duration: Double,
+   @Field val availableVideoTracks: List<VideoTrack>,
+   @Field val availableSubtitleTracks: List<SubtitleTrack>,
+-  @Field val availableAudioTracks: List<AudioTrack>
++  @Field val availableAudioTracks: List<AudioTrack>,
++  @Field val isSeekable: Boolean
+ ) : VideoEventPayload
+diff --git a/src/VideoPlayerEvents.types.ts b/src/VideoPlayerEvents.types.ts
+--- a/src/VideoPlayerEvents.types.ts
++++ b/src/VideoPlayerEvents.types.ts
+@@ -267,6 +267,9 @@
+  * Data delivered with the [`sourceLoad`](#videoplayerevents) event, contains information about the video source that has finished loading.
+  */
+ export type SourceLoadEventPayload = {
++  /** Whether the loaded Android timeline supports seeking. */
++  isSeekable?: boolean;
++
+   /**
+    * The video source that has been loaded.
+    */
+diff --git a/build/VideoPlayerEvents.types.d.ts b/build/VideoPlayerEvents.types.d.ts
+--- a/build/VideoPlayerEvents.types.d.ts
++++ b/build/VideoPlayerEvents.types.d.ts
+@@ -221,6 +221,8 @@
+  * Data delivered with the [`sourceLoad`](#videoplayerevents) event, contains information about the video source that has finished loading.
+  */
+ export type SourceLoadEventPayload = {
++    /** Whether the loaded Android timeline supports seeking. */
++    isSeekable?: boolean;
+     /**
+      * The video source that has been loaded.
+      */

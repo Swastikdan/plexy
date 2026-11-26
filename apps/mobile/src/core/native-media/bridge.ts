@@ -20,6 +20,9 @@ interface MediaModule {
   addListener<E extends keyof MediaEvents>(event: E, listener: MediaEvents[E]): { remove(): void };
   takeVideo(id: string): Promise<ExternalVideo | null>;
   openPickedVideo?: (uri: string) => Promise<ExternalVideo>;
+  createPlaybackRemux?: () => string;
+  preparePlaybackRemux?: (id: string, uri: string) => Promise<string>;
+  releasePlaybackRemux?: (id: string) => void;
   importVideo(uri: string, name: string): Promise<string>;
   startCasting(id: string, uri: string, title: string, seconds: number): Promise<void>;
   castStatus(id: string): Promise<CastStatus | null>;

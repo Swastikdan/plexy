@@ -16,9 +16,9 @@ import { useIsFullscreen } from "@/lib/use-fullscreen";
 import { useScreenWakeLock } from "@/lib/use-screen-wake-lock";
 import { getPlaybackPreferences } from "@/lib/playback-preferences";
 import { subtitleTrackLabel } from "@/lib/subtitle-label";
-import { creditsStart, segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
+import { segmentAt, skipLabel, type SkipSegmentKind } from "@/lib/skip-segments";
 import { isPrefetchActive, prefetchAssets, prefetchTrickplayTrack } from "@/lib/asset-prefetch";
-import { NextEpisodeCard } from "@/components/player/next-episode-card";
+import { NextEpisodeButton } from "@/components/player/next-episode-button";
 import { NativeWatchPage } from "@/components/native/native-watch";
 import {
   isNativeAvailable,
@@ -178,7 +178,6 @@ function BrowserWatchRoute() {
   const appliedCueOffsetRef = useRef<number>(0);
   // Vertical placement of the caption track, in pixels (positive lifts it up).
   const [subtitlePosition, setSubtitlePosition] = useState<number>(0);
-  const [upNext, setUpNext] = useState(false);
   const [nextDismissed, setNextDismissed] = useState(false);
   const [activeSkipSegment, setActiveSkipSegment] = useState<SkipSegmentKind | null>(null);
 
@@ -242,7 +241,6 @@ function BrowserWatchRoute() {
     setShowMediaError(false);
     setPlaybackActive(false);
     setKnownDuration(null);
-    setUpNext(false);
     setNextDismissed(false);
     setActiveSkipSegment(null);
     autoAdvanceTriggeredRef.current = false;
@@ -812,10 +810,8 @@ function BrowserWatchRoute() {
     if (!next) return;
     const series = play.data?.next?.title;
     if (series) rememberNextSkip(series);
-    // Close the up-next card immediately; the destination may take a moment to
-    // mount and the ended/credits overlay must not stay on top of the new file.
+    // Hide the button while the next episode loads.
     setNextDismissed(true);
-    setUpNext(false);
     void navigate({ to: "/watch/$fileId", params: { fileId: String(next) }, replace: true, state: (previous) => ({ playerFromTitle: previous.playerFromTitle }) });
   }, [navigate, play.data?.nextFileId, play.data?.next?.title]);
 
@@ -823,13 +819,11 @@ function BrowserWatchRoute() {
     hideBuffering();
     const video = videoRef.current;
     if (!video) return;
-    const total = duration ?? (Number.isFinite(video.duration) ? video.duration : null);
     const markers = skipSegmentsQuery.data;
     const series = play.data?.next?.title ?? play.data?.title ?? "";
     const skipKind = segmentAt(markers, video.currentTime);
     setActiveSkipSegment(skipKind);
-    // Auto-skip only intros/recaps. Credits are left to the up-next card so
-    // the viewer can still see the last scene before the next episode starts.
+    // Intro and recap skips seek within the current episode.
     if (skipKind && skipKind !== "outro" && series && segmentSkipCount(series, skipKind) >= 3) {
       const marker = markers?.[skipKind];
       if (marker) {
@@ -837,17 +831,9 @@ function BrowserWatchRoute() {
         setActiveSkipSegment(null);
       }
     }
-    if (!total || !play.data?.nextFileId) {
-      setUpNext(false);
-      return;
-    }
-    // A real credits marker is exact; without one, assume the last chunk of
-    // the runtime is credits rather than waiting for the final 90 seconds.
-    const creditsFrom = creditsStart(markers, total);
-    const inCredits = creditsFrom != null && video.currentTime >= creditsFrom;
-    setUpNext(inCredits);
+    const total = duration ?? (Number.isFinite(video.duration) ? video.duration : null);
     if (
-      markers?.outro && video.currentTime >= markers.outro.start
+      total && play.data?.nextFileId && markers?.outro && video.currentTime >= markers.outro.start
       && series
       && getNextSkipCount(series) >= 3
       && !autoAdvanceTriggeredRef.current
@@ -1197,9 +1183,10 @@ function BrowserWatchRoute() {
                 {/* Top bar lives inside the skin: the skin element is what goes
                     fullscreen, so overlays outside it disappear in fullscreen. */}
                 <div
-                  className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
-                    needsMacOffset ? "pl-[88px]!" : ""
-                  } ${controlsVisible ? "opacity-100" : "opacity-0"}`}
+                  style={{ paddingLeft: needsMacOffset ? "88px" : undefined }}
+                  className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
+                    controlsVisible ? "opacity-100" : "opacity-0"
+                  }`}
                 >
                   <button
                     onClick={leavePlayer}
@@ -1211,26 +1198,29 @@ function BrowserWatchRoute() {
                     <ArrowLeft size={20} />
                   </button>
 
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-semibold text-white">
+                      {play.data?.title}
+                    </p>
+                    {play.data?.subtitle && (
+                      <p className="truncate text-[11px] text-white/75">{play.data.subtitle}</p>
+                    )}
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => setShowPlaybackStats(true)}
                     aria-label="Show playback stats"
                     title="Stats for nerds"
-                    className={`pointer-events-auto ml-auto inline-flex h-10 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "" : "pointer-events-none"}`}
+                    className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${controlsVisible ? "pointer-events-auto" : "pointer-events-none"}`}
                   >
                     <Activity size={16} />
                     <span className="hidden sm:inline">Stats</span>
                   </button>
+                  {controlsVisible && nextEpisode && !nextDismissed && (
+                    <NextEpisodeButton next={nextEpisode} onPlay={playNextEpisode} />
+                  )}
                 </div>
-
-                {nextEpisode && (
-                  <NextEpisodeCard
-                    next={nextEpisode}
-                    upNext={upNext}
-                    visible={!nextDismissed}
-                    onPlay={playNextEpisode}
-                  />
-                )}
 
                 {activeSkipSegment && !(activeSkipSegment === "outro" && nextEpisode) && (
                   <button

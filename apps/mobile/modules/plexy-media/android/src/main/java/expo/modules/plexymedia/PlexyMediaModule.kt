@@ -31,6 +31,7 @@ import java.net.Inet4Address
 
 class PlexyMediaModule : Module() {
   private val main = Handler(Looper.getMainLooper())
+  private val playbackRemux = PlaybackRemux()
   private var incoming: Intent? = null
   private var externalUri: Uri? = null
   private var castContext: CastContext? = null
@@ -62,6 +63,7 @@ class PlexyMediaModule : Module() {
       if (videoUri(intent) != null) incoming = intent
     }
     OnDestroy {
+      playbackRemux.releaseAll()
       main.post {
         stopCast()
         castContext?.sessionManager?.removeSessionManagerListener(castListener, CastSession::class.java)
@@ -100,6 +102,15 @@ class PlexyMediaModule : Module() {
         else level.coerceIn(0.01, 1.0).toFloat()
       window.attributes = attributes
     }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
+
+    Function("createPlaybackRemux") { playbackRemux.create() }
+
+    AsyncFunction("preparePlaybackRemux") { id: String, rawUri: String ->
+      val context = appContext.reactContext ?: error("Android storage is unavailable.")
+      playbackRemux.run(context, id, Uri.parse(rawUri))
+    }
+
+    Function("releasePlaybackRemux") { id: String -> playbackRemux.release(id) }
 
     AsyncFunction("takeVideo") { requestId: String ->
       val intent = listOfNotNull(incoming, appContext.currentActivity?.intent)

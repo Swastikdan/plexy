@@ -30,6 +30,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { localSegments } from "@plexy/local-library/library";
+import { nativeMedia } from "@/core/native-media/bridge";
 import { useClient } from "@/core/client/client-provider";
 import type { ShowTrackPreferences } from "@/core/client/preferences";
 import type {
@@ -74,6 +75,7 @@ interface SourceChoice {
   start: number;
   maxHeight?: number;
   uri?: string;
+  autoplay?: boolean;
   revision: number;
 }
 
@@ -170,7 +172,7 @@ export function PlaybackScreen({
       ? initial.watch.position
       : 0;
   const [resume, setResume] = useState(initialResume > 0);
-  const [started, setStarted] = useState(!initialResume);
+  const awaitingResume = useRef(initialResume > 0);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(
     initial.duration || initial.watch?.duration || 0,
@@ -181,6 +183,9 @@ export function PlaybackScreen({
   const [bufferedPosition, setBufferedPosition] = useState(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [optimizing, setOptimizing] = useState(false);
+  const remux = useRef<{ id: string; originalPosition: number; target?: number; resume?: boolean } | null>(null);
+  const originalUri = externalSource ?? (manifest.path === "unsupported" ? "" : api.stream(manifest.fileId));
   useEffect(() => {
     if (!message) return;
     const t = setTimeout(() => setMessage(""), 4000);
@@ -322,6 +327,7 @@ export function PlaybackScreen({
   useLayoutEffect(() => { preferencesRef.current = preferences; }, [preferences]);
   const lastSaved = useRef(0);
   const chosenStart = useRef(0);
+  const autoplay = useRef(true);
   const initialized = useRef(false);
   const [chromeIn] = React.useState(() => new Animated.Value(1));
   const player = useVideoPlayer(null, (instance) => {
@@ -405,7 +411,7 @@ export function PlaybackScreen({
   useEffect(() => () => endBoost(), [endBoost]);
   const save = useCallback(
     (completed = false, sync = false) => {
-      if (!manifest.itemId || !initialized.current) return;
+      if (!manifest.itemId || !initialized.current || pendingSeek.current || awaitingResume.current || remux.current?.resume) return;
       const length = durationRef.current;
       void progress
         .record({
@@ -467,10 +473,67 @@ export function PlaybackScreen({
   const finishSleepTimer = sleep.finish;
   useLayoutEffect(() => { endCastSleepTimer.current = finishSleepTimer; }, [finishSleepTimer]);
   const seekBurst = useRef({ seconds: 0, at: 0 });
+  const releaseOptimizedCopy = useEventCallback(() => {
+    if (!remux.current) return;
+    nativeMedia?.releasePlaybackRemux?.(remux.current.id);
+    remux.current = null;
+  });
+  const prepareOptimizedCopy = useEventCallback(async (target?: number, resumePlayback: boolean = false) => {
+    const media = nativeMedia;
+    if (!media?.createPlaybackRemux || !media.preparePlaybackRemux ||
+        !media.releasePlaybackRemux || !/^(file|content):\/\//.test(originalUri)) {
+      if (target !== undefined) setMessage("Seeking is unavailable for this video on this device.");
+      return;
+    }
+    seekUnsupported.current = true;
+    setOptimizing(true);
+    try {
+      const job = {
+        id: media.createPlaybackRemux(),
+        originalPosition: currentPosition.current,
+        target,
+        resume: resumePlayback,
+      };
+      remux.current = job;
+      const uri = await media.preparePlaybackRemux(job.id, originalUri);
+      if (!mounted.current || remux.current !== job) return;
+      if (casting.current || (job.target === undefined && player.duration > 0 && player.currentTime >= player.duration)) {
+        releaseOptimizedCopy();
+        return;
+      }
+      job.originalPosition = currentPosition.current;
+      save(false, true);
+      const start = job.target ?? job.originalPosition;
+      const shouldPlay = job.resume || player.playing;
+      job.resume = false;
+      job.target = undefined;
+      setChoice((old) => ({ ...old, uri, start, autoplay: shouldPlay }));
+      reveal();
+      setMessage("Using an optimized version for seeking. Embedded subtitles may be unavailable.");
+    } catch {
+      if (!mounted.current) return;
+      const failed = remux.current;
+      releaseOptimizedCopy();
+      if (failed?.target !== undefined) {
+        setMessage("Couldn’t prepare a seekable copy. Playing the original version.");
+      }
+      if (failed?.resume && !sleepPaused.current) player.play();
+    } finally {
+      if (mounted.current) setOptimizing(false);
+    }
+  });
+  const restoreOriginal = useEventCallback(() => {
+    if (!choice.uri || !remux.current) return false;
+    const start = remux.current.originalPosition;
+    seekUnsupported.current = true;
+    releaseOptimizedCopy();
+    setChoice((old) => ({ ...old, uri: undefined, start, revision: old.revision + 1 }));
+    setMessage("Couldn’t play the optimized version. Returning to the original.");
+    return true;
+  });
   // Some containers (notably Matroska files without a usable cue index) make
   // ExoPlayer snap back to the start instead of honouring a seek. Check where
-  // the player actually landed; retry once with a nearest-keyframe tolerance,
-  // then tell the viewer instead of leaving the timeline on a false position.
+  // the player actually landed before preparing an indexed copy.
   const verifySeek = useEventCallback((target: number, attempt: number) => {
     const check = (nextAttempt: number) => {
       if (seekWatchdog.current) clearTimeout(seekWatchdog.current);
@@ -484,6 +547,9 @@ export function PlaybackScreen({
           return;
         }
         if (seekLanded(target, actual)) {
+          pendingSeek.current = null;
+          currentPosition.current = actual;
+          setPosition(actual);
           try {
             updateNativePlayer(player, "seekTolerance", {
               toleranceBefore: 0.5,
@@ -503,7 +569,7 @@ export function PlaybackScreen({
           } catch {
             /* Fall through to the retry below. */
           }
-          pendingSeek.current = { target, until: Date.now() + 2500 };
+          pendingSeek.current = { target, until: Date.now() + 4000 };
           updateNativePlayer(player, "currentTime", target);
           check(1);
           return;
@@ -511,11 +577,11 @@ export function PlaybackScreen({
         pendingSeek.current = null;
         currentPosition.current = actual;
         setPosition(actual);
-        if (!seekUnsupported.current) {
+        if (!seekUnsupported.current && !choice.uri && !remux.current) {
           seekUnsupported.current = true;
-          setMessage(
-            "This video’s format can’t seek on this device. Playback will continue from where it is.",
-          );
+          void prepareOptimizedCopy(target);
+        } else {
+          setMessage("This video could not seek to the requested position.");
         }
       }, nextAttempt === 0 ? 1800 : 2200);
     };
@@ -536,11 +602,33 @@ export function PlaybackScreen({
       cast.command("seek", target);
       return;
     }
-    pendingSeek.current = { target, until: Date.now() + 2500 };
+    if (remux.current && !choice.uri) {
+      remux.current.target = target;
+      return;
+    }
+    if (!initialized.current) return;
+    pendingSeek.current = { target, until: Date.now() + 4000 };
     updateNativePlayer(player, "currentTime", target);
     currentPosition.current = target;
     setPosition(target);
     verifySeek(target, 0);
+  });
+  const startPlayback = useEventCallback((start: number) => {
+    awaitingResume.current = false;
+    setResume(false);
+    reveal();
+    if (!initialized.current) {
+      chosenStart.current = start;
+      autoplay.current = true;
+      return;
+    }
+    if (start > 0 && remux.current && !choice.uri) {
+      remux.current.target = start;
+      remux.current.resume = true;
+      return;
+    }
+    if (start > 0) seek(start);
+    if (!sleepPaused.current) player.play();
   });
   const seekWithFeedback = useEventCallback((seconds: number) => {
     const now = Date.now();
@@ -550,7 +638,7 @@ export function PlaybackScreen({
       Math.sign(previous.seconds) === Math.sign(seconds);
     const total = repeated ? previous.seconds + seconds : seconds;
     seekBurst.current = { seconds: total, at: now };
-    seek(currentPosition.current + seconds);
+    seek((remux.current?.target ?? currentPosition.current) + seconds);
     triggerHaptic("light");
     setSeekNotice({ seconds: total, id: now });
     if (seekNoticeTimer.current) clearTimeout(seekNoticeTimer.current);
@@ -571,8 +659,9 @@ export function PlaybackScreen({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      releaseOptimizedCopy();
     };
-  }, []);
+  }, [releaseOptimizedCopy]);
   useEffect(() => {
     const subs = [
       player.addListener("timeUpdate", (e) => {
@@ -614,6 +703,7 @@ export function PlaybackScreen({
           setVisible(true);
         }
         if (e.status === "error") {
+          if (restoreOriginal()) return;
           setError(
             "This device could not play the original file. Its video, audio or container format may be unsupported.",
           );
@@ -638,15 +728,24 @@ export function PlaybackScreen({
           pending && Date.now() < pending.until
             ? pending.target
             : chosenStart.current;
-        const value = Math.max(0, start - offset.current);
+        const shouldPrepare = !initialized.current && expectedUri.current === originalUri &&
+          !seekUnsupported.current && e.isSeekable === false && e.availableVideoTracks.length > 0;
+        if (shouldPrepare) void prepareOptimizedCopy(start > 0 ? start : undefined, start > 0);
+        const queuedResume = start > 0 && Boolean(remux.current?.resume);
+        const value = queuedResume ? 0 : Math.max(0, start - offset.current);
+        if (!initialized.current && start > 0 && !queuedResume) {
+          pendingSeek.current = { target: start, until: Date.now() + 4000 };
+          verifySeek(start, seekUnsupported.current ? 1 : 0);
+        }
         updateNativePlayer(player, "currentTime", value);
-        currentPosition.current = start;
-        setPosition(start);
+        currentPosition.current = queuedResume ? 0 : start;
+        setPosition(currentPosition.current);
         if (!durationRef.current && e.duration > 0) setDuration(e.duration);
         initialized.current = true;
         setEnded(false);
         updateNativePlayer(player, "playbackRate", preferencesRef.current.playbackRate);
-        if (!sleepPaused.current) player.play();
+        if (!awaitingResume.current && !queuedResume && !sleepPaused.current && autoplay.current) player.play();
+        else player.pause();
       }),
       player.addListener("playToEnd", () => {
         if (!initialized.current || casting.current) return;
@@ -661,7 +760,7 @@ export function PlaybackScreen({
       save(false, true);
       subs.forEach((s) => s.remove());
     };
-  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost, finishSleepTimer, casting]);
+  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost, finishSleepTimer, casting, restoreOriginal, verifySeek, prepareOptimizedCopy, originalUri]);
   const [previousChoice, setPreviousChoice] = useState(choice);
   if (previousChoice !== choice) {
     setPreviousChoice(choice);
@@ -671,11 +770,11 @@ export function PlaybackScreen({
     setBufferedPosition(0);
   }
   useEffect(() => {
-    if (!started || choice.path === "unsupported") return;
+    if (choice.path === "unsupported") return;
     let live = true;
     initialized.current = false;
     pendingSeek.current = null;
-    seekUnsupported.current = false;
+    if (choice.uri) seekUnsupported.current = false;
     if (seekWatchdog.current) {
       clearTimeout(seekWatchdog.current);
       seekWatchdog.current = null;
@@ -690,7 +789,8 @@ export function PlaybackScreen({
     }
     offset.current = 0;
     chosenStart.current = choice.start;
-    const uri = externalSource ?? api.stream(manifest.fileId);
+    autoplay.current = choice.autoplay ?? true;
+    const uri = choice.uri ?? originalUri;
     expectedUri.current = uri;
     void player
       .replaceAsync({
@@ -702,7 +802,7 @@ export function PlaybackScreen({
         },
       })
       .catch(() => {
-        if (live)
+        if (live && !restoreOriginal())
           setError(
             "Could not open this local video. Check file access, then retry.",
           );
@@ -710,7 +810,7 @@ export function PlaybackScreen({
     return () => {
       live = false;
     };
-  }, [api, choice, externalSource, manifest.fileId, manifest.title, manifest.subtitle, player, started]);
+  }, [choice, originalUri, manifest.title, manifest.subtitle, player, restoreOriginal]);
   useEffect(() => { autoSkipEnd.current = -1; }, [manifest.fileId]);
   const validatedSkips = React.useMemo(() => localSegments(skips ?? { intro: null, recap: null, outro: null }, duration || null), [skips, duration]);
   useEffect(() => {
@@ -967,6 +1067,17 @@ export function PlaybackScreen({
         />
 
         {openingVideo && !resume && <PlayerLoading />}
+        {(optimizing || (choice.uri && visible)) && (
+          <View
+            pointerEvents="none"
+            className="absolute self-center rounded-full bg-black/80 px-4 py-2"
+            style={{ top: Math.max(insets.top, 10) + 36 }}
+          >
+            <Text className="text-[13px] text-white" accessibilityLiveRegion="polite">
+              {optimizing ? "Preparing optimized version…" : "Optimized version"}
+            </Text>
+          </View>
+        )}
         <Animated.View
           pointerEvents="none"
           style={{
@@ -1412,10 +1523,7 @@ export function PlaybackScreen({
             <Pressable
               onPress={() => {
                 triggerHaptic("light");
-                reveal();
-                setChoice((old) => ({ ...old, start: initialResume }));
-                setResume(false);
-                setStarted(true);
+                startPlayback(initialResume);
               }}
               accessibilityRole="button"
               accessibilityLabel={`Continue watching from ${timeLabel(initialResume)}`}
@@ -1432,10 +1540,7 @@ export function PlaybackScreen({
             <Pressable
               onPress={() => {
                 triggerHaptic("light");
-                reveal();
-                setChoice((old) => ({ ...old, start: 0 }));
-                setResume(false);
-                setStarted(true);
+                startPlayback(0);
               }}
               accessibilityRole="button"
               accessibilityLabel="Start from beginning"
@@ -1456,7 +1561,7 @@ export function PlaybackScreen({
         sleep={sleep}
         extraActions={[
           ...(addExternalToLibrary ? [{ label: "Add to library", onPress: addExternalToLibrary }] : []),
-          ...(cast.available ? [cast.active
+          ...(cast.available && !optimizing ? [cast.active
             ? { label: "Stop casting", onPress: () => cast.command("stop") }
             : { label: "Cast to TV", onPress: () => {
               try {
