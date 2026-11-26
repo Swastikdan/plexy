@@ -89,7 +89,7 @@ export function ProfilePhotoEditor({ user }: { user?: AccountUser }) {
   };
 
   return (
-    <section className="panel p-4 sm:p-5">
+    <section className="rounded-xl border border-border bg-surface p-4 sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <UserAvatar user={user} size={56} className="rounded-2xl" />

@@ -1,4 +1,6 @@
 import { Text, View } from "react-native";
+import Animated from "react-native-reanimated";
+import { LIST_ITEM_EXIT, LIST_LAYOUT } from "@/shared/ui/list-motion";
 import { useClient } from "@/core/client/client-provider";
 import { useHiddenTitles } from "@/core/content/hidden-titles";
 import { useColors } from "@/shared/theme";
@@ -29,8 +31,10 @@ export function HiddenTitlesSettings() {
     <View className="gap-4">
       <View className="overflow-hidden rounded-[18px] bg-surface">
         {hidden.map((entry) => (
-          <View
+          <Animated.View
             key={entry.publicId}
+            layout={LIST_LAYOUT}
+            exiting={LIST_ITEM_EXIT}
             className="min-h-[82px] flex-row items-center gap-3 border-b-[0.33px] border-border px-4 py-3"
           >
             <View className="h-[58px] w-[40px] overflow-hidden rounded-[7px] bg-surface-secondary">
@@ -57,13 +61,13 @@ export function HiddenTitlesSettings() {
             </View>
             <Button
               label="Restore"
-              style={{ minHeight: 40, paddingHorizontal: 14, paddingVertical: 8 }}
+              className="min-h-10 px-3.5 py-2"
               onPress={() => {
                 triggerHaptic("light");
                 void restore(entry.publicId);
               }}
             />
-          </View>
+          </Animated.View>
         ))}
       </View>
       <Button
@@ -72,7 +76,7 @@ export function HiddenTitlesSettings() {
           triggerHaptic("medium");
           void restoreAll();
         }}
-        style={{ alignSelf: "flex-start" }}
+        className="self-start"
       />
     </View>
   );

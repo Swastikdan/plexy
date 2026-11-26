@@ -26,7 +26,7 @@ function Row({ row }: { row: TrackRow }) {
       onPress={() => { triggerHaptic("selection"); row.onPress(); }}
       className={cn(
         "min-h-[52px] flex-row items-center justify-between rounded-[12px] px-4 py-2.5 active:bg-foreground/10",
-        row.selected && "bg-accent/15",
+        row.selected && "bg-foreground/[0.08]",
       )}
     >
       <View className="mr-3 flex-1">

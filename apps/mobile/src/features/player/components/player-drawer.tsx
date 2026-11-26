@@ -302,7 +302,7 @@ export function PlayerDrawer({
                         className={cn(
                           "ml-2 h-12 w-12 rounded-full items-center justify-center active:opacity-60",
                           isEpWatched
-                            ? "bg-accent/20"
+                            ? "bg-foreground/[0.08]"
                             : "bg-foreground/[0.08]",
                         )}
                         accessibilityRole="button"

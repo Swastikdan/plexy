@@ -21,7 +21,6 @@ import {
   Animated,
   AppState,
   BackHandler,
-  Easing,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -44,7 +43,7 @@ import {
   languageTag,
   mediaLanguageName,
 } from "@/shared/lib/media-language";
-import { timeLabel } from "@/shared/theme";
+import { easings, timeLabel } from "@/shared/theme";
 import { Notice } from "@/shared/ui/notice";
 import { LocalThumbnail } from "./components/local-thumbnail";
 import { SubtitleSearch } from "./components/subtitle-search";
@@ -328,7 +327,10 @@ export function PlaybackScreen({
   const player = useVideoPlayer(null, (instance) => {
     instance.bufferOptions = bufferOptionsForDuration(initial.duration || 0);
     instance.timeUpdateEventInterval = 0.5;
-    instance.staysActiveInBackground = false;
+    // Background play keeps audio running with a media notification; without
+    // it, Expo pauses when the view is not entering PiP.
+    instance.staysActiveInBackground = preferencesRef.current.backgroundPlay;
+    instance.showNowPlayingNotification = preferencesRef.current.backgroundPlay;
     instance.keepScreenOnWhilePlaying = true;
   });
   const {
@@ -796,8 +798,8 @@ export function PlaybackScreen({
         save(false, true);
         // Expo handles background pausing natively. Pausing here races Android's
         // home-gesture PiP transition, whose start callback can arrive later.
-        // staysActiveInBackground remains false, so playback stops when the
-        // native view is not entering PiP (for example when the device locks).
+        // Unless background play is on, playback stops when the native view
+        // is not entering PiP (for example when the device locks).
       } else reveal();
     });
     return () => sub.remove();
@@ -890,7 +892,7 @@ export function PlaybackScreen({
         Animated.timing(resumeBackdropOpacity, {
           toValue: 1,
           duration: reduceMotion ? 0 : 200,
-          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          easing: easings.out,
           useNativeDriver: true,
         }),
         Animated.sequence([
@@ -899,13 +901,13 @@ export function PlaybackScreen({
             Animated.timing(resumeCardOpacity, {
               toValue: 1,
               duration: reduceMotion ? 0 : 240,
-              easing: Easing.bezier(0.23, 1, 0.32, 1),
+              easing: easings.out,
               useNativeDriver: true,
             }),
             Animated.timing(resumeCardScale, {
               toValue: 1,
               duration: reduceMotion ? 0 : 240,
-              easing: Easing.bezier(0.23, 1, 0.32, 1),
+              easing: easings.out,
               useNativeDriver: true,
             }),
           ]),
@@ -919,7 +921,7 @@ export function PlaybackScreen({
       Animated.timing(chromeIn, {
         toValue: 1,
         duration: reduceMotion ? 0 : 220,
-        easing: Easing.bezier(0.23, 1, 0.32, 1),
+        easing: easings.out,
         useNativeDriver: true,
       }).start();
     }

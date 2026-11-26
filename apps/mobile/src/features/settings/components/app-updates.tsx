@@ -13,6 +13,8 @@ openUnknownAppsSettings,
 type AppInfo,
 type UpdateInfo,
 } from "@/features/settings/lib/app-updater";
+const LATEST_RELEASE_URL = "https://github.com/Swastikdan/plexy/releases/latest";
+
 export function Updates() {
   const showDialog = useAppDialog();
   const online = useOnline();
@@ -66,18 +68,30 @@ export function Updates() {
       <Label>
         {info ? `Installed: ${info.versionName}` : "Reading installed version…"}
       </Label>
-      <Button
-        label={busy ? "Please wait…" : "Check update"}
-        disabled={!online || busy}
-        onPress={() => void check()}
-      />
+      <View className="flex-row gap-3">
+        <View className="flex-1">
+          <Button
+            className="w-full px-3"
+            label={busy ? "Please wait…" : "Check update"}
+            disabled={!online || busy}
+            onPress={() => void check()}
+          />
+        </View>
+        <View className="flex-1">
+          <Button
+            className="w-full px-3"
+            label="Get from GitHub"
+            disabled={busy || !online}
+            onPress={() => void Linking.openURL(update?.apkUrl ?? LATEST_RELEASE_URL).catch((error) => setMessage(String(error)))}
+          />
+        </View>
+      </View>
       {!online ? <Label>Connect to the internet to check for updates.</Label> : null}
       {update && (
         <>
           <Label>Available: {update.tagName}</Label>
           <Button
             primary
-            style={{ width: 120, flexShrink: 0 }}
             label={progress === 100 ? "Install…" : progress !== null ? "Downloading…" : "Update now"}
             disabled={!online || busy}
             onPress={() => showDialog("Download update?", `Download ${update.tagName}? Android will ask you to confirm installation after the download.`, [
@@ -88,11 +102,6 @@ export function Updates() {
             label="Allow installations"
             disabled={busy}
             onPress={() => void openUnknownAppsSettings().catch((error) => setMessage(String(error)))}
-          />
-          <Button
-            label="Download in browser"
-            disabled={busy || !online}
-            onPress={() => void Linking.openURL(update.apkUrl).catch((error) => setMessage(String(error)))}
           />
         </>
       )}

@@ -33,7 +33,7 @@ export function BottomNav({ className }: { className?: string }) {
   return (
     <nav
       className={cx(
-        "glass fixed inset-x-0 bottom-0 z-40 border-t border-border/80 lg:hidden",
+        "fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-[color-mix(in_oklab,var(--background)_72%,transparent)] backdrop-blur-[18px] backdrop-saturate-[1.15] lg:hidden",
         "px-3 pb-[max(env(safe-area-inset-bottom),0.55rem)] pt-1.5",
         className,
       )}

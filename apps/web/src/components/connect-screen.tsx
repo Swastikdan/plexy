@@ -167,8 +167,7 @@ export function ConnectScreen({
         </div>
       )}
       <div
-        className="absolute left-3 top-3 z-10 flex items-center gap-1.5 sm:left-6"
-        style={{ left: isElectronMac() && !isFullscreen ? 96 : undefined }}
+        className={`absolute top-3 z-10 flex items-center gap-1.5 ${isElectronMac() && !isFullscreen ? "left-[96px]" : "left-3 sm:left-6"}`}
       >
         {onCancel && <BackButton onClick={onCancel} label="Back to Plexy" />}
         <span className="truncate font-sans text-sm font-bold tracking-[-0.02em] text-foreground sm:text-[15px]">

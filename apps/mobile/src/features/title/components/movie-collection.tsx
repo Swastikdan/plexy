@@ -87,18 +87,12 @@ export function MovieCollection({
   if (!collection && data.loading) {
     return (
       <View className="gap-3 pt-1">
-        <SkeletonBlock style={{ width: 168, height: 18 }} />
-        <View className="flex-row flex-wrap" style={{ gap: GAP }}>
+        <SkeletonBlock className="w-[168px] h-[18px]" />
+        <View className="flex-row flex-wrap gap-2.5">
           {Array.from({ length: COLUMNS * 3 }, (_, index) => (
             <View key={index} style={{ width: cardWidth }} className="gap-2">
-              <SkeletonBlock
-                style={{
-                  width: "100%",
-                  aspectRatio: 2 / 3,
-                  borderRadius: 8,
-                }}
-              />
-              <SkeletonBlock style={{ width: "55%", height: 11 }} />
+              <SkeletonBlock className="w-full aspect-[2/3]" />
+              <SkeletonBlock className="w-[55%] h-[11px]" />
             </View>
           ))}
         </View>
@@ -138,10 +132,7 @@ export function MovieCollection({
           </Text>
         ) : null}
       </View>
-      <View
-        className="flex-row flex-wrap"
-        style={{ columnGap: GAP, rowGap: 18 }}
-      >
+      <View className="flex-row flex-wrap gap-x-2.5 gap-y-[18px]">
         {collection.parts.map((title) => {
           const item = toItemCard(
             title,

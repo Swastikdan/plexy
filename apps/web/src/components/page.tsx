@@ -18,7 +18,9 @@ export function Page({
   return (
     <main
       className={cx(
-        width === "reading" ? "mx-auto w-full max-w-4xl px-4 sm:px-8" : "app-page",
+        width === "reading"
+          ? "mx-auto w-full max-w-4xl px-4 sm:px-8"
+          : "mx-auto w-full max-w-[var(--app-max)] px-[var(--app-gutter)]",
         "min-h-dvh pb-14 pt-5 sm:pt-7",
         className,
       )}
@@ -45,7 +47,7 @@ export function SectionHeading({
     <div className={cx("flex flex-wrap items-end justify-between gap-x-6 gap-y-3", className)}>
       <div className="min-w-0">
         {eyebrow && (
-          <p className="eyebrow mb-2 flex items-center gap-2">
+          <p className="text-[0.6875rem] font-semibold tracking-[0.01em] leading-[1.25] text-muted mb-2 flex items-center gap-2">
             <span aria-hidden className="h-px w-5 bg-accent/70" />
             {eyebrow}
           </p>

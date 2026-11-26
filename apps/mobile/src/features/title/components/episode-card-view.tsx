@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from "react-native";
+import { Tappable } from "@/shared/ui/tappable";
 import { cn } from "@/shared/lib/cn";
 import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { useColors } from "@/shared/theme";
@@ -51,7 +52,8 @@ export function EpisodeCardView({
 }) {
   const colors = useColors();
   return (
-    <Pressable
+    <Tappable
+      feedback="scale"
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={LONG_PRESS_MS}
@@ -63,8 +65,8 @@ export function EpisodeCardView({
         `${title}${watched ? ", watched" : ""}${selecting ? (selected ? ", selected" : ", not selected") : ""}`
       }
       className={cn(
-        "flex-row gap-[14px] rounded-[10px] px-2 py-3 active:opacity-80",
-        selecting && selected && "bg-accent/15",
+        "flex-row gap-[14px] rounded-[10px] px-2 py-3",
+        selecting && selected && "bg-foreground/[0.08]",
       )}
     >
       <View className="aspect-[16/9] w-[148px] shrink-0 overflow-hidden rounded-lg bg-surface">
@@ -128,7 +130,7 @@ export function EpisodeCardView({
                 onPress={onToggleWatched}
                 hitSlop={10}
                 className={cn(
-                  "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-60",
+                  "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-70",
                   watched && "border-accent/40 bg-accent/15",
                 )}
                 accessibilityRole="button"
@@ -161,6 +163,6 @@ export function EpisodeCardView({
           </Text>
         )}
       </View>
-    </Pressable>
+    </Tappable>
   );
 }

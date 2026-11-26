@@ -1,6 +1,7 @@
 import type { LocalCatalog , ItemCard } from "@/core/library/catalog-api";
 import { useState } from "react";
-import { Pressable,Text,View } from "react-native";
+import { Text,View } from "react-native";
+import { Tappable } from "@/shared/ui/tappable";
 import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { Play } from "@/shared/ui/icons";
 import { PosterImage } from "@/shared/ui/poster-image";
@@ -49,7 +50,8 @@ export function ContinueWatchingCard({
     subtitle = "";
   }
   return (
-    <Pressable
+    <Tappable
+      feedback="scale"
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={LONG_PRESS_MS}
@@ -58,13 +60,10 @@ export function ContinueWatchingCard({
         onFocus?.();
       }}
       onBlur={() => setFocus(false)}
-      className="w-[168px] gap-1.5 active:opacity-80"
+      className="w-[168px] gap-1.5"
     >
       {/* 16:9 Thumbnail container */}
-      <View
-        className="w-full items-center justify-center overflow-hidden rounded-[8px] bg-surface"
-        style={{ aspectRatio: 16 / 9 }}
-      >
+      <View className="aspect-[16/9] w-full items-center justify-center overflow-hidden rounded-[8px] bg-surface">
         <PosterImage source={api.image(item.backdrop || item.poster)} />
         {!item.backdrop && !item.poster && (
           <View className="h-full w-full bg-surface-secondary" />
@@ -124,6 +123,6 @@ export function ContinueWatchingCard({
           </Text>
         )}
       </View>
-    </Pressable>
+    </Tappable>
   );
 }

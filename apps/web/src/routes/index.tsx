@@ -141,7 +141,7 @@ function HomeRoute() {
           )}
         </div>
       ) : (
-        <div className="staggered space-y-3 pb-8 sm:space-y-4">
+        <div className="space-y-3 pb-8 sm:space-y-4">
           {featuredItems.length > 0 && <HomeHero items={featuredItems} />}
 
           <div className="space-y-8 sm:space-y-9">

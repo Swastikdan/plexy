@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Pressable,
   Text,
   View,
   type StyleProp,
@@ -8,13 +7,16 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useColors } from "@/shared/theme";
+import { cn } from "@/shared/lib/cn";
 import { ChevronLeft } from "./icons";
 import { PlexyMark } from "./brand-logo";
+import { Tappable } from "./tappable";
 
 export function PageHeader({
   title,
   logo = false,
   right,
+  className,
   style,
   subtitle,
   onBack,
@@ -24,13 +26,17 @@ export function PageHeader({
   onBack?: () => void;
   logo?: boolean;
   right?: React.ReactNode;
+  className?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const { canGoBack, back, navigate } = useRouter();
   const colors = useColors();
   return (
     <View
-      className="flex-row items-center justify-between px-5 pt-[18px] pb-3 min-h-[64px]"
+      className={cn(
+        "flex-row items-center justify-between px-5 pt-[18px] pb-3 min-h-[64px]",
+        className,
+      )}
       style={style}
     >
       <View
@@ -41,7 +47,7 @@ export function PageHeader({
         }
       >
         {!logo && (
-          <Pressable
+          <Tappable
             accessibilityRole="button"
             accessibilityLabel="Go back"
             onPress={
@@ -49,10 +55,10 @@ export function PageHeader({
               (() => (canGoBack() ? back() : navigate("/")))
             }
             hitSlop={6}
-            className="h-9 w-11 items-center justify-center active:opacity-60"
+            className="h-9 w-11 items-center justify-center"
           >
             <ChevronLeft size={26} color={colors.ink} />
-          </Pressable>
+          </Tappable>
         )}
         {logo ? (
           <>

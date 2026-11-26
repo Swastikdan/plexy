@@ -29,8 +29,10 @@ import {
   Film,
   Folder,
   ArrowUpDown,
-  ChevronDown,
+  Calendar,
+  Check,
   ChevronRight,
+  Filter,
   Plus,
   X,
 } from "@/shared/ui/icons";
@@ -38,6 +40,7 @@ import { Notice } from "@/shared/ui/notice";
 import { PageState } from "@/shared/ui/page-state";
 import { PageHeader } from "@/shared/ui/page-header";
 import { LibraryGridSkeleton } from "@/shared/ui/skeleton";
+import { Reveal } from "@/shared/ui/reveal";
 import { Card } from "@/shared/ui/media-card";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { TitleBrowser } from "@/features/catalog/components/title-browser";
@@ -51,7 +54,8 @@ import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { certificationFor, fetchDetail } from "@/features/remote/lib/tmdb";
 import { parseRemotePublicId, remotePublicId, toItemCard } from "@/features/remote/lib/view";
-import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
+import { Tappable } from "@/shared/ui/tappable";
+import { ToggleSwitch } from "@/shared/ui/toggle-switch";
 import { useTitlePrefetch } from "@/features/catalog/hooks/use-title-prefetch";
 import { useCollections } from "@/features/collections/collections-store";
 
@@ -110,7 +114,7 @@ export function LibraryScreen({
   const [maxRuntime, setMaxRuntime] = useState<number>();
   const [unwatched, setUnwatched] = useState(false);
   const [offlineOnly, setOfflineOnly] = useState(false);
-  const [sortOpen, setSortOpen] = useState(false);
+  const [sheet, setSheet] = useState<"sort" | "filter" | null>(null);
   const [collection, setCollection] = useState<{
     name: string;
     items: ItemCard[];
@@ -340,44 +344,61 @@ export function LibraryScreen({
       <PageHeader
         title="Libraries"
         right={
-          activeTab === "collection" ? undefined : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Sort and filter. ${sortLabel}${unwatched ? ", unwatched only" : ""}${offlineFilter ? ", offline only" : ""}${genre ? `, ${genre}` : ""}${activeTab !== "series" && maxRuntime ? `, up to ${maxRuntime} minutes` : ""}`}
-              onPress={() => {
-                triggerHaptic("light");
-                setSortOpen(true);
-              }}
-              className={cn(
-                "flex-row items-center gap-1.5 h-[38px] px-3 rounded-full border border-foreground/14 bg-surface max-w-[190px]",
-                sortOpen && "border-foreground/40 bg-surface-secondary",
-                "active:opacity-[0.72]",
-              )}
-            >
-              <ArrowUpDown size={14} color={colors.ink} strokeWidth={2} />
-              <Text
-                className="font-archivo-medium text-[12.5px] text-foreground shrink"
-                numberOfLines={1}
+          // Fixed height so switching to Collections (no sort/filter) never
+          // changes the header height.
+          <View className="h-[38px] flex-row items-center gap-2">
+            {online ? (
+              <Tappable
+                accessibilityRole="button"
+                accessibilityLabel="Episode calendar"
+                onPress={() => router.push("/episode-calendar")}
+                className="h-[38px] w-[38px] items-center justify-center rounded-full border border-foreground/14 bg-surface"
               >
-                {filterCount ? `Filters (${filterCount})` : sortLabel}
-              </Text>
-              <ChevronDown size={14} color={colors.muted} strokeWidth={2.2} />
-            </Pressable>
-          )
+                <Calendar size={17} color={colors.ink} strokeWidth={1.9} />
+              </Tappable>
+            ) : null}
+            {activeTab !== "collection" ? (
+              <View className="h-[38px] flex-row items-center rounded-full border border-foreground/14 bg-surface">
+                <Tappable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Sort by ${sortLabel}`}
+                  onPress={() => {
+                    triggerHaptic("light");
+                    setSheet("sort");
+                  }}
+                  className="h-full flex-row items-center gap-1.5 pl-3 pr-2.5"
+                >
+                  <ArrowUpDown size={14} color={colors.ink} strokeWidth={2} />
+                  <Text
+                    className="font-archivo-medium text-[12.5px] text-foreground"
+                    numberOfLines={1}
+                  >
+                    {({ added: "Recent", name: "Name", year: "Year", rating: "Rating" } as Record<string, string>)[sort] ?? "Name"}
+                  </Text>
+                </Tappable>
+                <View className="h-[18px] w-px bg-foreground/14" />
+                <Tappable
+                  accessibilityRole="button"
+                  accessibilityLabel={filterCount ? `Filters, ${filterCount} active` : "Filters"}
+                  onPress={() => {
+                    triggerHaptic("light");
+                    setSheet("filter");
+                  }}
+                  className="h-full flex-row items-center gap-1.5 pl-2.5 pr-3"
+                >
+                  <Filter size={15} color={colors.ink} strokeWidth={2} />
+                  {filterCount ? (
+                    <View className="h-[18px] min-w-[18px] items-center justify-center rounded-full bg-foreground px-1">
+                      <Text className="font-archivo-bold text-[11px] text-background">{filterCount}</Text>
+                    </View>
+                  ) : null}
+                </Tappable>
+              </View>
+            ) : null}
+          </View>
         }
       />
 
-      {online ? (
-        <View className="flex-row px-5 pb-2">
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push("/episode-calendar")}
-            className="rounded-full border border-border px-4 py-2"
-          >
-            <Text className="font-archivo-medium text-foreground">Episode calendar</Text>
-          </Pressable>
-        </View>
-      ) : null}
       <TitleBrowser
         title={collection?.name ?? null}
         items={collection?.items ?? []}
@@ -423,7 +444,7 @@ export function LibraryScreen({
                     "flex-1 items-center justify-center rounded-full",
                     libraryTabs.length >= 5 ? "px-1.5" : "px-2",
                     active && "bg-foreground",
-                    !active && "active:opacity-[0.65]",
+                    !active && "active:opacity-70",
                   )}
                 >
                   <Text
@@ -518,14 +539,14 @@ export function LibraryScreen({
                 </Pressable>
               )}
               ListEmptyComponent={
-                <View className="flex-1 items-center justify-center px-6 py-16">
-                  <View className="h-16 w-16 items-center justify-center rounded-full border border-border bg-surface">
-                    <Folder size={28} color={colors.muted} strokeWidth={1.8} />
+                <View className="flex-1 items-center justify-center gap-3 px-6 pb-16">
+                  <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
+                    <Folder size={28} color={colors.brandLight} />
                   </View>
-                  <Text className="mt-5 text-center font-archivo-bold text-[22px] text-foreground">
+                  <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
                     No collections yet
                   </Text>
-                  <Text className="mt-2 max-w-[320px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
+                  <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
                     Franchise collections appear here automatically from TMDB.
                     Create your own to group titles for a mood or a movie night.
                   </Text>
@@ -538,7 +559,7 @@ export function LibraryScreen({
                         params: { create: "1" },
                       })
                     }
-                    style={{ marginTop: 22, minWidth: 170 }}
+                    className="mt-2 min-w-[170px]"
                   />
                 </View>
               }
@@ -582,16 +603,16 @@ export function LibraryScreen({
       />
 
       <Modal
-        visible={sortOpen}
+        visible={sheet !== null}
         transparent
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={() => setSortOpen(false)}
+        onRequestClose={() => setSheet(null)}
       >
         <Pressable
           className="flex-1 justify-end bg-black/66"
-          onPress={() => setSortOpen(false)}
-          accessibilityLabel="Close sort and filter"
+          onPress={() => setSheet(null)}
+          accessibilityLabel="Close"
         >
           <Pressable
             accessibilityViewIsModal
@@ -605,20 +626,20 @@ export function LibraryScreen({
                 accessibilityRole="header"
                 className="flex-1 font-archivo-bold text-[22px] text-foreground"
               >
-                Sort & filter
+                {sheet === "sort" ? "Sort by" : "Filter"}
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Close sort and filter"
-                onPress={() => setSortOpen(false)}
+                accessibilityLabel="Close"
+                onPress={() => setSheet(null)}
                 className="h-12 w-12 items-center justify-center rounded-full bg-default"
               >
                 <X size={22} color={colors.ink} />
               </Pressable>
             </View>
-            <ScrollView style={{ maxHeight: 450 }} keyboardShouldPersistTaps="handled">
-            {FILTERS.map(([key, label]) => (
-              <FilterRow
+            <ScrollView className="max-h-[450px]" keyboardShouldPersistTaps="handled">
+            {sheet === "sort" ? FILTERS.map(([key, label]) => (
+              <SheetRow
                 key={key}
                 label={label}
                 role="radio"
@@ -626,67 +647,62 @@ export function LibraryScreen({
                 onPress={() => {
                   triggerHaptic("selection");
                   reset(key, unwatched);
-                  setSortOpen(false);
+                  setSheet(null);
                 }}
               />
-            ))}
-            <FilterRow
-              label={genre ? `Genre · ${genre}` : "Genre · Any"}
-              role="checkbox"
-              active={Boolean(genre)}
-              onPress={() => {
-                setSortOpen(false);
-                showDialog("Genre", "Filter your library by genre.", [
-                  { text: "Any genre", onPress: () => setGenre(undefined) },
-                  ...genres.map((value) => ({ text: value, onPress: () => setGenre(value) })),
-                ]);
-              }}
-            />
-            {activeTab !== "series" ? (
-              <FilterRow
-                label={maxRuntime ? `Movie runtime · Up to ${maxRuntime} min` : "Movie runtime · Any"}
-                role="checkbox"
-                active={Boolean(maxRuntime)}
-                onPress={() => {
-                  setSortOpen(false);
-                  showDialog("Movie runtime", "Choose how much time you have.", [
-                    { text: "Any runtime", onPress: () => setMaxRuntime(undefined) },
-                    ...[60, 90, 120, 150].map((value) => ({
-                      text: `Up to ${value} minutes`,
-                      onPress: () => setMaxRuntime(value),
-                    })),
-                  ]);
-                }}
-              />
-            ) : null}
-            <FilterRow
-              label="Unwatched only"
-              role="checkbox"
-              active={unwatched}
-              onPress={() => {
-                triggerHaptic("selection");
-                reset(sort, !unwatched);
-              }}
-            />
-            {hybrid && (
-              <FilterRow
-                label="Offline only"
-                role="checkbox"
-                active={offlineFilter}
-                onPress={() => {
-                  triggerHaptic("selection");
-                  setOfflineOnly((value) => !value);
-                }}
-              />
+            )) : (
+              <>
+                <SheetRow
+                  label="Genre"
+                  value={genre ?? "Any"}
+                  onPress={() => {
+                    setSheet(null);
+                    showDialog("Genre", "Filter your library by genre.", [
+                      { text: "Any genre", onPress: () => setGenre(undefined) },
+                      ...genres.map((value) => ({ text: value, onPress: () => setGenre(value) })),
+                    ]);
+                  }}
+                />
+                {activeTab !== "series" ? (
+                  <SheetRow
+                    label="Movie runtime"
+                    value={maxRuntime ? `Up to ${maxRuntime} min` : "Any"}
+                    onPress={() => {
+                      setSheet(null);
+                      showDialog("Movie runtime", "Choose how much time you have.", [
+                        { text: "Any runtime", onPress: () => setMaxRuntime(undefined) },
+                        ...[60, 90, 120, 150].map((value) => ({
+                          text: `Up to ${value} minutes`,
+                          onPress: () => setMaxRuntime(value),
+                        })),
+                      ]);
+                    }}
+                  />
+                ) : null}
+                <SheetRow
+                  label="Unwatched only"
+                  role="switch"
+                  active={unwatched}
+                  onPress={() => reset(sort, !unwatched)}
+                />
+                {hybrid && (
+                  <SheetRow
+                    label="Offline only"
+                    role="switch"
+                    active={offlineFilter}
+                    onPress={() => setOfflineOnly((value) => !value)}
+                  />
+                )}
+                {(genre || maxRuntime || unwatched || offlineFilter) ? (
+                  <Button className="mt-2" label="Clear filters" onPress={() => {
+                    setGenre(undefined);
+                    setMaxRuntime(undefined);
+                    setUnwatched(false);
+                    setOfflineOnly(false);
+                  }} />
+                ) : null}
+              </>
             )}
-            {(genre || maxRuntime || unwatched || offlineFilter) ? (
-              <Button label="Clear filters" onPress={() => {
-                setGenre(undefined);
-                setMaxRuntime(undefined);
-                setUnwatched(false);
-                setOfflineOnly(false);
-              }} />
-            ) : null}
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -696,42 +712,43 @@ export function LibraryScreen({
 }
 
 /**
- * Bottom-sheet choice row. The selected state is a subtle foreground tint
- * rather than an inverted fill: the label keeps `text-foreground`, so it
- * stays readable in both light and dark mode (conditional `text-background`
- * utilities cannot override an always-present text color).
+ * Bottom-sheet row. Selection is shown by a check mark or switch, not a
+ * tinted fill, so the sheet stays neutral in light and dark mode.
  */
-function FilterRow({
+function SheetRow({
   label,
-  role,
-  active,
+  value,
+  role = "button",
+  active = false,
   onPress,
 }: {
   label: string;
-  role: "radio" | "checkbox";
-  active: boolean;
+  value?: string;
+  role?: "radio" | "switch" | "button";
+  active?: boolean;
   onPress: () => void;
 }) {
+  const colors = useColors();
   return (
-    <Pressable
+    <Tappable
+      feedback="highlight"
       accessibilityRole={role}
-      accessibilityState={{ checked: active }}
+      accessibilityState={role === "button" ? undefined : { checked: active }}
       onPress={onPress}
-      className={cn(
-        "min-h-[52px] flex-row items-center justify-between px-3.5 rounded-[12px]",
-        active ? "bg-accent/15" : "active:bg-foreground/[0.06]",
-      )}
+      className="min-h-[52px] flex-row items-center justify-between gap-3 rounded-[12px] px-3.5"
     >
-      <Text
-        className={cn(
-          "font-archivo-medium text-[15px] text-foreground",
-          active && "font-archivo-bold",
-        )}
-      >
-        {label}
-      </Text>
-      {role === "checkbox" ? <CheckboxIndicator checked={active} /> : null}
-    </Pressable>
+      <Text className="font-archivo-medium text-[15px] text-foreground">{label}</Text>
+      {role === "radio" ? (
+        active ? <Check size={20} color={colors.ink} strokeWidth={2.2} /> : null
+      ) : role === "switch" ? (
+        <ToggleSwitch value={active} onValueChange={onPress} accessibilityLabel={label} />
+      ) : (
+        <View className="flex-row items-center gap-1">
+          <Text className="font-archivo-regular text-[14px] text-muted" numberOfLines={1}>{value}</Text>
+          <ChevronRight size={16} color={colors.muted} strokeWidth={2} />
+        </View>
+      )}
+    </Tappable>
   );
 }
 
@@ -836,114 +853,120 @@ function LibraryTitles({
       setMore(false);
     }
   }
-  return data.loading || (loadingOnline && !items.length) ? (
-    <LibraryGridSkeleton />
-  ) : data.error ? (
-    <PageState
-      icon={AlertCircle}
-      title="Couldn't load your library"
-      message={data.error}
-      onAction={data.retry}
-    />
-  ) : (
-    <FlatList
-      key={`${columns}-${tab}`}
-      data={items}
-      numColumns={columns}
-      keyExtractor={(item) => item.publicId}
-      initialNumToRender={6}
-      maxToRenderPerBatch={6}
-      updateCellsBatchingPeriod={40}
-      windowSize={5}
-      {...prefetch}
-      columnWrapperStyle={{ gap: 12 }}
-      contentContainerStyle={{
-        gap: 12,
-        paddingHorizontal: 20,
-        paddingBottom: 24,
-        paddingTop: 4,
-      }}
-      renderItem={({ item }) => {
-        const isOnline = item.publicId.startsWith("remote:");
-        return (
-          <Card
-            width={cardWidth}
-            item={item}
-            api={api}
-            online={isOnline}
-            onPress={() => {
-              open(item.publicId);
-            }}
-            onLongPress={() =>
-              isOnline
-                ? remoteActions(item, {
-                    play: () => {
-                      const title = remoteTitleFromCard(item);
-                      if (title) remoteNavigation.play(title);
-                    },
-                    onChanged: data.retry,
-                  })
-                : titleActions(item, {
-                    play: () => playTitle(item),
-                    onChanged: data.retry,
-                  })
-            }
-          />
-        );
-      }}
-      onScrollToIndexFailed={() => {}}
-      ListEmptyComponent={
-        emptyLibrary ? (
-          preferences.mode === "online" ? (
-            <View className="items-center gap-3 px-6 py-12">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
-                <Film size={28} color={colors.brandLight} />
-              </View>
-              <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
-                No saved titles yet
-              </Text>
-              <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
-                Save a movie or show from Search and it will appear here.
-              </Text>
-            </View>
-          ) : (
-            <View className="items-center gap-3 px-6 py-12">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
-                <Film size={28} color={colors.brandLight} />
-              </View>
-              <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
-                Your library is empty
-              </Text>
-              <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
-                Add a media folder and Plexy will bring your movies and shows
-                together here.
-              </Text>
-              <Button
-                label="Add media folder"
-                primary
-                onPress={() => onAddFolder?.()}
-                style={{ marginTop: 8, minWidth: 170 }}
-              />
-            </View>
-          )
-        ) : (
-          <Notice message={"No titles match this filter."} />
-        )
-      }
-      ListFooterComponent={
-        <View className="gap-3 pt-2">
-          {!!moreError && <Notice message={moreError} />}
-          {!end && data.value?.items?.length === 60 && (
-            <Button
-              label={more ? "Loading…" : "Load more"}
-              disabled={more}
-              onPress={() => void loadMore()}
+  const loadingGrid = data.loading || (loadingOnline && !items.length);
+  return (
+    <Reveal phase={loadingGrid ? "loading" : data.error ? "state" : "ready"}>
+      {loadingGrid ? (
+      <LibraryGridSkeleton />
+    ) : data.error ? (
+      <PageState
+        icon={AlertCircle}
+        title="Couldn't load your library"
+        message={data.error}
+        onAction={data.retry}
+      />
+    ) : (
+      <FlatList
+        key={`${columns}-${tab}`}
+        data={items}
+        numColumns={columns}
+        keyExtractor={(item) => item.publicId}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={40}
+        windowSize={5}
+        {...prefetch}
+        columnWrapperStyle={{ gap: 12 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          gap: 12,
+          paddingHorizontal: 20,
+          paddingBottom: 24,
+          paddingTop: 4,
+        }}
+        renderItem={({ item }) => {
+          const isOnline = item.publicId.startsWith("remote:");
+          return (
+            <Card
+              width={cardWidth}
+              item={item}
+              api={api}
+              online={isOnline}
+              onPress={() => {
+                open(item.publicId);
+              }}
+              onLongPress={() =>
+                isOnline
+                  ? remoteActions(item, {
+                      play: () => {
+                        const title = remoteTitleFromCard(item);
+                        if (title) remoteNavigation.play(title);
+                      },
+                      onChanged: data.retry,
+                    })
+                  : titleActions(item, {
+                      play: () => playTitle(item),
+                      onChanged: data.retry,
+                    })
+              }
             />
-          )}
-        </View>
-      }
-      onEndReached={() => void loadMore()}
-      onEndReachedThreshold={0.4}
-    />
+          );
+        }}
+        onScrollToIndexFailed={() => {}}
+        ListEmptyComponent={
+          emptyLibrary ? (
+            preferences.mode === "online" ? (
+              <View className="flex-1 items-center justify-center gap-3 px-6 pb-16">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
+                  <Film size={28} color={colors.brandLight} />
+                </View>
+                <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
+                  No saved titles yet
+                </Text>
+                <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
+                  Save a movie or show from Search and it will appear here.
+                </Text>
+              </View>
+            ) : (
+              <View className="flex-1 items-center justify-center gap-3 px-6 pb-16">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
+                  <Film size={28} color={colors.brandLight} />
+                </View>
+                <Text className="text-center font-archivo-bold text-[22px] leading-[28px] text-foreground">
+                  Your library is empty
+                </Text>
+                <Text className="max-w-[300px] text-center font-archivo-regular text-[14px] leading-[21px] text-muted">
+                  Add a media folder and Plexy will bring your movies and shows
+                  together here.
+                </Text>
+                <Button
+                  label="Add media folder"
+                  primary
+                  onPress={() => onAddFolder?.()}
+                  className="mt-2 min-w-[170px]"
+                />
+              </View>
+            )
+          ) : (
+            <Notice message={"No titles match this filter."} />
+          )
+        }
+        ListFooterComponent={
+          <View className="gap-3 pt-2">
+            {!!moreError && <Notice message={moreError} />}
+            {!end && data.value?.items?.length === 60 && (
+              <Button
+                label={more ? "Loading…" : "Load more"}
+                disabled={more}
+                onPress={() => void loadMore()}
+              />
+            )}
+          </View>
+        }
+        onEndReached={() => void loadMore()}
+        onEndReachedThreshold={0.4}
+      />
+      )}
+    </Reveal>
   );
 }

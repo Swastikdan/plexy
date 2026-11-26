@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { FlatList, Pressable, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Pressable, Text, TextInput, View } from "react-native";
+import Animated from "react-native-reanimated";
+import { LIST_ITEM_EXIT, LIST_LAYOUT } from "@/shared/ui/list-motion";
+import { Screen } from "@/shared/ui/screen";
 import { useClient } from "@/core/client/client-provider";
 import { useResource } from "@/core/resources/use-resource";
 import { familyAllows } from "@/core/content/audience";
@@ -13,7 +15,6 @@ import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation
 import { isReleased } from "@/core/content/release";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
-import { PageHeader } from "@/shared/ui/page-header";
 import { PageState } from "@/shared/ui/page-state";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { ChevronRight, Folder, Plus } from "@/shared/ui/icons";
@@ -126,11 +127,7 @@ export function CollectionsScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <PageHeader
-        title={collection?.name ?? "Collections"}
-        onBack={backToList}
-      />
+    <Screen title={collection?.name ?? "Collections"} onBack={backToList}>
       <View className="gap-2 px-5 pb-2">
         {error ? <Notice message={error} /> : null}
         {editing ? (
@@ -172,7 +169,8 @@ export function CollectionsScreen() {
         ) : null}
       </View>
       {collection ? (
-        <FlatList
+        <Animated.FlatList
+          itemLayoutAnimation={LIST_LAYOUT}
           data={visible}
           keyExtractor={(item) => item.publicId}
           contentContainerStyle={{ padding: 20, gap: 10 }}
@@ -187,7 +185,7 @@ export function CollectionsScreen() {
             </View>
           }
           renderItem={({ item, index }) => (
-            <View className="gap-2 rounded-xl bg-surface p-3">
+            <Animated.View exiting={LIST_ITEM_EXIT} className="gap-2 rounded-xl bg-surface p-3">
               <Button label={item.name} onPress={() => {
                 const remote = remoteTitles.get(item.publicId);
                 if (remote) remoteNavigation.open(remote);
@@ -198,7 +196,7 @@ export function CollectionsScreen() {
                 <Button label="Move down" disabled={index === visible.length - 1} onPress={() => changeTitle(item.publicId, 1)} />
                 <Button label="Remove" onPress={() => changeTitle(item.publicId)} />
               </View>
-            </View>
+            </Animated.View>
           )}
         />
       ) : editing ? null : collections.length === 0 ? (
@@ -210,7 +208,8 @@ export function CollectionsScreen() {
           onAction={openCreate}
         />
       ) : (
-        <FlatList
+        <Animated.FlatList
+          itemLayoutAnimation={LIST_LAYOUT}
           data={collections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 20, gap: 10 }}
@@ -238,6 +237,6 @@ export function CollectionsScreen() {
           )}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }

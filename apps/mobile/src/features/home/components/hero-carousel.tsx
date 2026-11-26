@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppState, Pressable, useWindowDimensions, View } from "react-native";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming, type SharedValue } from "react-native-reanimated";
+import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, ReduceMotion, useAnimatedStyle, useSharedValue, withDelay, withTiming, type SharedValue } from "react-native-reanimated";
 import type { ItemCard } from "@/core/library/catalog-api";
 import { rememberTitlePreview } from "@/core/library/title-prefetch";
 import { cn } from "@/shared/lib/cn";
@@ -16,6 +16,10 @@ import type { OpenTitle } from "@/features/catalog/types";
 import { useHeroTransition } from "@/features/home/hooks/use-hero-transition";
 
 const ACTION_BOTTOM = 28;
+// Slides crossfade: the outgoing hero fades over the incoming one, so the
+// screen never dips to the background between titles.
+const SLIDE_IN = FadeIn.duration(420).easing(Easing.bezier(0.23, 1, 0.32, 1)).reduceMotion(ReduceMotion.System);
+const SLIDE_OUT = FadeOut.duration(420).easing(Easing.bezier(0.23, 1, 0.32, 1)).reduceMotion(ReduceMotion.System);
 const ADVANCE_MS = 5000;
 
 function CarouselDot({ selected, next, progress }: { selected: boolean; next: boolean; progress: SharedValue<number> }) {
@@ -104,9 +108,14 @@ export function HeroCarousel({
       className="relative w-full">
       <GestureDetector gesture={swipe}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Open ${activeItem.name}`} onPress={() => { rememberTitlePreview(activeItem); open(activeItem.publicId); }} onLongPress={onLongPress ? () => onLongPress(activeItem) : undefined} delayLongPress={LONG_PRESS_MS} className="overflow-hidden">
-          <Animated.View style={contentStyle} pointerEvents="none">
+          <Animated.View
+            key={activeItem.publicId}
+            entering={SLIDE_IN}
+            exiting={SLIDE_OUT}
+            style={contentStyle}
+            pointerEvents="none"
+          >
             <Hero
-              key={activeItem.publicId}
               item={activeItem}
               logo={activeItem.logo}
               online={activeItem.publicId.startsWith("remote:")}

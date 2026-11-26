@@ -16,13 +16,14 @@ interface GestureOptions {
   viewport: SharedValue<number>;
   startLevel: SharedValue<number>;
   brightnessValue: SharedValue<number>;
+  minBrightness: number;
   volumeValue: SharedValue<number>;
   beginGesture: (side: "brightness" | "volume" | null) => void;
   finishGesture: (scale?: number) => void;
 }
 
 /** Register native callbacks outside React rendering; updates stay on the UI runtime. */
-export function createVideoGestures({ enabled, locked, hasLoaded, height, pinchActive, panActive, initialZoom, zoomValue, leftSide, viewport, startLevel, brightnessValue, volumeValue, beginGesture, finishGesture }: GestureOptions) {
+export function createVideoGestures({ enabled, locked, hasLoaded, height, pinchActive, panActive, initialZoom, zoomValue, leftSide, viewport, startLevel, brightnessValue, volumeValue, minBrightness, beginGesture, finishGesture }: GestureOptions) {
   const pinch = Gesture.Pinch()
     .enabled(enabled && !locked)
     .onStart(() => {
@@ -52,7 +53,7 @@ export function createVideoGestures({ enabled, locked, hasLoaded, height, pinchA
     })
     .onUpdate(event => {
       const level = startLevel.get() - event.translationY / (height * 0.55);
-      if (leftSide.get()) brightnessValue.set(Math.min(1, Math.max(0.2, level)));
+      if (leftSide.get()) brightnessValue.set(Math.min(1, Math.max(minBrightness, level)));
       else volumeValue.set(Math.min(1, Math.max(0, level)));
     })
     .onFinalize(() => {

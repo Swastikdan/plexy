@@ -11,89 +11,26 @@ const OPTIONS: { value: Mode; label: string; hint: string }[] = [
   { value: "system", label: "System", hint: "Follow the system appearance" },
 ];
 
-const LIGHT = {
-  body: "#ECECEE",
-  border: "#D6D6DA",
-  screen: "#FAFAFB",
-  notch: "#3B3B3F",
-  indicator: "#3B3B3F",
-};
-const DARK = {
-  body: "#2F2F32",
-  border: "#49494D",
-  screen: "#151517",
-  notch: "#09090A",
-  indicator: "#D8D8DC",
-};
 // Content sits on both halves of the System preview, so it uses a neutral
 // gray that reads on either screen instead of the current app theme.
-const CONTENT = "rgba(122,122,128,0.30)";
-const CONTENT_STRONG = "rgba(122,122,128,0.52)";
+// (Literal colors: the preview is an illustration, not themed UI.)
 
 /** A tiny app screen: status row, art block, then a list of rows. */
 function ScreenContent() {
   return (
     <View
       pointerEvents="none"
-      style={{ flex: 1, paddingHorizontal: 8, paddingTop: 13 }}
+      className="flex-1 px-2 pt-[13px]"
     >
-      <View
-        style={{
-          width: 24,
-          height: 4,
-          borderRadius: 2,
-          backgroundColor: CONTENT_STRONG,
-        }}
-      />
-      <View
-        style={{
-          marginTop: 6,
-          height: 23,
-          borderRadius: 5,
-          backgroundColor: CONTENT,
-        }}
-      />
-      <View style={{ marginTop: 6, gap: 4 }}>
-        <View
-          style={{
-            height: 5,
-            width: "82%",
-            borderRadius: 3,
-            backgroundColor: CONTENT_STRONG,
-          }}
-        />
-        <View
-          style={{
-            height: 5,
-            width: "62%",
-            borderRadius: 3,
-            backgroundColor: CONTENT,
-          }}
-        />
+      <View className="h-1 w-6 rounded-full bg-[rgba(122,122,128,0.52)]" />
+      <View className="mt-1.5 h-[23px] rounded-[5px] bg-[rgba(122,122,128,0.30)]" />
+      <View className="mt-1.5 gap-1">
+        <View className="h-[5px] w-[82%] rounded-full bg-[rgba(122,122,128,0.52)]" />
+        <View className="h-[5px] w-[62%] rounded-full bg-[rgba(122,122,128,0.30)]" />
       </View>
-      <View
-        style={{
-          marginTop: 6,
-          flexDirection: "row",
-          gap: 4,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            height: 12,
-            borderRadius: 4,
-            backgroundColor: CONTENT,
-          }}
-        />
-        <View
-          style={{
-            flex: 1,
-            height: 12,
-            borderRadius: 4,
-            backgroundColor: CONTENT,
-          }}
-        />
+      <View className="mt-1.5 flex-row gap-1">
+        <View className="h-3 flex-1 rounded-[4px] bg-[rgba(122,122,128,0.30)]" />
+        <View className="h-3 flex-1 rounded-[4px] bg-[rgba(122,122,128,0.30)]" />
       </View>
     </View>
   );
@@ -101,98 +38,61 @@ function ScreenContent() {
 
 function PhonePreview({ mode }: { mode: Mode }) {
   const isSystem = mode === "system";
-  const body = mode === "dark" ? DARK : LIGHT;
-  const notch = isSystem ? "#1B1B1D" : body.notch;
-  const indicator = isSystem ? "#8C8C92" : body.indicator;
   return (
     <View
-      style={{
-        width: 72,
-        height: 104,
-        borderRadius: 19,
-        borderWidth: 1.5,
-        borderColor: isSystem ? "#7B7B83" : body.border,
-        backgroundColor: body.body,
-        overflow: "hidden",
-      }}
+      className={cn(
+        "h-[104px] w-[72px] rounded-[19px] border-[1.5px] overflow-hidden",
+        isSystem
+          ? "border-[#7B7B83]"
+          : mode === "dark"
+            ? "border-[#49494D]"
+            : "border-[#D6D6DA]",
+        mode === "dark" ? "bg-[#2F2F32]" : "bg-[#ECECEE]",
+      )}
     >
       {isSystem && (
         <>
-          <View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: "50%",
-              backgroundColor: LIGHT.body,
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              right: 0,
-              top: 0,
-              bottom: 0,
-              width: "50%",
-              backgroundColor: DARK.body,
-            }}
-          />
+          <View className="absolute inset-y-0 left-0 w-1/2 bg-[#ECECEE]" />
+          <View className="absolute inset-y-0 right-0 w-1/2 bg-[#2F2F32]" />
         </>
       )}
-      <View
-        style={{
-          position: "absolute",
-          left: 3,
-          right: 3,
-          top: 3,
-          bottom: 3,
-          borderRadius: 16,
-          overflow: "hidden",
-          flexDirection: "row",
-        }}
-      >
+      <View className="absolute inset-[3px] flex-row overflow-hidden rounded-[16px]">
         {isSystem ? (
           <>
-            <View style={{ flex: 1, backgroundColor: LIGHT.screen }} />
-            <View style={{ flex: 1, backgroundColor: DARK.screen }} />
+            <View className="flex-1 bg-[#FAFAFB]" />
+            <View className="flex-1 bg-[#151517]" />
           </>
         ) : (
-          <View style={{ flex: 1, backgroundColor: body.screen }} />
+          <View
+            className={cn(
+              "flex-1",
+              mode === "dark" ? "bg-[#151517]" : "bg-[#FAFAFB]",
+            )}
+          />
         )}
-        <View
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-          }}
-        >
+        <View className="absolute inset-0">
           <ScreenContent />
         </View>
       </View>
       <View
-        style={{
-          position: "absolute",
-          top: 7,
-          left: 26,
-          width: 20,
-          height: 4,
-          borderRadius: 2,
-          backgroundColor: notch,
-        }}
+        className={cn(
+          "absolute left-[26px] top-[7px] h-1 w-5 rounded-full",
+          isSystem
+            ? "bg-[#1B1B1D]"
+            : mode === "dark"
+              ? "bg-[#09090A]"
+              : "bg-[#3B3B3F]",
+        )}
       />
       <View
-        style={{
-          position: "absolute",
-          bottom: 6,
-          left: 25,
-          width: 22,
-          height: 2.5,
-          borderRadius: 2,
-          backgroundColor: indicator,
-        }}
+        className={cn(
+          "absolute bottom-[6px] left-[25px] h-[2.5px] w-[22px] rounded-full",
+          isSystem
+            ? "bg-[#8C8C92]"
+            : mode === "dark"
+              ? "bg-[#D8D8DC]"
+              : "bg-[#3B3B3F]",
+        )}
       />
     </View>
   );

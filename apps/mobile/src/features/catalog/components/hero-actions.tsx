@@ -79,7 +79,7 @@ export function HeroActions({
         className={cn(
           "min-h-[52px] flex-1 flex-row items-center justify-center gap-2.5 rounded-full bg-accent px-5 py-3.5",
           disabled && "opacity-40",
-          "active:opacity-78",
+          "active:opacity-70",
         )}
       >
         <Play size={22} color="#ffffff" fill="#ffffff" />
@@ -100,7 +100,7 @@ export function HeroActions({
           }}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full bg-surface border border-border",
-            "active:opacity-78",
+            "active:opacity-70",
           )}
           hitSlop={10}
           disabled={busy}
@@ -120,7 +120,7 @@ export function HeroActions({
           }}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-foreground/45 bg-foreground/12",
-            "active:opacity-78",
+            "active:opacity-70",
           )}
           hitSlop={10}
           disabled={busy}
@@ -141,7 +141,7 @@ export function HeroActions({
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px]",
             isWatched ? "border-foreground bg-foreground" : "border-foreground/45 bg-foreground/12",
-            "active:opacity-78",
+            "active:opacity-70",
           )}
           hitSlop={8}
           disabled={busy}
@@ -166,7 +166,7 @@ export function HeroActions({
           }}
           className={cn(
             "h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-danger/50 bg-danger/15",
-            "active:opacity-78",
+            "active:opacity-70",
           )}
           hitSlop={8}
           disabled={busy}

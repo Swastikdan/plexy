@@ -56,7 +56,7 @@ export function AppDialogProvider({ children }: PropsWithChildren) {
                     if (action.onPress) setTimeout(action.onPress, 0);
                   }}
                   className={cn("min-h-[52px] justify-center rounded-full px-5 py-3 active:opacity-70",
-                    action.selected ? "bg-accent/15" : action.style === "destructive" ? "bg-danger/15" : "bg-default")}>
+                    action.selected ? "bg-foreground/[0.08]" : action.style === "destructive" ? "bg-danger/15" : "bg-default")}>
                   <Text className={cn("text-center text-[15px]",
                     action.selected ? "font-archivo-bold" : "font-archivo-medium",
                     action.selected ? "text-foreground" : action.style === "destructive" ? "text-danger" : "text-default-foreground")}>

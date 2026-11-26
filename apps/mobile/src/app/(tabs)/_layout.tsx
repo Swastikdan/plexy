@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "@/core/client/client-provider";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { tabTransition } from "@/shared/navigation/transitions";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import {
@@ -26,7 +28,8 @@ const tabs: {
 type TabBarProps = Parameters<
   NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
 >[0];
-// Selection is immediate: frequent tab changes should never wait for motion.
+// The icon state flips immediately; only the scene crossfades, briefly, so
+// frequent tab changes never wait on motion.
 function TabIcon({ icon: Icon, focused, filled }: {
   icon: NativeIcon; focused: boolean; filled: boolean;
 }) {
@@ -76,7 +79,7 @@ function MobileTabBar({
           <Pressable
             key={route.key}
             onPress={onPress}
-            className="flex-1 min-h-[56px] items-center justify-center active:opacity-80"
+            className="flex-1 min-h-[56px] items-center justify-center active:opacity-70"
             accessibilityRole="tab"
             accessibilityState={{ selected: isFocused }}
             accessibilityLabel={tab.title}
@@ -100,6 +103,8 @@ function MobileTabBar({
 }
 export default function TabLayout() {
   const { runtime, preferences } = useClient();
+  const reducedMotion = useReducedMotion();
+  const canvas = useColors().canvas;
   const [attention, setAttention] = useState(0);
   useEffect(() => {
     const update = () => setAttention(runtime.getAttentionCount());
@@ -121,8 +126,10 @@ export default function TabLayout() {
       )}
       screenOptions={{
         headerShown: false,
-        animation: "none",
-        sceneStyle: { backgroundColor: "transparent" },
+        ...tabTransition(reducedMotion),
+        // Opaque scenes: a transparent one lets the outgoing tab show
+        // through the incoming one for the whole fade.
+        sceneStyle: { backgroundColor: canvas },
         // Keep visited tabs mounted; their lists, scroll positions and network
         // state must survive a tab switch and an Android back press.
         freezeOnBlur: false,

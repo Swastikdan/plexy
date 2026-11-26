@@ -7,6 +7,7 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import { createVideoGestures } from "@/features/player/lib/video-gestures";
+import { nativeMedia } from "@/core/native-media/bridge";
 import { useSharedValue, useAnimatedStyle, useAnimatedReaction } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import {
@@ -15,6 +16,8 @@ import {
   type PlayerTap,
 } from "@/features/player/lib/player-interactions";
 export type FitMode = "contain" | "cover" | "fill";
+const deviceControls = Boolean(nativeMedia?.setVolume && nativeMedia?.setBrightness);
+
 export function usePlayerGestures({
   hasLoaded,
   height,
@@ -173,7 +176,40 @@ export function usePlayerGestures({
     setAdjusting(null);
     if (scale != null) showFitToast(`${Math.round(scale * 100)}% zoom`);
   }, [showFitToast]);
-  const commitVolume = useEventCallback((level: number) => callbacks.current.onVolumeChange?.(level));
+  // With the native module the gestures move the phone's media volume and
+  // this window's brightness; otherwise they fall back to player volume and
+  // a dimming overlay.
+  const commitVolume = useEventCallback((level: number) => {
+    if (deviceControls) nativeMedia!.setVolume!(level);
+    else callbacks.current.onVolumeChange?.(level);
+  });
+  const commitBrightness = useEventCallback((level: number) => {
+    if (deviceControls) void nativeMedia!.setBrightness!(level).catch(() => {});
+  });
+  const adjustingRef = useRef(false);
+  useEffect(() => {
+    adjustingRef.current = adjusting != null;
+  }, [adjusting]);
+  useEffect(() => {
+    if (!deviceControls) return;
+    volumeValue.set(nativeMedia!.getVolume!());
+    void nativeMedia!.getBrightness!().then((level) => brightnessValue.set(level)).catch(() => {});
+    // Hardware volume keys change the level behind our back; keep the
+    // gesture's starting point in step.
+    const timer = setInterval(() => {
+      if (!adjustingRef.current) volumeValue.set(nativeMedia!.getVolume!());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      void nativeMedia!.setBrightness!(-1).catch(() => {});
+    };
+  }, [volumeValue, brightnessValue]);
+  useAnimatedReaction(
+    () => Math.round(brightnessValue.get() * 100),
+    (level, previous) => {
+      if (previous != null && level !== previous) scheduleOnRN(commitBrightness, level / 100);
+    },
+  );
   // Bridge only when the integer percentage changes, rather than on every frame.
   useAnimatedReaction(
     () => Math.round(volumeValue.get() * 100),
@@ -182,9 +218,9 @@ export function usePlayerGestures({
     },
   );
   const finishNativeGesture = useEventCallback(finishGesture);
-  const videoGestures = createVideoGestures({ enabled, locked, hasLoaded, height, pinchActive, panActive, initialZoom, zoomValue, leftSide, viewport, startLevel, brightnessValue, volumeValue, beginGesture, finishGesture: finishNativeGesture });
+  const videoGestures = createVideoGestures({ enabled, locked, hasLoaded, height, pinchActive, panActive, initialZoom, zoomValue, leftSide, viewport, startLevel, brightnessValue, volumeValue, minBrightness: deviceControls ? 0.01 : 0.2, beginGesture, finishGesture: finishNativeGesture });
   const zoomStyle = useAnimatedStyle(() => ({ transform: [{ scale: zoomValue.get() }] }));
-  const brightnessStyle = useAnimatedStyle(() => ({ opacity: 0.9 * (1 - brightnessValue.get()) }));
+  const brightnessStyle = useAnimatedStyle(() => ({ opacity: deviceControls ? 0 : 0.9 * (1 - brightnessValue.get()) }));
   const setViewportWidth = (width: number) => {
     viewportWidth.current = width;
     viewport.set(width);

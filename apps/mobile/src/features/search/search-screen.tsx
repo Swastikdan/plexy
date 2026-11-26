@@ -28,6 +28,7 @@ import { Card } from "@/shared/ui/media-card";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { PageState } from "@/shared/ui/page-state";
+import { Reveal } from "@/shared/ui/reveal";
 import {
   LibraryGridSkeleton,
   SearchResultRowsSkeleton,
@@ -286,12 +287,14 @@ export function SearchScreen({
   const homeError = localHomeError || onlineHomeError;
 
   let content: React.ReactNode;
+  let phase = "ready";
   if (!searching) {
     const hasHomeContent = Boolean(
       continueRow || localTitles.length || onlineTrending.length,
     );
     if (!hasHomeContent && homeLoading) {
       content = <LibraryGridSkeleton />;
+      phase = "loading";
     } else if (!hasHomeContent && homeError) {
       content = (
         <PageState
@@ -341,7 +344,7 @@ export function SearchScreen({
                   compact
                   label="Browse all in Libraries"
                   onPress={() => navigate("/libraries")}
-                  style={{ marginHorizontal: 20, alignSelf: "flex-start" }}
+                  className="mx-5 self-start"
                 />
               )}
             </View>
@@ -471,6 +474,7 @@ export function SearchScreen({
     // An empty local match (or an empty online match) is not "no results"
     // until the other source has answered too.
     content = <SearchResultsSkeleton />;
+    phase = "loading";
   } else if (localError || onlineError) {
     const offline = !connected && onlineMode;
     content = (
@@ -541,7 +545,7 @@ export function SearchScreen({
             hitSlop={10}
             className={cn(
               "w-6 h-6 rounded-full items-center justify-center bg-foreground/8",
-              "active:opacity-[0.6]",
+              "active:opacity-70",
             )}
           >
             <X size={15} color={colors.muted} strokeWidth={2.4} />
@@ -549,7 +553,7 @@ export function SearchScreen({
         )}
       </View>
 
-      {content}
+      <Reveal phase={phase}>{content}</Reveal>
     </View>
   );
 }

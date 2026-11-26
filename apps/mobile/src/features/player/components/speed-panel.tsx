@@ -64,7 +64,7 @@ export function SpeedPanel({
                 onPress={() => { triggerHaptic("selection"); onSelect(value); }}
                 className={cn(
                   "h-12 shrink-0 flex-row items-center justify-between rounded-[12px] px-3.5 py-3 active:bg-foreground/10",
-                  active && "bg-accent/15",
+                  active && "bg-foreground/[0.08]",
                 )}
               >
                 <Text

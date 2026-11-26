@@ -65,7 +65,7 @@ export function useHeroTransition(items: ItemCard[]) {
   }, [visible, opacity, finish]);
 
   const select = useCallback(
-    (index: number, animate = true) => {
+    (index: number, animate = false) => {
       const list = itemsRef.current;
       const target = list[Math.max(0, Math.min(list.length - 1, index))];
       if (!target || (animate && requestedId.current === target.publicId))

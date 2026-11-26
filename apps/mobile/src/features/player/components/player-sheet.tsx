@@ -23,7 +23,7 @@ export function SheetItem({
       accessibilityState={{ selected: !!selected }}
       className={cn(
         "flex-row items-center justify-between px-5 py-4 border-b-[0.33px] border-border active:opacity-[0.75]",
-        selected && "bg-accent/15",
+        selected && "bg-foreground/[0.08]",
       )}
     >
       <Text

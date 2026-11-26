@@ -163,10 +163,10 @@ function StepPanel({
   footer?: React.ReactNode;
 }) {
   return (
-    <section className="panel overflow-hidden">
+    <section className="rounded-xl border border-border bg-surface overflow-hidden">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border/70 px-5 py-5 sm:px-7 sm:py-6">
         <div className="min-w-0">
-          <p className="eyebrow">{eyebrow}</p>
+          <p className="text-[0.6875rem] font-semibold tracking-[0.01em] leading-[1.25] text-muted">{eyebrow}</p>
           <h2 className="mt-2 font-sans text-xl font-bold tracking-[-0.03em] text-foreground sm:text-[1.4rem]">{title}</h2>
           <p className="mt-1.5 max-w-2xl text-[12.5px] leading-relaxed text-muted">{description}</p>
         </div>
@@ -583,7 +583,7 @@ function OwnerStep() {
           This account manages the server, users, and libraries. Setup runs once for this installation.
         </p>
         <form
-          className="panel mt-6 space-y-4 p-5 sm:p-6"
+          className="rounded-xl border border-border bg-surface mt-6 space-y-4 p-5 sm:p-6"
           onSubmit={async (event) => {
             event.preventDefault();
             setError("");

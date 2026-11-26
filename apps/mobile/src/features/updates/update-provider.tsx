@@ -210,7 +210,7 @@ export function UpdateProvider({ children }: PropsWithChildren) {
   return <Context.Provider value={state}>
     {!state.bootstrapped ? <Loading /> : state.required ? <View className="flex-1 bg-background"><UpdateContent state={state} required /></View> : children}
     <Modal transparent={optional} visible={state.bootstrapped && !state.required && notice} animationType="fade" onRequestClose={() => { if (!state.updateDownloading) state.dismiss(); }} supportedOrientations={["portrait", "landscape"]}>
-      {optional ? <View className="flex-1 justify-center bg-black/50 px-5"><View className="overflow-hidden rounded-[24px] bg-background" style={{ maxHeight: "85%" }}><UpdateContent state={state} required={false} /></View></View> : <UpdateContent state={state} required={false} />}
+      {optional ? <View className="flex-1 justify-center bg-black/50 px-5"><View className="max-h-[85%] overflow-hidden rounded-[24px] bg-background"><UpdateContent state={state} required={false} /></View></View> : <UpdateContent state={state} required={false} />}
     </Modal>
   </Context.Provider>;
 }

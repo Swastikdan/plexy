@@ -1,7 +1,6 @@
-import Animated, { cubicBezier, useReducedMotion } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
-import { Pressable,Text,View } from "react-native";
+import { Text,View } from "react-native";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { rememberTitlePreview } from "@/core/library/title-prefetch";
@@ -10,8 +9,7 @@ import { useColors } from "@/shared/theme";
 import { Film, Tv, Globe } from "./icons";
 import { PosterImage } from "./poster-image";
 import { Label } from "./text";
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { Tappable } from "./tappable";
 
 export function Card({
   item,
@@ -35,8 +33,6 @@ export function Card({
 }) {
   const colors = useColors();
   const { preferences } = useClient();
-  const reducedMotion = useReducedMotion();
-  const [pressed, setPressed] = useState(false);
   const [focus, setFocus] = useState(false);
   const [failedPoster, setFailedPoster] = useState<string | null>(null);
   const isEpisode = item.kind === "episode";
@@ -55,7 +51,8 @@ export function Card({
   const showPoster = Boolean(artwork);
   const showOnline = online && preferences.mode === "hybrid";
   return (
-    <AnimatedPressable
+    <Tappable
+      feedback="scale"
       accessibilityRole="button"
       accessibilityLabel={`${item.parentTitle ? item.parentTitle + ", " : ""}${item.name}${showOnline ? ", online" : ""}${isWatched ? ", watched" : ""}`}
       onFocus={() => {
@@ -63,8 +60,6 @@ export function Card({
         onFocus?.();
       }}
       onBlur={() => setFocus(false)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
       pressRetentionOffset={16}
       onPress={() => {
         rememberTitlePreview(item);
@@ -72,14 +67,8 @@ export function Card({
       }}
       onLongPress={onLongPress}
       delayLongPress={LONG_PRESS_MS}
-      style={{
-        width: cardWidth,
-        transform: [{ scale: pressed && !reducedMotion ? 0.97 : 1 }],
-        transitionProperty: "transform",
-        transitionDuration: reducedMotion ? 0 : 120,
-        transitionTimingFunction: cubicBezier(0.23, 1, 0.32, 1),
-      }}
-      className="gap-2 active:opacity-90"
+      style={{ width: cardWidth }}
+      className="gap-2"
     >
       <View
         style={[
@@ -191,6 +180,6 @@ export function Card({
           </Label>
         </View>
       )}
-    </AnimatedPressable>
+    </Tappable>
   );
 }

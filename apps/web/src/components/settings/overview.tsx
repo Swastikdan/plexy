@@ -6,6 +6,7 @@
 /// panels share an equal row so nothing is squeezed into a narrow column.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { Skeleton } from "@heroui/react";
 import {
   ArrowUpRight,
   Camera,
@@ -50,7 +51,7 @@ export function OverviewPanel({ admin }: { admin: boolean }) {
     <div className="space-y-4">
       <ProfileBanner me={me.data} admin={admin} />
 
-      <section className="panel grid grid-cols-2 gap-px overflow-hidden bg-border xl:grid-cols-4">
+      <section className="rounded-xl border border-border bg-surface grid grid-cols-2 gap-px overflow-hidden bg-border xl:grid-cols-4">
         <StatTile label="Movies" value={movieTitles} />
         <StatTile label="TV shows" value={showTitles} />
         <StatTile label="Libraries" value={libraryList.length} />
@@ -75,7 +76,7 @@ function ProfileBanner({
   admin: boolean;
 }) {
   return (
-    <section className="panel relative overflow-hidden p-4 sm:p-5">
+    <section className="rounded-xl border border-border bg-surface relative overflow-hidden p-4 sm:p-5">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(ellipse_at_top_right,color-mix(in_oklab,var(--accent)_12%,transparent),transparent_68%)]"
@@ -153,7 +154,7 @@ function LibrarySnapshot({
   loading: boolean;
 }) {
   return (
-    <section className="panel overflow-hidden">
+    <section className="rounded-xl border border-border bg-surface overflow-hidden">
       <header className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Your libraries</h2>
         {admin && (
@@ -171,7 +172,7 @@ function LibrarySnapshot({
       {loading ? (
         <div className="space-y-2 border-t border-border/70 p-4">
           {[0, 1, 2].map((index) => (
-            <div key={index} className="skeleton h-12 rounded-lg" />
+            <Skeleton key={index} className="h-12 rounded-lg" />
           ))}
         </div>
       ) : libraries.length === 0 ? (
@@ -221,7 +222,7 @@ function QuickActions({ admin }: { admin: boolean }) {
     { to: "/settings" as const, search: { tab: "appearance" as const }, label: "Change appearance", icon: Sparkles },
   ];
   return (
-    <section className="panel flex h-full flex-col overflow-hidden">
+    <section className="rounded-xl border border-border bg-surface flex h-full flex-col overflow-hidden">
       <header className="px-4 py-3.5 sm:px-5">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Quick actions</h2>
       </header>
@@ -261,7 +262,7 @@ function ServerHealth({ admin }: { admin: boolean }) {
   });
   const data = status.data;
   return (
-    <section className="panel flex h-full flex-col p-4 sm:p-5">
+    <section className="rounded-xl border border-border bg-surface flex h-full flex-col p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[13px] font-bold tracking-[-0.01em] text-foreground">Server health</h2>
         <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-muted">

@@ -19,7 +19,7 @@ export function PageHeader({
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pb-6 pt-4 sm:pt-6">
       <div className="min-w-0">
         {eyebrow && (
-          <p className="eyebrow mb-2 flex items-center gap-2">
+          <p className="text-[0.6875rem] font-semibold tracking-[0.01em] leading-[1.25] text-muted mb-2 flex items-center gap-2">
             <span aria-hidden className="h-px w-5 bg-accent/70" />
             {eyebrow}
           </p>

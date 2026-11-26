@@ -69,7 +69,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
       {users.isLoading && !users.data ? (
         <PageLoader label="Loading users" className="min-h-[24vh]" />
       ) : users.data?.users.length ? (
-        <ul className="panel overflow-hidden">
+        <ul className="rounded-xl border border-border bg-surface overflow-hidden">
           {users.data.users.map((user) => (
             <UserRow
               key={`${user.id}:${user.disabled}:${user.role}:${user.maxAge}:${user.blockUnrated}`}
@@ -81,7 +81,7 @@ function Users({ currentUserId }: { currentUserId: number }) {
         </ul>
       ) : (
         !users.isError && (
-          <p className="panel px-4 py-6 text-center text-[11px] text-muted">
+          <p className="rounded-xl border border-border bg-surface px-4 py-6 text-center text-[11px] text-muted">
             No accounts yet. Create the first one to let someone sign in.
           </p>
         )

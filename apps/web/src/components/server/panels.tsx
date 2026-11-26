@@ -35,10 +35,11 @@ import {
 import { api, type LibraryItem, type ReviewEntry } from "@/client";
 import { getApiBase, getConfiguredServerBase, hasServerOverride, serverCandidateKind } from "@/server-config";
 import { queries } from "@/queries";
-import { Button, Input, ListBox, Modal, SearchField, Select, Switch } from "@heroui/react";
+import { Button, Input, ListBox, Modal, ProgressBar, SearchField, Select, Switch } from "@heroui/react";
 import { cx } from "@/lib/cx";
 import { cleanSearchTitle, extractYear } from "@/components/fix-match-modal";
 import { PageLoader } from "@/components/page-loader";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { SettingsSection } from "@/components/settings/section";
 import { LibraryFolderForm } from "@/components/library-folder-form";
 import type { DesktopSystemUsage, DesktopUpdateProgress, DesktopUpdateStatus } from "@/electron";
@@ -58,6 +59,7 @@ export function LibrariesPanel() {
   const queryClient = useQueryClient();
   const [scanning, setScanning] = useState<number | null>(null);
   const [editing, setEditing] = useState<LibraryItem | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<LibraryItem | null>(null);
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteLibrary(id),
     onSuccess: async () => {
@@ -136,7 +138,7 @@ export function LibrariesPanel() {
                   </IconButton>
                   <IconButton
                     label={`Remove ${lib.name}`}
-                    onClick={() => { if (window.confirm(`Remove ${lib.name}? Library records go with it.`)) remove.mutate(lib.id); }}
+                    onClick={() => setConfirmRemove(lib)}
                   >
                     <Trash2 size={14} />
                   </IconButton>
@@ -181,21 +183,38 @@ export function LibrariesPanel() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={confirmRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRemove(null);
+        }}
+        title={`Remove ${confirmRemove?.name ?? ""}?`}
+        body="Library records go with it."
+        confirmLabel="Remove library"
+        onConfirm={() => {
+          const library = confirmRemove;
+          setConfirmRemove(null);
+          if (library) remove.mutate(library.id);
+        }}
+      />
     </div>
   );
 }
 
 function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
   return (
-    <button
+    <Button
+      type="button"
+      isIconOnly
       aria-label={label}
       title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-secondary hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
+      onPress={onClick}
+      isDisabled={disabled}
+      className="h-8 w-8 rounded-lg bg-transparent text-muted transition-colors hover:bg-surface-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -226,12 +245,13 @@ export function MatchesPanel() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-surface p-1" role="group" aria-label="Match filter">
           {REVIEW_FILTERS.map((f) => (
-            <button
+            <Button
               key={f.key}
-              onClick={() => setFilter(f.key)}
+              type="button"
+              onPress={() => setFilter(f.key)}
               aria-pressed={filter === f.key}
               className={cx(
-                "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-95",
+                "inline-flex h-8 items-center gap-2 rounded-lg bg-transparent px-3 text-xs font-semibold transition-[background-color,color,transform] duration-150 active:scale-95",
                 filter === f.key
                   ? "bg-foreground text-background"
                   : "text-muted hover:text-foreground hover:bg-surface-tertiary/50",
@@ -246,7 +266,7 @@ export function MatchesPanel() {
                   {f.key === "attention" ? counts.attention : f.key === "matched" ? counts.matched : counts.all}
                 </span>
               )}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -467,11 +487,12 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
       {search.data && (
         <div className="space-y-1">
           {search.data.results.map((r) => (
-            <button
+            <Button
               key={r.tmdbId}
-              onClick={() => apply.mutate({ tmdbId: r.tmdbId })}
-              disabled={apply.isPending}
-              className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary disabled:opacity-50"
+              type="button"
+              onPress={() => apply.mutate({ tmdbId: r.tmdbId })}
+              isDisabled={apply.isPending}
+              className="flex h-auto w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary md:h-auto"
             >
               {r.poster && <img src={r.poster} alt="" className="h-14 w-10 rounded-lg object-cover" loading="lazy" />}
               <span className="min-w-0 flex-1">
@@ -479,7 +500,7 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
                 <span className="block text-[13px] text-muted">{r.year} · {r.overview?.slice(0, 90) ?? ""}</span>
               </span>
               <span className="shrink-0 text-xs font-semibold text-muted">Use this</span>
-            </button>
+            </Button>
           ))}
           {search.data.results.length === 0 && (
             <p className="text-sm text-muted">TMDB has nothing for that search.</p>
@@ -492,18 +513,19 @@ function FixMatch({ entry, onDone }: { entry: ReviewEntry; onDone: () => void })
           <p className="text-xs font-semibold text-muted">Auto candidates</p>
           <div className="mt-2 space-y-1">
             {entry.candidates.map((c) => (
-              <button
+              <Button
                 key={c.tmdbId}
-                onClick={() => apply.mutate({ tmdbId: c.tmdbId })}
-                disabled={apply.isPending}
-                className="flex w-full items-center justify-between gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary disabled:opacity-50"
+                type="button"
+                onPress={() => apply.mutate({ tmdbId: c.tmdbId })}
+                isDisabled={apply.isPending}
+                className="flex h-auto w-full items-center justify-between gap-3 rounded-xl p-2 text-left transition-colors hover:bg-surface-tertiary md:h-auto"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm">{c.title} {c.year ? `(${c.year})` : ""}</span>
                   <span className="block text-[13px] text-muted" title={c.reason}>{c.reason}</span>
                 </span>
                 <span className="shrink-0 text-[13px] tabular-nums text-muted">{Math.round(c.score * 100)}%</span>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -976,15 +998,15 @@ export function ServerPreferencesPanel() {
                     >
                       {url}
                     </a>
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => copyLanUrl(url)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-[background-color,color,transform] duration-150"
+                      onPress={() => copyLanUrl(url)}
+                      className="inline-flex h-auto shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground transition-[background-color,color,transform] duration-150 hover:bg-surface-tertiary active:scale-95 md:h-auto [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
                       title="Copy address"
                     >
                       {copiedUrl === url ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
                       <span>{copiedUrl === url ? "Copied" : "Copy"}</span>
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -1277,19 +1299,16 @@ function DesktopUpdateSettings() {
             <span className="font-medium text-foreground">{progressLabel}</span>
             {progressPercent !== null && <span className="tabular-nums text-muted">{progressPercent}%</span>}
           </div>
-          <div
-            className="mt-3 h-2 overflow-hidden rounded-full bg-border"
-            role="progressbar"
-            aria-label={progressLabel}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={progressPercent ?? undefined}
-          >
-            <div
-              className={`h-full origin-left rounded-full bg-accent transition-transform duration-150 ${progressPercent === null ? "w-1/3 animate-pulse" : ""}`}
-              style={progressPercent === null ? undefined : { transform: `scaleX(${progressPercent / 100})` }}
-            />
-          </div>
+          <ProgressBar aria-label={progressLabel} value={progressPercent ?? undefined} className="mt-3 w-full">
+            <ProgressBar.Track className="h-2 overflow-hidden rounded-full bg-border">
+              <ProgressBar.Fill
+                className={cx(
+                  "rounded-full bg-accent transition-[width] duration-150",
+                  progressPercent === null && "w-1/3 animate-pulse",
+                )}
+              />
+            </ProgressBar.Track>
+          </ProgressBar>
           {updateProgress.phase === "downloading" && (
             <p className="mt-2 text-xs text-muted">
               {formatUpdateBytes(downloaded)} downloaded
@@ -1641,18 +1660,15 @@ function OptimizerSettings() {
       </div>
 
       {total > 0 && (
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-muted">
+        <ProgressBar aria-label="Overall completion" value={percent} className="w-full">
+          <div data-slot="label" className="flex w-full justify-between text-xs font-normal text-muted">
             <span>Overall completion</span>
-            <span>{percent}%</span>
+            <ProgressBar.Output className="text-xs font-normal text-muted">{percent}%</ProgressBar.Output>
           </div>
-          <div className="w-full bg-surface-secondary rounded-full h-2 overflow-hidden border border-border/40">
-            <div
-              className="bg-accent h-full origin-left rounded-full transition-transform duration-300 ease-out"
-              style={{ transform: `scaleX(${percent / 100})` }}
-            />
-          </div>
-        </div>
+          <ProgressBar.Track className="h-2 overflow-hidden rounded-full border border-border/40 bg-surface-secondary">
+            <ProgressBar.Fill className="rounded-full bg-accent transition-[width] duration-300 ease-out" />
+          </ProgressBar.Track>
+        </ProgressBar>
       )}
 
       <div className="rounded-xl border border-border/60 bg-surface-secondary/40 p-3 space-y-3">
@@ -1744,19 +1760,19 @@ function OptimizerSettings() {
               <Folder size={14} className="text-muted" />
               <span>Storage Directory</span>
             </div>
-            <button
+            <Button
               type="button"
-              onClick={() => {
+              onPress={() => {
                 void navigator.clipboard.writeText(data.cacheDir!);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-tertiary active:scale-95 transition-[background-color,color,transform] duration-150"
+              className="inline-flex h-auto items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground transition-[background-color,color,transform] duration-150 hover:bg-surface-tertiary active:scale-95 md:h-auto [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
               title="Copy path"
             >
               {copied ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
               <span>{copied ? "Copied" : "Copy"}</span>
-            </button>
+            </Button>
           </div>
           <p className="font-mono text-xs text-foreground break-all select-all bg-surface p-2 rounded-lg border border-border/50">
             {data.cacheDir}
@@ -1766,14 +1782,14 @@ function OptimizerSettings() {
 
       {data.files && data.files.length > 0 && (
         <div>
-          <button
+          <Button
             type="button"
-            onClick={() => setShowFiles(!showFiles)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:underline"
+            onPress={() => setShowFiles(!showFiles)}
+            className="inline-flex h-auto items-center gap-1.5 bg-transparent text-xs font-semibold text-muted hover:underline md:h-auto [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
           >
             {showFiles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             <span>{showFiles ? "Hide prepared files" : `Show prepared files (${data.files.length})`}</span>
-          </button>
+          </Button>
           {showFiles && (
             <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-border bg-surface divide-y divide-border text-xs">
               {data.files.map((file) => (
@@ -2086,9 +2102,10 @@ function Logs() {
         <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-border/40">
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by level">
             {LOG_LEVELS.map((l) => (
-              <button
+              <Button
                 key={l}
-                onClick={() => setLevel(l)}
+                type="button"
+                onPress={() => setLevel(l)}
                 aria-pressed={level === l}
                 className={cx(
                   "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold tracking-[0.01em] transition-[background-color,color,transform] duration-150 active:scale-95",
@@ -2104,7 +2121,7 @@ function Logs() {
                 )}>
                   {l === "all" ? allEntries.length : levelCounts[l] ?? 0}
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -2112,6 +2129,7 @@ function Logs() {
             size="sm"
             isSelected={follow}
             onChange={setFollow}
+            className="w-full"
           >
             <Switch.Content className="flex items-center gap-2.5">
               <span className="inline-flex items-center gap-2">
@@ -2187,13 +2205,13 @@ function LogRow({ entry }: { entry: LogEntry }) {
         <div className="min-w-0 break-words text-foreground leading-relaxed">
           <span>{entry.message}</span>
           {hasContext && (
-            <button
+            <Button
               type="button"
-              onClick={() => setExpanded(!expanded)}
-              className="ml-2 text-[10px] text-muted hover:underline"
+              onPress={() => setExpanded(!expanded)}
+              className="ml-2 h-auto bg-transparent p-0 text-[10px] text-muted hover:underline md:h-auto"
             >
               {expanded ? "[hide context]" : "[context]"}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -2219,13 +2237,13 @@ function LogRow({ entry }: { entry: LogEntry }) {
           {entry.message}
         </p>
         {hasContext && (
-          <button
+          <Button
             type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="text-[10px] text-muted hover:underline"
+            onPress={() => setExpanded(!expanded)}
+            className="h-auto w-fit bg-transparent p-0 text-[10px] text-muted hover:underline md:h-auto"
           >
             {expanded ? "Hide context" : "Show context details"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -2313,9 +2331,11 @@ function TrickplayPanel() {
                   : "Up to date"}
             </span>
           </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-border" role="progressbar" aria-label="Scrub thumbnail coverage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
-            <div className="h-full rounded-full bg-foreground/70 transition-[width] duration-300" style={{ width: `${percent}%` }} />
-          </div>
+          <ProgressBar aria-label="Scrub thumbnail coverage" value={percent} className="mt-3 w-full">
+            <ProgressBar.Track className="h-2 overflow-hidden rounded-full bg-border">
+              <ProgressBar.Fill className="rounded-full bg-foreground/70 transition-[width] duration-300" />
+            </ProgressBar.Track>
+          </ProgressBar>
           <p className="mt-2 text-[10.5px] text-muted">
             {data.ffmpegAvailable
               ? "Uses FFmpeg one file at a time so playback keeps priority."
@@ -2356,6 +2376,7 @@ function ActiveSessionsPanel() {
   const active = sessions.data?.sessions.filter((session) => session.active) ?? [];
   const recent = sessions.data?.sessions.filter((session) => !session.active) ?? [];
   const paired = devices.data?.devices ?? [];
+  const [confirmRevoke, setConfirmRevoke] = useState<{ id: number; name: string } | null>(null);
 
   return (
     <Section title={`Active sessions${active.length ? ` · ${active.length}` : ""}`}>
@@ -2406,20 +2427,26 @@ function ActiveSessionsPanel() {
                       </p>
                     )}
                   </div>
-                  <button
+                  <Button
                     type="button"
-                    onClick={() => stop.mutate(session.id)}
-                    disabled={stop.isPending}
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-[11px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+                    onPress={() => stop.mutate(session.id)}
+                    isDisabled={stop.isPending}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-transparent px-2.5 text-[11px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-[11px]"
                   >
                     <Square size={11} />
                     Stop
-                  </button>
+                  </Button>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border/70">
-                    <div className="h-full rounded-full bg-foreground/70" style={{ width: `${percent}%` }} />
-                  </div>
+                  <ProgressBar
+                    aria-label="Session progress"
+                    value={percent}
+                    className="min-w-0 flex-1"
+                  >
+                    <ProgressBar.Track className="h-1.5 overflow-hidden rounded-full bg-border/70">
+                      <ProgressBar.Fill className="rounded-full bg-foreground/70" />
+                    </ProgressBar.Track>
+                  </ProgressBar>
                   <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
                     {formatSessionTime(session.position)} / {session.duration ? formatSessionTime(session.duration) : "—"}
                   </span>
@@ -2479,25 +2506,23 @@ function ActiveSessionsPanel() {
                 </div>
                 <div className="flex shrink-0 gap-2">
                   {!device.revoked ? (
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => {
-                        if (window.confirm(`Revoke ${device.name}? It will need to sign in again.`)) revoke.mutate(device.id);
-                      }}
-                      disabled={revoke.isPending}
-                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-border px-2 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+                      onPress={() => setConfirmRevoke(device)}
+                      isDisabled={revoke.isPending}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-transparent px-2 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-[11px]"
                     >
                       <ShieldOff size={11} /> Revoke
-                    </button>
+                    </Button>
                   ) : (
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => remove.mutate(device.id)}
-                      disabled={remove.isPending}
-                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-border px-2 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+                      onPress={() => remove.mutate(device.id)}
+                      isDisabled={remove.isPending}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-transparent px-2 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-[11px]"
                     >
                       <Trash2 size={11} /> Remove
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -2505,6 +2530,21 @@ function ActiveSessionsPanel() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmRevoke !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRevoke(null);
+        }}
+        title={`Revoke ${confirmRevoke?.name ?? ""}?`}
+        body="It will need to sign in again."
+        confirmLabel="Revoke"
+        onConfirm={() => {
+          const device = confirmRevoke;
+          setConfirmRevoke(null);
+          if (device) revoke.mutate(device.id);
+        }}
+      />
     </Section>
   );
 }

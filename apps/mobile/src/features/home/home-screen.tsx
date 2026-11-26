@@ -14,6 +14,7 @@ import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
 import { PageState } from "@/shared/ui/page-state";
 import { HomeSkeleton } from "@/shared/ui/skeleton";
+import { Reveal } from "@/shared/ui/reveal";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { LibraryAttention } from "@/features/catalog/components/library-attention";
@@ -256,24 +257,30 @@ export function HomeScreen({
     message: string,
     onAction: () => void,
   ) => (
-    <View className="flex-1 bg-background">
-      <PageHeader
-        logo
-        style={{ paddingTop: insets.top + 18 }}
-      />
-      <PageState
-        icon={icon}
-        title={title}
-        message={message}
-        onAction={onAction}
-      />
-    </View>
+    <Reveal phase="state">
+      <View className="flex-1 bg-background">
+        <PageHeader
+          logo
+          style={{ paddingTop: insets.top + 18 }}
+        />
+        <PageState
+          icon={icon}
+          title={title}
+          message={message}
+          onAction={onAction}
+        />
+      </View>
+    </Reveal>
   );
   if (
     (data.loading && !data.value) ||
     (online?.loading && !continueItems.length && !shelfRows.length)
   )
-    return <HomeSkeleton />;
+    return (
+      <Reveal phase="loading">
+        <HomeSkeleton />
+      </Reveal>
+    );
   if (data.error)
     return fullPageState(
       AlertCircle,
@@ -291,174 +298,176 @@ export function HomeScreen({
       online.refresh,
     );
   return (
-    <View className="flex-1 bg-background">
-      <TopFade />
-      {scrolled && (
-        <View
-          pointerEvents="none"
-          className="absolute left-0 right-0 top-0 border-b border-border"
-          style={{
-            height: insets.top + 72,
-            backgroundColor: colors.canvas,
-            zIndex: 19,
-          }}
-        />
-      )}
-      <PageHeader
-        logo
-        style={[
-          {
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 20,
-            backgroundColor: "transparent",
-            elevation: 20,
-          },
-          { top: insets.top },
-        ]}
-      />
-      <ScrollView
-        ref={scrollRef}
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[
-          { paddingBottom: 28 },
-          !heroItems.length && { paddingTop: insets.top + 90 },
-        ]}
-        showsVerticalScrollIndicator={false}
-        removeClippedSubviews={false}
-        scrollEventThrottle={16}
-        onScroll={(event) => {
-          const next = event.nativeEvent.contentOffset.y > 8;
-          if (scrolledRef.current !== next) {
-            scrolledRef.current = next;
-            setScrolled(next);
-          }
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={data.loading || Boolean(online?.loading)}
-            onRefresh={() => {
-              data.retry();
-              online?.refresh();
+    <Reveal phase="ready">
+      <View className="flex-1 bg-background">
+        <TopFade />
+        {scrolled && (
+          <View
+            pointerEvents="none"
+            className="absolute left-0 right-0 top-0 border-b border-border"
+            style={{
+              height: insets.top + 72,
+              backgroundColor: colors.canvas,
+              zIndex: 19,
             }}
-            tintColor={colors.ink}
           />
-        }
-      >
-        {/* Hero Carousel */}
-        {heroItems.length > 0 && (
-          <View>
-            <HeroCarousel
-              items={heroItems}
-              onPlay={heroPlay}
-              open={heroOpen}
-              onLongPress={heroLongPress}
-              active={active && !scrolled}
-              onHeroFocus={() => {
-                scrollRef.current?.scrollTo({ y: 0, animated: true });
-              }}
-            />
-          </View>
         )}
+        <PageHeader
+          logo
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 20,
+              backgroundColor: "transparent",
+              elevation: 20,
+            },
+            { top: insets.top },
+          ]}
+        />
+        <ScrollView
+          ref={scrollRef}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[
+            { paddingBottom: 28 },
+            !heroItems.length && { paddingTop: insets.top + 90 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={false}
+          scrollEventThrottle={16}
+          onScroll={(event) => {
+            const next = event.nativeEvent.contentOffset.y > 8;
+            if (scrolledRef.current !== next) {
+              scrolledRef.current = next;
+              setScrolled(next);
+            }
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={data.loading || Boolean(online?.loading)}
+              onRefresh={() => {
+                data.retry();
+                online?.refresh();
+              }}
+              tintColor={colors.ink}
+            />
+          }
+        >
+          {/* Hero Carousel */}
+          {heroItems.length > 0 && (
+            <View>
+              <HeroCarousel
+                items={heroItems}
+                onPlay={heroPlay}
+                open={heroOpen}
+                onLongPress={heroLongPress}
+                active={active && !scrolled}
+                onHeroFocus={() => {
+                  scrollRef.current?.scrollTo({ y: 0, animated: true });
+                }}
+              />
+            </View>
+          )}
 
-        {preferences.source !== "remote" && <LibraryAttention />}
+          {preferences.source !== "remote" && <LibraryAttention />}
 
-        {/* Continue watching row with full series or movie cards */}
-        {continueItems.length > 0 && (
-          <View>
+          {/* Continue watching row with full series or movie cards */}
+          {continueItems.length > 0 && (
+            <View>
+              <CatalogRow
+                key="continue-watching"
+                title="Continue Watching"
+                items={continueItems}
+                open={open}
+                onPlay={handlePlay}
+                isContinueWatching={true}
+                onChanged={data.retry}
+              />
+            </View>
+          )}
+
+          {/* Next Up: one unwatched episode per started series. */}
+          {nextItems.length > 0 && (
             <CatalogRow
-              key="continue-watching"
-              title="Continue Watching"
-              items={continueItems}
+              key="next-up"
+              title="Next Up"
+              items={nextItems}
               open={open}
               onPlay={handlePlay}
-              isContinueWatching={true}
+              playOnPress
               onChanged={data.retry}
             />
-          </View>
-        )}
+          )}
 
-        {/* Next Up: one unwatched episode per started series. */}
-        {nextItems.length > 0 && (
-          <CatalogRow
-            key="next-up"
-            title="Next Up"
-            items={nextItems}
-            open={open}
-            onPlay={handlePlay}
-            playOnPress
-            onChanged={data.retry}
-          />
-        )}
-
-        {/* The local Movies & Shows shelf, then the online categories. */}
-        {shelfRows.map((row) => (
-          <View key={row.key}>
-            <CatalogRow
-              key={row.key}
-              title={row.title}
-              items={row.items}
-              open={heroOpen}
-              onPlay={handlePlay}
-              onlineFor={(item) => item.publicId.startsWith("remote:")}
-              onLongPressItem={(item) => {
-                if (item.publicId.startsWith("remote:")) {
-                  remoteActions(item, {
-                    play: () => online?.play(item),
-                    onChanged: online?.refresh,
+          {/* The local Movies & Shows shelf, then the online categories. */}
+          {shelfRows.map((row) => (
+            <View key={row.key}>
+              <CatalogRow
+                key={row.key}
+                title={row.title}
+                items={row.items}
+                open={heroOpen}
+                onPlay={handlePlay}
+                onlineFor={(item) => item.publicId.startsWith("remote:")}
+                onLongPressItem={(item) => {
+                  if (item.publicId.startsWith("remote:")) {
+                    remoteActions(item, {
+                      play: () => online?.play(item),
+                      onChanged: online?.refresh,
+                    });
+                    return;
+                  }
+                  titleActions(item, {
+                    play: () => handlePlay(item),
+                    onChanged: data.retry,
                   });
-                  return;
-                }
-                titleActions(item, {
-                  play: () => handlePlay(item),
-                  onChanged: data.retry,
-                });
-              }}
-            />
-          </View>
-        ))}
-        {!!online?.error && shelfRows.length === 0 && !online.loading && (
-          <View className="px-5 py-6">
-            <Notice message={online.error} retry={online.refresh} />
-          </View>
-        )}
+                }}
+              />
+            </View>
+          ))}
+          {!!online?.error && shelfRows.length === 0 && !online.loading && (
+            <View className="px-5 py-6">
+              <Notice message={online.error} retry={online.refresh} />
+            </View>
+          )}
 
-        {!data.loading && !data.error && !hasAnyRows && (
-          <View className="min-h-[320px] justify-center gap-5 px-7 py-12">
-            <Film size={36} color={colors.brandLight} />
-            <Text className="font-archivo-bold text-[30px] leading-[36px] text-foreground">
-              {preferences.familyLevel !== "off"
-                ? "No titles for this family setting."
-                : "Your next watch starts here."}
-            </Text>
-            <Text className="font-archivo-regular text-[16px] leading-[24px] text-muted">
-              {preferences.familyLevel !== "off"
-                ? "Everything in this library is above the Kids & family limit or has no age rating."
-                : "Connect a media folder to bring your movies and shows into Plexy."}
-            </Text>
-            <NativeButton
-              className="self-start rounded-full bg-accent"
-              size="lg"
-              onPress={() =>
-                push({
-                  pathname:
-                    preferences.familyLevel !== "off"
-                      ? "/settings/family"
-                      : "/settings/folders",
-                })
-              }
-            >
-              <NativeButton.Label className="text-accent-foreground">
+          {!data.loading && !data.error && !hasAnyRows && (
+            <View className="min-h-[320px] justify-center gap-5 px-7 py-12">
+              <Film size={36} color={colors.brandLight} />
+              <Text className="font-archivo-bold text-[30px] leading-[36px] text-foreground">
                 {preferences.familyLevel !== "off"
-                  ? "Kids & family settings"
-                  : "Add media folders"}
-              </NativeButton.Label>
-            </NativeButton>
-          </View>
-        )}
-      </ScrollView>
-    </View>
+                  ? "No titles for this family setting."
+                  : "Your next watch starts here."}
+              </Text>
+              <Text className="font-archivo-regular text-[16px] leading-[24px] text-muted">
+                {preferences.familyLevel !== "off"
+                  ? "Everything in this library is above the Kids & family limit or has no age rating."
+                  : "Connect a media folder to bring your movies and shows into Plexy."}
+              </Text>
+              <NativeButton
+                className="self-start rounded-full bg-accent"
+                size="lg"
+                onPress={() =>
+                  push({
+                    pathname:
+                      preferences.familyLevel !== "off"
+                        ? "/settings/family"
+                        : "/settings/folders",
+                  })
+                }
+              >
+                <NativeButton.Label className="text-accent-foreground">
+                  {preferences.familyLevel !== "off"
+                    ? "Kids & family settings"
+                    : "Add media folders"}
+                </NativeButton.Label>
+              </NativeButton>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    </Reveal>
   );
 }

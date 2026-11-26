@@ -49,7 +49,7 @@ export function PageState({
           label={actionLabel}
           primary
           onPress={onAction}
-          style={{ marginTop: 24, minWidth: 150 }}
+          className="mt-6 min-w-[150px]"
         />
       )}
       {children}

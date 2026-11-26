@@ -156,7 +156,7 @@ export function PinDialog({
               accessibilityState={{ disabled: busy }}
               disabled={busy}
               onPress={() => void submit()}
-              className="min-h-[48px] flex-1 items-center justify-center rounded-full bg-accent active:opacity-80"
+              className="min-h-[48px] flex-1 items-center justify-center rounded-full bg-accent active:opacity-70"
             >
               <Text className="font-archivo-bold text-[15px] text-white">
                 {busy ? "Checking…" : mode === "set" ? "Save PIN" : "Confirm"}

@@ -1197,10 +1197,9 @@ function BrowserWatchRoute() {
                 {/* Top bar lives inside the skin: the skin element is what goes
                     fullscreen, so overlays outside it disappear in fullscreen. */}
                 <div
-                  style={{ paddingLeft: needsMacOffset ? "88px" : undefined }}
                   className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 bg-gradient-to-b from-black/55 to-transparent px-4 pb-10 pt-3 transition-opacity duration-300 sm:px-5 ${
-                    controlsVisible ? "opacity-100" : "opacity-0"
-                  }`}
+                    needsMacOffset ? "pl-[88px]!" : ""
+                  } ${controlsVisible ? "opacity-100" : "opacity-0"}`}
                 >
                   <button
                     onClick={leavePlayer}

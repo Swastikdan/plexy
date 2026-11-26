@@ -3,13 +3,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text, View } from "react-native";
 import { File } from "expo-file-system";
 import { Button } from "@/shared/ui/button";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "@/shared/ui/safe-area-view";
 import { useResource } from "@/core/resources/use-resource";
 import { useClient } from "@/core/client/client-provider";
 import { familyAllows } from "@/core/content/audience";
 import { localLibrary } from "@/core/library/local-runtime";
 import { nativeMedia, type ExternalVideo } from "@/core/native-media/bridge";
-import { useColors } from "@/shared/theme";
 import { PageHeader } from "@/shared/ui/page-header";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { PlaybackScreen } from "./playback-screen";
@@ -17,7 +16,6 @@ import { usePlayerOrientation } from "./hooks/use-player-orientation";
 
 export function ExternalPlayerRoute() {
   const { preferences } = useClient();
-  const colors = useColors();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const request = useResource(
     () => id && nativeMedia ? nativeMedia.takeVideo(id) : Promise.resolve(null),
@@ -51,7 +49,7 @@ export function ExternalPlayerRoute() {
       setSelecting(false);
     }
   }
-  if (!video || !allowed) return <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
+  if (!video || !allowed) return <SafeAreaView className="flex-1 bg-background">
     <PageHeader title="Open a video" />
     <View className="gap-4 px-5">
       <Text className="text-muted">{allowed

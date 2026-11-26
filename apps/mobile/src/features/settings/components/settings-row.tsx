@@ -1,7 +1,7 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Tappable } from "@/shared/ui/tappable";
 import { cn } from "@/shared/lib/cn";
-import { triggerHaptic } from "@/shared/lib/haptics";
 import { useColors } from "@/shared/theme";
 import { Check, ChevronRight, type NativeIcon } from "@/shared/ui/icons";
 
@@ -28,21 +28,20 @@ export function SettingsRow({
 }) {
   const colors = useColors();
   return (
-    <Pressable
+    <Tappable
+      feedback="highlight"
+      haptic={onPress ? "light" : undefined}
       accessibilityRole={
         selected !== undefined ? "radio" : onPress ? "button" : undefined
       }
       accessibilityState={
         selected !== undefined ? { checked: selected } : undefined
       }
-      onPress={() => {
-        if (onPress) triggerHaptic("light");
-        onPress?.();
-      }}
+      onPress={onPress}
       disabled={!onPress}
       className={cn(
-        "min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5 active:bg-surface-hover",
-        selected && "bg-accent/15",
+        "min-h-[66px] flex-row items-center gap-3.5 border-b-[0.33px] border-border px-4 py-3.5",
+        selected && "bg-foreground/[0.08]",
       )}
     >
       {Icon && (
@@ -71,6 +70,6 @@ export function SettingsRow({
         (selected ? <Check size={18} color={colors.brand} /> : navigation ? (
           <ChevronRight size={20} color={colors.muted} />
         ) : null)}
-    </Pressable>
+    </Tappable>
   );
 }

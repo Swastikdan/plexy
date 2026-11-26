@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AppState,
-  BackHandler,
-  StatusBar,
-  StyleSheet,
-  View,
-} from "react-native";
+import { AppState, BackHandler, StatusBar, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -193,10 +187,10 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
   );
 
   return (
-    <View style={styles.root}>
+    <View className="flex-1 bg-black">
       <StatusBar hidden />
       {error ? (
-        <View style={styles.error}>
+        <View className="flex-1 justify-center gap-4 p-6">
           <Notice
             kind="error"
             message={error}
@@ -212,7 +206,7 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
           <WebView
             key={`${url}:${revision}`}
             source={source}
-            style={styles.webview}
+            style={{ flex: 1, backgroundColor: "#000" }}
             originWhitelist={["*"]}
             javaScriptEnabled
             domStorageEnabled
@@ -244,7 +238,7 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
             }
             startInLoadingState
             renderLoading={() => (
-              <View style={styles.loading}>
+              <View className="absolute inset-0 bg-black">
                 <PlayerLoading />
               </View>
             )}
@@ -260,13 +254,13 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
             }
           />
 
-          {!active && <View style={styles.paused} pointerEvents="auto" />}
+          {!active && <View className="absolute inset-0 bg-black" pointerEvents="auto" />}
 
           {/* Online playback is just the provider iframe plus a back control. */}
           <View
             pointerEvents="box-none"
+            className="absolute flex-row items-center"
             style={[
-              styles.chrome,
               {
                 top: Math.max(insets.top, 10) + 8,
                 left: Math.max(insets.left, 10) + 8,
@@ -288,35 +282,3 @@ export function RemotePlayerScreen({ input }: { input: RemotePlayerInput }) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000" },
-  webview: { flex: 1, backgroundColor: "#000" },
-  loading: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "#000",
-  },
-  paused: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "#000",
-  },
-  chrome: {
-    position: "absolute",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  error: {
-    flex: 1,
-    justifyContent: "center",
-    gap: 16,
-    padding: 24,
-  },
-});

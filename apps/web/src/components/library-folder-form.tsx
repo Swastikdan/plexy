@@ -335,7 +335,7 @@ export function LibraryFolderForm({
                         <ArrowUp size={15} />
                       </button>
                     )}
-                    <div className="scroll-row flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-lg border border-border/70 bg-surface-secondary/40 px-1.5 py-1">
+                    <div className="scroll-smooth [scroll-snap-type:x_proximity] [scroll-padding-inline:var(--row-inset)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:snap-start flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-lg border border-border/70 bg-surface-secondary/40 px-1.5 py-1">
                       {crumbs.map((crumb, index) => (
                         <span key={crumb.path} className="flex shrink-0 items-center gap-0.5">
                           {index > 0 && <span className="px-0.5 text-muted/50">/</span>}

@@ -121,7 +121,7 @@ function SettingsRoute() {
     <Page className="pt-4 sm:pt-6">
       {/* Mobile section switcher */}
       <div className="relative -mx-4 mb-6 lg:hidden">
-        <div className="scroll-row overflow-x-auto px-4 pb-1">
+        <div className="scroll-smooth overflow-x-auto px-4 pb-1 [scroll-snap-type:x_proximity] [scroll-padding-inline:var(--row-inset)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:snap-start">
         <nav className="flex min-w-max items-center gap-1 rounded-xl border border-border bg-surface p-1" aria-label="Settings sections">
           {[...PERSONAL_TABS, ...(admin ? SERVER_TABS : [])].map((entry) => {
             const Icon = entry.icon;
@@ -192,8 +192,7 @@ function NavGroup({
 }) {
   return (
     <div>
-      <p className="eyebrow px-2 pb-1.5">{title}</p>
-      <ul className="space-y-0.5">
+      <p className="text-[0.6875rem] font-semibold tracking-[0.01em] leading-[1.25] text-muted px-2 pb-1.5">{title}</p>      <ul className="space-y-0.5">
         {items.map((entry) => {
           const Icon = entry.icon;
           const selected = active === entry.key;
@@ -204,7 +203,14 @@ function NavGroup({
                 search={{ tab: entry.key }}
                 aria-current={selected ? "page" : undefined}
                 data-active={selected || undefined}
-                className="side-link"
+                className={cx(
+                  "relative flex items-center gap-[0.7rem] rounded-[calc(var(--radius)*0.8)] px-[0.65rem] py-[0.56rem] text-[0.8125rem] font-semibold tracking-[-0.01em]",
+                  "transition-[color,background-color] duration-[160ms] ease-[var(--ease-out)]",
+                  "hover:text-foreground hover:bg-[color-mix(in_oklab,var(--surface-secondary)_72%,transparent)]",
+                  selected
+                    ? "bg-surface-secondary text-foreground before:absolute before:-left-[0.65rem] before:top-1/2 before:h-[1.15rem] before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-accent before:content-[''] [&>svg]:text-accent"
+                    : "text-muted",
+                )}
               >
                 <Icon size={15} strokeWidth={1.9} className={selected ? "" : "text-muted"} />
                 {entry.label}

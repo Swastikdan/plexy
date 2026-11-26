@@ -1,3 +1,5 @@
+import Calendar03Icon from "@hugeicons/core-free-icons/Calendar03Icon";
+import FilterHorizontalIcon from "@hugeicons/core-free-icons/FilterHorizontalIcon";
 import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
 import HardDriveIcon from "@hugeicons/core-free-icons/HardDriveIcon";
 import RefreshIcon from "@hugeicons/core-free-icons/RefreshIcon";
@@ -79,6 +81,8 @@ function glyph(icon: IconSvgElement, allowFill = false): NativeIcon {
 export const ArrowLeft = glyph(ArrowLeft02Icon);
 export const ArrowUpDown = glyph(ArrowUpDownIcon);
 export const Check = glyph(Tick02Icon);
+export const Calendar = glyph(Calendar03Icon);
+export const Filter = glyph(FilterHorizontalIcon);
 export const ChevronDown = glyph(ArrowDown01Icon);
 export const ChevronLeft = glyph(ArrowLeft01Icon);
 export const ChevronRight = glyph(ArrowRight01Icon);

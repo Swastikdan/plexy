@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import { Directory } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { BackHandler, Pressable, ScrollView, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "@/shared/ui/safe-area-view";
 import { canFinishOnboarding } from "@/core/client/watching-mode";
 import { useClient } from "@/core/client/client-provider";
 import { modeLabels, modePreferences, type AppMode } from "@/core/client/preferences";
 import { displayName, localLibrary } from "@/core/library/local-runtime";
 import { useColors } from "@/shared/theme";
 import { useAppDialog } from "@/shared/ui/app-dialog";
-import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
 import { Button } from "@/shared/ui/button";
 import { ChevronLeft } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
@@ -74,7 +73,7 @@ export function OnboardingScreen({
               accessibilityLabel="Go back"
               onPress={onClose}
               hitSlop={8}
-              className="-ml-2 h-10 w-10 items-center justify-center rounded-full active:opacity-60"
+              className="-ml-2 h-10 w-10 items-center justify-center rounded-full active:opacity-70"
             >
               <ChevronLeft size={26} color={colors.ink} />
             </Pressable>
@@ -93,16 +92,13 @@ export function OnboardingScreen({
           <>
             <View className="gap-3" accessibilityRole="radiogroup">
               {(["local", "hybrid", "online"] as const).map(value => (
-                <Pressable key={value} testID={`mode-${value}`} accessibilityRole="radio" accessibilityState={{ checked: mode === value }} onPress={() => setMode(value)} className={`rounded-[18px] border-2 p-5 gap-2 ${mode === value ? "border-accent bg-surface" : "border-border bg-background"}`}>
-                  <View className="flex-row items-center justify-between gap-3">
-                    <Text className="font-archivo-bold text-[20px] text-foreground">{modeLabels[value]}</Text>
-                    <CheckboxIndicator checked={mode === value} />
-                  </View>
+                <Pressable key={value} testID={`mode-${value}`} accessibilityRole="radio" accessibilityState={{ checked: mode === value }} onPress={() => setMode(value)} className={`rounded-[18px] border-2 p-5 gap-2 ${mode === value ? "border-foreground bg-surface" : "border-border bg-background active:opacity-70"}`}>
+                  <Text className="font-archivo-bold text-[20px] text-foreground">{modeLabels[value]}</Text>
                   <Text className="font-archivo-regular text-[14px] leading-[21px] text-muted">{descriptions[value]}</Text>
                 </Pressable>
               ))}
             </View>
-            <Button primary label={onClose ? "Configure" : "Continue"} onPress={() => setStep("setup")} />
+            <Button primary label={mode === "online" || folders.length ? "Continue" : "Configure"} onPress={() => setStep("setup")} />
           </>
         ) : (
           <>

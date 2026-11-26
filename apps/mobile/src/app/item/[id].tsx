@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "@/shared/ui/safe-area-view";
 import { TitleScreen } from "@/features/title/title-screen";
 import { useMediaNavigation } from "@/shared/navigation/use-media-navigation";
 import { Notice } from "@/shared/ui/notice";
@@ -13,7 +13,7 @@ export default function DetailRoute() {
   const offlineOnly = offline === "1";
   if (!id || Array.isArray(id)) return <Notice message="Invalid title." />;
   return (
-    <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1 }}>
+    <SafeAreaView edges={["left", "right", "bottom"]} className="flex-1">
       <TitleScreen
         input={{ source: "local", id }}
         offlineOnly={offlineOnly}

@@ -78,7 +78,7 @@ export function Row({
       <div className="relative -mx-1">
         <div
           ref={scroller}
-          className="scroll-row flex items-start gap-3 overflow-x-auto px-1 py-1.5 sm:gap-3.5"
+          className="scroll-smooth [scroll-snap-type:x_proximity] [scroll-padding-inline:var(--row-inset)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:snap-start flex items-start gap-3 overflow-x-auto px-1 py-1.5 sm:gap-3.5"
         >
           {items.map((item) => (
             <Poster

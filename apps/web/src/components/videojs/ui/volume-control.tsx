@@ -4,7 +4,6 @@ import { Button, Slider, Tooltip } from '@heroui/react';
 import { selectVolume } from '@videojs/core/dom';
 import { usePlayer } from '@videojs/react/video';
 import { VolumeX } from 'lucide-react';
-import type { CSSProperties } from 'react';
 
 import { cn } from '@/lib/resolve-class-name';
 
@@ -101,16 +100,7 @@ export function VolumeControl({ showTooltip = false }: VolumeControlProps = {}) 
   );
 
   return (
-    <div
-      className="group/volume relative z-10 h-media-control w-media-control shrink-0"
-      style={
-        {
-          '--volume-reveal': '5rem',
-          '--volume-expanded-width':
-            'calc(var(--media-control-size) + var(--volume-reveal))',
-        } as CSSProperties
-      }
-    >
+    <div className="group/volume relative z-10 h-media-control w-media-control shrink-0 [--volume-expanded-width:calc(var(--media-control-size)+var(--volume-reveal))] [--volume-reveal:5rem]">
       <div
         className={cn(
           'absolute inset-y-0 left-0 flex w-(--volume-expanded-width) items-center overflow-hidden rounded-media-control',

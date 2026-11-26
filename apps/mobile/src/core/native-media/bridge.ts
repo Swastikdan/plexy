@@ -23,6 +23,11 @@ interface MediaModule {
   importVideo(uri: string, name: string): Promise<string>;
   startCasting(id: string, uri: string, title: string, seconds: number): Promise<void>;
   castStatus(id: string): Promise<CastStatus | null>;
+  getVolume?: () => number;
+  setVolume?: (level: number) => void;
+  getBrightness?: () => Promise<number>;
+  /** Overrides this window's brightness; pass -1 to hand control back to the system. */
+  setBrightness?: (level: number) => Promise<void>;
   castCommand(id: string, command: "play" | "pause" | "seek" | "stop", seconds: number): Promise<void>;
 }
 

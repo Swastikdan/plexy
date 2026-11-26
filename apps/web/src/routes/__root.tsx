@@ -27,7 +27,7 @@ function Shell() {
         Skip to content
       </a>
       {chrome ? (
-        <div className="app-main">
+        <div className="relative min-w-0 flex-1">
           <TopNav />
           <div id="app-content" tabIndex={-1} className={cx("pb-20 outline-none lg:pb-0", electronMac && "md:pb-0")}>
             {/* Keyed by pathname so each route gets one quiet entrance. */}
@@ -38,7 +38,7 @@ function Shell() {
           <BottomNav className={electronMac ? "md:hidden" : undefined} />
         </div>
       ) : (
-        <div id="app-content" tabIndex={-1} className="app-main outline-none">
+        <div id="app-content" tabIndex={-1} className="relative min-w-0 flex-1 outline-none">
           <div key={pathname} className="page-enter">
             <Outlet />
           </div>

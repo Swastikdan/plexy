@@ -377,7 +377,7 @@ function LibraryRoute() {
                 Top 10 in your library
               </h2>
             </div>
-            <div className="scroll-row flex items-start gap-2 overflow-x-auto pb-1 sm:gap-3">
+            <div className="scroll-smooth [scroll-snap-type:x_proximity] [scroll-padding-inline:var(--row-inset)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:snap-start flex items-start gap-2 overflow-x-auto pb-1 sm:gap-3">
               {topRated.map((item, index) => (
                 <RankedPoster key={item.id} item={item} rank={index + 1} />
               ))}

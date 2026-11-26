@@ -1,5 +1,4 @@
 import { useCollectionAction } from "@/features/collections/use-collection-action";
-import { Menu } from "heroui-native/menu";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 import { useIsFocused, useRouter } from "expo-router";
 import { Button as NativeButton } from "heroui-native/button";
@@ -11,7 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
-import Animated, { Easing, FadeIn, ReduceMotion } from "react-native-reanimated";
+import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SwipePager } from "@/shared/ui/swipe-pager";
 import type { ProgressQueue } from "@/core/client/progress-queue";
@@ -24,12 +23,11 @@ import { useResource } from "@/core/resources/use-resource";
 import { useOnline } from "@/shared/hooks/use-online";
 import { triggerHaptic } from "@/shared/lib/haptics";
 import { cn } from "@/shared/lib/cn";
-import { useColors, control } from "@/shared/theme";
+import { easings, motion, useColors, control } from "@/shared/theme";
 import {
   AlertCircle,
   ArrowLeft,
   Eye,
-  ListVideo,
   Minus,
   EyeOff,
   Film,
@@ -88,8 +86,8 @@ import { TitleTabs } from "./components/title-tabs";
 import { defaultSeasonNumber, playbackSeasonNumber, seasonComplete } from "./lib/default-season";
 import { useMediaTitle, type MediaTitleInput } from "./lib/use-media-title";
 
-const CONTENT_ENTER = FadeIn.duration(120)
-  .easing(Easing.bezier(0.23, 1, 0.32, 1))
+const CONTENT_ENTER = FadeIn.duration(motion.duration.fast)
+  .easing(easings.out)
   .reduceMotion(ReduceMotion.System);
 
 type DetailTab = "episodes" | "more" | "details" | "collection";
@@ -103,7 +101,7 @@ function TitleBackButton({ onPress }: { onPress: () => void }) {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel="Go back"
-      className="absolute left-4 z-[99] h-10 w-10 items-center justify-center rounded-full border border-foreground/[0.15] bg-overlay/90 active:opacity-60"
+      className="absolute left-4 z-[99] h-10 w-10 items-center justify-center rounded-full border border-foreground/[0.15] bg-overlay/90 active:opacity-70"
       style={{ top: insets.top + 14 }}
       hitSlop={14}
     >
@@ -1077,51 +1075,13 @@ export function TitleScreen({
           onMarkWatched={() => void markSeasonWatched()}
           value={selectedSeason ?? null}
           onChange={(number) => setSeason(number)}
+          sort={episodeSort}
+          onSortChange={setEpisodeSort}
         />
       ) : onlineEnabled && media.remoteLoading ? (
         <SeasonPickerSkeleton />
       ) : null}
 
-      <View className="flex-row items-center justify-between">
-        <Menu>
-          <Menu.Trigger
-            accessibilityLabel={`Sort episodes, ${episodeSort === "oldest" ? "oldest first" : "newest first"}`}
-            className="min-h-11 justify-center"
-          >
-            <Text className="font-archivo-medium text-sm text-muted">
-              Sort by: {episodeSort === "oldest" ? "Oldest first" : "Newest first"}
-            </Text>
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Overlay />
-            <Menu.Content presentation="popover" align="start" offset={6} width={184} className="border border-border" style={{ backgroundColor: colors.elevated }}>
-              {(["oldest", "newest"] as const).map((order) => (
-                <Menu.Item key={order} accessibilityState={{ selected: episodeSort === order }}
-                  onPress={() => setEpisodeSort(order)}
-                  className={cn("min-h-12", episodeSort === order && "bg-accent/15")}>
-                  <Menu.ItemTitle className={episodeSort === order ? "font-archivo-bold" : "font-archivo-medium"}>
-                    {order === "oldest" ? "Oldest first" : "Newest first"}
-                  </Menu.ItemTitle>
-                </Menu.Item>
-              ))}
-            </Menu.Content>
-          </Menu.Portal>
-        </Menu>
-        {!selectingEpisodes && localSeasonEpisodes.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Select episodes"
-            onPress={() => startEpisodeSelection()}
-            hitSlop={8}
-            className="flex-row items-center gap-1.5 rounded-full bg-surface px-3 py-2 active:opacity-70"
-          >
-            <ListVideo size={13} color={colors.brand} strokeWidth={2.4} />
-            <Text className="font-archivo-bold text-[12px] text-accent">
-              Select
-            </Text>
-          </Pressable>
-        )}
-      </View>
       {selectedSeasonRemote.error && (
         <Notice message={selectedSeasonRemote.error} retry={selectedSeasonRemote.retry} />
       )}
@@ -1235,7 +1195,7 @@ export function TitleScreen({
                 void toggleWatchlist();
               }}
               className={cn(
-                "h-[38px] w-[38px] items-center justify-center rounded-full border active:opacity-80",
+                "h-[38px] w-[38px] items-center justify-center rounded-full border active:opacity-70",
                 watchlisted
                   ? "border-accent bg-accent"
                   : "border-border bg-surface",
@@ -1264,13 +1224,7 @@ export function TitleScreen({
                 pointerEvents="none"
                 accessible={false}
                 importantForAccessibility="no-hide-descendants"
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  opacity: 0,
-                }}
+                className="absolute inset-x-0 top-0 opacity-0"
               >
                 <Text
                   className="text-center font-archivo-regular text-[14px] leading-[22px] text-foreground/80"
@@ -1296,7 +1250,7 @@ export function TitleScreen({
                   setDescriptionExpanded((current) => !current);
                 }}
                 hitSlop={8}
-                className="self-center py-1.5 active:opacity-65"
+                className="self-center py-1.5 active:opacity-70"
               >
                 <Text className="font-archivo-bold text-[13px] tracking-[0.1px] text-accent">
                   {descriptionExpanded ? "Less Details" : "More Details"}

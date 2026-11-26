@@ -27,7 +27,7 @@ import {
   Sun,
   UserRound,
 } from "lucide-react";
-import { Button, Input, ListBox, Select, Switch } from "@heroui/react";
+import { Button, Input, ListBox, Select, Skeleton, Switch } from "@heroui/react";
 import {
   accountRequest,
   createPairingCode,
@@ -50,6 +50,7 @@ import {
 } from "@/lib/playback-preferences";
 import { cx } from "@/lib/cx";
 import { ProfilePhotoEditor } from "@/components/profile-photo";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { SettingsSection, SettingsToggleRow } from "./section";
 import type { ThemePreference } from "@/theme";
 
@@ -91,13 +92,13 @@ export function AppearancePanel() {
             const Icon = choice.icon;
             const selected = preference === choice.value;
             return (
-              <button
+              <Button
                 key={choice.value}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => setPreference(choice.value)}
+                onPress={() => setPreference(choice.value)}
                 className={cx(
-                  "group relative flex flex-col items-start gap-3 overflow-hidden rounded-xl border p-3 text-left transition-[border-color,background-color,transform] duration-150 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2",
+                  "group relative flex h-auto flex-col items-start gap-3 overflow-hidden rounded-xl border p-3 text-left transition-[border-color,background-color,transform] duration-150 active:scale-[0.99] focus-visible:shadow-none focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2 md:h-auto",
                   selected
                     ? "border-accent/55 bg-surface-secondary/70"
                     : "border-border bg-surface hover:border-foreground/20 hover:bg-surface-secondary/50",
@@ -115,7 +116,7 @@ export function AppearancePanel() {
                 </span>
                 <span className="text-[12px] font-semibold text-foreground">{choice.label}</span>
                 <ThemeSwatch mode={choice.value} />
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -285,6 +286,7 @@ export function DevicesPanel() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmSignOut, setConfirmSignOut] = useState<AuthDevice | null>(null);
 
   const mint = async () => {
     setBusy(true);
@@ -336,22 +338,22 @@ export function DevicesPanel() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 type="button"
-                onClick={copy}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary"
+                onPress={copy}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[10.5px] font-semibold text-foreground transition-colors hover:bg-surface-tertiary [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3"
               >
                 {copied ? <Check size={12} className="text-success-soft-foreground" /> : <Copy size={12} />}
                 {copied ? "Copied" : "Copy"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                onClick={() => setPairing(null)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground"
+                onPress={() => setPairing(null)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-transparent px-2 text-[10.5px] font-semibold text-muted transition-colors hover:text-foreground [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3"
               >
                 <RefreshCcw size={12} />
                 Hide
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -405,33 +407,25 @@ export function DevicesPanel() {
                   </p>
                 </div>
                 {device.revoked ? (
-                  <button
+                  <Button
                     type="button"
-                    onClick={() =>
+                    onPress={() =>
                       void removeRevokedDevice(device.id).then(() =>
                         queryClient.invalidateQueries({ queryKey: ["my-devices"] }),
                       )
                     }
-                    className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[10px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground"
+                    className="h-auto shrink-0 rounded-lg border border-border bg-transparent px-2.5 py-1 text-[10px] font-semibold text-muted transition-colors hover:bg-surface-secondary hover:text-foreground md:h-auto"
                   >
                     Remove
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
                     type="button"
-                    onClick={() => {
-                      if (!window.confirm(`Sign out ${device.name}?`)) return;
-                      void revokeDevice(device.id)
-                        .then(async () => {
-                          await queryClient.invalidateQueries({ queryKey: ["my-devices"] });
-                          if (current) window.location.reload();
-                        })
-                        .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not revoke the device."));
-                    }}
-                    className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[10px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground"
+                    onPress={() => setConfirmSignOut(device)}
+                    className="h-auto shrink-0 rounded-lg border border-border bg-transparent px-2.5 py-1 text-[10px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground md:h-auto"
                   >
                     Sign out
-                  </button>
+                  </Button>
                 )}
               </li>
             );
@@ -452,6 +446,26 @@ export function DevicesPanel() {
           </p>
         </SettingsSection>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmSignOut !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmSignOut(null);
+        }}
+        title={`Sign out ${confirmSignOut?.name ?? ""}?`}
+        confirmLabel="Sign out"
+        onConfirm={() => {
+          const device = confirmSignOut;
+          setConfirmSignOut(null);
+          if (!device) return;
+          void revokeDevice(device.id)
+            .then(async () => {
+              await queryClient.invalidateQueries({ queryKey: ["my-devices"] });
+              if (device.id === currentDeviceId) window.location.reload();
+            })
+            .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not revoke the device."));
+        }}
+      />
     </div>
   );
 }
@@ -488,7 +502,7 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
             <Switch
               size="sm"
               aria-label="Turn on subtitles"
-              className="switch--compact"
+              className="w-fit"
               isSelected={prefs.autoSubtitles}
               onChange={(selected) => update({ autoSubtitles: selected })}
             >
@@ -576,7 +590,7 @@ export function PlaybackPanel({ admin }: { admin: boolean }) {
           <Switch
             size="sm"
             aria-label="Share playback diagnostics"
-            className="switch--compact"
+            className="w-fit"
             isSelected={diagnostics}
             onChange={(enabled) => {
               setDiagnostics(enabled);

@@ -3,11 +3,13 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock3, Trash2, X } from "lucide-react";
+import { Button, Skeleton } from "@heroui/react";
 import { api, type ItemCard } from "@/client";
 import { queries } from "@/queries";
 import { Page } from "@/components/page";
 import { Poster } from "@/components/poster";
 import { State } from "@/components/state";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 function watchedLabel(value: string | null | undefined): string {
   if (!value) return "";
@@ -31,6 +33,7 @@ function HistoryRoute() {
   const queryClient = useQueryClient();
   const history = useQuery(queries.history(200));
   const [busy, setBusy] = useState<number | "all" | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const items = history.data?.items ?? [];
 
   const refresh = async () => {
@@ -50,7 +53,6 @@ function HistoryRoute() {
   };
 
   const clear = async () => {
-    if (!window.confirm("Clear your entire watch history and every resume point?")) return;
     setBusy("all");
     try {
       await api.clearHistory();
@@ -72,22 +74,22 @@ function HistoryRoute() {
           </p>
         </div>
         {items.length > 0 && (
-          <button
+          <Button
             type="button"
-            onClick={() => void clear()}
-            disabled={busy !== null}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-[11px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground disabled:opacity-50"
+            onPress={() => setConfirmClear(true)}
+            isDisabled={busy !== null}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-transparent px-3 text-[11px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
           >
             <Trash2 size={13} />
             {busy === "all" ? "Clearing…" : "Clear history"}
-          </button>
+          </Button>
         )}
       </header>
 
       {history.isLoading && !history.data ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-4">
           {Array.from({ length: 12 }, (_, index) => (
-            <div key={index} className="skeleton aspect-[2/3] rounded-xl" />
+            <Skeleton key={index} className="aspect-[2/3] rounded-xl" />
           ))}
         </div>
       ) : history.isError ? (
@@ -105,21 +107,31 @@ function HistoryRoute() {
               <Poster item={item} sizes="(min-width: 1280px) 220px, (min-width: 768px) 200px, 180px" />
               <div className="flex items-center justify-between gap-2 pr-1 pt-0.5">
                 <p className="text-[10px] text-muted">{watchedLabel(item.watchedAt)}</p>
-                <button
+                <Button
                   type="button"
-                  onClick={() => void remove(item)}
-                  disabled={busy !== null}
+                  onPress={() => void remove(item)}
+                  isDisabled={busy !== null}
+                  isIconOnly
                   aria-label={`Remove ${item.name} from history`}
                   title="Remove from history"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted opacity-0 transition-[color,background-color,opacity] hover:bg-surface-secondary hover:text-foreground group-hover:opacity-100 disabled:opacity-30"
+                  className="h-6 w-6 rounded-full bg-transparent text-muted opacity-0 transition-[color,background-color,opacity] hover:bg-surface-secondary hover:text-foreground group-hover:opacity-100 disabled:opacity-30 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-[11px]"
                 >
                   <X size={11} />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Clear watch history?"
+        body="Clear your entire watch history and every resume point?"
+        confirmLabel="Clear history"
+        onConfirm={() => void clear()}
+      />
     </Page>
   );
 }

@@ -73,7 +73,7 @@ const config: ExpoConfig = {
     ],
     [
       "expo-video",
-      { supportsPictureInPicture: true, supportsBackgroundPlayback: false },
+      { supportsPictureInPicture: true, supportsBackgroundPlayback: true },
     ],
     "expo-secure-store",
     "expo-font",

@@ -10,7 +10,6 @@ import * as SplashScreen from "expo-splash-screen";
 import React,{ useEffect,useState } from "react";
 import { AppState,StatusBar,View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { useColors } from "@/shared/theme";
 import { Loading } from "@/shared/ui/loading";
 import { Notice } from "@/shared/ui/notice";
 import {
@@ -24,7 +23,7 @@ function Ready({ children }: React.PropsWithChildren) {
   if (!ready && !storageError) return <Loading />;
   return (
     <View
-      style={{ flex: 1 }}
+      className="flex-1"
       onLayout={() => {
         if (ready || storageError)
           void SplashScreen.hideAsync().catch(() => {});
@@ -41,7 +40,6 @@ function Ready({ children }: React.PropsWithChildren) {
   );
 }
 export function MobileProvider({ children }: React.PropsWithChildren) {
-  const colors = useColors();
   const { theme } = useUniwind();
   const [booted, setBooted] = useState(false);
   const [error, setError] = useState("");
@@ -91,7 +89,7 @@ export function MobileProvider({ children }: React.PropsWithChildren) {
         translucent
         backgroundColor="transparent"
       />
-      <View style={{ flex: 1, backgroundColor: colors.canvas }}>
+      <View className="flex-1 bg-background">
         {error ? (
           <Notice message={error} />
         ) : !booted || (!fonts && !fontError) ? (

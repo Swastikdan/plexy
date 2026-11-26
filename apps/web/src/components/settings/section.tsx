@@ -25,7 +25,7 @@ export function SettingsSection({
 }) {
   const hasBody = Children.toArray(children).length > 0;
   return (
-    <section className={cx("panel overflow-hidden", className)}>
+    <section className={cx("rounded-xl border border-border bg-surface overflow-hidden", className)}>
       <header className={cx("flex flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-5", !flush && hasBody && "border-b border-border/70")}>
         <div className="flex min-w-0 items-center gap-3">
           {Icon && (

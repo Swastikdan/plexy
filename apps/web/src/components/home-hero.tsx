@@ -73,7 +73,7 @@ function HeroSlide({ item }: { item: ItemCard }) {
           fetchPriority="high"
           loading="eager"
           decoding="async"
-          className="hero-media absolute inset-0 h-full w-full object-cover object-[center_26%]"
+          className="absolute inset-0 h-full w-full object-cover object-[center_26%]"
         />
       ) : (
         <div
@@ -98,7 +98,10 @@ function HeroSlide({ item }: { item: ItemCard }) {
           {item.genres.length > 0 && (
             <div className="mb-4 flex flex-wrap gap-2" aria-label="Genres">
               {item.genres.slice(0, 3).map((genre) => (
-                <span key={genre} className="hero-chip">
+                <span
+                  key={genre}
+                  className="inline-flex h-7 items-center rounded-full border border-[var(--cinema-glass-line)] bg-[var(--cinema-glass)] px-3 text-[0.6875rem] font-semibold tracking-[0.01em] text-[rgba(247,248,248,0.88)] backdrop-blur-[12px]"
+                >
                   {genre}
                 </span>
               ))}
@@ -114,33 +117,35 @@ function HeroSlide({ item }: { item: ItemCard }) {
               />
             </>
           ) : (
-            <h1 className="hero-title mb-4 max-w-[16ch] font-sans text-[2.4rem] text-white sm:text-5xl lg:text-[3.8rem]">
+            <h1 className="mb-4 max-w-[16ch] font-sans text-[2.4rem] text-white [font-family:var(--font-display)] font-normal leading-[0.9] uppercase text-balance [text-shadow:0_3px_26px_rgba(0,0,0,0.42)] sm:text-5xl lg:text-[3.8rem] [letter-spacing:0.005em]">
               {item.name}
             </h1>
           )}
 
-          <div className="hero-meta">
+          <div className="flex flex-wrap items-center gap-[0.55rem] text-xs font-medium text-[color-mix(in_oklab,var(--snow)_72%,transparent)]">
             {item.playSubtitle && (
               <span className="font-semibold text-white/92">{item.playSubtitle}</span>
             )}
-            {item.playSubtitle && item.year && <span className="meta-dot" aria-hidden />}
+            {item.playSubtitle && item.year && (
+              <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
+            )}
             {item.year && <span>{item.year}</span>}
             {item.rating != null && (
               <>
-                <span className="meta-dot" aria-hidden />
+                <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
                 <span className="inline-flex items-center gap-1">
                   <Star size={11} fill="currentColor" className="text-warning" aria-hidden />
-                  <strong>{item.rating.toFixed(1)}</strong>
+                  <strong className="font-semibold text-[var(--snow)]">{item.rating.toFixed(1)}</strong>
                 </span>
               </>
             )}
             {item.runtime != null && item.runtime > 0 && (
               <>
-                <span className="meta-dot" aria-hidden />
+                <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
                 <span>{item.runtime} min</span>
               </>
             )}
-            <span className="meta-dot" aria-hidden />
+            <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
             <span>{item.kind === "series" ? "Series" : "Film"}</span>
           </div>
 

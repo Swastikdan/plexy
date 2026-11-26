@@ -2,6 +2,9 @@ package expo.modules.plexymedia
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.provider.Settings
+import android.view.WindowManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -64,6 +67,39 @@ class PlexyMediaModule : Module() {
         castContext?.sessionManager?.removeSessionManagerListener(castListener, CastSession::class.java)
       }
     }
+
+    // Player gestures drive the real device controls: media volume moves the
+    // system STREAM_MUSIC level, and brightness overrides this window only, so
+    // leaving the player gives the phone its own brightness back.
+    Function("getVolume") {
+      val audio = appContext.reactContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        ?: return@Function 1.0
+      val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+      audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max
+    }
+    Function("setVolume") { level: Double ->
+      val audio = appContext.reactContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        ?: return@Function Unit
+      val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+      audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(level.coerceIn(0.0, 1.0) * max).toInt(), 0)
+    }
+    AsyncFunction("getBrightness") {
+      val window = appContext.currentActivity?.window
+      val current = window?.attributes?.screenBrightness ?: -1f
+      if (current >= 0f) return@AsyncFunction current.toDouble()
+      val system = try {
+        Settings.System.getInt(appContext.reactContext?.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+      } catch (_: Exception) { 128 }
+      (system / 255.0).coerceIn(0.0, 1.0)
+    }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
+    AsyncFunction("setBrightness") { level: Double ->
+      val window = appContext.currentActivity?.window ?: return@AsyncFunction Unit
+      val attributes = window.attributes
+      attributes.screenBrightness =
+        if (level < 0) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        else level.coerceIn(0.01, 1.0).toFloat()
+      window.attributes = attributes
+    }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
 
     AsyncFunction("takeVideo") { requestId: String ->
       val intent = listOfNotNull(incoming, appContext.currentActivity?.intent)

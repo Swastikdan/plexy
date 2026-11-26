@@ -28,7 +28,7 @@ export function ScanScreen() {
     finally { setActiveFolder(null); }
   }
   return <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 20, gap: 16 }}>
-    <PageHeader title="Scan library" style={{ paddingHorizontal: 0 }} />
+    <PageHeader title="Scan library" className="px-0" />
     <View className="rounded-[18px] overflow-hidden bg-surface">
       {roots.map(root => <SettingsRow key={root.uri} title={root.name} subtitle={root.kind === "tv" ? "TV shows" : root.kind === "auto" ? "Movies & shows" : "Movies"}>
         <Pressable
@@ -37,7 +37,7 @@ export function ScanScreen() {
           accessibilityState={{ disabled: scanning, busy: scanning && activeFolder === root.uri }}
           disabled={scanning}
           onPress={() => void scan([root.uri])}
-          className="h-11 w-11 items-center justify-center rounded-full bg-default active:opacity-65 disabled:opacity-40"
+          className="h-11 w-11 items-center justify-center rounded-full bg-default active:opacity-70 disabled:opacity-40"
         >
           <RefreshCw size={20} color={colors.ink} />
         </Pressable>

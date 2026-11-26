@@ -1,4 +1,4 @@
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "@/shared/ui/screen";
 import { useState, useSyncExternalStore } from "react";
 import { Directory, File } from "expo-file-system";
 import { SectionList, Text, View } from "react-native";
@@ -7,7 +7,6 @@ import { Film, Folder } from "@/shared/ui/icons";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
-import { PageHeader } from "@/shared/ui/page-header";
 
 const subscribe = (listener: () => void) => localLibrary.subscribe(listener);
 const getVersion = () => localLibrary.version;
@@ -42,8 +41,7 @@ export function LibraryRecoveryScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <PageHeader title="Reconnect media" />
+    <Screen title="Reconnect media">
       <SectionList
         sections={[
           ...(missing.size ? [{
@@ -93,6 +91,6 @@ export function LibraryRecoveryScreen() {
           <Button label="Reconnect" disabled={busy} onPress={() => void run(item.pick)} />
         </View>}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }

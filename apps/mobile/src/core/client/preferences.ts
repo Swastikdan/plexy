@@ -33,6 +33,8 @@ export interface Preferences {
   subtitleSize: number;
   autoSkip: boolean;
   autoNext: boolean;
+  /** Keep audio playing with a media notification when the app leaves the screen. */
+  backgroundPlay: boolean;
   /** Start the Vidy embed automatically. */
   onlineAutoplay: boolean;
   /** Show Vidy's season/episode picker. */
@@ -64,6 +66,7 @@ export const defaultPreferences: Preferences = {
   subtitleSize: 22,
   autoSkip: false,
   autoNext: true,
+  backgroundPlay: false,
   onlineAutoplay: true,
   onlineEpisodeSelector: true,
   onlineDisclaimerSeen: false,

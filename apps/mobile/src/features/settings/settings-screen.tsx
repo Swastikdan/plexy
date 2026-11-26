@@ -37,7 +37,6 @@ import {
   EyeOff,
   Film,
   Folder,
-  Github,
   HardDrive,
   Play,
   Tv,
@@ -50,6 +49,7 @@ import {
 } from "@/shared/ui/icons";
 import { Notice } from "@/shared/ui/notice";
 import { PageHeader } from "@/shared/ui/page-header";
+import { ScreenContent } from "@/shared/ui/screen";
 import { ToggleSwitch } from "@/shared/ui/toggle-switch";
 import { Updates } from "./components/app-updates";
 import { AppearanceModeSelector } from "./components/appearance-mode-selector";
@@ -298,10 +298,8 @@ export function SettingsScreen({
                         ? "Hidden titles"
                         : "Settings"
         }
-        style={{
-          paddingHorizontal: 20,
-        }}
       />
+      <ScreenContent>
       <ScrollView
         ref={folderScroll}
         className="flex-1 bg-background"
@@ -345,7 +343,7 @@ export function SettingsScreen({
                   <X size={22} color={colors.ink} />
                 </Pressable>
               </View>
-              <ScrollView style={{ maxHeight: 420, flexShrink: 1 }}>
+              <ScrollView className="max-h-[420px] shrink">
                 {picker?.description ? (
                   <Text className="px-4 py-3 text-[13px] leading-5 font-archivo-regular text-muted">
                     {picker.description}
@@ -493,38 +491,28 @@ export function SettingsScreen({
                     </Text>
                   </View>
                 </View>
-                <View className="mt-3 flex-row flex-wrap items-center gap-x-3 gap-y-2">
-                  <Button
-                    label={appUpdateLabel}
-                    primary={hasAppUpdate}
-                    disabled={(!online && !otaPending) || updateChecking || updateDownloading}
-                    onPress={() =>
-                      void (hasAppUpdate
-                        ? handleDownloadAndInstall()
-                        : handleCheckUpdate())
-                    }
-                    style={{
-                      minHeight: 44,
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      opacity: online ? 1 : 0.4,
-                    }}
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Download from GitHub"
-                    accessibilityState={{ disabled: busy || !online }}
-                    disabled={busy || !online}
-                    hitSlop={6}
-                    onPress={() => void downloadFromGitHub()}
-                    className="flex-row items-center gap-1.5 py-2 active:opacity-60"
-                    style={{ opacity: online ? 1 : 0.4 }}
-                  >
-                    <Github size={16} color={colors.muted} />
-                    <Text className="text-[13px] font-archivo-medium text-muted">
-                      Download from GitHub
-                    </Text>
-                  </Pressable>
+                <View className="mt-3 flex-row gap-3">
+                  <View className="flex-1">
+                    <Button
+                      label={appUpdateLabel}
+                      primary={hasAppUpdate}
+                      disabled={(!online && !otaPending) || updateChecking || updateDownloading}
+                      onPress={() =>
+                        void (hasAppUpdate
+                          ? handleDownloadAndInstall()
+                          : handleCheckUpdate())
+                      }
+                      className="min-h-11 w-full px-3 py-2.5"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Button
+                      label="Get from GitHub"
+                      disabled={busy || !online}
+                      onPress={() => void downloadFromGitHub()}
+                      className="min-h-11 w-full px-3 py-2.5"
+                    />
+                  </View>
                 </View>
               </View>
               <SettingsRow
@@ -600,6 +588,16 @@ export function SettingsScreen({
                   value={preferences.autoSkip}
                   onValueChange={(v) => updatePreferences({ autoSkip: v })}
                   accessibilityLabel="Automatically skip marked sections"
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="Background play"
+                subtitle="Keep listening when you leave the app or lock the screen"
+              >
+                <ToggleSwitch
+                  value={preferences.backgroundPlay}
+                  onValueChange={(v) => updatePreferences({ backgroundPlay: v })}
+                  accessibilityLabel="Background play"
                 />
               </SettingsRow>
               <SettingsRow
@@ -908,6 +906,7 @@ export function SettingsScreen({
         {page === "hidden" && <HiddenTitlesSettings />}
         {page === "updates" && <Updates />}
       </ScrollView>
+      </ScreenContent>
     </View>
   );
 }

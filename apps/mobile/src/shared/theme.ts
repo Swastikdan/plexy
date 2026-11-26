@@ -1,4 +1,5 @@
-import { processColor , Easing, Platform } from "react-native";
+import { processColor, Platform } from "react-native";
+import { Easing } from "react-native-reanimated";
 import { useThemeColor } from "heroui-native";
 
 // Resolve raw color props from the same HeroUI tokens as Tailwind utilities.
@@ -45,17 +46,41 @@ export function sizeLabel(n: number) {
     ? `${(n / 1024 ** 3).toFixed(1)} GB`
     : `${Math.round(n / 1024 ** 2)} MB`;
 }
+/**
+ * The app's motion scale. Use these instead of literal durations or spring
+ * configs so screens, lists and controls move with the same rhythm.
+ */
 export const motion = {
   easeOut: [0.23, 1, 0.32, 1] as const,
-  duration: { exit: 100, enter: 180 },
-};
+  duration: {
+    /** Leaving elements: quicker than entering so the next state wins. */
+    exit: 100,
+    /** Small changes: image crossfades, tab switches, content reveal. */
+    fast: 120,
+    /** Elements entering the screen. */
+    enter: 180,
+    /** Larger surfaces: sheets, drawers, expanding sections. */
+    slow: 320,
+  },
+  spring: {
+    /** Gesture release that should land without bounce. */
+    settle: { duration: 400, dampingRatio: 1, overshootClamping: true },
+    /** Gesture release that keeps a hint of the finger's momentum. */
+    fling: { duration: 400, dampingRatio: 0.8, overshootClamping: true },
+  },
+} as const;
+/**
+ * Easing curves as worklets (Reanimated's bezierFn), so they run on the UI
+ * thread in withTiming and layout animations, and stay plain callable
+ * functions for React Navigation's Animated-based transitions.
+ */
 export const easings = {
   /** Strong ease-out: fast start, slow settle. Use for entering elements. */
-  out: Easing.bezier(...motion.easeOut),
+  out: Easing.bezierFn(...motion.easeOut),
   /** Strong ease-in-out: for elements moving across the screen. */
-  inOut: Easing.bezier(0.77, 0, 0.175, 1),
+  inOut: Easing.bezierFn(0.77, 0, 0.175, 1),
   /** iOS-like drawer curve: for slide-in panels from an edge. */
-  drawer: Easing.bezier(0.32, 0.72, 0, 1),
+  drawer: Easing.bezierFn(0.32, 0.72, 0, 1),
   /** Fast ease-in: for dismissal/exit animations. */
-  in: Easing.bezier(0.32, 0, 1, 1),
+  in: Easing.bezierFn(0.32, 0, 1, 1),
 };

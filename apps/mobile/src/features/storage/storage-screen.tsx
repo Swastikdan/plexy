@@ -1,13 +1,13 @@
+import { ToggleSwitch } from "@/shared/ui/toggle-switch";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { SectionList, Pressable, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Screen } from "@/shared/ui/screen";
 import { displayName, localLibrary } from "@/core/library/local-runtime";
 import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
 import { Film, Folder, HardDrive, Trash2 } from "@/shared/ui/icons";
 import { useColors } from "@/shared/theme";
 import { Button } from "@/shared/ui/button";
 import { Notice } from "@/shared/ui/notice";
-import { PageHeader } from "@/shared/ui/page-header";
 import { useAppDialog } from "@/shared/ui/app-dialog";
 
 const subscribe = (listener: () => void) => localLibrary.subscribe(listener);
@@ -67,8 +67,7 @@ export function StorageScreen() {
     } }],
   );
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <PageHeader title="Storage" />
+    <Screen title="Storage">
       <View className="mx-5 mb-2 flex-row items-center gap-4 rounded-2xl bg-surface px-4 py-3">
         <HardDrive size={24} color={colors.muted} />
         <View className="flex-1">
@@ -77,16 +76,17 @@ export function StorageScreen() {
         </View>
       </View>
       {message ? <View className="px-5 pb-2"><Notice message={message} /></View> : null}
-      <View className="self-start px-5 pb-1">
-        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: watchedOnly, disabled: busy }} disabled={busy}
-          className="min-h-11 flex-row items-center gap-2 py-1"
-          onPress={() => { setWatchedOnly(!watchedOnly); setSelected(new Set()); }}>
-          <CheckboxIndicator checked={watchedOnly} />
-          <Text className="font-archivo-medium text-foreground">Watched videos only</Text>
-        </Pressable>
+      <View className="mx-5 mb-1 min-h-12 flex-row items-center justify-between gap-3">
+        <Text className="font-archivo-medium text-foreground">Watched videos only</Text>
+        <ToggleSwitch
+          value={watchedOnly}
+          disabled={busy}
+          accessibilityLabel="Watched videos only"
+          onValueChange={(next) => { setWatchedOnly(next); setSelected(new Set()); }}
+        />
       </View>
       <SectionList
-        style={{ flex: 1 }}
+        className="flex-1"
         sections={sections}
         keyExtractor={(record) => String(record.id)}
         stickySectionHeadersEnabled={false}
@@ -129,6 +129,6 @@ export function StorageScreen() {
           <Button primary label={busy ? "Deleting…" : "Review deletion"} disabled={busy} onPress={confirm} />
         </View>
       ) : null}
-    </SafeAreaView>
+    </Screen>
   );
 }

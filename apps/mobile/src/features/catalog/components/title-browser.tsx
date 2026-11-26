@@ -62,7 +62,7 @@ export function TitleBrowser({
             accessibilityLabel="Back to library"
             onPress={close}
             hitSlop={8}
-            className="h-[30px] w-[44px] items-center justify-center self-start active:opacity-60"
+            className="h-[30px] w-[44px] items-center justify-center self-start active:opacity-70"
           >
             <ChevronLeft size={24} color={colors.ink} />
           </Pressable>

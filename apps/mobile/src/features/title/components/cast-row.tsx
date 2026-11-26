@@ -1,5 +1,6 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
-import { ScrollView,Pressable,Text,View } from "react-native";
+import { ScrollView,Text,View } from "react-native";
+import { Tappable } from "@/shared/ui/tappable";
 import type {
 LocalCatalog,
 TitleDetail,
@@ -32,7 +33,8 @@ export function CastRow({
         contentContainerStyle={{ gap: 14 }}
       >
         {people.map((person, index) => (
-          <Pressable key={`${person.name}-${index}`}
+          <Tappable key={`${person.name}-${index}`}
+            feedback="scale"
             disabled={!canOpen(person.name)}
             onPress={() => onSelect(person.name)}
             className="w-24 gap-1.5"
@@ -54,7 +56,7 @@ export function CastRow({
             <Text className="font-archivo-regular text-[11px] text-muted" numberOfLines={1}>
               {person.character}
             </Text>
-          </Pressable>
+          </Tappable>
         ))}
       </ScrollView>
     </View>

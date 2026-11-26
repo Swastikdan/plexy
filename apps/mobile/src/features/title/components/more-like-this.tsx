@@ -44,17 +44,11 @@ export function MoreLikeThis({
 
   if (loading) {
     return (
-      <View className="flex-row flex-wrap pt-1" style={{ gap: GAP }}>
+      <View className="flex-row flex-wrap gap-2.5 pt-1">
         {Array.from({ length: COLUMNS * 3 }, (_, index) => (
           <View key={index} style={{ width: cardWidth }} className="gap-2">
-            <SkeletonBlock
-              style={{
-                width: "100%",
-                aspectRatio: 2 / 3,
-                borderRadius: 8,
-              }}
-            />
-            <SkeletonBlock style={{ width: "55%", height: 11 }} />
+            <SkeletonBlock className="w-full aspect-[2/3]" />
+            <SkeletonBlock className="w-[55%] h-[11px]" />
           </View>
         ))}
       </View>
@@ -78,10 +72,7 @@ export function MoreLikeThis({
   }
 
   return (
-    <View
-      className="flex-row flex-wrap pt-1"
-      style={{ columnGap: GAP, rowGap: 18 }}
-    >
+    <View className="flex-row flex-wrap gap-x-2.5 gap-y-[18px] pt-1">
       {items.map((item) => {
         const remote = item.publicId.startsWith("remote:");
         return (

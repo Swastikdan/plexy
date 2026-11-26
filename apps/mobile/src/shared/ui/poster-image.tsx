@@ -1,5 +1,6 @@
 import { useReducedMotion } from "react-native-reanimated";
 import { Image } from "expo-image";
+import { motion } from "@/shared/theme";
 import type { ImageStyle, StyleProp } from "react-native";
 
 export function PosterImage({
@@ -20,7 +21,7 @@ export function PosterImage({
       source={source}
       style={[{ width: "100%", height: "100%" }, style]}
       contentFit={resizeMode}
-      transition={reducedMotion ? 0 : { duration: 120, timing: "ease-out", effect: "cross-dissolve" }}
+      transition={reducedMotion ? 0 : { duration: motion.duration.fast, timing: "ease-out", effect: "cross-dissolve" }}
       cachePolicy="memory-disk"
       recyclingKey={source.uri}
       onError={onError}

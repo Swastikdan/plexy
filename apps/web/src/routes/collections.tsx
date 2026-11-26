@@ -3,11 +3,13 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderHeart, Plus, Trash2, X } from "lucide-react";
+import { Button, Input, Skeleton } from "@heroui/react";
 import { api, type ItemCard } from "@/client";
 import { queries } from "@/queries";
 import { Page } from "@/components/page";
 import { Poster } from "@/components/poster";
 import { State } from "@/components/state";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 function CollectionsRoute() {
   const { id } = Route.useSearch();
@@ -21,6 +23,7 @@ function CollectionsRoute() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["collections"] });
@@ -49,14 +52,14 @@ function CollectionsRoute() {
   const automaticCollection = current?.collection.source === "tmdb";
 
   const newCollectionButton = (className = "") => (
-    <button
+    <Button
       type="button"
-      onClick={() => setCreating((value) => !value)}
-      className={`inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-90 ${className}`}
+      onPress={() => setCreating((value) => !value)}
+      className={`inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-90 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5 ${className}`}
     >
       <Plus size={14} />
       New collection
-    </button>
+    </Button>
   );
 
   return (
@@ -79,39 +82,41 @@ function CollectionsRoute() {
           }}
           className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3"
         >
-          <input
+          <Input
             autoFocus
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Collection name"
             aria-label="Collection name"
-            className="h-9 min-w-52 flex-1 rounded-lg border border-border bg-background px-3 text-[12px] text-foreground outline-none focus:border-accent"
+            fullWidth
+            className="min-w-52 flex-1"
           />
-          <button
+          <Button
             type="submit"
-            disabled={!name.trim() || busy}
-            className="h-9 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background disabled:opacity-50"
+            isDisabled={!name.trim() || busy}
+            className="h-9 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background"
           >
             {busy ? "Creating…" : "Create"}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            onClick={() => {
+            onPress={() => {
               setCreating(false);
               setName("");
             }}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-secondary"
+            isIconOnly
+            className="h-9 w-9 rounded-lg text-muted hover:bg-surface-secondary [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
             aria-label="Cancel"
           >
             <X size={14} />
-          </button>
+          </Button>
         </form>
       )}
 
       {list.isLoading && !list.data ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }, (_, index) => (
-            <div key={index} className="skeleton h-36 rounded-2xl" />
+            <Skeleton key={index} className="h-36 rounded-2xl" />
           ))}
         </div>
       ) : collections.length === 0 ? (
@@ -125,7 +130,7 @@ function CollectionsRoute() {
         )
       ) : (
         <div className="grid items-start gap-6 xl:grid-cols-[20rem_minmax(0,1fr)]">
-          <aside className="panel overflow-hidden">
+          <aside className="rounded-xl border border-border bg-surface overflow-hidden">
             {automatic.length > 0 && (
               <div>
                 <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
@@ -221,7 +226,7 @@ function CollectionsRoute() {
                 body="Pick a collection on the left, or create a new one."
               />
             ) : selected.isLoading && !current ? (
-              <div className="skeleton h-64 rounded-2xl" />
+              <Skeleton className="h-64 rounded-2xl" />
             ) : !current ? (
               <State title="Collection not found" body="It may have been removed." />
             ) : (
@@ -237,20 +242,14 @@ function CollectionsRoute() {
                     </p>
                   </div>
                   {!automaticCollection && (
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => {
-                        if (!window.confirm(`Delete “${current.collection.name}”? Titles stay in your library.`)) return;
-                        void api.deleteCollection(current.collection.id).then(async () => {
-                          await refresh();
-                          void navigate({ to: "/collections", search: {} });
-                        });
-                      }}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground"
+                      onPress={() => setConfirmDelete(true)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-transparent px-2.5 text-[10.5px] font-semibold text-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger-soft-foreground [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3"
                     >
                       <Trash2 size={12} />
                       Delete collection
-                    </button>
+                    </Button>
                   )}
                 </header>
 
@@ -263,18 +262,19 @@ function CollectionsRoute() {
                     {items.map((item) => (
                       <div key={item.id} className="group relative">
                         <Poster item={item} sizes="(min-width: 1280px) 220px, (min-width: 768px) 200px, 180px" />
-                        <button
+                        <Button
                           type="button"
-                          onClick={() => {
+                          onPress={() => {
                             if (id == null) return;
                             void api.removeFromCollection(id, item.id).then(refresh);
                           }}
+                          isIconOnly
                           aria-label={`Remove ${item.name} from collection`}
                           title="Remove from collection"
-                          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white opacity-0 backdrop-blur transition-opacity hover:bg-black/85 group-hover:opacity-100"
+                          className="absolute right-2 top-2 h-7 w-7 rounded-full border border-white/20 bg-black/65 text-white opacity-0 backdrop-blur transition-opacity hover:bg-black/85 group-hover:opacity-100 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3"
                         >
                           <X size={12} />
-                        </button>
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -284,6 +284,21 @@ function CollectionsRoute() {
           </section>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete “${current?.collection.name ?? ""}”?`}
+        body="Titles stay in your library."
+        confirmLabel="Delete collection"
+        onConfirm={() => {
+          if (id == null) return;
+          void api.deleteCollection(current.collection.id).then(async () => {
+            await refresh();
+            void navigate({ to: "/collections", search: {} });
+          });
+        }}
+      />
     </Page>
   );
 }

@@ -1,16 +1,21 @@
 import { Stack } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { pushTransition } from "@/shared/navigation/transitions";
 import { useColors } from "@/shared/theme";
+import { SafeAreaView } from "@/shared/ui/safe-area-view";
 
 export const unstable_settings = { initialRouteName: "index" };
 export default function SettingsLayout() {
   const colors = useColors();
+  const reducedMotion = useReducedMotion();
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: colors.canvas }}
+      className="flex-1 bg-background"
     >
-      <Stack screenOptions={{ headerShown: false }} />
+      {/* Same push as the root stack, so a settings page and a title page
+          enter the same way. */}
+      <Stack screenOptions={pushTransition(reducedMotion, colors.canvas)} />
     </SafeAreaView>
   );
 }

@@ -13,6 +13,7 @@ export const Button = forwardRef<
     selected?: boolean;
     disabled?: boolean;
     compact?: boolean;
+    className?: string;
     style?: StyleProp<ViewStyle>;
     onFocus?: () => void;
     testID?: string;
@@ -25,6 +26,7 @@ export const Button = forwardRef<
     selected,
     disabled,
     compact,
+    className,
     style,
     onFocus,
     testID,
@@ -53,6 +55,7 @@ export const Button = forwardRef<
           : "min-h-[52px] px-5 py-3 gap-[9px]",
         !isFilled && "bg-default",
         "focus:border-2 focus:border-foreground",
+        className,
       )}
     >
       {!compact && (

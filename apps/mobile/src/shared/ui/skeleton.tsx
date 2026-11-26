@@ -28,10 +28,8 @@ export function SkeletonBlock({
 function PosterCardSkeleton({ width }: { width: number | `${number}%` }) {
   return (
     <View style={{ width }} className="gap-2">
-      <SkeletonBlock
-        style={{ width: "100%", aspectRatio: 2 / 3, borderRadius: 8 }}
-      />
-      <SkeletonBlock style={{ width: "55%", height: 11 }} />
+      <SkeletonBlock className="w-full aspect-[2/3]" />
+      <SkeletonBlock className="w-[55%] h-[11px]" />
     </View>
   );
 }
@@ -40,7 +38,7 @@ function PosterCardSkeleton({ width }: { width: number | `${number}%` }) {
 function PosterShelfSkeleton({ count = 3 }: { count?: number }) {
   return (
     <View className="gap-2">
-      <SkeletonBlock style={{ marginLeft: 20, width: 132, height: 16 }} />
+      <SkeletonBlock className="ml-5 w-[132px] h-4" />
       <View className="flex-row gap-2.5 overflow-hidden px-5">
         {Array.from({ length: count }, (_, card) => (
           <PosterCardSkeleton key={card} width={150} />
@@ -54,7 +52,7 @@ function PosterShelfSkeleton({ count = 3 }: { count?: number }) {
 export function SeasonPickerSkeleton() {
   return (
     <View className="w-full flex-row items-center justify-between">
-      <SkeletonBlock style={{ width: 108, height: 20 }} />
+      <SkeletonBlock className="w-[108px] h-5" />
     </View>
   );
 }
@@ -65,13 +63,11 @@ export function EpisodeListSkeleton({ count = 4 }: { count?: number }) {
     <View className="gap-[18px] pt-3">
       {Array.from({ length: count }, (_, index) => (
         <View key={index} className="flex-row gap-[14px] px-2 py-3">
-          <SkeletonBlock
-            style={{ width: 148, aspectRatio: 16 / 9, borderRadius: 8 }}
-          />
+          <SkeletonBlock className="w-[148px] aspect-[16/9]" />
           <View className="flex-1 justify-center gap-2">
-            <SkeletonBlock style={{ width: "62%", height: 14 }} />
-            <SkeletonBlock style={{ width: "94%", height: 12 }} />
-            <SkeletonBlock style={{ width: "45%", height: 11 }} />
+            <SkeletonBlock className="w-[62%] h-3.5" />
+            <SkeletonBlock className="w-[94%] h-3" />
+            <SkeletonBlock className="w-[45%] h-[11px]" />
           </View>
         </View>
       ))}
@@ -83,19 +79,17 @@ export function EpisodeListSkeleton({ count = 4 }: { count?: number }) {
 export function CastRowSkeleton({ count = 4 }: { count?: number }) {
   return (
     <View className="gap-3">
-      <SkeletonBlock style={{ width: 126, height: 18 }} />
+      <SkeletonBlock className="w-[126px] h-[18px]" />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 14 }}
+        contentContainerClassName="gap-3.5"
       >
         {Array.from({ length: count }, (_, index) => (
           <View key={index} className="w-24 gap-1.5">
-            <SkeletonBlock
-              style={{ width: "100%", aspectRatio: 2 / 3, borderRadius: 8 }}
-            />
-            <SkeletonBlock style={{ width: "82%", height: 11 }} />
-            <SkeletonBlock style={{ width: "55%", height: 10 }} />
+            <SkeletonBlock className="w-full aspect-[2/3]" />
+            <SkeletonBlock className="w-[82%] h-[11px]" />
+            <SkeletonBlock className="w-[55%] h-2.5" />
           </View>
         ))}
       </ScrollView>
@@ -135,7 +129,7 @@ export function TitleHeroSkeleton() {
         style={StyleSheet.absoluteFill}
       />
       <View className="absolute inset-x-5 bottom-7 items-center">
-        <SkeletonBlock style={{ width: "58%", height: 52, borderRadius: 8 }} />
+        <SkeletonBlock className="w-[58%] h-[52px]" />
       </View>
     </View>
   );
@@ -150,8 +144,8 @@ export function HomeSkeleton() {
         className="absolute left-5 z-10 flex-row items-center gap-2"
         style={{ top: insets.top + 18 }}
       >
-        <SkeletonBlock style={{ width: 28, height: 28, borderRadius: 14 }} />
-        <SkeletonBlock style={{ width: 92, height: 26 }} />
+        <SkeletonBlock className="w-7 h-7 rounded-full" />
+        <SkeletonBlock className="w-[92px] h-[26px]" />
       </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -161,15 +155,11 @@ export function HomeSkeleton() {
           className="justify-end overflow-hidden"
           style={{ height: 540 + insets.top }}
         >
-          <SkeletonBlock
-            style={{ position: "absolute", inset: 0, borderRadius: 0 }}
-          />
+          <SkeletonBlock className="absolute inset-0 rounded-none" />
           <View className="gap-3 px-5 pb-8">
-            <SkeletonBlock style={{ width: 230, height: 42 }} />
-            <SkeletonBlock style={{ width: 170, height: 12 }} />
-            <SkeletonBlock
-              style={{ width: "100%", height: 52, borderRadius: 26 }}
-            />
+            <SkeletonBlock className="w-[230px] h-[42px]" />
+            <SkeletonBlock className="w-[170px] h-3" />
+            <SkeletonBlock className="w-full h-[52px] rounded-full" />
           </View>
         </View>
         {[0, 1, 2].map((row) => (
@@ -216,7 +206,7 @@ export function SearchResultRowsSkeleton({
 export function SearchResultsSkeleton() {
   return (
     <View className="flex-1 gap-3 px-5 pt-2">
-      <SkeletonBlock style={{ width: 142, height: 16 }} />
+      <SkeletonBlock className="w-[142px] h-4" />
       <SearchResultRowsSkeleton rows={4} inset={false} />
     </View>
   );
@@ -241,8 +231,7 @@ export function LibraryGridSkeleton() {
   const cardWidth = Math.floor(available / columns) - 10;
   return (
     <View
-      className="flex-1 flex-row flex-wrap px-5 pt-1"
-      style={{ gap: 12 }}
+      className="flex-1 flex-row flex-wrap gap-3 px-5 pt-1"
     >
       {Array.from({ length: columns * 3 }, (_, index) => (
         <PosterCardSkeleton key={index} width={cardWidth} />
@@ -261,10 +250,7 @@ function TitlePosterGridSkeleton() {
     Math.floor((width - 40 - gap * (columns - 1)) / columns),
   );
   return (
-    <View
-      className="flex-row flex-wrap pt-1"
-      style={{ columnGap: gap, rowGap: 18 }}
-    >
+    <View className="flex-row flex-wrap gap-x-2.5 gap-y-[18px] pt-1">
       {Array.from({ length: columns * 2 }, (_, index) => (
         <PosterCardSkeleton key={index} width={cardWidth} />
       ))}
@@ -298,35 +284,31 @@ export function TitleDetailSkeleton({ series = true }: { series?: boolean }) {
         <View className="gap-[18px] px-5 pt-5">
           {/* Centered fact line. */}
           <View className="flex-row flex-wrap items-center justify-center gap-x-2 gap-y-1">
-            <SkeletonBlock style={{ width: 36, height: 18, borderRadius: 4 }} />
-            <SkeletonBlock style={{ width: 40, height: 12 }} />
-            <SkeletonBlock style={{ width: 86, height: 12 }} />
+            <SkeletonBlock className="w-9 h-[18px] rounded-[4px]" />
+            <SkeletonBlock className="w-10 h-3" />
+            <SkeletonBlock className="w-[86px] h-3" />
           </View>
 
           {/* Centered rating and primary play pill. */}
           <View className="flex-row items-center justify-center gap-3">
-            <SkeletonBlock style={{ width: 105, height: 21 }} />
-            <SkeletonBlock
-              style={{ width: 104, height: 38, borderRadius: 19 }}
-            />
+            <SkeletonBlock className="w-[105px] h-[21px]" />
+            <SkeletonBlock className="w-[104px] h-[38px] rounded-full" />
           </View>
 
           {/* Centered quick action (My List for online titles). */}
           <View className="items-center py-1">
             <View className="min-w-[64px] items-center gap-2 py-1">
-              <SkeletonBlock
-                style={{ width: 26, height: 26, borderRadius: 13 }}
-              />
-              <SkeletonBlock style={{ width: 52, height: 13 }} />
+              <SkeletonBlock className="w-[26px] h-[26px] rounded-full" />
+              <SkeletonBlock className="w-[52px] h-[13px]" />
             </View>
           </View>
 
           {/* Synopsis: left aligned, exactly like the real text block. */}
           <View className="gap-2">
-            <SkeletonBlock style={{ width: "100%", height: 14 }} />
-            <SkeletonBlock style={{ width: "96%", height: 14 }} />
-            <SkeletonBlock style={{ width: "90%", height: 14 }} />
-            <SkeletonBlock style={{ width: "54%", height: 14 }} />
+            <SkeletonBlock className="w-full h-3.5" />
+            <SkeletonBlock className="w-[96%] h-3.5" />
+            <SkeletonBlock className="w-[90%] h-3.5" />
+            <SkeletonBlock className="w-[54%] h-3.5" />
           </View>
 
           {/* Underline tab strip. */}
@@ -335,10 +317,9 @@ export function TitleDetailSkeleton({ series = true }: { series?: boolean }) {
               <View
                 key={index}
                 className={cn(
-                  "min-h-11 justify-center border-b-2 pb-2.5 pt-1",
+                  "-mb-px min-h-11 justify-center border-b-2 pb-2.5 pt-1",
                   index === 0 ? "border-b-accent" : "border-b-transparent",
                 )}
-                style={{ marginBottom: -1 }}
               >
                 <SkeletonBlock style={{ width, height: 15 }} />
               </View>
@@ -351,7 +332,7 @@ export function TitleDetailSkeleton({ series = true }: { series?: boolean }) {
               {/* Episode count. The Select pill only exists for downloaded
                   episodes, so it is not part of the online first paint. */}
               <View className="flex-row items-center justify-between">
-                <SkeletonBlock style={{ width: 64, height: 12 }} />
+                <SkeletonBlock className="w-16 h-3" />
               </View>
               <EpisodeListSkeleton count={4} />
             </View>

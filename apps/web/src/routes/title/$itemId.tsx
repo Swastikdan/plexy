@@ -229,7 +229,7 @@ function DetailView({
   };
 
   return (
-    <div className="staggered space-y-8">
+    <div className="space-y-8">
       <section className="hero-shell flex min-h-[30rem] flex-col sm:min-h-[34rem] lg:min-h-[35rem]">
         <ArtworkImage
           src={item.backdrop ?? item.poster}
@@ -239,7 +239,7 @@ function DetailView({
           fetchPriority="high"
           loading="eager"
           decoding="async"
-          className="hero-media absolute inset-0 h-full w-full object-cover object-[center_24%] sm:object-[center_28%]"
+          className="absolute inset-0 h-full w-full object-cover object-[center_24%] sm:object-[center_28%]"
         />
 
         <div className="relative z-10 flex flex-1 flex-col justify-between gap-8 p-5 sm:p-8 lg:p-11">
@@ -276,7 +276,10 @@ function DetailView({
               {displayGenres.length > 0 && (
                 <div className="mb-3.5 flex flex-wrap gap-2" aria-label="Genres">
                   {displayGenres.map((genre) => (
-                    <span key={genre} className="hero-chip">
+                    <span
+                      key={genre}
+                      className="inline-flex h-7 items-center rounded-full border border-[var(--cinema-glass-line)] bg-[var(--cinema-glass)] px-3 text-[0.6875rem] font-semibold tracking-[0.01em] text-[rgba(247,248,248,0.88)] backdrop-blur-[12px]"
+                    >
                       {genre}
                     </span>
                   ))}
@@ -292,26 +295,26 @@ function DetailView({
                   />
                 </>
               ) : (
-                <h1 className="hero-title mb-3 max-w-[18ch] font-sans text-[2.4rem] text-white sm:text-5xl lg:text-[3.8rem]">
+                <h1 className="mb-3 max-w-[18ch] font-sans text-[2.4rem] text-white [font-family:var(--font-display)] font-normal leading-[0.9] uppercase text-balance [text-shadow:0_3px_26px_rgba(0,0,0,0.42)] sm:text-5xl lg:text-[3.8rem] [letter-spacing:0.005em]">
                   {item.name}
                 </h1>
               )}
 
-              <div className="hero-meta">
+              <div className="flex flex-wrap items-center gap-[0.55rem] text-xs font-medium text-[color-mix(in_oklab,var(--snow)_72%,transparent)]">
                 {item.year && <span>{item.year}</span>}
                 {displayRuntime != null && (
                   <>
-                    <span className="meta-dot" aria-hidden />
+                    <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
                     <span>{displayRuntime} min</span>
                   </>
                 )}
                 {displayCert && (
                   <>
-                    <span className="meta-dot" aria-hidden />
+                    <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
                     <span>{displayCert}</span>
                   </>
                 )}
-                <span className="meta-dot" aria-hidden />
+                <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-[color-mix(in_oklab,var(--snow)_36%,transparent)]" />
                 <span>{item.kind === "series" ? "Series" : "Film"}</span>
               </div>
 
@@ -529,7 +532,7 @@ function DetailView({
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_20.5rem] xl:gap-10">
         <div className="min-w-0 space-y-8">
           {item.kind === "series" && (
-            <section className="panel overflow-hidden">
+            <section className="rounded-xl border border-border bg-surface overflow-hidden">
               <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 px-4 py-3.5 sm:px-5">
                 <h2 className="font-sans text-lg font-bold tracking-[-0.03em] text-foreground">
                   Episodes
@@ -600,7 +603,7 @@ function DetailView({
                               sizes="(min-width: 640px) 144px, (min-width: 420px) 128px, 120px"
                               loading="lazy"
                               decoding="async"
-                              className="zoom-on-hover-strong h-full w-full object-cover"
+                              className="h-full w-full object-cover transition-transform duration-300 ease-[var(--ease-out)] [@media(hover:hover)_and_(pointer:fine)_and_(prefers-reduced-motion:no-preference)]:group-hover:scale-[1.05]"
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-muted">
@@ -679,7 +682,7 @@ function DetailView({
           )}
 
           {extraVideos.length > 0 && (
-            <section className="panel overflow-hidden">
+            <section className="rounded-xl border border-border bg-surface overflow-hidden">
               <header className="border-b border-border/70 px-4 py-3.5 sm:px-5">
                 <h2 className="font-sans text-lg font-bold tracking-[-0.03em] text-foreground">
                   More videos
@@ -709,7 +712,7 @@ function DetailView({
         {(cast?.length || (item.kind !== "series" && file)) && (
           <aside className="h-fit space-y-5">
             {cast && cast.length > 0 && (
-            <section className="panel overflow-hidden">
+            <section className="rounded-xl border border-border bg-surface overflow-hidden">
               <header className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
                 <div className="flex items-center gap-2">
                   <Users size={13} className="text-muted" aria-hidden />
@@ -761,7 +764,7 @@ function DetailView({
           )}
 
           {item.kind !== "series" && file && (
-            <section className="panel p-4 sm:p-5">
+            <section className="rounded-xl border border-border bg-surface p-4 sm:p-5">
               <div className="flex items-center gap-2">
                 <HardDrive size={13} className="text-muted" aria-hidden />
                 <h2 className="text-[12px] font-bold tracking-[-0.01em] text-foreground">Details</h2>

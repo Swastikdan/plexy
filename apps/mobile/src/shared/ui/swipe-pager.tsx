@@ -14,6 +14,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { useReducedMotion } from "@/shared/hooks/use-reduced-motion";
+import { motion } from "@/shared/theme";
 
 const PagerLock = createContext<(locked: boolean) => void>(() => {});
 
@@ -133,15 +134,13 @@ export function SwipePager({
       );
       targetIndex.set(next);
       translation.set(reduceMotion ? -next * width : withSpring(-next * width, {
-        duration: 400, dampingRatio: 0.8, velocity: event.velocityX, overshootClamping: true,
+        ...motion.spring.fling, velocity: event.velocityX,
       }));
       if (next !== boundedIndex) scheduleOnRN(notifyChange, next);
     })
     .onFinalize((_event, success) => {
       if (!success) {
-        translation.set(reduceMotion ? -targetIndex.get() * width : withSpring(-targetIndex.get() * width, {
-          duration: 400, dampingRatio: 1, overshootClamping: true,
-        }));
+        translation.set(reduceMotion ? -targetIndex.get() * width : withSpring(-targetIndex.get() * width, motion.spring.settle));
       }
     }), [scrollEnabled, neighboursReady, childInteracting, width, pageKeys.length, boundedIndex, notifyChange, reduceMotion, translation, dragStart, targetIndex]);
   const trackStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translation.get() }] }));

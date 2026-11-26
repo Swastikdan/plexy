@@ -56,6 +56,9 @@
 @import "@heroui/styles/components/toggle-button-group.css" layer(components);
 @import "@heroui/styles/components/tooltip.css" layer(components);
 @import "@heroui/styles/components/scroll-shadow.css" layer(components);
+@import "@heroui/styles/components/skeleton.css" layer(components);
+@import "@heroui/styles/components/avatar.css" layer(components);
+@import "@heroui/styles/components/progress-bar.css" layer(components);
 
 /* Theme tokens and HeroUI's custom utilities/variants used by those components. */
 @import "@heroui/styles/themes/default" layer(theme);
@@ -89,8 +92,6 @@
 /* Utility-class scanning for the app. HeroUI's own component CSS is shipped
  * precompiled, so only our source needs to be scanned. */
 @source "./**/*.{ts,tsx}";
-
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
   /* Tailwind's radius utilities follow HeroUI's single --radius token, so the
@@ -332,116 +333,9 @@
 
 /* --- App frame ---------------------------------------------------------- */
 
-.app-shell {
-  display: flex;
-  min-height: 100dvh;
-}
-
-.app-main {
-  position: relative;
-  min-width: 0;
-  flex: 1;
-}
-
-.app-page {
-  width: 100%;
-  max-width: var(--app-max);
-  margin-inline: auto;
-  padding-inline: var(--app-gutter);
-}
-
 /* --- Navigation --------------------------------------------------------- */
 
-.side-link {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  border-radius: calc(var(--radius) * 0.8);
-  padding: 0.56rem 0.65rem;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  transition:
-    color 160ms var(--ease-out),
-    background-color 160ms var(--ease-out);
-}
-
-.side-link:hover {
-  color: var(--foreground);
-  background: color-mix(in oklab, var(--surface-secondary) 72%, transparent);
-}
-
-.side-link[data-active="true"] {
-  color: var(--foreground);
-  background: var(--surface-secondary);
-}
-
-.side-link[data-active="true"]::before {
-  content: "";
-  position: absolute;
-  left: -0.65rem;
-  top: 50%;
-  height: 1.15rem;
-  width: 2px;
-  border-radius: 999px;
-  background: var(--accent);
-  transform: translateY(-50%);
-}
-
-.side-link[data-active="true"] svg {
-  color: var(--accent);
-}
-
 /* --- Shared surfaces ---------------------------------------------------- */
-
-.eyebrow {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  line-height: 1.25;
-  color: var(--muted);
-}
-
-.panel {
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) * 2);
-  background: var(--surface);
-}
-
-.panel-quiet {
-  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-  border-radius: calc(var(--radius) * 1.7);
-  background: color-mix(in oklab, var(--surface) 58%, transparent);
-}
-
-.panel-inset {
-  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
-  border-radius: calc(var(--radius) * 1.4);
-  background: color-mix(in oklab, var(--surface-secondary) 42%, transparent);
-}
-
-.lift {
-  transition:
-    transform 220ms var(--ease-out),
-    border-color 220ms var(--ease-out),
-    background-color 220ms var(--ease-out),
-    box-shadow 220ms var(--ease-out);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .lift:hover {
-    transform: translateY(-2px);
-  }
-}
-
-.press {
-  transition: transform 140ms var(--ease-out);
-}
-.press:active {
-  transform: scale(0.975);
-}
 
 .media-card {
   border: 1px solid color-mix(in oklab, var(--border) 74%, transparent);
@@ -497,34 +391,6 @@
   }
 }
 
-.progress-track {
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--foreground) 14%, transparent);
-}
-
-.progress-fill {
-  height: 100%;
-  transform-origin: left;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: transform 600ms var(--ease-out);
-}
-
-.glass {
-  background: color-mix(in oklab, var(--background) 72%, transparent);
-  backdrop-filter: blur(18px) saturate(1.15);
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
-}
-
-.hairline {
-  border-color: var(--border);
-}
-
-.rule-top {
-  border-top: 1px solid var(--border);
-}
-
 .hero-shell {
   position: relative;
   isolation: isolate;
@@ -544,10 +410,6 @@
   border: 0;
   border-radius: 0;
   background: var(--background);
-}
-
-.hero-shell--bleed::before {
-  content: none;
 }
 
 .hero-shell::after {
@@ -589,86 +451,6 @@
 .hero-copy > *:nth-child(3) { animation-delay: 120ms; }
 .hero-copy > *:nth-child(4) { animation-delay: 180ms; }
 .hero-copy > *:nth-child(5) { animation-delay: 240ms; }
-
-.hero-title {
-  font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: 0.005em;
-  line-height: 0.9;
-  text-transform: uppercase;
-  text-wrap: balance;
-  text-shadow: 0 3px 26px rgba(0, 0, 0, 0.42);
-}
-
-/* Genre pills sit above the display title, as in the home reference. */
-.hero-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 1.75rem;
-  border-radius: 999px;
-  border: 1px solid var(--cinema-glass-line);
-  background: var(--cinema-glass);
-  color: rgba(247, 248, 248, 0.88);
-  padding-inline: 0.75rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Header search: a wide, quiet field centred over the hero. On pages without
- * a hero it switches to the page surface so light theme stays legible. */
-.cinema-search {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  height: 2.75rem;
-  border-radius: 999px;
-  border: 1px solid var(--cinema-glass-line);
-  background: color-mix(in oklab, var(--cinema-raised) 72%, transparent);
-  color: var(--cinema-ink);
-  padding-inline: 1rem;
-  backdrop-filter: blur(16px) saturate(1.1);
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
-  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
-}
-.cinema-search:hover { border-color: rgba(255, 255, 255, 0.24); }
-.cinema-search:focus-within {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: color-mix(in oklab, var(--cinema-raised) 88%, transparent);
-}
-.cinema-search input {
-  min-width: 0;
-  flex: 1;
-  background: transparent;
-  color: var(--cinema-ink);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  outline: none;
-}
-.cinema-search input::placeholder { color: rgba(247, 248, 248, 0.44); }
-.cinema-search kbd {
-  border-radius: 0.3rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  padding: 0.05rem 0.3rem;
-  font-size: 0.625rem;
-  color: rgba(247, 248, 248, 0.5);
-}
-
-.cinema-search.cinema-search--surface {
-  border-color: var(--border);
-  background: color-mix(in oklab, var(--surface-secondary) 88%, transparent);
-  color: var(--foreground);
-}
-.cinema-search.cinema-search--surface input { color: var(--foreground); }
-.cinema-search.cinema-search--surface input::placeholder { color: var(--muted); }
-.cinema-search.cinema-search--surface svg { color: var(--muted); }
-.cinema-search.cinema-search--surface:focus-within {
-  border-color: color-mix(in oklab, var(--accent) 48%, var(--border));
-  background: var(--surface-secondary);
-}
 
 /* A horizontal collapse lets the icon positions follow the available label
    space. Keep the track transition local to the four tabs. */
@@ -736,28 +518,6 @@
   border-color: color-mix(in oklab, var(--accent) 48%, var(--border));
   background: color-mix(in oklab, var(--accent) 16%, var(--surface-secondary));
   color: var(--foreground);
-}
-
-.hero-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: color-mix(in oklab, var(--snow) 72%, transparent);
-}
-
-.hero-meta .meta-dot {
-  width: 3px;
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--snow) 36%, transparent);
-}
-
-.hero-meta strong {
-  color: var(--snow);
-  font-weight: 600;
 }
 
 /* Buttons render on the art in both themes, so they keep their own paper/ink
@@ -828,38 +588,6 @@
   color: var(--eclipse);
 }
 
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--surface-secondary) 78%, transparent);
-  padding: 0.18rem 0.5rem;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-/* Skeleton shimmer, used while a screen resolves */
-.skeleton {
-  position: relative;
-  overflow: hidden;
-  background: color-mix(in oklab, var(--surface-secondary) 80%, transparent);
-}
-.skeleton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 6%, transparent), transparent);
-  animation: shimmer 1.6s infinite;
-}
-@keyframes shimmer {
-  100% { transform: translateX(100%); }
-}
-
 /* Filter / segmented pill row used on library and settings screens */
 .segmented {
   display: inline-flex;
@@ -895,11 +623,6 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes rise {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
 /* Route changes commit the destination in one paint. The old fade-up made the
  * home banner read as a flash on every navigation, so only a near-instant
  * opacity settle remains. */
@@ -913,45 +636,6 @@
 
 /* One orchestrated entrance: the hero copy rises on first paint. The artwork
  * itself is already there — animating it made navigations flash. */
-.staggered > * {
-  animation: none;
-}
-
-.hero-media {
-  animation: none;
-}
-
-/* Poster hover is a pointer affordance, not a touch state. Keeping the
- * transform here (rather than on a Tailwind hover class) means touch devices
- * never fire a false lift on tap, and the menu-open freeze can share it. */
-.poster-frame {
-  transition:
-    transform 200ms var(--ease-out),
-    border-color 200ms var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .poster-frame:hover {
-    transform: scale(1.03);
-  }
-}
-.poster-frame[data-open="true"] {
-  transform: scale(1.03);
-}
-
-/* Artwork zoom inside search rows and episode cards follows the same pointer
- * rule: it is an affordance on hover-capable devices, never a tap state. */
-.zoom-on-hover,
-.zoom-on-hover-strong {
-  transition: transform 300ms var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .group:hover .zoom-on-hover {
-    transform: scale(1.04);
-  }
-  .group:hover .zoom-on-hover-strong {
-    transform: scale(1.05);
-  }
-}
 
 @layer base {
   html {
@@ -989,18 +673,6 @@
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
   }
-
-  /* Horizontal poster scrollers */
-  .scroll-row {
-    scrollbar-width: none;
-    scroll-behavior: smooth;
-  }
-  .scroll-row::-webkit-scrollbar { display: none; }
-  /* The page's px gutter (--row-inset) sits on a scroll container, so snap
-     positions need the same padding — otherwise snapped cards align flush
-     with the scroller edge instead of the page gutter. */
-  .scroll-row { scroll-snap-type: x proximity; scroll-padding-inline: var(--row-inset); }
-  .scroll-row > * { scroll-snap-align: start; }
 }
 
 /* Mobile fullscreen playback: when a browser fullscreen plays video but the
@@ -1022,15 +694,6 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-  .poster-frame:hover,
-  .poster-frame[data-open="true"],
-  .group:hover .zoom-on-hover,
-  .group:hover .zoom-on-hover-strong {
-    transform: none;
-  }
-  .hero-media {
-    animation: none;
   }
 }
 /* ---break---
@@ -1410,21 +1073,6 @@
   color: var(--default-foreground) !important;
 }
 
-/* Switch styling: full-width alignment with control on the right */
-.switch {
-  width: 100%;
-  cursor: pointer;
-}
-
-.switch .switch__content {
-  width: 100%;
-}
-
-/* Compact switches sit inside a settings row and keep their own width. */
-.switch.switch--compact,
-.switch.switch--compact .switch__content {
-  width: auto;
-}
 /*
  * Embedded desktop playback: libmpv draws beneath the web contents view, so the
  * player route (and only the player route) lets the window and page be

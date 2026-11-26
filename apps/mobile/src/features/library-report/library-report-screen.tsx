@@ -13,7 +13,7 @@ Pressable,
 Text,
 View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "@/shared/ui/safe-area-view";
 import type { ItemCard } from "@plexy/api-client/types";
 import { useClient } from "@/core/client/client-provider";
 import { cn } from "@/shared/lib/cn";
@@ -66,7 +66,7 @@ export function LibraryReportScreen() {
     <View className="flex-1 bg-background">
           <View className="px-5 pt-4 pb-3 gap-3.5">
             <View className="flex-row items-center justify-between">
-              <PageHeader title="Library report" onBack={() => dismissTo("/settings")} style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, flex: 1 }} />
+              <PageHeader title="Library report" onBack={() => dismissTo("/settings")} className="flex-1 p-0" />
               <ReportAction
                 label={busy ? "Adding…" : "+ Add"}
                 disabled={busy}
@@ -212,7 +212,7 @@ export function LibraryReportScreen() {
         animationType="slide"
         onRequestClose={() => setEditing(null)}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }}>
+        <SafeAreaView className="flex-1 bg-background">
           {editing && (
             <IdentifyTitle
               key={editing.id}

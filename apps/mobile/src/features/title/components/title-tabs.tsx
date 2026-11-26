@@ -35,7 +35,7 @@ export function TitleTabs({
             onFocus={() => setFocus(tab.key)}
             onBlur={() => setFocus(null)}
             className={cn(
-              "min-h-11 justify-center border-b-2 pb-2.5 pt-1 active:opacity-65",
+              "min-h-11 justify-center border-b-2 pb-2.5 pt-1 active:opacity-70",
               active
                 ? "border-b-accent"
                 : focus === tab.key
