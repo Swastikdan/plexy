@@ -19,6 +19,7 @@ pub const ROW_HEIGHT_NAVIGATION: f32 = 40.;
 pub const ROW_RADIUS: f32 = 8.;
 pub const ROW_PADDING_X: f32 = 10.;
 pub const ROW_GAP: f32 = 10.;
+pub const ITEM_GAP: f32 = 4.;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuTone {
@@ -32,7 +33,7 @@ impl MenuTone {
     pub fn panel_bg(self) -> Hsla {
         match self {
             MenuTone::App => theme::overlay(),
-            MenuTone::Media => rgba(0x0d131cf5).into(),
+            MenuTone::Media => rgba(0x18181bf5).into(),
         }
     }
 
@@ -71,12 +72,14 @@ impl MenuTone {
         }
     }
 
-    pub fn radio_border(self) -> Hsla {
+    pub fn selected(self) -> Hsla {
         match self {
-            MenuTone::App => theme::border(),
-            MenuTone::Media => snow(0.72),
+            MenuTone::App => theme::segment(),
+            MenuTone::Media => snow(0.18),
         }
     }
+
+
 }
 
 fn snow(a: f32) -> Hsla {
@@ -95,7 +98,130 @@ pub fn panel(tone: MenuTone) -> Div {
         .max_h(px(340.))
         .flex()
         .flex_col()
-        .gap(px(2.))
+        .gap(px(ITEM_GAP))
+}
+
+pub fn select_trigger(
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    open: bool,
+) -> Stateful<Div> {
+    div()
+        .id(gpui::ElementId::Name(id.into()))
+        .relative()
+        .h(px(40.))
+        .px(px(14.))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(10.))
+        .rounded(px(theme::RADIUS_LG))
+        .cursor_pointer()
+        .bg(theme::surface_secondary())
+        .border_1()
+        .border_color(if open { theme::foreground() } else { theme::border() })
+        .hover(|style| style.bg(theme::default()))
+        .text_size(px(14.))
+        .text_color(theme::foreground())
+        .child(div().min_w_0().truncate().child(label.into()))
+        .child(div().flex_none().child(icon(Icon::ChevronDown, 16., theme::foreground())))
+}
+
+/// A menu positioned below its trigger or at a context-click point.
+pub fn popup(
+    items: Vec<gpui::AnyElement>,
+    width: f32,
+    position: Option<gpui::Point<gpui::Pixels>>,
+) -> impl IntoElement {
+    gpui::deferred(Popup { items: Some(items), width: px(width), position }).with_priority(2)
+}
+
+struct Popup {
+    items: Option<Vec<gpui::AnyElement>>,
+    width: gpui::Pixels,
+    position: Option<gpui::Point<gpui::Pixels>>,
+}
+
+impl IntoElement for Popup {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl gpui::Element for Popup {
+    type RequestLayoutState = ();
+    type PrepaintState = gpui::AnyElement;
+
+    fn id(&self) -> Option<gpui::ElementId> { None }
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> { None }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (gpui::LayoutId, ()) {
+        // Fill the trigger's bounds without affecting the surrounding layout.
+        let style = gpui::Style {
+            position: gpui::Position::Absolute,
+            inset: gpui::Edges::all(px(0.).into()),
+            ..Default::default()
+        };
+        (window.request_layout(style, [], cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        bounds: gpui::Bounds<gpui::Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::AnyElement {
+        let viewport = window.viewport_size();
+        let edge = px(8.);
+        let gap = px(6.);
+        let (x, top, bottom) = match self.position {
+            Some(point) => (point.x, point.y, point.y),
+            None => (bounds.left(), bounds.top() - gap, bounds.bottom() + gap),
+        };
+        let items = self.items.take().expect("popup prepaint");
+        let ideal = px(items.len() as f32 * ROW_HEIGHT
+            + items.len().saturating_sub(1) as f32 * ITEM_GAP + 2. * (PANEL_PADDING + 1.)).min(px(340.));
+        let below = viewport.height - bottom - edge;
+        let above = top - edge;
+        let flip = below < ideal && above > below;
+        let max_height = ideal.min(if flip { above } else { below }).max(px(0.));
+        let width = self.width.min(viewport.width - edge * 2.);
+        let x = x.min(viewport.width - width - edge).max(edge);
+        let mut menu = panel(MenuTone::App).id("popup").occlude()
+            .w(width).max_h(max_height).overflow_y_scroll().children(items).into_any_element();
+        let size = menu.layout_as_root(
+            gpui::size(gpui::AvailableSpace::Definite(width), gpui::AvailableSpace::MinContent),
+            window,
+            cx,
+        );
+        let y = if flip { top - size.height } else { bottom };
+        menu.prepaint_at(gpui::point(x, y), window, cx);
+        menu
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        _: gpui::Bounds<gpui::Pixels>,
+        _: &mut (),
+        menu: &mut gpui::AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        menu.paint(window, cx);
+    }
 }
 
 /// A full-width separator between groups of rows.
@@ -226,6 +352,8 @@ impl IntoElement for MenuRow {
         };
         let hover = if self.danger {
             with_alpha(theme::danger(), 0.12)
+        } else if self.selected {
+            tone.selected()
         } else {
             tone.hover()
         };
@@ -238,6 +366,8 @@ impl IntoElement for MenuRow {
         let mut row = div()
             .id(gpui::ElementId::Name(self.id.clone()))
             .h(px(height))
+            .flex_none()
+            .when(self.selected, |row| row.bg(tone.selected()))
             .px(px(ROW_PADDING_X))
             .flex()
             .items_center()
@@ -261,31 +391,9 @@ impl IntoElement for MenuRow {
                         .truncate()
                         .child(self.label.clone()),
                 );
-                if self.selected {
-                    row = row.child(icon(Icon::Check, 15., theme::accent()));
-                }
+
             }
             RowKind::Radio => {
-                let accent = theme::accent();
-                let border = if self.selected {
-                    accent
-                } else {
-                    tone.radio_border()
-                };
-                row = row.child(
-                    div()
-                        .size(px(16.))
-                        .flex_none()
-                        .rounded_full()
-                        .border_2()
-                        .border_color(border)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(self.selected, |el| {
-                            el.child(div().size(px(8.)).rounded_full().bg(accent))
-                        }),
-                );
                 row = row.child(
                     div()
                         .flex_1()
@@ -331,17 +439,6 @@ impl IntoElement for MenuRow {
                     .child(icon(Icon::ChevronRight, 14., tone.muted()));
             }
             RowKind::Collection => {
-                row = row.child(
-                    div()
-                        .size(px(16.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(self.selected, |el| {
-                            el.child(icon(Icon::Check, 15., theme::accent()))
-                        }),
-                );
                 row = row.child(
                     div()
                         .flex_1()

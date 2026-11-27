@@ -42,6 +42,7 @@ extern "C" {
     fn plexy_error_string(code: c_int) -> *const c_char;
     fn plexy_hide_cursor_until_moved();
     fn plexy_window_frame(gpui_view: *mut c_void, out: *mut f64) -> c_int;
+    fn plexy_debug_mouse(gpui_view: *mut c_void, kind: c_int, x: f64, y: f64);
     fn plexy_set_app_icon(bytes: *const u8, len: usize);
 
     fn plexy_preview_create(
@@ -382,6 +383,7 @@ impl Player {
             let mut state = native.state.lock();
             *state = PlaybackState {
                 revision: state.revision + 1,
+                paused: false,
                 volume: state.volume,
                 muted: state.muted,
                 speed: state.speed,
@@ -445,13 +447,20 @@ impl Player {
     pub fn set_paused(&self, paused: bool) -> Result<()> {
         self.set("pause", if paused { "yes" } else { "no" })
     }
-    pub fn toggle_pause(&self) -> Result<()> {
-        let state = self.native()?.state.lock().clone();
-        if state.ended {
+    pub fn toggle_pause(&self) -> Result<bool> {
+        let ended = self.native()?.state.lock().ended;
+        if ended {
             self.seek_to(0.0)?;
-            return self.set_paused(false);
+            self.set_paused(false)?;
+            return Ok(false);
         }
-        self.set_paused(!state.paused)
+        let paused = match self.get("pause").as_deref() {
+            Some("yes") => false,
+            Some("no") => true,
+            _ => !self.native()?.state.lock().paused,
+        };
+        self.set_paused(paused)?;
+        Ok(paused)
     }
     pub fn seek_to(&self, seconds: f64) -> Result<()> {
         self.command(&["seek", &format!("{:.3}", seconds.max(0.0)), "absolute+exact"])
@@ -561,6 +570,12 @@ impl Drop for NativePlayer {
 pub fn window_frame(gpui_view: *mut c_void) -> Option<[f64; 4]> {
     let mut out = [0.0; 4];
     (unsafe { plexy_window_frame(gpui_view, out.as_mut_ptr()) } == 0).then_some(out)
+}
+
+/// Self-test hook: synthetic mouse event (0 move, 1 down, 2 up) at a point
+/// in window content coordinates.
+pub fn debug_mouse(gpui_view: *mut c_void, kind: i32, x: f64, y: f64) {
+    unsafe { plexy_debug_mouse(gpui_view, kind, x, y) }
 }
 
 pub fn hide_cursor_until_moved() {

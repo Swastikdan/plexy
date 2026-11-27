@@ -31,6 +31,8 @@ pub enum Field {
     Search,
     Collection,
     Token,
+    MarkerStart,
+    MarkerEnd,
 }
 
 /// A resolved title for cards and lists.
@@ -110,7 +112,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub fn on_field_key(&mut self, field: Field, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_field_key(&mut self, field: Field, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         cx.stop_propagation();
         let keystroke = &event.keystroke;
         let mods = keystroke.modifiers;
@@ -118,14 +120,39 @@ impl PlayerView {
             Field::Search => self.search_query.clone(),
             Field::Collection => self.collection_draft.clone(),
             Field::Token => self.token_draft.clone(),
+            Field::MarkerStart | Field::MarkerEnd => {
+                let Some(editor) = &self.marker_editor else { return };
+                if field == Field::MarkerStart { editor.start.clone() } else { editor.end.clone() }
+            }
         };
         match keystroke.key.as_str() {
             "backspace" if mods.platform || mods.alt => text.clear(),
             "backspace" => {
                 text.pop();
             }
+            "escape" if matches!(field, Field::MarkerStart | Field::MarkerEnd) => {
+                self.marker_editor = None;
+                window.focus(&self.focus_handle());
+                cx.notify();
+                return;
+            }
+            "escape" if field == Field::Collection && self.collection_picker => {
+                self.collection_picker = false;
+                self.collection_target = None;
+                self.collection_draft.clear();
+                window.focus(&self.focus_handle());
+                cx.notify();
+                return;
+            }
             "escape" => text.clear(),
             "enter" => {
+                if matches!(field, Field::MarkerStart | Field::MarkerEnd) {
+                    self.save_marker(false, cx);
+                    if self.marker_editor.is_none() {
+                        window.focus(&self.focus_handle());
+                    }
+                    return;
+                }
                 if field == Field::Token {
                     self.save_token(cx);
                     return;
@@ -163,6 +190,12 @@ impl PlayerView {
             }
             Field::Collection => self.collection_draft = text,
             Field::Token => self.token_draft = text,
+            Field::MarkerStart | Field::MarkerEnd => {
+                if let Some(editor) = &mut self.marker_editor {
+                    if field == Field::MarkerStart { editor.start = text; } else { editor.end = text; }
+                    editor.error = None;
+                }
+            }
         }
         cx.notify();
     }
@@ -252,6 +285,9 @@ impl PlayerView {
     /// Fills poster and the `2017 · ★ 7.5` caption from TMDB when matched.
     pub fn enrich_view(&self, mut t: TitleView) -> TitleView {
         if let Some(meta) = self.metas.get(&t.key) {
+            if !meta.name.is_empty() {
+                t.title = meta.name.clone();
+            }
             if meta.poster.is_some() {
                 t.poster = meta.poster.clone();
             }
@@ -315,33 +351,15 @@ impl PlayerView {
         cx: &mut Context<Self>,
         set: fn(&mut Self, T),
     ) -> impl IntoElement {
-        div()
-            .flex()
-            .p(px(2.))
-            .gap(px(2.))
-            .rounded(px(theme::RADIUS_LG))
-            .bg(theme::surface_secondary())
-            .children(options.iter().map(|(value, label)| {
-                let value = *value;
-                let active = value == current;
-                div()
-                    .id(SharedString::from(format!("{id}-{label}")))
-                    .h(px(24.))
-                    .px(px(10.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(theme::RADIUS))
-                    .cursor_pointer()
-                    .text_size(px(10.))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .when(active, |el| el.bg(theme::segment()).text_color(theme::foreground()))
-                    .when(!active, |el| el.text_color(theme::muted()).hover(|s| s.text_color(theme::foreground())))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        set(this, value);
-                        cx.notify();
-                    }))
-                    .child(*label)
-            }))
+        crate::ui::controls::tabs(options.iter().map(|(value, label)| {
+            let value = *value;
+            crate::ui::controls::tab(format!("{id}-{label}"), *label, value == current)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    set(this, value);
+                    cx.notify();
+                }))
+                .into_any_element()
+        })).p(px(2.)).rounded(px(theme::RADIUS_LG)).bg(theme::surface_secondary())
     }
 
     pub fn grid_toolbar(&self, title: &str, years: bool, cx: &mut Context<Self>) -> impl IntoElement {
@@ -385,16 +403,14 @@ impl PlayerView {
             .cursor_pointer()
             .text_size(px(11.))
             .font_weight(gpui::FontWeight::SEMIBOLD)
-            .when(active, |el| el.bg(gpui::Hsla { a: 0.18, ..theme::accent() }).text_color(theme::accent()))
+            .when(active, |el| el.bg(theme::foreground()).text_color(theme::background()))
             .when(!active, |el| el.bg(theme::default()).text_color(theme::foreground()).hover(|s| s.bg(theme::segment())))
-            .when(active, |el| el.child(icon(Icon::Check, 14., theme::accent())))
             .child(label)
     }
 
     /// Watchlist, Favorite, rating, Hide and Add to Collection.
     pub fn title_actions(&self, key: &TitleKey, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let encoded = key.encode();
-        let rating = self.personal.rating(key);
         let mut row = div().flex().flex_wrap().items_center().gap(px(6.));
         for (mark, label) in [(Mark::Watchlist, "Watchlist"), (Mark::Favorite, "Favorite"), (Mark::Hidden, "Hidden")] {
             let active = self.personal.has(key, mark);
@@ -409,25 +425,9 @@ impl PlayerView {
                 cx.notify();
             })));
         }
-        let stars = div().flex().items_center().gap(px(2.)).ml(px(5.)).children((1..=5u8).map(|star| {
-            let key = key.clone();
-            div()
-                .id(SharedString::from(format!("star-{star}-{encoded}")))
-                .px(px(2.))
-                .cursor_pointer()
-                .text_size(px(18.))
-                .text_color(if star <= rating { theme::warning() } else { theme::segment() })
-                .hover(|s| s.text_color(theme::warning()))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.catalog.set_rating(&key, star);
-                    this.reload_catalog();
-                    cx.notify();
-                }))
-                .child("★")
-        }));
         let in_collections = self.personal.collections.iter().filter(|c| c.titles.contains(key)).count();
         let picker_key = key.clone();
-        row = row.child(stars).child(
+        row = row.child(self.rating_stars(key, cx)).child(
             self.chip(
                 format!("collections-{encoded}"),
                 if in_collections > 0 { format!("In {in_collections} collection{}", if in_collections == 1 { "" } else { "s" }) } else { "Add to Collection".into() },
@@ -480,6 +480,69 @@ impl PlayerView {
     }
 
     // MARK: Screens
+
+    fn rating_stars(&self, key: &TitleKey, cx: &mut Context<Self>) -> impl IntoElement {
+        let encoded = key.encode();
+        let rating = self.personal.rating(key);
+        div().flex().items_center().gap(px(4.)).children((1..=5u8).map(|star| {
+            let key = key.clone();
+            div()
+                .id(SharedString::from(format!("star-{star}-{encoded}")))
+                .px(px(6.))
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_size(px(18.))
+                .text_color(if star <= rating { theme::foreground() } else { theme::muted() })
+                .hover(|s| s.bg(theme::default()).text_color(theme::foreground()))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.catalog.set_rating(&key, star);
+                    this.reload_catalog();
+                    cx.notify();
+                }))
+                .child("★")
+        }))
+    }
+
+    pub fn render_rating_dialog(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let key = self.rating_target.as_ref()?;
+        Some(crate::ui::controls::dialog(
+            "Rate title",
+            self.rating_stars(key, cx),
+            self.button("rating-done", "Done", true).on_click(cx.listener(|this, _, _, cx| {
+                this.rating_target = None;
+                cx.notify();
+            })),
+        ))
+    }
+
+    pub fn render_collection_dialog(&self, window: &Window, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let key = self.collection_target.as_ref().filter(|_| self.collection_picker)?;
+        let items = self.personal.collections.iter().map(|collection| {
+            let id = collection.id;
+            let key = key.clone();
+            crate::ui::menu::MenuRow::collection(format!("collection-choice-{id}"), collection.name.clone(), collection.titles.contains(&key))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.catalog.toggle_in_collection(id, &key);
+                    this.reload_catalog();
+                    cx.notify();
+                }))
+        });
+        let body = div().flex().flex_col().gap(px(10.))
+            .when(!self.personal.collections.is_empty(), |el| {
+                el.child(div().id("collection-choices").max_h(px(156.)).overflow_y_scroll()
+                    .flex().flex_col().gap(px(crate::ui::menu::ITEM_GAP)).children(items))
+            })
+            .child(self.text_field("collection-dialog-name", Field::Collection, &self.collection_focus,
+                &self.collection_draft, "New collection name, then Return", window, cx));
+        Some(crate::ui::controls::dialog("Add to collection", body,
+            self.button("collection-done", "Done", true).on_click(cx.listener(|this, _, window, cx| {
+                this.collection_picker = false;
+                this.collection_target = None;
+                this.collection_draft.clear();
+                window.focus(&this.focus_handle());
+                cx.notify();
+            }))))
+    }
 
     pub fn render_movie(&self, path: &PathBuf, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(movie) = self.items.iter().find(|i| &i.path == path).cloned() else {
@@ -548,21 +611,8 @@ impl PlayerView {
 
     pub fn render_search(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search_query.trim().to_string();
-        let field = self
-            .text_field("search-page", Field::Search, &self.search_focus, &self.search_query, "Search your films and shows...", window, cx)
-            .h(px(48.))
-            .pl(px(46.))
-            .pr(px(20.))
-            .rounded_full()
-            .bg(theme::surface())
-            .text_size(px(15.));
-        let mut page = div().flex().flex_col().gap(px(28.)).child(
-            div()
-                .pb(px(8.))
-                .relative()
-                .child(field)
-                .child(div().absolute().left(px(18.)).top(px(14.)).child(icon(Icon::Search, 20., theme::muted()))),
-        );
+        let field = self.text_field("search-page", Field::Search, &self.search_focus, &self.search_query, "Search your films and shows…", window, cx);
+        let mut page = div().flex().flex_col().gap(px(28.)).child(crate::ui::controls::search(field));
         if query.is_empty() {
             let mut resuming: Vec<&Item> = self.items.iter().filter(|i| !i.missing && i.progress.is_some_and(|p| p.resumable())).collect();
             resuming.sort_by_key(|i| std::cmp::Reverse(i.progress.map(|p| p.updated).unwrap_or(0)));
@@ -581,7 +631,8 @@ impl PlayerView {
         // Genre and cast matches from TMDB metadata, like the web search.
         let meta_hit = |key: &TitleKey| {
             self.metas.get(key).is_some_and(|m| {
-                let mut hay: Vec<&str> = m.genres.iter().map(String::as_str).collect();
+                let mut hay = vec![m.name.as_str()];
+                hay.extend(m.genres.iter().map(String::as_str));
                 hay.extend(m.cast.iter().map(|c| c.name.as_str()));
                 hay.iter().any(|h| matches(&query, &[h]))
             })
@@ -648,7 +699,7 @@ impl PlayerView {
 
     pub fn render_collections(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let creating = self.collection_focus.is_focused(window) || !self.collection_draft.is_empty();
-        let field = div().w(px(336.)).child(self.text_field("collection-create", Field::Collection, &self.collection_focus, &self.collection_draft, "New collection name, then Return", window, cx));
+        let field = div().w_full().max_w(px(336.)).child(self.text_field("collection-create", Field::Collection, &self.collection_focus, &self.collection_draft, "New collection name, then Return", window, cx));
         let focus = self.collection_focus.clone();
         let new_button = div()
             .id("collection-new")
@@ -670,25 +721,18 @@ impl PlayerView {
             }))
             .child(icon(Icon::Plus, 16., theme::background()))
             .child("New collection");
-        let mut page = div().flex().flex_col().gap(px(14.)).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(10.))
-                .child(div().text_size(px(32.)).line_height(px(37.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("Collections"))
-                .child(div().text_size(px(14.)).text_color(theme::muted()).child("Franchise collections from TMDB appear automatically. Create your own to group titles for a mood or a movie night.")),
-        );
+        let mut page = div().flex().flex_col().gap(px(14.));
         if self.personal.collections.is_empty() {
             return page
                 .child(crate::shell_ui::empty_state(
                     Icon::FolderHeart,
                     "No collections yet",
-                    "Plexy groups movies from the same TMDB franchise automatically. Create a collection to group anything else.",
+                    "Create a collection to group movies and shows.",
                     Some(if creating { field.into_any_element() } else { new_button.into_any_element() }),
                 ))
                 .into_any_element();
         }
-        page = page.child(div().flex().gap(px(12.)).child(new_button).when(creating, |el| el.child(field)));
+        page = page.child(div().flex().flex_wrap().gap(px(12.)).child(new_button).when(creating, |el| el.child(field)));
         for collection in &self.personal.collections {
             let id = collection.id;
             let titles: Vec<TitleView> = collection.titles.iter().filter_map(|k| self.title_view(k)).collect();
@@ -723,14 +767,7 @@ impl PlayerView {
 
     pub fn render_history(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let count = self.personal.history.len();
-        let mut page = div().flex().flex_col().gap(px(28.)).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(10.))
-                .child(div().text_size(px(32.)).line_height(px(37.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("History"))
-                .child(div().text_size(px(14.)).text_color(theme::muted()).child(if count == 0 { "Everything you finish watching shows up here.".to_string() } else { format!("{count} finished title{}", if count == 1 { "" } else { "s" }) })),
-        );
+        let mut page = div().flex().flex_col().gap(px(18.));
         if count == 0 {
             return page
                 .child(crate::shell_ui::empty_state(Icon::Clock, "Nothing watched yet", "Finish a movie or an episode and it appears here, newest first, so you can rewatch it in a click.", None))

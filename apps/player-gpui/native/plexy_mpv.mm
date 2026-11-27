@@ -729,3 +729,22 @@ extern "C" void plexy_set_app_icon(const unsigned char *bytes, size_t len) {
         if (image) [NSApp setApplicationIconImage:image];
     }
 }
+
+// Self-test hook: delivers a synthetic mouse event to the window at a point
+// in the GPUI view's top-left coordinates. kind: 0 move, 1 down, 2 up.
+extern "C" void plexy_debug_mouse(void *gpuiView, int kind, double x, double y) {
+  @autoreleasepool {
+    NSView *view = (__bridge NSView *)gpuiView;
+    NSWindow *window = view.window;
+    if (!window) return;
+    NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+    NSPoint point = [view convertPoint:local toView:nil];
+    // AppKit assigns button number zero to synthetic mouse events. A
+    // Control-click follows GPUI's regular macOS secondary-click path.
+    bool down = kind == 1 || kind == 3;
+    NSEventType type = kind == 0 ? NSEventTypeMouseMoved : down ? NSEventTypeLeftMouseDown : NSEventTypeLeftMouseUp;
+    NSEventModifierFlags modifiers = kind >= 3 ? NSEventModifierFlagControl : 0;
+    NSEvent *event = [NSEvent mouseEventWithType:type location:point modifierFlags:modifiers timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:kind == 0 ? 0 : 1 pressure:down ? 1.0 : 0.0];
+    [window sendEvent:event];
+  }
+}

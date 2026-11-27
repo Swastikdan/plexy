@@ -74,16 +74,25 @@ pub struct Tmdb {
     token: Option<String>,
     db: Arc<Mutex<Connection>>,
     last_request: AtomicU64,
+    language: String,
+    region: String,
 }
 
 impl Tmdb {
     pub fn new(catalog: &Catalog) -> Self {
-        Self { agent: ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build(), token: token(catalog), db: catalog.db_handle(), last_request: AtomicU64::new(0) }
+        Self {
+            agent: ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build(),
+            token: token(catalog),
+            db: catalog.db_handle(),
+            last_request: AtomicU64::new(0),
+            language: catalog.setting("metadata_language").unwrap_or_else(|| "en-US".into()),
+            region: catalog.setting("metadata_region").unwrap_or_else(|| "US".into()),
+        }
     }
 
     #[cfg(test)]
     fn with_db(db: Arc<Mutex<Connection>>) -> Self {
-        Self { agent: ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build(), token: None, db, last_request: AtomicU64::new(0) }
+        Self { agent: ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build(), token: None, db, last_request: AtomicU64::new(0), language: "en-US".into(), region: "US".into() }
     }
 
     pub fn has_token(&self) -> bool {
@@ -169,7 +178,8 @@ impl Tmdb {
         let mut attempts = Vec::new();
         let mut push = |query: &str, year: Option<u32>| {
             let year_param = year.map(|year| if kind == "tv" { format!("&first_air_date_year={year}") } else { format!("&year={year}") }).unwrap_or_default();
-            attempts.push(format!("/search/{kind}?query={}&include_adult=false{year_param}", url_encode(query)));
+            let region = if kind == "movie" { format!("&region={}", url_encode(&self.region)) } else { String::new() };
+            attempts.push(format!("/search/{kind}?query={}&include_adult=false{region}{year_param}", url_encode(query)));
         };
         push(query, year);
         push(query, None);
@@ -189,7 +199,7 @@ impl Tmdb {
 
     /// Combined details + credits + age ratings used by the enrichment pass.
     pub fn detail(&self, kind: &str, id: i64) -> Result<Value> {
-        self.request(&format!("/{kind}/{id}?append_to_response=videos,credits,release_dates,content_ratings&language=en-US"), DETAIL_TTL_MS)
+        self.request(&format!("/{kind}/{id}?append_to_response=videos,credits,release_dates,content_ratings&language={}", url_encode(&self.language)), DETAIL_TTL_MS)
     }
 
     pub fn season(&self, id: i64, season: u32) -> Result<Value> {
@@ -204,13 +214,14 @@ impl Tmdb {
     /// Best transparent title logo: language-neutral first, then English, then
     /// the highest-voted logo of any language.
     pub fn logo_path(&self, kind: &str, id: i64) -> Option<String> {
-        let value = self.request(&format!("/{kind}/{id}/images?include_image_language=en,null"), DETAIL_TTL_MS).ok()?;
+        let language = self.language.split('-').next().unwrap_or("en");
+        let value = self.request(&format!("/{kind}/{id}/images?include_image_language={},en,null", url_encode(language)), DETAIL_TTL_MS).ok()?;
         let logos = value.get("logos")?.as_array()?.clone();
         let score = |logo: &Value| -> i64 {
             let lang = logo.get("iso_639_1").and_then(|v| v.as_str()).unwrap_or("");
             let votes = (logo.get("vote_average").and_then(|v| v.as_f64()).unwrap_or(0.) * 1000.) as i64
                 + logo.get("vote_count").and_then(|v| v.as_f64()).unwrap_or(0.) as i64;
-            i64::from(lang.is_empty()) * 10_000_000 + i64::from(lang == "en") * 1_000_000 + votes
+            i64::from(lang == language) * 100_000_000 + i64::from(lang.is_empty()) * 10_000_000 + i64::from(lang == "en") * 1_000_000 + votes
         };
         logos.iter().max_by_key(|logo| score(logo)).and_then(|logo| logo.get("file_path").and_then(|v| v.as_str()).map(str::to_string))
     }
@@ -319,6 +330,9 @@ pub fn enrich_title(catalog: &Catalog, tmdb: &Tmdb, key: &TitleKey, title: &str,
 
     let chosen = match catalog.manual_match(key) {
         Some((kind, id)) => Some((kind, id, true)),
+        None if let Some(meta) = catalog.title_meta(key).filter(|m| m.matched) => {
+            Some((meta.kind, meta.tmdb_id, meta.manual))
+        }
         None => {
             let results = match tmdb.search(kind, title, year) {
                 Ok(results) => results,
@@ -371,7 +385,7 @@ pub fn enrich_title(catalog: &Catalog, tmdb: &Tmdb, key: &TitleKey, title: &str,
         })
         .unwrap_or_default();
     let imdb = tmdb.external_imdb_id(&kind, id).ok().flatten();
-    let certification = certification_from(&detail, &kind);
+    let certification = certification_from(&detail, &kind, &tmdb.region);
 
     let name = detail
         .get(if kind == "tv" { "name" } else { "title" })
@@ -412,7 +426,7 @@ pub fn enrich_title(catalog: &Catalog, tmdb: &Tmdb, key: &TitleKey, title: &str,
     EnrichOutcome::Matched
 }
 
-fn certification_from(detail: &Value, kind: &str) -> Option<String> {
+fn certification_from(detail: &Value, kind: &str, region: &str) -> Option<String> {
     let rows: Vec<(String, String)> = if kind == "tv" {
         detail.pointer("/content_ratings/results").and_then(|v| v.as_array()).map(|list| {
             list.iter()
@@ -436,7 +450,7 @@ fn certification_from(detail: &Value, kind: &str) -> Option<String> {
         })
     }
     .unwrap_or_default();
-    rows.iter().find(|(country, _)| country == "US").or_else(|| rows.first()).map(|(_, rating)| rating.clone())
+    rows.iter().find(|(country, _)| country == region).or_else(|| rows.iter().find(|(country, _)| country == "US")).or_else(|| rows.first()).map(|(_, rating)| rating.clone())
 }
 
 /// Episode names and stills for every local season of a matched show.
@@ -462,24 +476,73 @@ fn store_episode_details(catalog: &Catalog, tmdb: &Tmdb, key: &TitleKey, id: i64
 /// Enrich every title that has no stored metadata or whose last attempt is
 /// stale. Called on a background thread after a scan or a token change.
 pub fn enrich_missing(catalog: &Catalog) -> (usize, usize) {
-    let Some(_) = token(catalog) else { return (0, 0) };
+    let (enriched, reviewed, _) = refresh_metadata(catalog, false);
+    (enriched, reviewed)
+}
+
+pub fn refresh_metadata(catalog: &Catalog, refresh_all: bool) -> (usize, usize, bool) {
+    let _worker = catalog.metadata_work.lock();
     let tmdb = Tmdb::new(catalog);
     let mut enriched = 0;
     let mut reviewed = 0;
-    for target in catalog.titles_missing_metadata() {
+    let mut interrupted = !tmdb.has_token();
+    if interrupted {
+        return (0, 0, true);
+    }
+    for target in catalog.metadata_targets(refresh_all) {
         match enrich_title(catalog, &tmdb, &target.key, &target.title, target.year, target.is_show) {
             EnrichOutcome::Matched => enriched += 1,
             EnrichOutcome::Review => reviewed += 1,
-            EnrichOutcome::Offline | EnrichOutcome::NoToken => break,
+            EnrichOutcome::Offline | EnrichOutcome::NoToken => {
+                interrupted = true;
+                break;
+            }
         }
         std::thread::sleep(Duration::from_millis(MIN_GAP_MS));
     }
     tmdb.prune();
     catalog.bump_metadata_epoch();
-    (enriched, reviewed)
+    (enriched, reviewed, interrupted)
 }
 
 // MARK: Skip markers (IntroDB)
+
+pub fn refresh_marker_file(
+    catalog: &Catalog,
+    tmdb: &Tmdb,
+    path: &std::path::Path,
+    imdb: &str,
+    season: Option<u32>,
+    episode: Option<u32>,
+    is_movie: bool,
+) -> Result<SkipSegments> {
+    let result = fetch_markers(tmdb, imdb, season, episode, is_movie);
+    match &result {
+        Ok(segments) => catalog.store_segments(path, imdb, segments, "introdb"),
+        Err(_) => catalog.record_skip_lookup(path, "error", Some(imdb), 3600),
+    }
+    result
+}
+
+pub fn refresh_missing_markers(catalog: &Catalog) -> (usize, usize, usize) {
+    let tmdb = Tmdb::new(catalog);
+    let mut checked = 0;
+    let mut found = 0;
+    let mut failed = 0;
+    for (path, imdb, season, episode, movie) in catalog.paths_missing_markers() {
+        if catalog.setting("skip_markers").as_deref() == Some("off") {
+            break;
+        }
+        checked += 1;
+        match refresh_marker_file(catalog, &tmdb, &path, &imdb, season, episode, movie) {
+            Ok(markers) if markers != SkipSegments::default() => found += 1,
+            Ok(_) => {}
+            Err(_) => failed += 1,
+        }
+        std::thread::sleep(Duration::from_millis(MIN_GAP_MS));
+    }
+    (checked, found, failed)
+}
 
 /// Fetch community markers for one file. `imdb` is the matched series or
 /// movie IMDb id from TMDB. A 404 (nothing contributed yet) is an empty,
@@ -709,7 +772,7 @@ mod tests {
         assert_eq!(stored.cast.len(), 1);
         assert_eq!(stored.imdb_id.as_deref(), Some("tt4361256"));
         assert!(!stored.manual);
-        assert!(catalog.titles_missing_metadata().is_empty());
+        assert!(catalog.metadata_targets(false).is_empty());
         let counts = catalog.genre_counts();
         assert_eq!(counts, vec![("Crime".into(), 1), ("Drama".into(), 1)]);
         assert_eq!(catalog.titles_with_genre("cri"), vec![key.encode()]);
@@ -736,7 +799,10 @@ mod tests {
             recap: None,
             outro: Some(SegmentWindow { start: 2000.0, end: 2600.0, confidence: None, submission_count: None }),
         };
+        let manual = SegmentWindow { start: 2.0, end: 30.0, confidence: None, submission_count: None };
+        catalog.save_manual_segment(path, SegmentKind::Intro, Some(manual)).unwrap();
         catalog.store_segments(path, "tt1234567", &segments, "introdb");
+        assert_eq!(catalog.manual_segments(path).intro, Some(manual));
         let read = catalog.stored_segments(path, Some(2500.0));
         assert_eq!(read.intro.unwrap().end, 88.0);
         // The outro overshoots this 2 500 s cut and is dropped at read time.
@@ -744,6 +810,9 @@ mod tests {
         let fresh = catalog.stored_segments(path, Some(2700.0));
         assert!(fresh.outro.is_some());
         assert!(catalog.skip_lookup(path).unwrap().1 > 0);
+        catalog.save_manual_segment(path, SegmentKind::Intro, None).unwrap();
+        assert_eq!(catalog.manual_segments(path).intro, None);
+        assert_eq!(catalog.stored_segments(path, None).intro, segments.intro);
     }
 
     #[test]

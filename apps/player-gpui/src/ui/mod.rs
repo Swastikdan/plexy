@@ -25,3 +25,5 @@ pub mod prelude {
     pub use super::menu::{MenuRow, MenuTone};
     pub use super::motion::{Easing, MotionSpec, TweenExt};
 }
+
+pub mod controls;

@@ -36,6 +36,13 @@
       "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c",
       "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
     },
+    "gpui-kit": {
+      "source": "longbridge/gpui-kit",
+      "commit": "af829064d4d4de48dd34d0ea0b389279b8aa4fc4",
+      "sourceType": "github",
+      "skillPath": "skills/gpui-kit/SKILL.md",
+      "computedHash": "127a6c3e915eff2177e5414dddaaaaee0f42316d763bbb7cb7a7d2fd8ef3cbee"
+    },
     "logo-maker": {
       "source": "panel-ui/PanelUI",
       "sourceType": "github",
