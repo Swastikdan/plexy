@@ -115,6 +115,8 @@ impl PlayerView {
     }
 
     fn add_library(&mut self, kind: LibraryKind, window: &mut Window, cx: &mut Context<Self>) {
+        self.add_library_open = false;
+        cx.notify();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -124,17 +126,16 @@ impl PlayerView {
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Ok(Some(paths))) = paths.await {
                 this.update(cx, |view, cx| {
-                    let mut library = None;
-                    for path in paths {
-                        match library {
-                            None => library = view.catalog.add_library(kind, &path).ok(),
-                            Some(id) => {
-                                let _ = view.catalog.add_root(id, &path);
-                            }
+                    match view.catalog.add_library_with_folders(kind, &paths) {
+                        Ok(id) => {
+                            view.reload_catalog();
+                            view.catalog.scan(Some(id), false);
+                        }
+                        Err(error) => {
+                            view.library_error = Some(format!("Couldn’t add library. {error}"));
+                            view.add_library_open = true;
                         }
                     }
-                    view.reload_catalog();
-                    view.catalog.scan(library, false);
                     cx.notify();
                 })
                 .ok();
@@ -327,11 +328,11 @@ impl PlayerView {
                                 .right(px(7.))
                                 .size(px(20.))
                                 .rounded_full()
-                                .bg(theme::accent())
+                                .bg(gpui::hsla(0., 0., 1., 0.96))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .child(icon(Icon::Check, 14., theme::accent_foreground())),
+                                .child(icon(Icon::Check, 14., gpui::hsla(0., 0., 0.02, 1.))),
                         )
                     })
                     .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(7.)).right(px(7.)).bottom(px(7.)).child(progress_bar(fraction))))
@@ -431,8 +432,7 @@ impl PlayerView {
                     .flex()
                     .gap(px(8.))
                     .mt(px(6.))
-                    .child(self.button("welcome-movies", "Add Movies Folder", true).on_click(cx.listener(|this, _, window, cx| this.add_library(LibraryKind::Movies, window, cx))))
-                    .child(self.button("welcome-tv", "Add TV Folder", false).on_click(cx.listener(|this, _, window, cx| this.add_library(LibraryKind::Shows, window, cx))))
+                    .child(self.add_library_button(cx))
                     .child(self.button("welcome-open", "Open a File…", false).on_click(cx.listener(|this, _, window, cx| this.prompt_open(window, cx)))),
             )
     }
@@ -585,6 +585,43 @@ impl PlayerView {
         page.into_any_element()
     }
 
+    fn add_library_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        self.button("add-library", "Add a Library", true).on_click(cx.listener(|this, _, window, cx| {
+            this.add_library_open = true;
+            this.library_error = None;
+            window.focus(&this.focus_handle());
+            cx.notify();
+        }))
+    }
+
+    pub fn render_add_library(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        self.add_library_open.then(|| {
+            let choices = div().flex().flex_col().gap(px(6.))
+                .when_some(self.library_error.clone(), |el, error| {
+                    el.child(div().text_size(px(13.)).text_color(theme::danger()).child(error))
+                })
+                .children(
+                [(LibraryKind::Movies, Icon::Film), (LibraryKind::Shows, Icon::Tv)]
+                    .into_iter()
+                    .map(|(kind, icon)| {
+                        crate::ui::menu::MenuRow::navigation(
+                            kind.label(), icon, kind.label(), "Choose folders",
+                        ).on_click(cx.listener(move |this, _, window, cx| {
+                            this.add_library(kind, window, cx);
+                        }))
+                    }),
+            );
+            crate::ui::controls::dialog(
+                "Add a Library",
+                choices,
+                self.button("cancel-library", "Cancel", false).on_click(cx.listener(|this, _, _, cx| {
+                    this.add_library_open = false;
+                    cx.notify();
+                })),
+            )
+        })
+    }
+
     fn render_libraries(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let status = self.catalog.status.lock().clone();
         let mut page = div()
@@ -595,15 +632,13 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .child(section_title("Libraries"))
+                    .justify_end()
                     .child(
                         div()
                             .flex()
                             .flex_wrap()
                             .gap(px(8.))
-                            .child(self.button("lib-add-movies", "Add Movies Library", true).on_click(cx.listener(|this, _, window, cx| this.add_library(LibraryKind::Movies, window, cx))))
-                            .child(self.button("lib-add-tv", "Add TV Library", true).on_click(cx.listener(|this, _, window, cx| this.add_library(LibraryKind::Shows, window, cx))))
+                            .child(self.add_library_button(cx))
                             .child(self.button("lib-scan-all", if status.running { "Scanning…" } else { "Rescan All" }, false).on_click(cx.listener(|this, _, _, cx| {
                                 this.catalog.scan(None, false);
                                 cx.notify();
@@ -667,6 +702,7 @@ impl PlayerView {
                             div()
                                 .flex()
                                 .gap(px(6.))
+                                .flex_wrap()
                                 .child(self.button(format!("lib-auto-{id}"), if auto { "Auto-refresh: On" } else { "Auto-refresh: Off" }, false).on_click(cx.listener(move |this, _, _, cx| {
                                     this.catalog.set_auto_refresh(id, !auto);
                                     this.reload_catalog();
@@ -734,28 +770,16 @@ impl PlayerView {
     /// Screens that keep the simple list layout inside the new shell.
     pub fn render_list_screen(&self, screen: Screen, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let lists = |this: &Self, cx: &mut Context<Self>| {
-            div().flex().gap(px(8.)).children(
+            crate::ui::controls::tabs(
                 [("lists-watchlist", "Watchlist", Screen::Watchlist), ("lists-favorites", "Favorites", Screen::Favorites), ("lists-collections", "Collections", Screen::Collections), ("lists-hidden", "Hidden", Screen::Hidden)]
                     .into_iter()
                     .map(|(id, label, target)| {
-                        let active = this.screen == target;
-                        div()
-                            .id(id)
-                            .h(px(30.))
-                            .px(px(13.))
-                            .flex()
-                            .items_center()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .text_size(px(11.))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .bg(if active { theme::foreground() } else { theme::default() })
-                            .text_color(if active { theme::background() } else { theme::foreground() })
+                        crate::ui::controls::tab(id, label, this.screen == target)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.screen = target.clone();
                                 cx.notify();
                             }))
-                            .child(label)
+                            .into_any_element()
                     }),
             )
         };

@@ -59,12 +59,22 @@ pub const LANGUAGES: [(&str, &str); 34] = [
     ("vie", "Vietnamese"),
 ];
 
+const METADATA_LANGUAGES: [(&str, &str); 7] = [
+    ("en-US", "English (US)"), ("en-GB", "English (UK)"), ("hi-IN", "Hindi (India)"),
+    ("ja-JP", "Japanese"), ("ko-KR", "Korean"), ("fr-FR", "French"), ("es-ES", "Spanish"),
+];
+const METADATA_REGIONS: [(&str, &str); 6] = [
+    ("US", "United States"), ("IN", "India"), ("GB", "United Kingdom"),
+    ("CA", "Canada"), ("AU", "Australia"), ("JP", "Japan"),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsSection {
     Playback,
     Libraries,
     Appearance,
     Metadata,
+    Updates,
 }
 
 /// A featured title in the Home carousel.
@@ -217,71 +227,6 @@ pub fn empty_state(icon_name: Icon, title: &str, body: &str, action: Option<AnyE
         .children(action.map(|a| div().pt(px(16.)).child(a)))
 }
 
-/// A floating menu anchored under its trigger, painted above everything.
-static DROPDOWN_DISMISSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static DROPDOWN_CLOSED: std::sync::Mutex<Option<(&'static str, Instant)>> = std::sync::Mutex::new(None);
-
-static DROPDOWN_TRIGGER: std::sync::Mutex<Option<(gpui::Bounds<gpui::Pixels>, gpui::Size<gpui::Pixels>)>> = std::sync::Mutex::new(None);
-
-/// Place inside the trigger (or its wrapper): measures that parent, then
-/// opens the menu below it, or above when there is no room, and aligns it to
-/// the trigger's left edge, or its right edge near the window's right side.
-pub fn dropdown(items: Vec<AnyElement>, width: f32) -> impl IntoElement {
-    let est_h = (items.len() as f32 * crate::ui::menu::ROW_HEIGHT
-        + items.len().saturating_sub(1) as f32 * 2.
-        + 2. * crate::ui::menu::PANEL_PADDING)
-        .min(340.);
-    let measured = *DROPDOWN_TRIGGER.lock().unwrap();
-    let menu = crate::ui::menu::panel(crate::ui::menu::MenuTone::App)
-        .id("dropdown")
-        .occlude()
-        .on_mouse_down_out(|_, window, _| {
-            DROPDOWN_DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed);
-            window.refresh();
-        })
-        .w(px(width))
-        .max_h(px(340.))
-        .overflow_y_scroll()
-        .children(items)
-        .with_animation("dropdown-in", Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()), |el, t| el.opacity(t));
-    div()
-        .absolute()
-        .inset_0()
-        .child(
-            gpui::canvas(
-                |bounds, window, _| {
-                    let next = Some((bounds, window.viewport_size()));
-                    let mut slot = DROPDOWN_TRIGGER.lock().unwrap();
-                    if *slot != next {
-                        *slot = next;
-                        window.refresh();
-                    }
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .inset_0(),
-        )
-        .when_some(measured, move |el, (b, win)| {
-            const GAP: f32 = 6.;
-            const EDGE: f32 = 8.;
-            let (left, right, top, bottom) = (f32::from(b.origin.x), f32::from(b.origin.x + b.size.width), f32::from(b.origin.y), f32::from(b.origin.y + b.size.height));
-            let (win_w, win_h) = (f32::from(win.width), f32::from(win.height));
-            let below_fits = bottom + GAP + est_h <= win_h - EDGE;
-            let above = !below_fits && top - GAP - est_h >= EDGE || (!below_fits && top > win_h - bottom);
-            let align_right = left + width > win_w - EDGE && right - width >= EDGE;
-            let x = if align_right { right } else { left.max(EDGE) };
-            let y = if above { top - GAP } else { bottom + GAP };
-            let corner = match (above, align_right) {
-                (false, false) => gpui::Corner::TopLeft,
-                (false, true) => gpui::Corner::TopRight,
-                (true, false) => gpui::Corner::BottomLeft,
-                (true, true) => gpui::Corner::BottomRight,
-            };
-            el.child(gpui::deferred(gpui::anchored().position(gpui::point(px(x), px(y))).anchor(corner).snap_to_window_with_margin(px(EDGE)).child(menu)).with_priority(1))
-        })
-}
-
 impl PlayerView {
     /// Card art that grows 3% while hovered and eases back when the pointer
     /// leaves, without moving the cards around it. The fixed-size frame clips
@@ -325,22 +270,8 @@ impl PlayerView {
             .into_any_element()
     }
 
-    /// Closes an open dropdown after a click outside it. Called from render.
-    pub fn take_dropdown_dismiss(&mut self) {
-        if DROPDOWN_DISMISSED.swap(false, std::sync::atomic::Ordering::Relaxed) {
-            if let Some(key) = self.open_select.take() {
-                *DROPDOWN_CLOSED.lock().unwrap() = Some((key, Instant::now()));
-            }
-        }
-    }
-
-    /// Opens or closes dropdown `key`. A click on the trigger of a menu that
-    /// the same mouse-down just dismissed keeps it closed.
     pub fn toggle_select(&mut self, key: &'static str) {
-        let just_closed = DROPDOWN_CLOSED.lock().unwrap().is_some_and(|(k, at)| k == key && at.elapsed() < Duration::from_millis(350));
-        self.open_select = if self.open_select == Some(key) || just_closed { None } else { Some(key) };
-        // Re-measure the new trigger before showing its menu.
-        *DROPDOWN_TRIGGER.lock().unwrap() = None;
+        self.open_select = (self.open_select != Some(key)).then_some(key);
     }
 }
 
@@ -417,9 +348,9 @@ impl PlayerView {
             .cursor_pointer()
             .border_1()
             .border_color(snow(0.18))
-            .bg(if active { with_alpha(theme::accent(), 0.25) } else { ink(0.45) })
-            .hover(|s| s.bg(snow(0.12)))
-            .child(icon(icon_name, 20., if active { theme::accent() } else { snow(1.) }))
+            .bg(if active { snow(0.96) } else { ink(0.45) })
+            .hover(move |s| s.bg(if active { snow(0.82) } else { snow(0.12) }))
+            .child(icon(icon_name, 20., if active { ink(1.) } else { snow(1.) }))
     }
 
     fn see_all(&self, id: &'static str, screen: Screen, cx: &mut Context<Self>) -> impl IntoElement {
@@ -508,13 +439,14 @@ impl PlayerView {
         div()
             .id(id)
             .size(px(37.))
+            .flex_none()
             .flex()
             .items_center()
             .justify_center()
             .rounded_full()
             .cursor_pointer()
             .bg(nav_ink(0.1))
-            .when(active, |el| el.border_2().border_color(theme::accent()))
+            .when(active, |el| el.border_2().border_color(nav_ink(0.85)))
             .hover(|s| s.bg(nav_ink(0.18)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.screen = screen.clone();
@@ -544,60 +476,77 @@ impl PlayerView {
         // Room for the traffic lights while windowed.
         let left_inset = if window.is_fullscreen() { 0. } else { 64. };
         let title = self.page_title();
+        let count = self.personal.history.len();
+        let compact = self.page_width() < 790.;
         div()
             .h(px(67.))
             .flex_none()
-            .px(px(38.))
+            .px(px(if compact { 16. } else { 24. }))
             .flex()
             .items_center()
-            .gap(px(19.))
+            .gap(px(8.))
             .border_b_1()
             .border_color(theme::separator())
             .bg(black(0.92))
             .child(
-                div()
-                    .w(px(220. + left_inset))
-                    .pl(px(left_inset))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .min_w_0()
-                    .child(match title.clone() {
-                        None => img("icons/plexy-logo.svg").w(px(26.)).h(px(28.)).into_any_element(),
-                        Some(_) => div()
-                            .id("nav-back")
-                            .size(px(26.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(nav_ink(0.12)))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.go_back();
-                                cx.notify();
-                            }))
-                            .child(icon(Icon::ArrowLeft, 20., nav_ink(1.)))
-                            .into_any_element(),
-                    })
-                    .child(div().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(nav_ink(1.)).truncate().child(title.unwrap_or_else(|| "Plexy".into()))),
+                div().flex_1().min_w_0().child(
+                    div()
+                        .pl(px(left_inset))
+                        .flex()
+                        .items_center()
+                        .gap(px(10.))
+                        .min_w_0()
+                        .child(match title.clone() {
+                            None => img("icons/plexy-logo.svg").w(px(26.)).h(px(28.)).into_any_element(),
+                            Some(_) => div()
+                                .id("nav-back")
+                                .flex_none()
+                                .size(px(26.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .cursor_pointer()
+                                .hover(|s| s.bg(nav_ink(0.12)))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.go_back();
+                                    cx.notify();
+                                }))
+                                .child(icon(Icon::ArrowLeft, 20., nav_ink(1.)))
+                                .into_any_element(),
+                        })
+                        .child(div().min_w_0().text_size(px(if compact { 14. } else { 17. }))
+                            .font_weight(gpui::FontWeight::BOLD).text_color(nav_ink(1.))
+                            .truncate().child(title.unwrap_or_else(|| "Plexy".into()))),
+                ),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(3.))
+                    .flex_none()
                     .child(self.nav_icon("top-home", Icon::Home, "Home", Screen::Home, window, cx))
                     .child(self.nav_icon("top-library", Icon::Library, "Library", Screen::Library, window, cx))
                     .child(self.nav_icon("top-collections", Icon::FolderHeart, "Collections", Screen::Collections, window, cx))
                     .child(self.nav_icon("top-history", Icon::Clock, "History", Screen::History, window, cx)),
             )
-            .child(div().flex_1())
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
                     .flex()
+                    .justify_end()
+                    .items_center()
                     .gap(px(8.))
+                    .when(self.screen == Screen::History && count > 0, |el| {
+                        el.child(div().min_w_0().text_size(px(11.)).text_color(theme::muted()).truncate()
+                            .child(match (count, f32::from(self.viewport.width) < 640.) {
+                                (_, true) => format!("{count} finished"),
+                                (1, false) => "1 finished title".into(),
+                                (_, false) => format!("{count} finished titles"),
+                            }))
+                    })
                     .child(self.round_icon("top-search", Icon::Search, self.screen == Screen::Search, cx, Screen::Search))
                     .child(self.round_icon("top-settings", Icon::Settings, self.screen == Screen::Settings, cx, Screen::Settings)),
             )
@@ -676,6 +625,9 @@ impl PlayerView {
         }
         for hero in &mut heroes {
             if let Some(meta) = self.metas.get(&hero.key) {
+                if !meta.name.is_empty() {
+                    hero.title = meta.name.clone();
+                }
                 hero.genres = meta.genres.iter().take(3).cloned().collect();
                 hero.logo = meta.logo.clone();
                 if meta.backdrop.is_some() {
@@ -769,9 +721,10 @@ impl PlayerView {
                     .into_any_element(),
             );
         }
+        let compact = f32::from(self.viewport.height) < 530.;
         copy.push(match hero.logo.clone() {
-            Some(logo) => div().h(px(120.)).max_w(px(448.)).py(px(4.)).flex().items_end().child(crate::assets::artwork_image(logo).h_full().max_w(px(448.)).object_fit(ObjectFit::Contain)).into_any_element(),
-            None => div().max_w(px(640.)).text_size(px(60.)).line_height(px(58.)).font_weight(gpui::FontWeight::BLACK).text_color(snow(1.)).child(hero.title.to_uppercase()).into_any_element(),
+            Some(logo) => div().h(px(if compact { 76. } else { 120. })).max_w(px(448.)).py(px(4.)).flex().items_end().child(crate::assets::artwork_image(logo).h_full().max_w(px(448.)).object_fit(ObjectFit::Contain)).into_any_element(),
+            None => div().max_w(px(640.)).line_clamp(2).text_ellipsis().text_size(px(if compact { 38. } else { 60. })).line_height(px(if compact { 40. } else { 58. })).font_weight(gpui::FontWeight::BLACK).text_color(snow(1.)).child(hero.title.to_uppercase()).into_any_element(),
         });
         copy.push(
             div()
@@ -887,7 +840,7 @@ impl PlayerView {
                 .child(div().absolute().inset_0().bg(linear_gradient(90., linear_color_stop(ink(0.78), 0.), linear_color_stop(ink(0.0), 0.62))))
                 .child(div().absolute().left_0().right_0().top_0().h(px(150.)).bg(linear_gradient(180., linear_color_stop(ink(0.5), 0.), linear_color_stop(ink(0.0), 1.))))
                 .child(hero_fade())
-                .child(div().absolute().left(px(HERO_GUTTER)).right(px(HERO_GUTTER)).bottom(px(88.)).max_w(px(704.)).flex().flex_col().gap(px(16.)).children(copy))
+                .child(div().absolute().left(px(HERO_GUTTER)).right(px(HERO_GUTTER)).bottom(px(if compact { 66. } else { 88. })).max_w(px(704.)).flex().flex_col().gap(px(16.)).children(copy))
                 .children(dots)
                 .when(count > 1, |el| {
                     el.child(div().absolute().left(px(14.)).top(px(hero_h / 2. - 20.)).child(arrow("hero-prev", Icon::ChevronLeft, -1)))
@@ -896,15 +849,15 @@ impl PlayerView {
         )
     }
 
-    /// `h-[clamp(30rem,68vh,52rem)]` from the web hero.
+    /// Keep playback actions above the fold in short tiled windows.
     pub fn hero_height(&self) -> f32 {
-        let h = f32::from(self.shell_scroll.bounds().size.height);
-        (if h > 100. { h } else { 760. } * 0.68).clamp(480., 832.)
+        let h = f32::from(self.viewport.height);
+        (h * 0.68).clamp(if h < 530. { 370. } else { 440. }, 832.)
     }
 
     /// Usable page width (window minus page gutters), for responsive rows.
     pub fn page_width(&self) -> f32 {
-        let w = f32::from(self.shell_scroll.bounds().size.width);
+        let w = f32::from(self.viewport.width);
         (if w > 100. { w } else { 1280. }) - 2. * PAGE_X
     }
 
@@ -976,7 +929,7 @@ impl PlayerView {
             None => code,
         };
         let group = id.clone();
-        div()
+        let card = div()
             .id(id)
             .group(group.clone())
             .w(px(width))
@@ -1027,7 +980,12 @@ impl PlayerView {
                     .child(div().flex_1().min_w_0().text_size(px(15.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).truncate().group_hover(group.clone(), |s| s.text_color(theme::accent())).child(item.title.clone()))
                     .children(caption.map(|c| div().flex_none().text_size(px(12.)).text_color(theme::muted()).child(c))),
             )
-            .child(div().text_size(px(13.)).text_color(theme::muted()).truncate().child(line))
+            .child(div().text_size(px(13.)).text_color(theme::muted()).truncate().child(line));
+        if item.episode.is_some() {
+            self.episode_context(card, item.path.clone(), cx)
+        } else {
+            card
+        }
     }
 
     /// Width for a four-up grid of landscape tiles.
@@ -1343,10 +1301,10 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_wrap()
-                    .items_end()
-                    .justify_between()
+                    .items_center()
+                    .justify_end()
                     .gap(px(13.))
-                    .child(div().flex().flex_col().gap(px(10.)).child(h1("Library")).child(div().text_size(px(14.)).text_color(theme::muted()).child("Browse every movie and show in your libraries.")))
+
                     .child(
                         div()
                             .flex()
@@ -1364,8 +1322,8 @@ impl PlayerView {
                                     .cursor_pointer()
                                     .text_size(px(11.))
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .bg(if unwatched { with_alpha(theme::accent(), 0.22) } else { theme::default() })
-                                    .text_color(if unwatched { theme::accent() } else { theme::muted() })
+                                    .bg(if unwatched { theme::foreground() } else { theme::default() })
+                                    .text_color(if unwatched { theme::background() } else { theme::muted() })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.watch_filter = if this.watch_filter == WatchFilter::Unwatched { WatchFilter::All } else { WatchFilter::Unwatched };
                                         cx.notify();
@@ -1373,28 +1331,18 @@ impl PlayerView {
                                     .child("Unwatched"),
                             )
                             .child(
-                                div()
-                                    .id("lib-sort")
+                                crate::ui::menu::select_trigger("lib-sort", sort_label, sort_open)
                                     .h(px(37.))
                                     .min_w(px(168.))
-                                    .px(px(14.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(10.))
                                     .rounded_full()
-                                    .cursor_pointer()
-                                    .bg(theme::default())
-                                    .hover(|s| s.bg(theme::segment()))
-                                    .when(sort_open, |el| el.bg(theme::segment()))
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                    .text_size(px(13.))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        window.focus(&this.focus_handle());
                                         this.toggle_select("lib-sort");
                                         cx.notify();
                                     }))
-                                    .child(div().text_size(px(13.)).text_color(theme::foreground()).child(sort_label))
-                                    .child(icon(Icon::ChevronDown, 16., theme::foreground()))
                                     .when(sort_open, |el| {
-                                        el.child(dropdown(
+                                        el.child(crate::ui::menu::popup(
                                             [(Sort::Added, "Recently added"), (Sort::Title, "Title"), (Sort::Year, "Year")]
                                                 .into_iter()
                                                 .map(|(value, label)| {
@@ -1408,7 +1356,7 @@ impl PlayerView {
                                                         .into_any_element()
                                                 })
                                                 .collect(),
-                                            180.,
+                                            180., None,
                                         ))
                                     }),
                             ),
@@ -1420,9 +1368,9 @@ impl PlayerView {
                         .flex()
                         .flex_col()
                         .gap(px(14.))
-                        .child(div().flex().items_center().justify_between().child(h2("Categories")).child(div().text_size(px(13.)).text_color(theme::muted()).child("Browse by mood")))
+                        .child(h2("Categories"))
                         .child(div().text_size(px(15.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).child("Genres"))
-                        .child(div().flex().gap(px(16.)).children(genres)),
+                        .child(div().id("library-genres").flex().gap(px(16.)).overflow_x_scroll().children(genres)),
                 )
             })
             .when(genre_list_empty, |el| el.child(
@@ -1466,12 +1414,13 @@ impl PlayerView {
         play: Option<(PathBuf, Option<f64>)>,
         watched: bool,
         on_watched: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let (in_watchlist, favorite, hidden) = (self.personal.has(key, Mark::Watchlist), self.personal.has(key, Mark::Favorite), self.personal.has(key, Mark::Hidden));
-        let (k1, k2, k3, k4) = (key.clone(), key.clone(), key.clone(), key.clone());
+        let (watchlist_key, favorite_key, hide_key, collection_key, rating_key) =
+            (key.clone(), key.clone(), key.clone(), key.clone(), key.clone());
         let tmdb = self.metas.get(key).cloned();
+        let title = tmdb.as_ref().map(|meta| meta.name.as_str()).filter(|name| !name.is_empty()).unwrap_or(title);
         let scope = key.encode();
         let mut copy: Vec<AnyElement> = Vec::new();
         if let Some(m) = &tmdb {
@@ -1479,9 +1428,10 @@ impl PlayerView {
                 copy.push(div().flex().gap(px(8.)).children(m.genres.iter().take(3).cloned().map(genre_chip)).into_any_element());
             }
         }
+        let compact = f32::from(self.viewport.height) < 530.;
         copy.push(match tmdb.as_ref().and_then(|m| m.logo.clone()) {
-            Some(logo) => div().h(px(96.)).max_w(px(340.)).child(crate::assets::artwork_image(logo).h_full().max_w(px(340.)).object_fit(ObjectFit::Contain)).into_any_element(),
-            None => div().text_size(px(44.)).line_height(px(48.)).font_weight(gpui::FontWeight::BLACK).text_color(snow(1.)).child(title.to_uppercase()).into_any_element(),
+            Some(logo) => div().h(px(if compact { 56. } else { 96. })).max_w(px(340.)).child(crate::assets::artwork_image(logo).h_full().max_w(px(340.)).object_fit(ObjectFit::Contain)).into_any_element(),
+            None => div().line_clamp(2).text_ellipsis().text_size(px(if compact { 32. } else { 44. })).line_height(px(if compact { 34. } else { 48. })).font_weight(gpui::FontWeight::BLACK).text_color(snow(1.)).child(title.to_uppercase()).into_any_element(),
         });
         copy.push(div().text_size(px(14.)).text_color(snow(0.85)).child(dot_join(meta)).into_any_element());
         if let Some(r) = tmdb.as_ref().and_then(|m| m.rating).filter(|r| *r > 0.0) {
@@ -1499,7 +1449,7 @@ impl PlayerView {
         }
         if let Some(overview) = tmdb.as_ref().and_then(|m| m.overview.clone()).filter(|o| !o.is_empty()) {
             let short = if overview.chars().count() > 280 { format!("{}…", overview.chars().take(280).collect::<String>().trim_end()) } else { overview };
-            copy.push(div().max_w(px(600.)).text_size(px(14.)).line_height(px(21.)).text_color(snow(0.78)).child(short).into_any_element());
+            copy.push(div().max_w(px(600.)).line_clamp(if compact { 2 } else { 3 }).text_ellipsis().text_size(px(14.)).line_height(px(21.)).text_color(snow(0.78)).child(short).into_any_element());
         }
         div()
             .flex()
@@ -1519,8 +1469,9 @@ impl PlayerView {
                     .child(
                         div()
                             .absolute()
-                            .left(px(HERO_GUTTER))
-                            .bottom(px(56.))
+                            .left(px(if compact { PAGE_X } else { HERO_GUTTER }))
+                            .right(px(PAGE_X))
+                            .bottom(px(if compact { 34. } else { 56. }))
                             .max_w(px(720.))
                             .flex()
                             .flex_col()
@@ -1547,35 +1498,47 @@ impl PlayerView {
                                             })))
                                         })
                                     })
-                                    .child(self.circle_button("title-watched", if watched { Icon::CircleCheck } else { Icon::Circle }, watched).on_click(cx.listener(move |this, _, _, cx| {
-                                        on_watched(this, cx);
-                                        this.reload_catalog();
-                                        cx.notify();
-                                    })))
                                     .child(self.circle_button("title-watchlist", Icon::Bookmark, in_watchlist).on_click(cx.listener(move |this, _, _, cx| {
-                                        this.catalog.toggle_mark(&k1, Mark::Watchlist);
+                                        this.catalog.toggle_mark(&watchlist_key, Mark::Watchlist);
                                         this.reload_catalog();
                                         cx.notify();
                                     })))
                                     .child(self.circle_button("title-favorite", Icon::Star, favorite).on_click(cx.listener(move |this, _, _, cx| {
-                                        this.catalog.toggle_mark(&k2, Mark::Favorite);
+                                        this.catalog.toggle_mark(&favorite_key, Mark::Favorite);
                                         this.reload_catalog();
                                         cx.notify();
                                     })))
                                     .child(
                                         div()
-                                            .child(self.circle_button("title-more", Icon::Ellipsis, self.open_select == Some("title-more")).on_click(cx.listener(|this, _, _, cx| {
+                                            .relative()
+                                            .child(self.circle_button("title-more", Icon::Ellipsis, self.open_select == Some("title-more")).on_click(cx.listener(|this, _, window, cx| {
+                                                window.focus(&this.focus_handle());
                                                 this.toggle_select("title-more");
                                                 cx.notify();
                                             })))
                                             .when(self.open_select == Some("title-more"), |el| {
-                                                el.child(dropdown(
+                                                el.child(crate::ui::menu::popup(
                                                     vec![
+                                                        menu_item("title-watched", Some(Icon::CircleCheck), if watched { "Remove from watched" } else { "Mark as watched" }, false)
+                                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                                this.open_select = None;
+                                                                on_watched(this, cx);
+                                                                this.reload_catalog();
+                                                                cx.notify();
+                                                            }))
+                                                            .into_any_element(),
                                                         menu_item("title-hide", Some(Icon::EyeOff), if hidden { "Unhide" } else { "Hide from library" }, false)
                                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                                 this.open_select = None;
-                                                                this.catalog.toggle_mark(&k3, Mark::Hidden);
+                                                                this.catalog.toggle_mark(&hide_key, Mark::Hidden);
                                                                 this.reload_catalog();
+                                                                cx.notify();
+                                                            }))
+                                                            .into_any_element(),
+                                                        menu_item("title-rate", Some(Icon::Star), "Rate title", false)
+                                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                                this.open_select = None;
+                                                                this.rating_target = Some(rating_key.clone());
                                                                 cx.notify();
                                                             }))
                                                             .into_any_element(),
@@ -1583,20 +1546,20 @@ impl PlayerView {
                                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                                 this.open_select = None;
                                                                 this.collection_picker = true;
-                                                                this.collection_target = Some(k4.clone());
+                                                                this.collection_target = Some(collection_key.clone());
                                                                 window.focus(&this.collection_focus.clone());
                                                                 cx.notify();
                                                             }))
                                                             .into_any_element(),
                                                     ],
-                                                    210.,
+                                                    222., None,
                                                 ))
                                             }),
                                     ),
                             ),
                     ),
             )
-            .when(self.collection_picker, |el| el.child(self.title_actions(key, window, cx)))
+
     }
 
     fn panel(&self, title: &str, icon_name: Option<Icon>, body: impl IntoElement) -> impl IntoElement {
@@ -1652,6 +1615,21 @@ impl PlayerView {
         Some(self.panel("Top cast", None, div().flex().flex_col().children(rows)).into_any_element())
     }
 
+    fn title_info(&self, key: &TitleKey, details: impl IntoElement) -> impl IntoElement {
+        let cast = self.cast_panel(key);
+        div()
+            .flex()
+            .items_start()
+            .gap(px(22.))
+            .child(div().flex_1().min_w_0().child(self.panel("Details", Some(Icon::List), details)))
+            .children(cast.map(|cast| {
+                div().min_w_0()
+                    .when(self.page_width() >= 900., |el| el.flex_none().w(px(312.)))
+                    .when(self.page_width() < 900., |el| el.flex_1())
+                    .child(cast)
+            }))
+    }
+
     /// Title facts for the Details panel: TMDB fields first, then `extra`.
     fn title_details(&self, key: &TitleKey, extra: Vec<(&str, String)>) -> impl IntoElement {
         let meta = self.metas.get(key);
@@ -1692,7 +1670,58 @@ impl PlayerView {
             .child(div().min_w_0().text_size(px(13.)).text_color(theme::foreground()).text_right().child(value))
     }
 
-    pub fn render_show_page(&self, key: &str, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_episode_menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let (path, position) = self.episode_menu.as_ref()?;
+        let item = self.items.iter().find(|item| &item.path == path)?;
+        let play = path.clone();
+        let watch = path.clone();
+        let watched = item.watched();
+        let resume = item.progress.is_some_and(|progress| progress.resumable());
+        let mut rows = Vec::new();
+        if !item.missing {
+            let label = if resume { "Continue watching" } else if watched { "Play again" } else { "Play" };
+            rows.push(menu_item("episode-play", Some(Icon::Play), label, false)
+                .on_click(cx.listener(move |this, _, window, cx| this.play_item(play.clone(), window, cx)))
+                .into_any_element());
+        }
+        rows.push(menu_item(
+            "episode-watched", Some(Icon::CircleCheck),
+            if watched { "Remove from watched" } else { "Mark as watched" }, false,
+        ).on_click(cx.listener(move |this, _, _, cx| {
+            this.catalog.set_watched(&watch, !watched);
+            this.episode_menu = None;
+            this.reload_catalog();
+            cx.notify();
+        })).into_any_element());
+        if !watched && item.progress.is_some_and(|progress| progress.position > 0.) {
+            let path = path.clone();
+            rows.push(menu_item("episode-clear", Some(Icon::Restart), "Clear watch progress", false)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.catalog.set_watched(&path, false);
+                    this.episode_menu = None;
+                    this.reload_catalog();
+                    cx.notify();
+                })).into_any_element());
+        }
+        Some(crate::ui::menu::popup(rows, 232., Some(*position)))
+    }
+
+    fn episode_context(
+        &self,
+        card: gpui::Stateful<gpui::Div>,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        card.on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
+            cx.stop_propagation();
+            window.focus(&this.focus_handle());
+            this.open_select = None;
+            this.episode_menu = Some((path.clone(), event.position));
+            cx.notify();
+        }))
+    }
+
+    pub fn render_show_page(&self, key: &str, cx: &mut Context<Self>) -> AnyElement {
         let Some(show) = self.shows().into_iter().find(|s| s.key == key) else {
             return div().px(px(PAGE_X)).pt(px(84.)).child(empty_state(Icon::Tv, "Show not found", "This show is no longer in your library.", None)).into_any_element();
         };
@@ -1722,38 +1751,23 @@ impl PlayerView {
                     this.catalog.set_watched(path, !all_watched);
                 }
             },
-            window,
             cx,
         );
 
         let season_name = |s: u32| if s == 0 { "Extras".to_string() } else { format!("Season {s}") };
         let season_open = self.open_select == Some("season");
-        let season_picker = div()
-            .flex()
-            .child(
-                div()
-                    .id("season-picker")
-                    .h(px(44.))
-                    .px(px(18.))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .rounded(px(10.))
-                    .cursor_pointer()
-                    .bg(theme::default())
-                    .hover(|s| s.bg(theme::segment()))
-                    .text_size(px(16.))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(theme::foreground())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.toggle_select("season");
-                        cx.notify();
-                    }))
-                    .child(season_name(season))
-                    .child(icon(Icon::ChevronDown, 16., theme::foreground())),
-            )
+        let season_picker = crate::ui::menu::select_trigger("season-picker", season_name(season), season_open)
+            .h(px(44.))
+            .w(px(148.))
+            .px(px(16.))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .on_click(cx.listener(|this, _, window, cx| {
+                window.focus(&this.focus_handle());
+                this.toggle_select("season");
+                cx.notify();
+            }))
             .when(season_open && seasons.len() > 1, |el| {
-                el.child(dropdown(
+                el.child(crate::ui::menu::popup(
                     seasons
                         .iter()
                         .map(|s| {
@@ -1767,11 +1781,14 @@ impl PlayerView {
                                 .into_any_element()
                         })
                         .collect(),
-                    200.,
+                    200., None,
                 ))
             });
 
-        let card_w = ((self.page_width() - 3. * 24.) / 4.).max(220.);
+        let side_by_side = self.page_width() >= 900.;
+        let episode_width = self.page_width() - if side_by_side { 312. + 24. } else { 0. };
+        let columns = ((episode_width + 24.) / 244.).floor().clamp(2., 4.);
+        let card_w = ((episode_width - (columns - 1.) * 24.) / columns).floor();
         let season_eps = show.seasons.get(&season).cloned().unwrap_or_default();
         let episode_count = season_eps.len();
         let runtime = self.metas.get(&title_key).and_then(|m| m.runtime);
@@ -1787,7 +1804,7 @@ impl PlayerView {
             let minutes = episode.progress.filter(|p| p.duration > 0.0).map(|p| (p.duration / 60.).round() as u32).or(runtime);
             let group = SharedString::from(format!("ep-{}", episode.id));
             episodes = episodes.child(
-                div()
+                self.episode_context(div()
                     .id(SharedString::from(format!("episode-{}", episode.id)))
                     .group(group.clone())
                     .w(px(card_w))
@@ -1796,7 +1813,7 @@ impl PlayerView {
                     .flex_col()
                     .gap(px(10.))
                     .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, window, cx| this.play_item(play.clone(), window, cx)))
+                    .on_click(cx.listener(move |this, _, window, cx| this.play_item(play.clone(), window, cx))), episode.path.clone(), cx)
                     .child(
                         div()
                             .relative()
@@ -1841,7 +1858,7 @@ impl PlayerView {
                             .text_size(px(13.))
                             .text_color(theme::muted())
                             .when_some(minutes, |el, m| el.child(format!("{m}min")))
-                            .when(watched, |el| el.child(div().flex().items_center().gap(px(5.)).child(icon(Icon::CircleCheck, 14., theme::accent())).child("Watched"))),
+                            .when(watched, |el| el.child(div().flex().items_center().gap(px(5.)).child(icon(Icon::CircleCheck, 14., theme::foreground())).child("Watched"))),
                     ),
             );
         }
@@ -1859,6 +1876,20 @@ impl PlayerView {
             .map(TitleView::from_show)
             .collect();
 
+        let episode_list = div().flex().flex_col().gap(px(20.))
+            .flex_1().min_w_0()
+            .child(if seasons.len() > 1 { season_picker.into_any_element() } else { h2(season_name(season)).into_any_element() })
+            .child(div().text_size(px(16.)).text_color(theme::muted()).child(format!("{episode_count} episode{}", if episode_count == 1 { "" } else { "s" })))
+            .child(episodes);
+        let body = if side_by_side {
+            div().flex().items_start().gap(px(24.)).child(episode_list).child(
+                div().w(px(312.)).flex_none().flex().flex_col().gap(px(20.))
+                    .children(self.cast_panel(&title_key))
+                    .child(self.panel("Details", Some(Icon::List), details)),
+            )
+        } else {
+            div().flex().flex_col().gap(px(29.)).child(episode_list).child(self.title_info(&title_key, details))
+        };
         div()
             .px(px(PAGE_X))
             .pt(px(84.))
@@ -1867,29 +1898,12 @@ impl PlayerView {
             .flex_col()
             .gap(px(29.))
             .child(hero)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(20.))
-                    .child(if seasons.len() > 1 { season_picker.into_any_element() } else { h2(season_name(season)).into_any_element() })
-                    .child(div().text_size(px(16.)).text_color(theme::muted()).child(format!("{episode_count} episode{}", if episode_count == 1 { "" } else { "s" })))
-                    .child(episodes),
-            )
-            .child(
-                div()
-                    .pt(px(12.))
-                    .flex()
-                    .gap(px(22.))
-                    .items_start()
-                    .children(self.cast_panel(&title_key).map(|c| div().flex_1().min_w_0().child(c)))
-                    .child(div().flex_1().min_w_0().child(self.panel("Details", Some(Icon::List), details))),
-            )
+            .child(body)
             .when(!others.is_empty(), |el| el.child(self.section("More like this", None, self.title_grid("more", others, cx))))
             .into_any_element()
     }
 
-    pub fn render_movie_page(&self, path: &PathBuf, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_movie_page(&self, path: &PathBuf, cx: &mut Context<Self>) -> AnyElement {
         let Some(movie) = self.items.iter().find(|i| &i.path == path).cloned() else {
             return div().px(px(PAGE_X)).pt(px(84.)).child(empty_state(Icon::Film, "Movie not found", "This movie is no longer in your library.", None)).into_any_element();
         };
@@ -1911,7 +1925,6 @@ impl PlayerView {
             Some((path.clone(), movie.progress.filter(|p| p.resumable()).map(|p| p.position))),
             watched,
             move |this, _| this.catalog.set_watched(&toggle, !watched),
-            window,
             cx,
         );
         let size = std::fs::metadata(path).map(|m| format!("{:.2} GB", m.len() as f64 / 1e9)).unwrap_or_default();
@@ -1925,7 +1938,7 @@ impl PlayerView {
             .flex_col()
             .gap(px(29.))
             .child(hero)
-            .child(div().flex().gap(px(22.)).items_start().children(self.cast_panel(&key).map(|c| div().w(px(496.)).child(c))).child(div().w(px(496.)).child(self.panel("Details", Some(Icon::List), details))))
+            .child(self.title_info(&key, details))
             .when(!others.is_empty(), |el| el.child(self.section("More like this", None, self.title_grid("more-movies", others, cx))))
             .into_any_element()
     }
@@ -1950,48 +1963,42 @@ impl PlayerView {
             .child(div().size(px(16.)).rounded_full().bg(theme::foreground()))
     }
 
-    fn language_select(&self, id: &'static str, setting: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
-        let current = self.catalog.setting(setting).unwrap_or_default();
-        let label = LANGUAGES.iter().find(|(code, _)| *code == current).map(|(_, name)| name.to_string()).unwrap_or_else(|| language_name(&current));
+    fn setting_select(
+        &self,
+        setting: &'static str,
+        fallback: &str,
+        options: &'static [(&'static str, &'static str)],
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let current = self.catalog.setting(setting).unwrap_or_else(|| fallback.into());
+        let label = options.iter().find(|(code, _)| *code == current).map(|(_, name)| name.to_string()).unwrap_or_else(|| language_name(&current));
         let open = self.open_select == Some(setting);
-        div()
-            .relative()
-            .child(
-                div()
-                    .id(id)
-                    .w(px(256.))
-                    .h(px(40.))
-                    .px(px(14.))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .rounded(px(theme::RADIUS_LG))
-                    .cursor_pointer()
-                    .bg(theme::surface_secondary())
-                    .border_1()
-                    .border_color(if open { theme::accent() } else { theme::border() })
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.toggle_select(setting);
-                        cx.notify();
-                    }))
-                    .child(div().text_size(px(14.)).text_color(theme::foreground()).child(label))
-                    .child(icon(Icon::ChevronDown, 16., theme::foreground())),
-            )
+        let width = if self.page_width() < 720. { 180. } else { 256. };
+        crate::ui::menu::select_trigger(setting, label, open)
+            .w(px(width))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                window.focus(&this.focus_handle());
+                this.toggle_select(setting);
+                cx.notify();
+            }))
             .when(open, |el| {
-                el.child(dropdown(
-                    LANGUAGES
+                el.child(crate::ui::menu::popup(
+                    options
                         .iter()
                         .map(|(code, name)| {
                             menu_item(format!("{setting}-{code}"), None, *name, *code == current)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.catalog.set_setting(setting, code);
+                                    if setting.starts_with("metadata_") {
+                                        this.metadata_message = "Refresh metadata to apply this to existing titles.".into();
+                                    }
                                     this.open_select = None;
                                     cx.notify();
                                 }))
                                 .into_any_element()
                         })
                         .collect(),
-                    256.,
+                    width, None,
                 ))
             })
     }
@@ -2032,30 +2039,90 @@ impl PlayerView {
             .into_any_element()
     }
 
+    fn run_metadata_job(&mut self, markers: bool, cx: &mut Context<Self>) {
+        if self.metadata_busy {
+            return;
+        }
+        self.metadata_busy = true;
+        self.metadata_message = if markers { "Looking up markers…" } else { "Refreshing metadata…" }.into();
+        cx.notify();
+        let catalog = self.catalog.clone();
+        let work = cx.background_spawn(async move {
+            if markers {
+                let (checked, found, failed) = crate::metadata::refresh_missing_markers(&catalog);
+                if checked == 0 {
+                    "No missing markers for titles matched to IMDb.".into()
+                } else {
+                    format!("Checked {checked} files. Found markers for {found}. Couldn’t check {failed}.")
+                }
+            } else {
+                let (refreshed, unmatched, interrupted) = crate::metadata::refresh_metadata(&catalog, true);
+                if interrupted {
+                    format!("Refreshed {refreshed} titles before losing the connection to TMDB.")
+                } else {
+                    format!("Refreshed {refreshed} titles. {unmatched} couldn’t be matched.")
+                }
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let message = work.await;
+            this.update(cx, |this, cx| {
+                this.metadata_busy = false;
+                this.metadata_message = message;
+                cx.notify();
+            }).ok();
+        }).detach();
+    }
+
+    fn render_updates(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::updates::UpdateStatus;
+        let message = match &self.update_status {
+            UpdateStatus::Idle => "Check GitHub for a newer Plexy Beta release.".into(),
+            UpdateStatus::Checking => "Checking for updates…".into(),
+            UpdateStatus::Current => "You’re up to date.".into(),
+            UpdateStatus::Available { version, .. } => format!("Plexy Beta {version} is available."),
+            UpdateStatus::Failed => "Couldn’t check for updates. Try again in a moment.".into(),
+        };
+        let download = match &self.update_status {
+            UpdateStatus::Available { download, .. } => Some(download.clone()),
+            _ => None,
+        };
+        self.settings_card(Icon::Monitor, "Plexy Beta", vec![
+            Self::setting_row("Installed version", div().text_size(px(13.)).child(crate::updates::VERSION)),
+            div().flex().flex_col().gap(px(12.)).child(div().text_size(px(13.)).text_color(theme::muted()).child(message))
+                .child(div().flex().flex_wrap().gap(px(8.))
+                    .child(self.button("check-update", "Check for updates", false).on_click(cx.listener(|this, _, _, cx| {
+                        if matches!(this.update_status, UpdateStatus::Checking) {
+                            return;
+                        }
+                        this.update_status = UpdateStatus::Checking;
+                        cx.notify();
+                        let check = cx.background_spawn(async { crate::updates::check().unwrap_or(UpdateStatus::Failed) });
+                        cx.spawn(async move |this, cx| {
+                            let status = check.await;
+                            this.update(cx, |this, cx| {
+                                this.update_status = status;
+                                cx.notify();
+                            }).ok();
+                        }).detach();
+                    })))
+                    .when_some(download, |el, url| {
+                        el.child(self.button("download-update", "Download update", true).on_click(move |_, _, cx| cx.open_url(&url)))
+                    }))
+                .into_any_element(),
+        ])
+    }
+
     pub fn render_settings_page(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let compact = self.page_width() < 850.;
         let section = if self.screen == Screen::Libraries { SettingsSection::Libraries } else { self.settings_section };
-        let nav = |id: &'static str, icon_name: Icon, label: &'static str, target: SettingsSection, cx: &mut Context<Self>| {
-            let active = section == target;
-            div()
-                .id(id)
-                .relative()
-                .h(px(40.))
-                .px(px(11.))
-                .flex()
-                .items_center()
-                .gap(px(11.))
-                .rounded(px(theme::RADIUS_LG))
-                .cursor_pointer()
-                .when(active, |el| el.bg(theme::default()))
-                .hover(|s| s.bg(theme::default_soft()))
+        let nav = |id: &'static str, label: &'static str, target: SettingsSection, cx: &mut Context<Self>| {
+            crate::ui::controls::tab(id, label, section == target)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings_section = target;
                     this.screen = Screen::Settings;
                     cx.notify();
                 }))
-                .when(active, |el| el.child(div().absolute().left(px(-14.)).top(px(10.)).w(px(2.)).h(px(21.)).rounded_full().bg(theme::accent())))
-                .child(icon(icon_name, 18., if active { theme::accent() } else { theme::muted() }))
-                .child(div().text_size(px(14.)).text_color(theme::foreground()).font_weight(if active { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL }).child(label))
         };
         let group = |text: &'static str| div().px(px(10.)).pt(px(10.)).pb(px(5.)).text_size(px(11.)).text_color(theme::muted()).child(text);
 
@@ -2063,7 +2130,6 @@ impl PlayerView {
             SettingsSection::Playback => {
                 let subs_on = self.catalog.setting("subtitles_on").as_deref() != Some("no");
                 let autoplay = self.catalog.setting("autoplay").as_deref() == Some("on");
-                let skip = self.catalog.setting("skip_markers").as_deref() == Some("on");
                 div()
                     .flex()
                     .flex_col()
@@ -2073,16 +2139,15 @@ impl PlayerView {
                         "Subtitles",
                         vec![
                             Self::setting_row("Turn on subtitles", self.toggle("set-subs-on", subs_on, cx, move |this| this.catalog.set_setting("subtitles_on", if subs_on { "no" } else { "yes" }))),
-                            Self::setting_row("Preferred subtitle language", self.language_select("set-sub-lang", "subtitle_lang", cx)),
+                            Self::setting_row("Preferred subtitle language", self.setting_select("subtitle_lang", "", &LANGUAGES, cx)),
                         ],
                     ))
-                    .child(self.settings_card(Icon::AudioLines, "Audio language", vec![Self::setting_row("Preferred audio language", self.language_select("set-audio-lang", "audio_lang", cx))]))
+                    .child(self.settings_card(Icon::AudioLines, "Audio language", vec![Self::setting_row("Preferred audio language", self.setting_select("audio_lang", "", &LANGUAGES, cx))]))
                     .child(self.settings_card(
                         Icon::SkipForward,
                         "Episodes",
                         vec![
                             Self::setting_row("Autoplay next episode", self.toggle("set-autoplay", autoplay, cx, move |this| this.catalog.set_setting("autoplay", if autoplay { "off" } else { "on" }))),
-                            Self::setting_row("Skip intro and credits markers (IntroDB)", self.toggle("set-skip", skip, cx, move |this| this.catalog.set_setting("skip_markers", if skip { "off" } else { "on" }))),
                         ],
                     ))
                     .into_any_element()
@@ -2091,7 +2156,9 @@ impl PlayerView {
                 let (ok, message) = self.token_status.lock().clone();
                 let connected = crate::metadata::token(&self.catalog).is_some();
                 let masked = "•".repeat(self.token_draft.chars().count().min(40));
-                let field = self.text_field("set-token", crate::personal_ui::Field::Token, &self.token_focus, &masked, "Paste your TMDB API Read Access Token", window, cx).w(px(380.));
+                let field = self.text_field("set-token", crate::personal_ui::Field::Token, &self.token_focus, &masked, "Paste your TMDB API Read Access Token", window, cx).flex_1().min_w_0();
+                let skip = self.catalog.setting("skip_markers").as_deref() != Some("off");
+                let chapters = self.catalog.setting("chapter_markers").as_deref() != Some("off");
                 div()
                     .flex()
                     .flex_col()
@@ -2101,16 +2168,53 @@ impl PlayerView {
                         "TMDB",
                         vec![
                             Self::setting_row("Status", div().text_size(px(13.)).text_color(if connected { theme::success() } else { theme::muted() }).child(if connected { "Connected" } else { "Not connected — artwork and details stay local" })),
-                            Self::setting_row(
-                                "Access token",
-                                div().flex().items_center().gap(px(10.)).child(field).child(self.pill_button("set-token-save", None, "Verify and save", true).h(px(32.)).px(px(14.)).text_size(px(12.)).on_click(cx.listener(|this, _, _, cx| this.save_token(cx)))),
-                            ),
+                            Self::setting_row("Metadata language", self.setting_select("metadata_language", "en-US", &METADATA_LANGUAGES, cx)),
+                            Self::setting_row("Region", self.setting_select("metadata_region", "US", &METADATA_REGIONS, cx)),
+                            div().flex().items_center().gap(px(10.)).child(field)
+                                .child(self.button("set-token-save", "Verify and save", false).on_click(cx.listener(|this, _, _, cx| this.save_token(cx))))
+                                .into_any_element(),
+                            Self::setting_row("Refresh titles and age ratings", self.button("metadata-refresh", "Refresh metadata", false).on_click(cx.listener(|this, _, _, cx| {
+                                if crate::metadata::token(&this.catalog).is_some() {
+                                    this.run_metadata_job(false, cx);
+                                } else {
+                                    this.metadata_message = "Connect TMDB to refresh metadata.".into();
+                                    cx.notify();
+                                }
+                            }))),
+                            Self::setting_row("Cached TMDB responses", self.button("metadata-clear", "Clear TMDB cache", false).on_click(cx.listener(|this, _, _, cx| {
+                                if !this.metadata_busy {
+                                    this.metadata_message = match this.catalog.clear_tmdb_cache() {
+                                        Ok(count) => format!("Cleared {count} cached TMDB responses."),
+                                        Err(_) => "Couldn’t clear the TMDB cache.".into(),
+                                    };
+                                    cx.notify();
+                                }
+                            }))),
                         ],
                     ))
                     .when(!message.is_empty(), |el| el.child(div().text_size(px(13.)).text_color(if ok { theme::muted() } else { theme::danger() }).child(message)))
-                    .child(div().text_size(px(12.)).text_color(theme::muted()).child("Artwork is saved on this Mac, so titles keep their posters offline."))
+                    .child(self.settings_card(Icon::SkipForward, "Intro, recap and credits", vec![
+                        Self::setting_row("Community skip markers (IntroDB)", self.toggle("set-skip", skip, cx, move |this| {
+                            this.catalog.set_setting("skip_markers", if skip { "off" } else { "on" });
+                        })),
+                        Self::setting_row("Skip using named video chapters", self.toggle("set-chapter-markers", chapters, cx, move |this| {
+                            this.catalog.set_setting("chapter_markers", if chapters { "off" } else { "on" });
+                        })),
+                        Self::setting_row("Look up missing episode markers", self.button("markers-refresh", "Refresh markers", false).on_click(cx.listener(move |this, _, _, cx| {
+                            if skip {
+                                this.run_metadata_job(true, cx);
+                            } else {
+                                this.metadata_message = "Enable community skip markers to refresh them.".into();
+                                cx.notify();
+                            }
+                        }))),
+                    ]))
+                    .when(!self.metadata_message.is_empty(), |el| {
+                        el.child(div().text_size(px(13.)).text_color(theme::muted()).child(self.metadata_message.clone()))
+                    })
                     .into_any_element()
             }
+            SettingsSection::Updates => self.render_updates(cx).into_any_element(),
             SettingsSection::Libraries => self.render_libraries_public(cx),
             SettingsSection::Appearance => {
                 let current = self.catalog.setting("theme").unwrap_or_else(|| "dark".into());
@@ -2180,27 +2284,29 @@ impl PlayerView {
             SettingsSection::Playback => "Playback",
             SettingsSection::Libraries => "Libraries",
             SettingsSection::Appearance => "Appearance",
-            SettingsSection::Metadata => "Metadata",
+            SettingsSection::Metadata => "Metadata & episode markers",
+            SettingsSection::Updates => "Updates",
         };
         div()
-            .px(px(38.))
-            .pt(px(96.))
+            .px(px(PAGE_X))
+            .pt(px(86.))
             .pb(px(38.))
             .flex()
-            .gap(px(45.))
+            .gap(px(if compact { 16. } else { 32. }))
+            .when(compact, |el| el.flex_col())
             .child(
-                div()
-                    .w(px(256.))
+                crate::ui::controls::tabs([])
                     .flex_none()
-                    .flex()
-                    .flex_col()
+                    .when(!compact, |el| el.w(px(200.)).flex_col())
+                    .when(compact, |el| el.flex_wrap())
                     .gap(px(3.))
-                    .child(group("Preferences"))
-                    .child(nav("settings-playback", Icon::Captions, "Playback", SettingsSection::Playback, cx))
-                    .child(nav("settings-appearance", Icon::Palette, "Appearance", SettingsSection::Appearance, cx))
-                    .child(nav("settings-metadata", Icon::Film, "Metadata", SettingsSection::Metadata, cx))
-                    .child(group("Library"))
-                    .child(nav("settings-libraries", Icon::Library, "Libraries", SettingsSection::Libraries, cx)),
+                    .when(!compact, |el| el.child(group("Preferences")))
+                    .child(nav("settings-playback", "Playback", SettingsSection::Playback, cx))
+                    .child(nav("settings-appearance", "Appearance", SettingsSection::Appearance, cx))
+                    .child(nav("settings-metadata", "Metadata & markers", SettingsSection::Metadata, cx))
+                    .child(nav("settings-updates", "Updates", SettingsSection::Updates, cx))
+                    .when(!compact, |el| el.child(group("Library")))
+                    .child(nav("settings-libraries", "Libraries", SettingsSection::Libraries, cx)),
             )
             .child(
                 div()
@@ -2222,8 +2328,8 @@ impl PlayerView {
             Screen::Home => self.render_home_page(cx),
             Screen::Library => self.render_library_page(cx),
             Screen::Genre(genre) => self.render_genre_page(&genre, cx),
-            Screen::Show(key) => self.render_show_page(&key, window, cx),
-            Screen::Movie(path) => self.render_movie_page(&path, window, cx),
+            Screen::Show(key) => self.render_show_page(&key, cx),
+            Screen::Movie(path) => self.render_movie_page(&path, cx),
             Screen::Settings | Screen::Libraries => self.render_settings_page(window, cx),
             other => div().px(px(PAGE_X)).pt(px(84.)).pb(px(38.)).child(self.render_list_screen(other, window, cx)).into_any_element(),
         };
@@ -2264,6 +2370,25 @@ impl PlayerView {
                     ),
             )
             .child(self.render_top_nav(window, cx).when(on_home, |el| el.bg(gpui::hsla(0., 0., 0., 0.)).border_color(gpui::hsla(0., 0., 0., 0.))))
+            .when(self.open_select.is_some() || self.episode_menu.is_some(), |el| {
+                el.child(gpui::deferred(
+                    div().id("dismiss-popup").absolute().inset_0().occlude()
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+                            this.open_select = None;
+                            this.episode_menu = None;
+                            cx.notify();
+                        }))
+                        .on_mouse_down(gpui::MouseButton::Right, cx.listener(|this, _, _, cx| {
+                            this.open_select = None;
+                            this.episode_menu = None;
+                            cx.notify();
+                        })),
+                ).with_priority(1))
+            })
+            .children(self.render_episode_menu(cx))
+            .children(self.render_add_library(cx))
+            .children(self.render_collection_dialog(window, cx))
+            .children(self.render_rating_dialog(cx))
     }
 }
 

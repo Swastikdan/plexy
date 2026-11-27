@@ -614,27 +614,23 @@ the player menu turn into a white sheet in light mode.
 | Radius | 8 |
 | Label | 13 px semibold, foreground |
 | Detail / value | 11 px muted, line-height 15, truncate |
-| Leading slot | 16 px icon / 16 px radio / 16 px spacer |
-| Trailing slot | 15 px check / 14 px chevron / value |
+| Leading slot | Optional 16 px icon |
+| Trailing slot | 14 px chevron and optional value on navigation rows |
 | Hover | `theme::default()` background |
-| Selected | foreground label + accent radio/check; no full-row accent fill |
+| Selected | Neutral full-row fill with a foreground label |
+| Space between items | 4 px |
 | Danger | danger text, danger-tinted hover |
 | Divider | 1 px separator, `mx(6) my(4)` |
 
 Variants:
 
-- `Action`: optional leading icon, label, optional trailing check. Used for
-  "Hide from library", "Add to collection".
-- `Radio`: leading 16 px radio (8 px inner dot), label + optional detail,
-  optional trailing check. Used for audio/subtitle tracks.
+- `Action`: label with an optional leading icon. Used for title actions,
+  sort, seasons and language choices.
+- `Radio`: label and optional secondary detail. Used for player track choices.
 - `Navigation`: leading 18 px icon, 14 px semibold label, trailing 12 px value
-  and 14 px chevron. Used for player Settings → Subtitles/Audio/Speed/Chapters.
-- `Collection`: fixed 16 px leading check slot, label. Used in the collection
-  picker.
+  and 14 px chevron. Used for player settings and library types.
+- `Collection`: selectable label. Used in the collection picker.
 
-The player's `settings_row` becomes a `Navigation` row, not its own visual
-system. The settings page language dropdown becomes a normal `Action` list,
-not a special case. Track menus keep the radio but at 16 px, not 20.
 
 Concrete conversion map:
 
@@ -642,33 +638,22 @@ Concrete conversion map:
 | --- | --- |
 | Shell item `h(34)`, panel `p(5)` | `h(36)`, panel `p(6)` |
 | Player navigation `px(14) py(12)`, 17 px bold | `px(10) py(6)`, height 40, 14 px semibold |
-| Player track `px(14) py(10)`, 16 + 12, 20 radio | `px(10) py(6)`, height 48, 13 + 11, 16 radio |
+| Player track `px(14) py(10)`, 16 + 12, 20 radio | `px(10) py(6)`, height 48, 13 + 11 |
 | Collection picker `px(8) py(6)`, 11 px | `px(10) py(6)`, height 36, 13 px |
 | Panel radius 12 (shell) / 14 (player), padding 5/8/10 | radius 12, padding 6, tone decides color |
 | Icon 16 (shell) / 20–22 (player) | 16 leading; 18 only in `Navigation` |
-| Check 15 / no check | 15 trailing check, same position everywhere |
+| Selection indicators | Shared neutral selected row |
 
 #### Dropdown behavior checklist
 
-A `Dropdown` is not just a floating box. When the component is built, verify:
+- A menu opens in the same frame as the trigger click. The deferred menu
+  uses the trigger bounds from layout, with a 6 px offset and 8 px window
+  margin. An episode context menu uses the pointer position.
+- The panel flips above its anchor when that side has more room and the
+  full list does not fit below. Long lists scroll inside the available space.
+- One shell menu opens at a time. Clicking the trigger or outside the panel,
+  selecting a row, or pressing Escape closes the menu.
 
-- It is rendered inside the trigger's `.relative()` wrapper and positioned
-  with `deferred(anchored()...)`, offset 6 px, `snap_to_window_with_margin(8)`
-  so it never leaves the window.
-- It flips above the trigger when there is no room below. The current
-  `dropdown` estimates height as `items.len() * 34 + 12`; update that to the
-  canonical row heights (36/48) when the row changes, or measure the panel.
-- It has a stable id derived from the trigger (`library-sort`, `title-more`,
-  `season`), not a global `"dropdown"`.
-- One dropdown is open at a time through the screen's `open_select`.
-- Click outside closes it through the screen's handler, not a global atomic;
-  clicking the trigger while open closes it without immediately reopening.
-- Clicking an item applies the value and closes.
-- Escape closes and does not leak to the player shortcuts.
-- A long list scrolls inside the panel and keeps the selected item visible.
-- Width, padding, row height and check position match every other menu.
-- In light theme, the panel uses the app surface tokens; in the player, it
-  uses the media tone and stays dark.
 
 Target call shape:
 

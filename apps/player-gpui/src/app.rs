@@ -90,6 +90,9 @@ pub struct PlayerView {
     cursor_hidden: bool,
     subs_raised: bool,
     pub menu: Option<Menu>,
+    /// The menu an outside press just closed, so that press does not
+    /// reopen it (its trigger) or play/pause (the picture).
+    menu_dismissed: Option<(Menu, Instant)>,
     over_controls: bool,
     volume_hover: bool,
     volume_hover_until: Option<Instant>,
@@ -122,6 +125,7 @@ pub struct PlayerView {
     pub collection_focus: FocusHandle,
     pub collection_picker: bool,
     pub collection_target: Option<TitleKey>,
+    pub rating_target: Option<TitleKey>,
     pub sort: Sort,
     pub watch_filter: WatchFilter,
     pub hero_index: usize,
@@ -137,6 +141,9 @@ pub struct PlayerView {
     token_seen: String,
     /// IntroDB markers for the open file; filled at open and by the lookup thread.
     pub segments: Arc<parking_lot::Mutex<Option<(PathBuf, crate::catalog::SkipSegments)>>>,
+    pub manual_segments: crate::catalog::SkipSegments,
+    pub marker_editor: Option<crate::marker_ui::MarkerEditor>,
+    chapter_markers: bool,
     /// Autoplay countdown start once the episode ends; `None` when idle.
     pub autoplay_at: Option<Instant>,
     pub autoplay_cancelled: bool,
@@ -148,8 +155,15 @@ pub struct PlayerView {
     autoplay_fired: bool,
     pub episode_metas: std::collections::HashMap<PathBuf, crate::catalog::EpisodeMeta>,
     metadata_epoch: u64,
+    pub update_status: crate::updates::UpdateStatus,
+    pub metadata_busy: bool,
+    pub metadata_message: String,
     pub settings_section: crate::shell_ui::SettingsSection,
     pub selected_season: Option<u32>,
+    pub viewport: gpui::Size<Pixels>,
+    pub add_library_open: bool,
+    pub library_error: Option<String>,
+    pub episode_menu: Option<(PathBuf, gpui::Point<Pixels>)>,
     pub open_select: Option<&'static str>,
     pub hovered_card: Option<SharedString>,
     scan_progress: (u64, usize, bool),
@@ -177,6 +191,7 @@ impl PlayerView {
             cursor_hidden: false,
             subs_raised: false,
             menu: None,
+            menu_dismissed: None,
             over_controls: false,
             volume_hover: false,
             volume_hover_until: None,
@@ -204,6 +219,7 @@ impl PlayerView {
             collection_focus: cx.focus_handle(),
             collection_picker: false,
             collection_target: None,
+            rating_target: None,
             sort: Sort::Added,
             watch_filter: WatchFilter::All,
             hero_index: 0,
@@ -216,6 +232,9 @@ impl PlayerView {
             token_draft: String::new(),
             token_seen: String::new(),
             segments: Default::default(),
+            manual_segments: Default::default(),
+            marker_editor: None,
+            chapter_markers: true,
             autoplay_at: None,
             autoplay_cancelled: false,
             fullscreen_before_play: false,
@@ -225,8 +244,15 @@ impl PlayerView {
             token_focus: cx.focus_handle(),
             token_status: Default::default(),
             metadata_epoch: catalog.metadata_epoch(),
+            update_status: Default::default(),
+            metadata_busy: false,
+            metadata_message: String::new(),
             settings_section: if std::env::var("PLEXY_SCREEN").as_deref() == Ok("appearance") { crate::shell_ui::SettingsSection::Appearance } else { crate::shell_ui::SettingsSection::Playback },
             selected_season: None,
+            viewport: gpui::size(px(1280.), px(760.)),
+            add_library_open: false,
+            library_error: None,
+            episode_menu: None,
             open_select: None,
             hovered_card: None,
             scan_progress: (0, 0, false),
@@ -261,6 +287,11 @@ impl PlayerView {
             self.fullscreen_before_play = window.is_fullscreen();
         }
         self.save_progress();
+        self.open_select = None;
+        self.episode_menu = None;
+        self.collection_picker = false;
+        self.collection_target = None;
+        self.rating_target = None;
         let resolved = match mpv::local_media_path(path).and_then(|path| {
             if self.libmpv.is_none() {
                 let libmpv = mpv::find_libmpv()?;
@@ -307,6 +338,8 @@ impl PlayerView {
                 self.last_saved = Instant::now();
                 self.last_saved_position = None;
                 self.state = self.player.snapshot();
+                self.marker_editor = None;
+                self.chapter_markers = self.catalog.setting("chapter_markers").as_deref() != Some("off");
                 self.load_segments(&path);
                 if start > 0.0 {
                     self.flash(Icon::Play, format!("Resuming from {}", format_time(start)));
@@ -331,7 +364,8 @@ impl PlayerView {
     /// cache is missing or expired (needs a matched IMDb id).
     fn load_segments(&mut self, path: &Path) {
         self.segments = Default::default();
-        if !self.setting_on("skip_markers") {
+        self.manual_segments = self.catalog.manual_segments(path);
+        if self.catalog.setting("skip_markers").as_deref() == Some("off") {
             return;
         }
         *self.segments.lock() = Some((path.to_path_buf(), self.catalog.stored_segments(path, None)));
@@ -346,32 +380,46 @@ impl PlayerView {
         let (catalog, slot, path) = (self.catalog.clone(), self.segments.clone(), path.to_path_buf());
         std::thread::spawn(move || {
             let tmdb = crate::metadata::Tmdb::new(&catalog);
-            match crate::metadata::fetch_markers(&tmdb, &imdb, item.season, item.episode, is_movie) {
-                Ok(segments) => {
-                    let found = segments != Default::default();
-                    catalog.store_segments(&path, &imdb, &segments, "introdb");
-                    catalog.record_skip_lookup(&path, if found { "found" } else { "none" }, Some(&imdb), if found { 30 * 86400 } else { 3 * 86400 });
-                    let mut slot = slot.lock();
-                    if slot.as_ref().is_some_and(|(p, _)| p == &path) {
-                        *slot = Some((path, segments));
-                    }
+            if let Ok(segments) = crate::metadata::refresh_marker_file(&catalog, &tmdb, &path, &imdb, item.season, item.episode, is_movie) {
+                let mut slot = slot.lock();
+                if slot.as_ref().is_some_and(|(p, _)| p == &path) {
+                    *slot = Some((path, segments));
                 }
-                Err(_) => catalog.record_skip_lookup(&path, "error", Some(&imdb), 3600),
             }
         });
     }
 
-    /// The skip action for the playhead: IntroDB marker first, else an
-    /// intro chapter. Returns (label, seek target).
-    pub fn skip_action(&self) -> Option<(String, f64)> {
-        let position = self.state.position;
-        if let Some((_, segments)) = self.segments.lock().as_ref() {
-            if let Some((kind, window)) = segments.active(position) {
-                let end = if self.state.duration > 0.0 { window.end.min(self.state.duration) } else { window.end };
-                return Some((format!("Skip {}", kind.label()), end));
+    pub fn effective_segments(&self) -> crate::catalog::SkipSegments {
+        let mut segments = self.segments.lock().as_ref().map(|(_, segments)| *segments).unwrap_or_default();
+        for kind in crate::catalog::SegmentKind::ALL {
+            if let Some(manual) = self.manual_segments.kind(kind) {
+                segments.set(kind, Some(manual));
+            }
+            if let Some(mut marker) = segments.kind(kind).filter(|_| self.state.duration > 0.) {
+                marker.end = marker.end.min(self.state.duration);
+                segments.set(kind, (marker.start < marker.end).then_some(marker));
             }
         }
-        self.intro_end().map(|end| ("Skip intro".to_string(), end))
+        segments
+    }
+
+    /// Saved markers take precedence over named chapters.
+    pub fn skip_action(&self) -> Option<(&'static str, f64)> {
+        self.effective_segments().active(self.state.position)
+            .map(|(kind, marker)| (kind.skip_label(), marker.end))
+            .or_else(|| self.chapter_markers.then(|| self.chapter_skip()).flatten())
+    }
+
+    /// Skip intro / skip credits: on credits with a next episode, play it.
+    fn run_skip(&mut self, label: &str, end: f64, window: &mut Window, cx: &mut Context<Self>) {
+        if label.contains("credits") && self.next_episode.is_some() {
+            self.autoplay_fired = true;
+            self.play_next(window, cx);
+        } else {
+            let _ = self.player.seek_to(end);
+        }
+        self.poke();
+        cx.notify();
     }
 
     /// Starts an OpenSubtitles search for the open file (needs its IMDb id).
@@ -472,6 +520,7 @@ impl PlayerView {
         self.previews = None;
         self.sub_search = Default::default();
         self.sub_was_busy = false;
+        self.marker_editor = None;
         self.segments = Default::default();
         self.state = PlaybackState::default();
         self.identity = None;
@@ -493,14 +542,23 @@ impl PlayerView {
         }
     }
 
-    /// The chapter the playhead is in when it is an intro/opening.
-    fn intro_end(&self) -> Option<f64> {
+    /// A skip for the chapter under the playhead when it is an intro,
+    /// recap or credits chapter. Returns (label, end of the chapter).
+    fn chapter_skip(&self) -> Option<(&'static str, f64)> {
         let chapters = &self.state.chapters;
         let index = chapters.iter().rposition(|c| c.time <= self.state.position + 0.1)?;
         let title = chapters[index].title.to_lowercase();
-        let is_intro = ["intro", "opening", " op", "recap"].iter().any(|word| title.contains(word.trim()))
-            && !title.contains("outro");
-        is_intro.then(|| chapters.get(index + 1).map(|c| c.time).unwrap_or(self.state.duration))
+        let end = chapters.get(index + 1).map(|c| c.time).unwrap_or(self.state.duration);
+        let has = |words: &[&str]| words.iter().any(|word| title.split(|c: char| !c.is_alphanumeric()).any(|w| w == *word) || title.contains(word) && word.len() > 4);
+        if has(&["credits", "credit", "outro", "ending", "closing", "ed"]) {
+            Some(("Skip credits", end))
+        } else if has(&["recap", "previously"]) {
+            Some(("Skip recap", end))
+        } else if has(&["intro", "opening", "op"]) {
+            Some(("Skip intro", end))
+        } else {
+            None
+        }
     }
 
     pub fn prompt_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -551,6 +609,7 @@ impl PlayerView {
         let previous_revision = self.state.revision;
         let mut overlay_changed = false;
         if self.media.is_some() {
+            let previous_skip = self.skip_action();
             let state = self.player.snapshot();
             let just_ended = state.ended && !self.state.ended;
             overlay_changed = self.state.buffering != state.buffering
@@ -558,6 +617,7 @@ impl PlayerView {
                 || self.state.error != state.error
                 || (self.next_episode.is_some() && near_episode_end(&self.state) != near_episode_end(&state));
             self.state = state;
+            overlay_changed |= previous_skip != self.skip_action();
             if self.state.loaded {
                 let paused_now = self.state.paused || self.state.ended;
                 let position = if self.state.ended { self.state.duration } else { self.state.position };
@@ -684,6 +744,7 @@ impl PlayerView {
             || self.state.paused
             || self.state.ended
             || self.menu.is_some()
+            || self.marker_editor.is_some()
             || self.over_controls
             || self.scrub_fraction.is_some()
             || self.dragging_volume
@@ -737,9 +798,9 @@ impl PlayerView {
     // MARK: Commands
 
     fn toggle_pause(&mut self) {
-        let _ = self.player.toggle_pause();
-        let paused = !self.state.paused || self.state.ended;
-        self.flash(if paused { Icon::Pause } else { Icon::Play }, "");
+        if let Ok(paused) = self.player.toggle_pause() {
+            self.flash(if paused { Icon::Pause } else { Icon::Play }, "");
+        }
     }
 
     fn seek_by(&mut self, delta: f64) {
@@ -833,23 +894,24 @@ impl PlayerView {
         self.catalog.setting(key).and_then(|v| v.parse().ok()).unwrap_or(default)
     }
 
-    /// Pushes the saved subtitle size and preset to mpv.
+    /// Pushes the saved subtitle size to mpv.
     pub fn apply_subtitle_style(&self) {
         let scale = SUB_SIZES.get(self.sub_style_index("sub_size", 2)).map(|s| s.0).unwrap_or(1.0);
         let _ = self.player.set("sub-scale", &scale.to_string());
-        let props: &[(&str, &str)] = match self.sub_style_index("sub_preset", 0) {
-            1 => &[("sub-color", "#FF111111"), ("sub-border-style", "opaque-box"), ("sub-border-color", "#E6A6A6A6"), ("sub-border-size", "3"), ("sub-shadow-offset", "0")],
-            2 => &[("sub-color", "#FFF5E100"), ("sub-border-style", "opaque-box"), ("sub-border-color", "#FF000000"), ("sub-border-size", "3"), ("sub-shadow-offset", "0")],
-            3 => &[("sub-color", "#FFFFFFFF"), ("sub-border-style", "outline-and-shadow"), ("sub-border-size", "0"), ("sub-shadow-offset", "2"), ("sub-shadow-color", "#C0000000")],
-            _ => &[("sub-color", "#FFFFFFFF"), ("sub-border-style", "outline-and-shadow"), ("sub-border-color", "#FF000000"), ("sub-border-size", "2.5"), ("sub-shadow-offset", "0")],
-        };
-        for (name, value) in props {
-            let _ = self.player.set(name, value);
-        }
+    }
+
+    /// Self-test hook: open a player menu as its trigger would.
+    pub fn toggle_menu_for_test(&mut self, menu: Menu) {
+        self.toggle_menu(menu);
+    }
+
+    fn menu_just_dismissed(&self) -> Option<Menu> {
+        self.menu_dismissed.filter(|(_, at)| at.elapsed() < Duration::from_millis(400)).map(|(menu, _)| menu)
     }
 
     fn toggle_menu(&mut self, menu: Menu) {
-        self.menu = if self.menu == Some(menu) { None } else { Some(menu) };
+        let reopening = self.menu_just_dismissed().is_some_and(|closed| closed == menu || (menu == Menu::More && closed != Menu::Speed));
+        self.menu = if self.menu == Some(menu) || reopening { None } else { Some(menu) };
         self.poke();
     }
 
@@ -863,8 +925,25 @@ impl PlayerView {
         }
         self.poke();
         let key = keystroke.key.as_str();
+        if self.marker_editor.is_some() {
+            if key == "escape" {
+                self.marker_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
         if self.media.is_none() {
-            if key == "enter" || key == "space" {
+            if key == "escape" {
+                self.open_select = None;
+                self.add_library_open = false;
+                self.collection_picker = false;
+                self.collection_target = None;
+                self.rating_target = None;
+                self.episode_menu = None;
+                cx.notify();
+            }
+            if !self.add_library_open && self.rating_target.is_none() && (key == "enter" || key == "space") {
                 self.prompt_open(window, cx);
             }
             return;
@@ -1041,9 +1120,9 @@ fn white(alpha: f32) -> Hsla {
     Hsla { h: 0., s: 0., l: 1., a: alpha }
 }
 
-/// The player's menu surface: near-black with a cool tint, over video.
+/// The player's menu surface: HeroUI dark `--surface`, over video.
 fn panel_bg() -> Hsla {
-    rgba(0x0d131cf5).into()
+    rgba(0x18181bf5).into()
 }
 
 /// Subtitle sizes: mpv `sub-scale` and the "Aa" preview size.
@@ -1118,9 +1197,21 @@ impl PlayerView {
             })
             .collect::<Vec<_>>();
 
+        let segments = self.effective_segments();
+        let marker_ranges = crate::catalog::SegmentKind::ALL.into_iter().filter_map(|kind| {
+            let marker = segments.kind(kind)?;
+            (duration > 0.).then(|| {
+                div().absolute().top(px(17.)).h(px(3.)).rounded_full()
+                    .left(gpui::relative((marker.start / duration) as f32))
+                    .w(gpui::relative(((marker.end - marker.start) / duration) as f32))
+                    .bg(white(0.72))
+            })
+        }).collect::<Vec<_>>();
+
         div()
             .id("seek-bar")
             .relative()
+            .children(marker_ranges)
             .h(px(26.))
             .w_full()
             .flex()
@@ -1293,7 +1384,7 @@ impl PlayerView {
                         .top(px(46.))
                         .left(px(-2.))
                         .w(px(44.))
-                        .h(px(232.))
+                        .h(px(148.))
                         .py(px(14.))
                         .rounded(px(theme::RADIUS_LG))
                         .bg(panel_bg())
@@ -1476,9 +1567,16 @@ impl PlayerView {
             .right(px(28.))
             .top(px(92.))
             .w(px(if menu == Menu::Speed { 440. } else { 400. }))
-            .max_h(px(560.))
+            .max_h((self.viewport.height - px(104.)).min(px(560.)))
             .overflow_y_scroll()
+            .occlude()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                if let Some(menu) = this.menu.take() {
+                    this.menu_dismissed = Some((menu, Instant::now()));
+                    cx.notify();
+                }
+            }))
             .on_scroll_wheel(|_: &ScrollWheelEvent, _, cx| cx.stop_propagation())
             .child(header);
 
@@ -1508,6 +1606,12 @@ impl PlayerView {
                     ))
                     .child(divider())
                     .child(self.settings_row("set-speed", Icon::Speed, "Speed", format!("{}x", trim_number(self.state.speed)), cx, Menu::Speed));
+                if self.state.duration > 0. {
+                    panel = panel.child(crate::ui::menu::MenuRow::action("edit-markers", "Edit markers")
+                        .tone(crate::ui::menu::MenuTone::Media)
+                        .icon(Icon::Chapters)
+                        .on_click(cx.listener(|this, _, window, cx| this.open_marker_editor(window, cx))));
+                }
                 if !self.state.chapters.is_empty() {
                     let current = self
                         .state
@@ -1565,7 +1669,6 @@ impl PlayerView {
             }
             Menu::SubtitleStyle => {
                 let size = self.sub_style_index("sub_size", 2);
-                let preset = self.sub_style_index("sub_preset", 0);
                 let label = |text: &'static str| div().px(px(14.)).pt(px(6.)).pb(px(10.)).text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).child(text);
                 let sizes = div().px(px(14.)).flex().items_end().gap(px(16.)).children(SUB_SIZES.iter().enumerate().map(|(i, (_, font))| {
                     div()
@@ -1583,43 +1686,9 @@ impl PlayerView {
                         }))
                         .child("Aa")
                 }));
-                let tile = |i: usize, cx: &mut Context<Self>| {
-                    let selected = i == preset;
-                    let (bg, fg, slash) = match i {
-                        0 => (rgba(0x00000000).into(), white(1.), false),
-                        1 => (white(0.55), black(0.9), true),
-                        2 => (black(1.), rgba(0xf5e100ff).into(), false),
-                        _ => (rgba(0x00000000).into(), white(1.), true),
-                    };
-                    div()
-                        .id(SharedString::from(format!("sub-preset-{i}")))
-                        .relative()
-                        .size(px(56.))
-                        .rounded(px(8.))
-                        .cursor_pointer()
-                        .bg(bg)
-                        .border_2()
-                        .border_color(if selected { white(0.97) } else { rgba(0x00000000).into() })
-                        .hover(|s| s.border_color(white(0.5)))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            cx.stop_propagation();
-                            this.catalog.set_setting("sub_preset", &i.to_string());
-                            this.apply_subtitle_style();
-                            cx.notify();
-                        }))
-                        .child(div().text_size(px(22.)).font_weight(gpui::FontWeight::MEDIUM).text_color(fg).child("Aa"))
-                        .when(slash, |el| el.child(div().absolute().left(px(26.)).top(px(-4.)).w(px(1.5)).h(px(60.)).bg(white(0.7)).opacity(0.6)))
-                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(18.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon(Icon::Check, 11., black(1.)))))
-                };
                 panel = panel
                     .child(label("Size"))
                     .child(sizes)
-                    .child(divider())
-                    .child(label("Presets"))
-                    .child(div().px(px(14.)).pt(px(4.)).flex().gap(px(16.)).children((0..4).map(|i| tile(i, cx))))
                     .child(divider())
                     .child(self.stepper(
                         "sub-delay",
@@ -1699,7 +1768,7 @@ impl PlayerView {
                         .h(px(44.))
                         .rounded(px(8.))
                         .cursor_pointer()
-                        .bg(white(0.08))
+                        .bg(white(if selected { 0.18 } else { 0.08 }))
                         .border_2()
                         .border_color(if selected { white(0.97) } else { rgba(0x00000000).into() })
                         .hover(|s| s.bg(white(0.16)))
@@ -1715,7 +1784,6 @@ impl PlayerView {
                             cx.notify();
                         }))
                         .child(format!("{}x", trim_number(speed)))
-                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(17.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon(Icon::Check, 10., black(1.)))))
                 })));
             }
             Menu::Chapters => {
@@ -1888,9 +1956,9 @@ impl PlayerView {
                         "subtitles",
                         if self.state.subtitle_id.is_some() { Icon::SubtitlesOn } else { Icon::Subtitles },
                         22.,
-                        menu == Some(Menu::Subtitles),
+                        self.state.subtitle_id.is_some(),
                         cx,
-                        |this, _, _| this.toggle_menu(Menu::Subtitles),
+                        |this, _, _| this.toggle_subtitles(),
                     ))
                     .child(self.render_volume(cx))
                     .child(self.icon_button(
@@ -2021,7 +2089,6 @@ impl PlayerView {
         )
     }
 
-    /// Next Episode / Skip Intro actions on the right.
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = &self.state;
         let shown = self.scrub_fraction.map(|f| f as f64 * state.duration).unwrap_or(state.position);
@@ -2029,23 +2096,6 @@ impl PlayerView {
         let time = |text: String| {
             div().flex_none().min_w(px(58.)).text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(white(0.96)).child(text)
         };
-        let action = |id: &'static str, label: &'static str, primary: bool| {
-            div()
-                .id(id)
-                .h(px(38.))
-                .px(px(16.))
-                .flex()
-                .items_center()
-                .rounded(px(theme::RADIUS))
-                .cursor_pointer()
-                .text_size(px(16.))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .when(primary, |el| el.bg(white(0.97)).text_color(black(0.95)).hover(|s| s.bg(white(0.85))))
-                .when(!primary, |el| el.bg(rgba(0x262626e6)).text_color(white(0.97)).hover(|s| s.bg(rgba(0x3a3a3af0))))
-                .child(label)
-        };
-        let skip = self.skip_action();
-        let next = self.next_episode.is_some();
 
         div()
             .id("footer")
@@ -2100,6 +2150,7 @@ impl PlayerView {
                                     .bg(rgba(0x2b2b2bd9))
                                     .hover(|style| style.bg(rgba(0x404040e6)))
                                     .active(|style| style.bg(rgba(0x555555f0)))
+                                    .occlude()
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         cx.stop_propagation();
                                         this.poke();
@@ -2110,30 +2161,57 @@ impl PlayerView {
                             )
                             .child(self.icon_button("forward", Icon::Forward, 28., false, cx, |this, _, _| this.seek_by(10.0))),
                     )
-                    .child(
-                        div()
-                            .absolute()
-                            .right_0()
-                            .top_0()
-                            .bottom_0()
-                            .flex()
-                            .items_center()
-                            .gap(px(12.))
-                            .when(next, |el| {
-                                el.child(action("next", "Next Episode", false).on_click(cx.listener(|this, _, window, cx| {
-                                    cx.stop_propagation();
-                                    this.play_next(window, cx);
-                                })))
-                            })
-                            .when_some(skip, |el, (label, end)| {
-                                el.child(action("skip-intro", "", true).child(label).on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    let _ = this.player.seek_to(end);
-                                    cx.notify();
-                                })))
-                            }),
-                    ),
             )
+    }
+
+    /// Next Episode / Skip actions, bottom right. Painted above the chrome
+    /// and kept on screen while it is hidden, so a skip is always one click.
+    fn render_actions(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let visible = self.controls_wanted();
+        let skip = self.skip_action();
+        let next = self.next_episode.is_some() && visible;
+        if skip.is_none() && !next {
+            return None;
+        }
+        let action = |id: &'static str, label: String, primary: bool| {
+            div()
+                .id(id)
+                .h(px(38.))
+                .px(px(16.))
+                .flex()
+                .items_center()
+                .rounded(px(theme::RADIUS))
+                .cursor_pointer()
+                .text_size(px(16.))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .when(primary, |el| el.bg(white(0.97)).text_color(black(0.95)).hover(|s| s.bg(white(0.85))))
+                .when(!primary, |el| el.bg(rgba(0x262626e6)).text_color(white(0.97)).hover(|s| s.bg(rgba(0x3a3a3af0))))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(label)
+        };
+        Some(
+            div()
+                .absolute()
+                .right(px(28.))
+                // Level with the transport row, or lower when the chrome is hidden.
+                .bottom(px(if !visible { 40. } else if f32::from(self.viewport.width) < 900. { 128. } else { 31. }))
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .when(next, |el| {
+                    el.child(action("next", "Next Episode".into(), false).on_click(cx.listener(|this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.autoplay_fired = true;
+                        this.play_next(window, cx);
+                    })))
+                })
+                .when_some(skip, |el, (label, end)| {
+                    el.child(action("skip-intro", label.into(), true).on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.run_skip(label, end, window, cx);
+                    })))
+                }),
+        )
     }
 }
 
@@ -2148,7 +2226,7 @@ impl Render for PlayerView {
             _ => false,
         };
         theme::set_light(light && !has_media);
-        self.take_dropdown_dismiss();
+        self.viewport = window.viewport_size();
 
         div()
             .id("player")
@@ -2185,7 +2263,7 @@ impl Render for PlayerView {
                         .absolute()
                         .inset_0()
                         .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
-                            if this.menu.take().is_some() {
+                            if this.menu.take().is_some() || this.menu_just_dismissed().is_some() {
                                 cx.notify();
                                 return;
                             }
@@ -2209,7 +2287,6 @@ impl Render for PlayerView {
                     )
                 })
                 .children(self.render_osd())
-                .children(self.render_up_next(cx))
                 .child(
                     div()
                         .absolute()
@@ -2223,8 +2300,11 @@ impl Render for PlayerView {
                             |el, t| el.opacity(t),
                         ),
                 )
+                .children(self.render_up_next(cx))
+                .children(self.render_actions(cx))
                 .when_some(self.menu.filter(|_| self.controls_wanted()), |el, menu| el.child(self.render_menu(menu, cx)))
             })
+            .children(self.render_marker_editor(cx, window))
             .when_some(self.state.error.clone(), |el, error| {
                 el.child(
                     div().absolute().top(px(44.)).left_0().right_0().flex().justify_center().child(

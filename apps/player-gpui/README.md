@@ -66,7 +66,7 @@ touch beta build inputs and manual build-only runs produce a
 4. Publish the draft from GitHub Releases as a pre-release. Its tag is
    `plexy-beta-v<version>` and points to the tested commit. Give a corrected build
    a new version once the prior version is public. Users install beta updates by
-   downloading the new DMG.
+   choosing **Settings → Updates → Check for updates** and installing the new DMG.
 
 Stable Plexy continues through [Build & Release](../../.github/workflows/build.yml)
 and its Electron updater. Use the [Plexy feature audit](../../docs/APP_FEATURE_AUDIT.md)

@@ -6,6 +6,7 @@ mod app;
 mod assets;
 mod catalog;
 mod library_ui;
+mod marker_ui;
 mod media;
 mod metadata;
 mod mpv;
@@ -15,6 +16,7 @@ mod selftest;
 mod shell_ui;
 mod theme;
 mod ui;
+mod updates;
 
 use std::path::PathBuf;
 
@@ -102,7 +104,7 @@ fn main() {
                         traffic_light_position: Some(gpui::point(px(14.), px(14.))),
                     }),
                     window_background: WindowBackgroundAppearance::Opaque,
-                    window_min_size: Some(size(px(480.), px(300.))),
+                    window_min_size: Some(size(px(600.), px(360.))),
                     ..Default::default()
                 },
                 move |window, cx| {
@@ -122,6 +124,10 @@ fn main() {
                     let view = cx.new(|cx| PlayerView::new(gpui_view as usize, catalog, cx));
                     view.update(cx, |view, cx| {
                         window.focus(view.focus_handle());
+                        cx.observe_window_bounds(window, |view, _, cx| {
+                            view.episode_menu = None;
+                            cx.notify();
+                        }).detach();
                         if let Some(file) = &file {
                             view.open(file, window, cx);
                         }

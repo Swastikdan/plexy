@@ -106,6 +106,31 @@ async fn key(this: &WeakEntity<PlayerView>, cx: &mut Cx, keystroke: &str) {
     sleep(cx, 350).await;
 }
 
+/// Clicks at window point (x, y) through the window's real NSEvent path,
+/// so it goes through GPUI hit-testing exactly like a person's click.
+async fn click(this: &WeakEntity<PlayerView>, cx: &mut Cx, x: f32, y: f32) {
+    mouse_click(this, cx, x, y, false).await;
+}
+
+async fn mouse_click(this: &WeakEntity<PlayerView>, cx: &mut Cx, x: f32, y: f32, right: bool) {
+    let Ok(view) = this.update(cx, |view, _| view.gpui_view) else { return };
+    let (down, up) = if right { (3, 4) } else { (1, 2) };
+    for (kind, wait) in [(0, 120u64), (down, 60), (up, 0)] {
+        mpv::debug_mouse(view as *mut c_void, kind, x as f64, y as f64);
+        sleep(cx, wait).await;
+    }
+    sleep(cx, 400).await;
+}
+
+/// Window-space centre of the transport's play button.
+fn play_button_point(cx: &mut Cx) -> (f32, f32) {
+    cx.update(|window, _| {
+        let size = window.viewport_size();
+        (f32::from(size.width) / 2.0, f32::from(size.height) - 18.0 - 32.0)
+    })
+    .unwrap_or((0.0, 0.0))
+}
+
 async fn screenshot(this: &WeakEntity<PlayerView>, cx: &mut Cx, dir: &PathBuf, name: &str, report: &mut Report) {
     // Region capture records whatever is on screen there, so the player
     // must be the frontmost window first.
@@ -145,6 +170,97 @@ pub fn run(report_path: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
         let start = s.position;
         let playing = wait_until(&this, cx, 6_000, |s| s.position > start + 0.8).await;
         report.check("plays", playing, format!("position advanced to {:.2}s", state(&this, cx).position));
+
+        // 1b. The on-screen play button pauses and resumes.
+        let (px_, py_) = play_button_point(cx);
+        // Let the chrome auto-hide first: the click must still land.
+        sleep(cx, 3_200).await;
+        let before = state(&this, cx).paused;
+        click(&this, cx, px_, py_).await;
+        let toggled = wait_until(&this, cx, 1_500, |s| s.paused != before).await;
+        let paused_at = state(&this, cx).position;
+        sleep(cx, 2_000).await;
+        let paused = state(&this, cx);
+        let icon_paused = this.update(cx, |view, _| view.state.paused).unwrap_or(before);
+        report.check("play button stays paused", toggled && icon_paused && paused.paused && (paused.position - paused_at).abs() < 0.15,
+            format!("paused {} at {:.2}s (started pause at {paused_at:.2}s)", paused.paused, paused.position));
+        click(&this, cx, px_, py_).await;
+        let back = wait_until(&this, cx, 1_500, |s| s.paused == before).await;
+        let resumed_at = state(&this, cx).position;
+        let advancing = wait_until(&this, cx, 3_000, |s| !s.paused && s.position > resumed_at + 0.8).await;
+        report.check("play button resumes", back && advancing, format!("paused {}, position {:.2}s", state(&this, cx).paused, state(&this, cx).position));
+
+        // Use the player menu's editor and verify the skip action and saved marker.
+        let (middle, _) = play_button_point(cx);
+        click(&this, cx, 2. * middle - 48., 63.).await;
+        click(&this, cx, 2. * middle - 190., 305.).await;
+        let editing = this.update(cx, |v, _| v.marker_editor.is_some()).unwrap_or(false);
+        report.check("player menu opens Edit markers", editing, format!("open {editing}"));
+        if editing {
+            this.update(cx, |v, cx| {
+                if let Some(editor) = &mut v.marker_editor {
+                    editor.start = "0".into();
+                    editor.end = "24".into();
+                    cx.notify();
+                }
+            }).ok();
+            screenshot(&this, cx, &dir, "marker-editor", &mut report).await;
+            this.update(cx, |v, cx| v.save_marker(false, cx)).ok();
+            let marker = this.update(cx, |v, _| {
+                let Some(path) = &v.media else { return false };
+                v.skip_action().is_some_and(|(label, end)| label == "Skip intro" && end == 24.)
+                    && v.catalog.manual_segments(path).intro.is_some_and(|marker| marker.end == 24.)
+            }).unwrap_or(false);
+            report.check("manual intro marker persists and offers Skip intro", marker, format!("active {marker}"));
+            screenshot(&this, cx, &dir, "skip-intro", &mut report).await;
+            click(&this, cx, 2. * middle - 92., py_ + 1.).await;
+            let skipped = wait_until(&this, cx, 1_500, |s| s.position >= 23.9).await;
+            report.check("Skip intro seeks to marker end", skipped, format!("position {:.2}s", state(&this, cx).position));
+        }
+        this.update(cx, |v, cx| {
+            if let Some(path) = &v.media {
+                let _ = v.catalog.save_manual_segment(path, crate::catalog::SegmentKind::Intro, None);
+                v.manual_segments = Default::default();
+            }
+            v.menu = None;
+            cx.notify();
+        }).ok();
+
+        // 1c. An open menu closes on a press anywhere outside it, including
+        // the header above it, and that press does not pause playback.
+        this.update(cx, |view, cx| {
+            view.toggle_menu_for_test(crate::app::Menu::More);
+            cx.notify();
+        })
+        .ok();
+        sleep(cx, 300).await;
+        let paused_before = state(&this, cx).paused;
+        let (w, _) = play_button_point(cx);
+        click(&this, cx, w, 60.0).await;
+        let closed = this.update(cx, |view, _| view.menu.is_none()).unwrap_or(false);
+        report.check("menu closes on header press", closed && state(&this, cx).paused == paused_before, format!("menu closed {closed}, paused {}", state(&this, cx).paused));
+
+        // 1d. The Up Next card's Play now opens the next episode even though
+        // it sits over the (hidden) footer.
+        let next = this.update(cx, |view, _| view.next_episode.clone()).ok().flatten();
+        if let Some(next) = next {
+            let duration = state(&this, cx).duration;
+            this.update(cx, |view, _| {
+                let _ = view.player.seek_to(duration - 40.0);
+            })
+            .ok();
+            sleep(cx, 3_200).await;
+            let (w, h) = cx.update(|window, _| {
+                let size = window.viewport_size();
+                (f32::from(size.width), f32::from(size.height))
+            })
+            .unwrap_or((0.0, 0.0));
+            click(&this, cx, w - 178.0, h - 168.0).await;
+            sleep(cx, 800).await;
+            let now = this.update(cx, |view, _| view.media.clone()).ok().flatten();
+            report.check("up next Play now opens next episode", now.as_ref() == Some(&next), format!("now {:?}", now.map(|p| p.display().to_string())));
+            let _ = wait_until(&this, cx, 15_000, |s| s.loaded && s.duration > 0.0).await;
+        }
 
         // 2. Tracks.
         let _ = wait_until(&this, cx, 3_000, |s| !s.tracks.is_empty()).await;
@@ -229,8 +345,9 @@ pub fn run(report_path: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
             "hover previews generated",
             shown == 5,
             format!(
-                "{shown}/5 frames, {} decoded by the preview core",
-                this.update(cx, |v, _| v.previews().map(|p| p.generated()).unwrap_or(0)).unwrap_or(0)
+                "{shown}/5 frames, {} decoded by the preview core, {} from the disk cache",
+                this.update(cx, |v, _| v.previews().map(|p| p.generated()).unwrap_or(0)).unwrap_or(0),
+                this.update(cx, |v, _| v.previews().map(|p| p.from_disk()).unwrap_or(0)).unwrap_or(0)
             ),
         );
         report.check(
@@ -434,14 +551,97 @@ pub fn run_library(dir: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
             .ok();
             screenshot(&this, cx, &dir, name, &mut report).await;
         }
+        this.update_in(cx, |v, window, cx| {
+            v.screen = crate::library_ui::Screen::Settings;
+            v.settings_section = crate::shell_ui::SettingsSection::Playback;
+            window.resize(size(px(640.), px(390.)));
+            cx.notify();
+        }).ok();
+        sleep(cx, 350).await;
+        let quarter = cx.update(|window, _| window.viewport_size()).ok();
+        report.check("quarter-screen window", quarter == Some(size(px(640.), px(390.))), format!("{quarter:?}"));
+        click(&this, cx, 503., 350.).await;
+        let subtitle_open = this.update(cx, |v, _| v.open_select == Some("subtitle_lang")).unwrap_or(false);
+        report.check("subtitle dropdown opens with a stationary pointer", subtitle_open, format!("open {subtitle_open}"));
+        screenshot(&this, cx, &dir, "lib-quarter-subtitle-menu", &mut report).await;
+        click(&this, cx, 502., 74.).await;
+        let selected = this.update(cx, |v, _| v.catalog.setting("subtitle_lang")).ok().flatten();
+        report.check("subtitle menu selects a language", selected.as_deref() == Some("eng"), format!("{selected:?}"));
+        this.update_in(cx, |v, window, cx| {
+            v.open_select = None;
+            window.resize(size(px(640.), px(760.)));
+            cx.notify();
+        }).ok();
+        sleep(cx, 350).await;
+        let half = cx.update(|window, _| window.viewport_size()).ok();
+        report.check("half-screen window", half == Some(size(px(640.), px(760.))), format!("{half:?}"));
+        click(&this, cx, 503., 503.).await;
+        let audio_open = this.update(cx, |v, _| v.open_select == Some("audio_lang")).unwrap_or(false);
+        report.check("audio dropdown opens with a stationary pointer", audio_open, format!("open {audio_open}"));
+        screenshot(&this, cx, &dir, "lib-half-audio-menu", &mut report).await;
+        this.update(cx, |v, cx| {
+            v.open_select = None;
+            v.screen = crate::library_ui::Screen::Libraries;
+            cx.notify();
+        }).ok();
+        sleep(cx, 250).await;
+        click(&this, cx, 468., 214.).await;
+        let adding = this.update(cx, |v, _| v.add_library_open).unwrap_or(false);
+        report.check("Add a Library opens the type picker", adding, format!("open {adding}"));
+        screenshot(&this, cx, &dir, "lib-half-add-library", &mut report).await;
+        this.update_in(cx, |v, window, cx| {
+            v.add_library_open = false;
+            v.screen = crate::library_ui::Screen::Settings;
+            window.resize(size(px(1280.), px(390.)));
+            cx.notify();
+        }).ok();
+        screenshot(&this, cx, &dir, "lib-horizontal-half-settings", &mut report).await;
+        let horizontal = cx.update(|window, _| window.viewport_size()).ok();
+        report.check("horizontal half-screen window", horizontal == Some(size(px(1280.), px(390.))), format!("{horizontal:?}"));
+
+        this.update(cx, |v, cx| {
+            v.settings_section = crate::shell_ui::SettingsSection::Updates;
+            cx.notify();
+        }).ok();
+        sleep(cx, 300).await;
+        click(&this, cx, 340., 319.).await;
+        let started = Instant::now();
+        let update_status = loop {
+            use crate::updates::UpdateStatus;
+            match this.update(cx, |v, _| v.update_status.clone()) {
+                Ok(UpdateStatus::Current) => break Some("Up to date".to_string()),
+                Ok(UpdateStatus::Available { version, .. }) => break Some(format!("Update available: {version}")),
+                Ok(UpdateStatus::Failed) => break Some("Network error shown".into()),
+                Ok(UpdateStatus::Checking) if started.elapsed() < Duration::from_secs(15) => sleep(cx, 150).await,
+                _ => break None,
+            }
+        };
+        report.check("Check for updates displays a result", update_status.is_some(), format!("{update_status:?}"));
+        screenshot(&this, cx, &dir, "lib-settings-updates", &mut report).await;
+        this.update_in(cx, |_, window, _| window.resize(size(px(1280.), px(760.)))).ok();
+
         let first_show = this.update(cx, |v, _| v.shows().first().map(|s| (s.key.clone(), s.next_up().map(|e| e.path.clone())))).ok().flatten();
-        if let Some((key, next)) = first_show {
+        if let Some((show_key, next)) = first_show {
             this.update(cx, |v, cx| {
-                v.screen = crate::library_ui::Screen::Show(key);
+                v.screen = crate::library_ui::Screen::Show(show_key);
                 cx.notify();
             })
             .ok();
             screenshot(&this, cx, &dir, "lib-4-show", &mut report).await;
+            mouse_click(&this, cx, 120., 671., true).await;
+            let episode_menu = this.update(cx, |v, _| v.episode_menu.as_ref().map(|(path, _)| path.clone())).ok().flatten();
+            report.check("right-click opens the episode action menu", episode_menu.is_some(), format!("{episode_menu:?}"));
+            screenshot(&this, cx, &dir, "lib-episode-context", &mut report).await;
+            if let Some(episode) = episode_menu {
+                click(&this, cx, 160., 646.).await;
+                let watched = this.update(cx, |v, _| v.catalog.progress(&episode).is_some_and(|p| p.watched())).unwrap_or(false);
+                report.check("episode menu marks watched", watched, format!("watched {watched}"));
+                mouse_click(&this, cx, 120., 671., true).await;
+                click(&this, cx, 160., 646.).await;
+                let removed = this.update(cx, |v, _| v.catalog.progress(&episode).is_none()).unwrap_or(false);
+                report.check("episode menu removes watched state", removed, format!("removed {removed}"));
+            }
+            key(&this, cx, "escape").await;
             if let Some(path) = next {
                 this.update_in(cx, |v, window, cx| v.open(&path, window, cx)).ok();
                 let loaded = wait_until(&this, cx, 10_000, |s| s.loaded && s.position > 1.5).await;

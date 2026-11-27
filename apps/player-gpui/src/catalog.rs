@@ -209,6 +209,7 @@ fn find_poster(path: &Path) -> Option<PathBuf> {
 pub struct Catalog {
     db: Arc<Mutex<Connection>>,
     pub status: Arc<Mutex<ScanStatus>>,
+    pub(crate) metadata_work: Arc<Mutex<()>>,
     /// Bumped when background metadata or marker work changes the database,
     /// so the UI can reload without polling the network.
     metadata_epoch: Arc<AtomicU64>,
@@ -272,10 +273,13 @@ impl Catalog {
                path TEXT NOT NULL, kind TEXT NOT NULL, start_seconds REAL NOT NULL, end_seconds REAL NOT NULL,
                confidence REAL, submission_count INTEGER, source TEXT NOT NULL, updated_at INTEGER NOT NULL,
                PRIMARY KEY(path, kind));
+             CREATE TABLE IF NOT EXISTS local_skip_segments (
+               path TEXT NOT NULL, kind TEXT NOT NULL, start_seconds REAL NOT NULL, end_seconds REAL NOT NULL,
+               PRIMARY KEY(path, kind));
              CREATE TABLE IF NOT EXISTS skip_lookups (
                path TEXT PRIMARY KEY, status TEXT NOT NULL, imdb_id TEXT, expires_at INTEGER NOT NULL);",
         )?;
-        let catalog = Self { db: Arc::new(Mutex::new(db)), status: Arc::new(Mutex::new(ScanStatus::default())), metadata_epoch: Arc::new(AtomicU64::new(0)) };
+        let catalog = Self { db: Arc::new(Mutex::new(db)), status: Arc::new(Mutex::new(ScanStatus::default())), metadata_work: Default::default(), metadata_epoch: Arc::new(AtomicU64::new(0)) };
         catalog.import_legacy_progress(&dir);
         Ok(catalog)
     }
@@ -374,11 +378,23 @@ impl Catalog {
     }
 
     pub fn add_library(&self, kind: LibraryKind, folder: &Path) -> Result<i64> {
-        let name = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| kind.label().into());
-        let db = self.db.lock();
-        db.execute("INSERT INTO libraries(name, kind, auto_refresh, created_at) VALUES (?1, ?2, 1, ?3)", params![name, kind.as_str(), now()])?;
-        let id = db.last_insert_rowid();
-        db.execute("INSERT INTO roots(library_id, path) VALUES (?1, ?2)", params![id, folder.display().to_string()])?;
+        self.add_library_with_folders(kind, &[folder])
+    }
+
+    pub fn add_library_with_folders(&self, kind: LibraryKind, folders: &[impl AsRef<Path>]) -> Result<i64> {
+        let first = folders.first().ok_or_else(|| anyhow::anyhow!("Choose at least one folder"))?.as_ref();
+        let name = first.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| kind.label().into());
+        let mut db = self.db.lock();
+        let transaction = db.transaction()?;
+        transaction.execute("INSERT INTO libraries(name, kind, auto_refresh, created_at) VALUES (?1, ?2, 1, ?3)", params![name, kind.as_str(), now()])?;
+        let id = transaction.last_insert_rowid();
+        for folder in folders {
+            transaction.execute(
+                "INSERT OR IGNORE INTO roots(library_id, path) VALUES (?1, ?2)",
+                params![id, folder.as_ref().display().to_string()],
+            )?;
+        }
+        transaction.commit()?;
         Ok(id)
     }
 
@@ -640,11 +656,21 @@ pub enum SegmentKind {
 }
 
 impl SegmentKind {
+    pub const ALL: [Self; 3] = [Self::Intro, Self::Recap, Self::Outro];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Intro => "intro",
             Self::Recap => "recap",
             Self::Outro => "credits",
+        }
+    }
+
+    pub fn skip_label(self) -> &'static str {
+        match self {
+            Self::Intro => "Skip intro",
+            Self::Recap => "Skip recap",
+            Self::Outro => "Skip credits",
         }
     }
 }
@@ -675,9 +701,17 @@ impl SkipSegments {
         }
     }
 
+    pub fn set(&mut self, kind: SegmentKind, window: Option<SegmentWindow>) {
+        match kind {
+            SegmentKind::Intro => self.intro = window,
+            SegmentKind::Recap => self.recap = window,
+            SegmentKind::Outro => self.outro = window,
+        }
+    }
+
     /// The window the playhead is inside right now, if any.
     pub fn active(self, position: f64) -> Option<(SegmentKind, SegmentWindow)> {
-        [SegmentKind::Intro, SegmentKind::Recap, SegmentKind::Outro]
+        SegmentKind::ALL
             .into_iter()
             .find_map(|kind| self.kind(kind).filter(|w| position >= w.start && position < w.end).map(|w| (kind, w)))
     }
@@ -777,6 +811,10 @@ impl Catalog {
             return None;
         }
         Some(data_dir().join("artwork").join(name))
+    }
+
+    pub fn clear_tmdb_cache(&self) -> rusqlite::Result<usize> {
+        self.db.lock().execute("DELETE FROM tmdb_cache", [])
     }
 
     pub fn tmdb_token(&self) -> Option<String> {
@@ -1002,7 +1040,7 @@ impl Catalog {
 
     /// Titles that want metadata: no stored row, or a stale attempt. Shows
     /// first (their artwork covers every episode card), then movies.
-    pub fn titles_missing_metadata(&self) -> Vec<EnrichTarget> {
+    pub fn metadata_targets(&self, refresh_all: bool) -> Vec<EnrichTarget> {
         let items = self.items();
         let tv = self.tv_library_ids_pub();
         let mut seen: HashSet<String> = HashSet::new();
@@ -1017,7 +1055,7 @@ impl Catalog {
                 // Matched before artwork downloads worked: backfill the art.
                 Some(meta) => meta.matched && (meta.poster.is_none() || meta.backdrop.is_none() || meta.logo.is_none()),
             };
-            if needs && self.recently_attempted(&key, 30 * 60_000) {
+            if refresh_all || (needs && self.recently_attempted(&key, 30 * 60_000)) {
                 targets.push(EnrichTarget { key, title, year, is_show });
             }
         };
@@ -1121,6 +1159,35 @@ impl Catalog {
             }
         }
         segments
+    }
+
+    pub fn manual_segments(&self, path: &Path) -> SkipSegments {
+        let db = self.db.lock();
+        let mut segments = SkipSegments::default();
+        for kind in SegmentKind::ALL {
+            let window = db.query_row(
+                "SELECT start_seconds, end_seconds FROM local_skip_segments WHERE path = ?1 AND kind = ?2",
+                params![path.display().to_string(), kind.label()],
+                |row| Ok(SegmentWindow { start: row.get(0)?, end: row.get(1)?, confidence: None, submission_count: None }),
+            ).ok();
+            segments.set(kind, window);
+        }
+        segments
+    }
+
+    pub fn save_manual_segment(&self, path: &Path, kind: SegmentKind, window: Option<SegmentWindow>) -> rusqlite::Result<()> {
+        let path = path.display().to_string();
+        let db = self.db.lock();
+        if let Some(window) = window {
+            db.execute(
+                "INSERT INTO local_skip_segments(path, kind, start_seconds, end_seconds) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(path, kind) DO UPDATE SET start_seconds = excluded.start_seconds, end_seconds = excluded.end_seconds",
+                params![path, kind.label(), window.start, window.end],
+            )?;
+        } else {
+            db.execute("DELETE FROM local_skip_segments WHERE path = ?1 AND kind = ?2", params![path, kind.label()])?;
+        }
+        Ok(())
     }
 
     pub fn skip_lookup(&self, path: &Path) -> Option<(String, i64)> {
@@ -1343,7 +1410,12 @@ mod tests {
         }
         std::env::set_var("PLEXY_PLAYER_DATA", base.join("data"));
         let catalog = Catalog::open().unwrap();
-        let id = catalog.add_library(LibraryKind::Shows, &base.join("TV")).unwrap();
+        let roots = [base.join("TV"), base.join("TV Archive")];
+        std::fs::create_dir_all(&roots[1]).unwrap();
+        let id = catalog.add_library_with_folders(LibraryKind::Shows, &roots).unwrap();
+        let libraries = catalog.libraries();
+        assert_eq!(libraries.len(), 1);
+        assert_eq!(libraries[0].roots.iter().map(|root| root.path.clone()).collect::<Vec<_>>(), roots);
         catalog.scan(None, false);
         while catalog.status.lock().running {
             std::thread::sleep(std::time::Duration::from_millis(20));
