@@ -61,6 +61,22 @@ export async function toggleSaved(title: RemoteTitle): Promise<boolean> {
   return !exists;
 }
 
+/** Drop the online bookmark after a downloaded copy joins the library. */
+export async function removeSaved(
+  mediaType: RemoteTitle["mediaType"],
+  tmdbId: number,
+) {
+  const current = libraryStore.get();
+  const next = current.filter(
+    (entry) =>
+      !(
+        entry.title.mediaType === mediaType &&
+        entry.title.tmdbId === tmdbId
+      ),
+  );
+  if (next.length !== current.length) await writeLibrary(next);
+}
+
 export function isSaved(title: Pick<RemoteTitle, "mediaType" | "tmdbId">) {
   const key = savedKey(title);
   return libraryStore.get().some((entry) => savedKey(entry.title) === key);

@@ -78,6 +78,13 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
             if (typeof saved.onlineEpisodeSelector !== "boolean") saved.onlineEpisodeSelector = true;
             if (typeof saved.onlineDisclaimerSeen !== "boolean") saved.onlineDisclaimerSeen = false;
+            if (![2160, 1080, 720, 480].includes(saved.movyMaxHeight)) saved.movyMaxHeight = 1080;
+            if (typeof saved.movyWifiOnly !== "boolean") saved.movyWifiOnly = true;
+            if (typeof saved.movyMultiStream !== "boolean") saved.movyMultiStream = true;
+            if (typeof saved.movyBackgroundDownloads !== "boolean") saved.movyBackgroundDownloads = true;
+            if (typeof saved.movyNotifications !== "boolean") saved.movyNotifications = true;
+            if (typeof saved.movyAutoCreateAccount !== "boolean") saved.movyAutoCreateAccount = false;
+            if (![1, 2, 3].includes(saved.movyAccountCap)) saved.movyAccountCap = 2;
             const familyLevels: FamilyLevel[] = ["off", "little", "older", "teen"];
             if (!familyLevels.includes(saved.familyLevel)) saved.familyLevel = "off";
             if (typeof saved.familyBlockUnrated !== "boolean") saved.familyBlockUnrated = true;
