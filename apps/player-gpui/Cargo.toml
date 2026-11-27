@@ -1,6 +1,6 @@
 [package]
 name = "plexy-player"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 publish = false
 description = "Local-file Plexy player for Apple Silicon macOS, built on GPUI and libmpv."
