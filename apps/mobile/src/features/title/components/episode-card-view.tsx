@@ -6,6 +6,10 @@ import { useColors } from "@/shared/theme";
 import { PosterImage } from "@/shared/ui/poster-image";
 import { CheckboxIndicator } from "@/shared/ui/checkbox-indicator";
 import { Eye, Globe, Play } from "@/shared/ui/icons";
+import {
+  DownloadButton,
+  type DownloadButtonState,
+} from "@/features/movy/components/download-button";
 
 export interface EpisodeArtwork {
   uri: string;
@@ -33,6 +37,9 @@ export function EpisodeCardView({
   onToggleWatched,
   accessibilityLabel,
   online = false,
+  downloadState,
+  downloadProgress,
+  onDownload,
 }: {
   artwork?: EpisodeArtwork;
   title: string;
@@ -49,6 +56,9 @@ export function EpisodeCardView({
   onToggleWatched?: () => void;
   accessibilityLabel?: string;
   online?: boolean;
+  downloadState?: DownloadButtonState;
+  downloadProgress?: number;
+  onDownload?: () => void;
 }) {
   const colors = useColors();
   return (
@@ -125,6 +135,14 @@ export function EpisodeCardView({
             {title}
           </Text>
           <View className="flex-row items-center gap-1.5">
+            {onDownload && !selecting ? (
+              <DownloadButton
+                state={downloadState ?? "idle"}
+                progress={downloadProgress}
+                size={30}
+                onPress={onDownload}
+              />
+            ) : null}
             {onToggleWatched && !selecting && (
               <Pressable
                 onPress={onToggleWatched}

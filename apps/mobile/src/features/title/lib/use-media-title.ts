@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { useClient } from "@/core/client/client-provider";
+import { localLibrary } from "@/core/library/local-runtime";
 import type {
   ItemCard,
   LocalCatalog,
@@ -99,6 +100,10 @@ function remoteDetailToTitleDetail(
  * Resolves local and online title inputs into one shape. A downloaded copy
  * always wins, so every screen renders the offline title page when it exists.
  */
+const subscribeLibrary = (listener: () => void) =>
+  localLibrary.subscribe(listener);
+const libraryVersion = () => localLibrary.version;
+
 export function useMediaTitle(
   input: MediaTitleInput,
   api: LocalCatalog,
@@ -111,14 +116,25 @@ export function useMediaTitle(
   const fallbackName = remoteInput?.fallbackName;
   const inputMediaType = remoteInput?.mediaType;
   const inputTmdbId = remoteInput?.tmdbId;
+  // A finished download can be imported while an online title page is open.
+  // Subscribe to the local library so the page converts to the offline view
+  // without requiring a navigation or remount.
+  const libraryRevision = useSyncExternalStore(
+    subscribeLibrary,
+    libraryVersion,
+    libraryVersion,
+  );
   const localMatch = useMemo(() => {
+    // The revision is intentionally read so a library import invalidates this
+    // lookup and converts an open online title page to its offline copy.
+    void libraryRevision;
     if (!inputMediaType || inputTmdbId == null) return null;
     return (
       api
         .titlesByTmdb()
         .get(`${inputMediaType}:${inputTmdbId}`) ?? null
     );
-  }, [api, inputMediaType, inputTmdbId]);
+  }, [api, inputMediaType, inputTmdbId, libraryRevision]);
 
   const resolvedLocalId = localId ?? localMatch?.publicId;
   const local = useResource(

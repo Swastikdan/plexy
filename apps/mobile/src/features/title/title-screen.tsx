@@ -66,6 +66,17 @@ import { useRemoteTitleActions } from "@/features/remote/hooks/use-remote-title-
 import { useRecommendations } from "@/features/remote/lib/use-recommendations";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { useRemoteNavigation } from "@/features/remote/lib/use-remote-navigation";
+import { useMovy } from "@/features/movy/movy-provider";
+import { AccountSheet } from "@/features/movy/components/account-sheet";
+import {
+  QualitySheet,
+  type DownloadTarget,
+} from "@/features/movy/components/quality-sheet";
+import {
+  DownloadButton,
+  downloadButtonState,
+  type DownloadButtonState,
+} from "@/features/movy/components/download-button";
 import { lockPlayerLandscape } from "@/features/player/hooks/use-player-orientation";
 import { fetchSeason, peekSeason, type RemoteMediaType } from "@/features/remote/lib/tmdb";
 import {
@@ -134,6 +145,7 @@ export function TitleScreen({
   const remoteActions = useRemoteTitleActions();
   const { api, progress, preferences } = useClient();
   const { save, isSaved } = useRemote();
+  const movy = useMovy();
   const remoteNavigation = useRemoteNavigation();
   const insets = useSafeAreaInsets();
   const onlineEnabled =
@@ -175,6 +187,15 @@ export function TitleScreen({
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionOverflows, setDescriptionOverflows] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [downloadTarget, setDownloadTarget] = useState<DownloadTarget | null>(null);
+  const [downloadAccountOpen, setDownloadAccountOpen] = useState(false);
+  const pendingDownload = useRef<DownloadTarget | null>(null);
+  React.useEffect(() => {
+    if (!movy.active || !pendingDownload.current) return;
+    const target = pendingDownload.current;
+    pendingDownload.current = null;
+    setDownloadTarget(target);
+  }, [movy.active]);
   const [savedBusy, setSavedBusy] = useState(false);
   const [localWatchlistBusy, setLocalWatchlistBusy] = useState(false);
   const [watchlistOverride, setWatchlistOverride] = useState<boolean | null>(
@@ -729,6 +750,97 @@ export function TitleScreen({
     const titleName = remoteDetail?.title || item?.name || "";
     openRemotePlayer(null, null, titleName);
   }
+  function downloadRecordFor(
+    seasonNumber: number | null,
+    episodeNumber: number | null,
+  ) {
+    if (!remoteMediaType || tmdbId == null) return undefined;
+    return movy.findDownload(
+      remoteMediaType,
+      tmdbId,
+      seasonNumber,
+      episodeNumber,
+    );
+  }
+  function downloadStateFor(
+    seasonNumber: number | null,
+    episodeNumber: number | null,
+  ): DownloadButtonState {
+    return downloadButtonState(
+      downloadRecordFor(seasonNumber, episodeNumber),
+    );
+  }
+  function downloadProgressFor(
+    seasonNumber: number | null,
+    episodeNumber: number | null,
+  ) {
+    return downloadRecordFor(seasonNumber, episodeNumber)?.progress ?? 0;
+  }
+  function openDownload(
+    seasonNumber: number | null,
+    episodeNumber: number | null,
+    episodeTitle?: string | null,
+  ) {
+    if (playbackBlocked) {
+      setActionError(playbackBlockedMessage);
+      return;
+    }
+    if (!remoteDetail || !remoteMediaType || tmdbId == null) {
+      setActionError(
+        "This title is not matched to TMDB, so downloads are unavailable.",
+      );
+      return;
+    }
+    const existing = downloadRecordFor(seasonNumber, episodeNumber);
+    if (existing?.status === "completed") {
+      setActionError("This download is already in your library.");
+      return;
+    }
+    if (existing?.status === "paused") {
+      void movy.resume(existing.id);
+      return;
+    }
+    if (
+      existing &&
+      (existing.status === "queued" ||
+        existing.status === "downloading" ||
+        existing.status === "verifying")
+    ) {
+      push("/settings/downloads");
+      return;
+    }
+    // A failed record may hold an expired signed URL. Open the quality sheet
+    // so the user can mint a fresh link; the provider replaces the old record.
+    const titleName = remoteDetail.title || item?.name || "";
+    const isEpisode = remoteMediaType === "tv";
+    const display = isEpisode
+      ? `${titleName} · S${seasonNumber ?? 1}E${episodeNumber ?? 1}`
+      : titleName;
+    const target: DownloadTarget = {
+      ref: {
+        title: titleName,
+        mediaType: remoteMediaType,
+        year: remoteDetail.year ?? item?.year ?? null,
+        tmdbId,
+        imdbId: remoteDetail.imdbId ?? null,
+        season: isEpisode ? (seasonNumber ?? 1) : null,
+        episode: isEpisode ? (episodeNumber ?? 1) : null,
+      },
+      meta: {
+        title: titleName,
+        episodeTitle: episodeTitle ?? null,
+        display,
+        poster: remoteDetail.poster ?? item?.poster ?? null,
+      },
+    };
+    if (!movy.active) {
+      movy.clearError();
+      pendingDownload.current = target;
+      setDownloadAccountOpen(true);
+      return;
+    }
+    setDownloadTarget(target);
+  }
   const hasEpisodes = Boolean(
     item?.kind === "series" ||
       detail?.episodes?.length ||
@@ -1116,6 +1228,15 @@ export function TitleScreen({
             )
           }
           onLongPressRemoteEpisode={openRemoteEpisodeActions}
+          onDownload={(seasonNumber, episodeNumber, episodeTitle) =>
+            openDownload(seasonNumber, episodeNumber, episodeTitle)
+          }
+          downloadStateFor={(seasonNumber, episodeNumber) =>
+            downloadStateFor(seasonNumber, episodeNumber)
+          }
+          downloadProgressFor={(seasonNumber, episodeNumber) =>
+            downloadProgressFor(seasonNumber, episodeNumber)
+          }
         />
       )}
     </View>
@@ -1500,27 +1621,64 @@ export function TitleScreen({
           disabled={hybridDisabled}
           onPress={playHybrid}
           secondary={
-            detail.trailer?.provider?.toLowerCase() === "youtube" ? (
-              <NativeButton
-                variant="secondary"
-                size="lg"
-                isIconOnly
-                accessibilityLabel="Watch trailer"
-                className="rounded-full bg-surface"
-                style={{ width: control.height, height: control.height }}
-                isDisabled={!online}
-                onPress={() => {
-                  void Linking.openURL(
-                    `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
-                  ).catch((e) => setActionError(String(e)));
-                }}
-              >
-                <Film size={22} color={colors.ink} />
-              </NativeButton>
-            ) : undefined
+            <View className="flex-row gap-2">
+              {detail.trailer?.provider?.toLowerCase() === "youtube" ? (
+                <NativeButton
+                  variant="secondary"
+                  size="lg"
+                  isIconOnly
+                  accessibilityLabel="Watch trailer"
+                  className="rounded-full bg-surface"
+                  style={{ width: control.height, height: control.height }}
+                  isDisabled={!online}
+                  onPress={() => {
+                    void Linking.openURL(
+                      `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
+                    ).catch((e) => setActionError(String(e)));
+                  }}
+                >
+                  <Film size={22} color={colors.ink} />
+                </NativeButton>
+              ) : null}
+              {!media.isOffline &&
+              remoteMediaType === "movie" &&
+              remoteDetail &&
+              tmdbId != null ? (
+                <DownloadButton
+                  state={downloadStateFor(null, null)}
+                  progress={downloadProgressFor(null, null)}
+                  size={control.height}
+                  onPress={() => openDownload(null, null)}
+                />
+              ) : null}
+            </View>
           }
         />
       )}
+
+      <AccountSheet
+        key={downloadAccountOpen ? "download-account-open" : "download-account-closed"}
+        visible={downloadAccountOpen}
+        onClose={() => {
+          setDownloadAccountOpen(false);
+          pendingDownload.current = null;
+        }}
+      />
+      <QualitySheet
+        key={
+          downloadTarget
+            ? `${downloadTarget.ref.mediaType}:${downloadTarget.ref.tmdbId}:${downloadTarget.ref.season ?? 0}:${downloadTarget.ref.episode ?? 0}`
+            : "quality-closed"
+        }
+        visible={Boolean(downloadTarget)}
+        target={downloadTarget}
+        onClose={() => setDownloadTarget(null)}
+        onAccount={() => {
+          movy.clearError();
+          setDownloadTarget(null);
+          setDownloadAccountOpen(true);
+        }}
+      />
     </Animated.View>
   );
 }
@@ -1547,6 +1705,9 @@ function SeasonEpisodes({
   tmdbId,
   onToggleRemoteWatched,
   onLongPressRemoteEpisode,
+  onDownload,
+  downloadStateFor,
+  downloadProgressFor,
 }: {
   episodes: HybridEpisode[];
   api: LocalCatalog;
@@ -1571,6 +1732,16 @@ function SeasonEpisodes({
     episode: number,
     watched: boolean,
   ) => void;
+  onDownload: (
+    season: number,
+    episode: number,
+    episodeTitle?: string | null,
+  ) => void;
+  downloadStateFor: (
+    season: number,
+    episode: number,
+  ) => DownloadButtonState;
+  downloadProgressFor: (season: number, episode: number) => number;
 }) {
   const [limit, setLimit] = useState(EPISODE_PAGE_SIZE);
   const visible = episodes.slice(0, limit);
@@ -1660,6 +1831,26 @@ function SeasonEpisodes({
                           remoteWatched,
                         )
                     : undefined
+            }
+            downloadState={
+              episode.remote
+                ? downloadStateFor(episode.seasonNumber, episode.number)
+                : undefined
+            }
+            downloadProgress={
+              episode.remote
+                ? downloadProgressFor(episode.seasonNumber, episode.number)
+                : 0
+            }
+            onDownload={
+              episode.remote
+                ? () =>
+                    onDownload(
+                      episode.seasonNumber,
+                      episode.number,
+                      episode.title,
+                    )
+                : undefined
             }
           />
         );

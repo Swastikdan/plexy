@@ -641,6 +641,18 @@ export function SettingsScreen({
                 />
               </SettingsRow>
             </View>
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Downloads
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                navigation
+                title="Online downloads"
+                subtitle="Save movies and episodes for offline playback"
+                icon={Download}
+                onPress={() => push("/settings/downloads")}
+              />
+            </View>
             </>}
           </>
         )}

@@ -41,6 +41,14 @@ export interface Preferences {
   onlineEpisodeSelector: boolean;
   /** The user has acknowledged the online catalog disclaimer. */
   onlineDisclaimerSeen: boolean;
+  /** Highest download quality requested from Movy. */
+  movyMaxHeight: 2160 | 1080 | 720 | 480;
+  movyWifiOnly: boolean;
+  movyMultiStream: boolean;
+  movyBackgroundDownloads: boolean;
+  movyNotifications: boolean;
+  movyAutoCreateAccount: boolean;
+  movyAccountCap: 1 | 2 | 3;
   seekSeconds: 5 | 10 | 15 | 20 | 30 | 60;
   playbackRate: number;
   /** Kids & Family mode. `off` disables every maturity filter. */
@@ -70,6 +78,13 @@ export const defaultPreferences: Preferences = {
   onlineAutoplay: true,
   onlineEpisodeSelector: true,
   onlineDisclaimerSeen: false,
+  movyMaxHeight: 1080,
+  movyWifiOnly: true,
+  movyMultiStream: true,
+  movyBackgroundDownloads: true,
+  movyNotifications: true,
+  movyAutoCreateAccount: false,
+  movyAccountCap: 2,
   seekSeconds: 10,
   playbackRate: 1,
   familyLevel: "off",

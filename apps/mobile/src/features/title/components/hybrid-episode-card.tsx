@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { LocalCatalog } from "@/core/library/catalog-api";
 import type { HybridEpisode } from "@/features/remote/lib/hybrid-episodes";
+import type { DownloadButtonState } from "@/features/movy/components/download-button";
 import { EpisodeCardView } from "./episode-card-view";
 
 /**
@@ -18,6 +19,9 @@ export function HybridEpisodeCard({
   onPress,
   onLongPress,
   onToggleWatched,
+  downloadState,
+  downloadProgress,
+  onDownload,
 }: {
   episode: HybridEpisode;
   api: Pick<LocalCatalog, "image">;
@@ -29,6 +33,9 @@ export function HybridEpisodeCard({
   onPress?: () => void;
   onLongPress?: () => void;
   onToggleWatched?: () => void;
+  downloadState?: DownloadButtonState;
+  downloadProgress?: number;
+  onDownload?: () => void;
 }) {
   const artworkPath = episode.artwork;
   const artwork = useMemo(
@@ -52,6 +59,9 @@ export function HybridEpisodeCard({
       onPress={onPress}
       onLongPress={onLongPress}
       onToggleWatched={onToggleWatched}
+      downloadState={downloadState}
+      downloadProgress={downloadProgress}
+      onDownload={onDownload}
     />
   );
 }
