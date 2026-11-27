@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use gpui::{div, img, prelude::*, px, svg, Context, MouseButton, ObjectFit, PathPromptOptions, SharedString, Window};
+use gpui::{div, prelude::*, px, svg, Context, MouseButton, PathPromptOptions, SharedString, Window};
 
 use crate::app::{format_time, PlayerView};
 use crate::catalog::{self, Item, LibraryKind, Mark, Show, TitleKey};
@@ -22,6 +22,8 @@ pub enum Screen {
     Show(String),
     Movie(PathBuf),
     Search,
+    /// Titles in one TMDB genre, from the Library's genre tiles.
+    Genre(String),
     Watchlist,
     Favorites,
     Collections,
@@ -30,6 +32,26 @@ pub enum Screen {
     Libraries,
     Library,
     Settings,
+}
+
+impl Screen {
+    /// Start page for screenshot checks: `PLEXY_SCREEN=library`, `show:<key>`,
+    /// `genre:<name>`, `search:<query>`, `history`, `collections`, `appearance`.
+    pub fn from_env() -> Screen {
+        let Ok(value) = std::env::var("PLEXY_SCREEN") else { return Screen::Home };
+        let (kind, arg) = value.split_once(':').unwrap_or((value.as_str(), ""));
+        match kind {
+            "library" => Screen::Library,
+            "show" => Screen::Show(arg.to_string()),
+            "movie" => Screen::Movie(PathBuf::from(arg)),
+            "genre" => Screen::Genre(arg.to_string()),
+            "search" => Screen::Search,
+            "history" => Screen::History,
+            "collections" => Screen::Collections,
+            "settings" | "appearance" => Screen::Settings,
+            _ => Screen::Home,
+        }
+    }
 }
 
 pub(crate) fn icon(name: &str, size: f32, color: gpui::Hsla) -> impl IntoElement {
@@ -80,16 +102,18 @@ impl PlayerView {
         self.libraries = self.catalog.libraries();
         self.items = self.catalog.items();
         self.personal = self.catalog.personal();
-        let mut keys: Vec<TitleKey> = self.shows().into_iter().map(|s| TitleKey::Show(s.key)).collect();
-        keys.extend(self.items.iter().filter(|i| i.season.is_none()).map(|i| TitleKey::Movie(i.path.clone())));
-        self.episode_metas = self
-            .items
-            .iter()
-            .filter(|i| i.season.is_some())
-            .map(|i| (i.path.clone(), self.catalog.episode_meta(&i.path)))
-            .filter(|(_, m)| m.still.is_some() || m.name.is_some())
-            .collect();
-        self.metas = keys.into_iter().filter_map(|k| self.catalog.title_meta(&k).filter(|m| m.matched).map(|m| (k, m))).collect();
+        let tv = self.tv_library_ids();
+        let mut keys = HashSet::new();
+        for item in &self.items {
+            if !item.missing && tv.contains(&item.library_id) {
+                keys.insert(TitleKey::Show(item.show_key()));
+            }
+            if item.season.is_none() {
+                keys.insert(TitleKey::Movie(item.path.clone()));
+            }
+        }
+        self.episode_metas = self.catalog.library_episode_metadata();
+        self.metas = self.catalog.matched_title_metadata(&keys);
     }
 
     fn add_library(&mut self, kind: LibraryKind, window: &mut Window, cx: &mut Context<Self>) {
@@ -184,14 +208,14 @@ impl PlayerView {
         ((self.page_width() - 7. * 20.) / 8.).clamp(112., 200.)
     }
 
-    pub(crate) fn poster(&self, poster: Option<PathBuf>, title: &str, width: f32, height: f32) -> impl IntoElement {
+    pub(crate) fn poster(&self, poster: Option<PathBuf>, title: &str, width: f32, height: f32) -> gpui::Div {
         div()
             .w(px(width))
             .h(px(height))
             .rounded(px(10.))
             .overflow_hidden()
             .bg(theme::surface_secondary())
-            .when_some(poster.clone(), |el, path| el.child(img(path).size_full().rounded(px(10.)).object_fit(ObjectFit::Cover)))
+            .when_some(poster.clone(), |el, path| el.child(crate::assets::artwork_cover(path, 10.)))
             .when(poster.is_none(), |el| {
                 // Tinted placeholder with the title, like the web app's
                 // no-artwork state.
@@ -240,7 +264,7 @@ impl PlayerView {
                     .bg(theme::surface_secondary())
                     .border_1()
                     .border_color(theme::border())
-                    .when_some(item.poster.clone(), |el, poster| el.child(img(poster).size_full().object_fit(ObjectFit::Cover)))
+                    .when_some(item.poster.clone(), |el, poster| el.child(crate::assets::artwork_cover(poster, 0.)))
                     .child(
                         div()
                             .absolute()
@@ -280,8 +304,10 @@ impl PlayerView {
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
         let width = self.poster_width();
+        let group = SharedString::from(format!("poster-{id}"));
         div()
             .id(SharedString::from(id))
+            .group(group.clone())
             .w(px(width))
             .flex_none()
             .flex()
@@ -290,9 +316,12 @@ impl PlayerView {
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
             .child(
-                div()
-                    .relative()
-                    .child(self.poster(poster, &title, width, width * 1.5))
+                self.lift(
+                    group.clone(),
+                    width,
+                    width * 1.5,
+                    div()
+                    .child(self.poster(poster, &title, width, width * 1.5).size_full())
                     .when(watched, |el| {
                         el.child(
                             div()
@@ -308,9 +337,12 @@ impl PlayerView {
                                 .child(icon("check", 14., theme::accent_foreground())),
                         )
                     })
-                    .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(7.)).right(px(7.)).bottom(px(7.)).child(progress_bar(fraction)))),
+                    .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(7.)).right(px(7.)).bottom(px(7.)).child(progress_bar(fraction))))
+                    .child(crate::shell_ui::hover_ring(group.clone(), 10.)),
+                    cx,
+                ),
             )
-            .child(div().text_size(px(15.)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme::foreground()).truncate().child(title))
+            .child(div().text_size(px(15.)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme::foreground()).truncate().group_hover(group.clone(), |s| s.text_color(theme::accent())).child(title))
             .child(div().text_size(px(12.)).text_color(theme::muted()).truncate().child(subtitle))
     }
 
@@ -604,17 +636,19 @@ impl PlayerView {
             );
         }
         if self.libraries.is_empty() {
-            page = page.child(div().text_color(theme::muted()).child("No libraries yet. Add a Movies or TV folder to start."));
+            page = page.child(crate::shell_ui::empty_state("library", "No libraries yet", "Add a Movies or TV folder to start building your library.", None));
         }
         for library in &self.libraries {
             let id = library.id;
             let auto = library.auto_refresh;
             let mut card = div()
+                .id(SharedString::from(format!("library-card-{id}")))
                 .p(px(14.))
                 .rounded(px(theme::RADIUS_XL))
                 .bg(theme::surface())
                 .border_1()
                 .border_color(theme::border())
+                .hover(|s| s.bg(theme::surface_secondary()).border_color(theme::segment()))
                 .flex()
                 .flex_col()
                 .gap(px(10.))
@@ -759,6 +793,7 @@ impl PlayerView {
             Screen::Hidden => self.render_mark_list(Mark::Hidden, "Hidden", "Hidden titles stay out of Home and the grids. Open one to unhide it.", cx),
             Screen::Collections => self.render_collections(window, cx),
             Screen::History => self.render_history(cx),
+            Screen::Genre(genre) => self.render_genre_page(&genre, cx),
             Screen::Libraries | Screen::Library | Screen::Settings => self.render_libraries(cx),
         };
         let scanning = self.catalog.status.lock().running;

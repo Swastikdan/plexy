@@ -16,7 +16,6 @@ mod shell_ui;
 mod theme;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use gpui::{
     actions, prelude::*, px, size, App, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
@@ -64,16 +63,21 @@ fn parse_args() -> Args {
 
 fn main() {
     let args = parse_args();
-    let libmpv = match mpv::find_libmpv() {
-        Ok(path) => path,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(1);
-        }
-    };
-
     Application::new().with_assets(assets::Assets).run(move |cx: &mut App| {
+        cx.set_global(assets::ArtworkCache::default());
         mpv::set_app_icon();
+        // Archivo, the web app's UI font (SIL OFL, assets/fonts/OFL.txt).
+        let fonts: Vec<std::borrow::Cow<'static, [u8]>> = vec![
+            include_bytes!("../assets/fonts/Archivo_400Regular.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_500Medium.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_600SemiBold.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_700Bold.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_800ExtraBold.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_900Black.ttf").as_slice().into(),
+        ];
+        if let Err(error) = cx.text_system().add_fonts(fonts) {
+            eprintln!("fonts: {error}");
+        }
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-o", Open, None)]);
         cx.set_menus(vec![
@@ -83,20 +87,10 @@ fn main() {
         cx.on_window_closed(|cx| cx.quit()).detach();
 
         let bounds = Bounds::centered(None, size(px(1280.), px(760.)), cx);
-        let player = match mpv::Player::new(&libmpv) {
-            Ok(player) => Arc::new(player),
-            Err(error) => {
-                eprintln!("{error}");
-                cx.quit();
-                return;
-            }
-        };
-
         let file = args.file.clone();
         let self_test = args.self_test.clone();
         let library_test = args.library_test.clone();
         let add_libraries = args.add_libraries.clone();
-        let libmpv = libmpv.clone();
         let window = cx
             .open_window(
                 WindowOptions {
@@ -118,16 +112,13 @@ fn main() {
                         Ok(RawWindowHandle::AppKit(handle)) => handle.ns_view.as_ptr(),
                         _ => std::ptr::null_mut(),
                     };
-                    if let Err(error) = player.attach(gpui_view) {
-                        eprintln!("{error}");
-                    }
                     let catalog = catalog::Catalog::open().expect("open the library database");
                     for (kind, path) in &add_libraries {
                         if !catalog.libraries().iter().any(|l| l.roots.iter().any(|r| &r.path == path)) {
                             let _ = catalog.add_library(*kind, path);
                         }
                     }
-                    let view = cx.new(|cx| PlayerView::new(player.clone(), libmpv.clone(), gpui_view as usize, catalog, cx));
+                    let view = cx.new(|cx| PlayerView::new(gpui_view as usize, catalog, cx));
                     view.update(cx, |view, cx| {
                         window.focus(view.focus_handle());
                         if let Some(file) = &file {

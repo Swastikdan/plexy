@@ -12,8 +12,9 @@ parking_lot = "0.12"
 image = { version = "0.25", default-features = false }
 raw-window-handle = "0.6"
 regex = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde_json = "1"
+tempfile = "3"
 ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
 
 [build-dependencies]

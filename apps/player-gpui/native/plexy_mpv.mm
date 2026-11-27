@@ -26,6 +26,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -148,6 +149,12 @@ enum PayloadKind {
 
 // MARK: - Playback core
 
+// Queued redraws can outlive the player. Only the main queue touches the view.
+struct FrameSignal {
+  std::atomic<bool> pending{false};
+  NSView *view = nil;
+};
+
 struct PlexyPlayer {
   mpv_handle *mpv = nullptr;
   mpv_render_context *render = nullptr;
@@ -156,7 +163,7 @@ struct PlexyPlayer {
   std::thread eventThread;
   std::atomic<bool> running{false};
   std::atomic<bool> stopping{false};
-  std::atomic<bool> framePending{false};
+  std::shared_ptr<FrameSignal> frameSignal = std::make_shared<FrameSignal>();
 
   NSView *view = nil;
   std::mutex renderMutex;
@@ -166,10 +173,11 @@ struct PlexyPlayer {
   }
 
   void scheduleFrame() {
-    if (framePending.exchange(true)) return;
+    auto signal = frameSignal;
+    if (signal->pending.exchange(true)) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-      framePending.store(false);
-      NSView *target = view;
+      signal->pending.store(false);
+      NSView *target = signal->view;
       if (target && !target.hidden) [target setNeedsDisplay:YES];
     });
   }
@@ -283,11 +291,9 @@ void PlexyPlayer::createRenderContext(CGLContextObj) {
       [](void *, const char *name) -> void * { return (void *)dlsym(RTLD_DEFAULT, name); },
       nullptr,
   };
-  int advanced = 1;
   mpv_render_param params[] = {
       {MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_OPENGL},
       {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &glInit},
-      {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
       {MPV_RENDER_PARAM_INVALID, nullptr},
   };
   mpv_render_context *created = nullptr;
@@ -308,7 +314,9 @@ void PlexyPlayer::destroyRenderContext() {
   if (render) {
     PlexyGLView *glView = [view isKindOfClass:[PlexyGLView class]] ? (PlexyGLView *)view : nil;
     if (glView) [[glView openGLContext] makeCurrentContext];
+    gApi.mpv_render_context_set_update_callback(render, nullptr, nullptr);
     gApi.mpv_render_context_free(render);
+    [NSOpenGLContext clearCurrentContext];
     render = nullptr;
   }
 }
@@ -388,6 +396,7 @@ void PlexyPlayer::destroy() {
   callback = nullptr;
 
   auto teardown = ^{
+    frameSignal->view = nil;
     destroyRenderContext();
     if (view) {
       [(PlexyGLView *)view setOwner:nullptr];
@@ -505,7 +514,7 @@ PlexyPlayer *plexy_player_create(const char *libmpvPath, plexy_event_fn callback
   player->running.store(true);
   player->eventThread = std::thread([player]() {
     while (player->running.load() && !player->stopping.load()) {
-      mpv_event *event = gApi.mpv_wait_event(player->mpv, 0.5);
+      mpv_event *event = gApi.mpv_wait_event(player->mpv, -1.0);
       if (!event || event->event_id == MPV_EVENT_NONE) continue;
       player->handleEvent(event);
     }
@@ -522,10 +531,18 @@ int plexy_player_attach(PlexyPlayer *player, void *gpuiView) {
   NSView *host = above.superview;
   if (!host) return -3;
   PlexyGLView *video = [[PlexyGLView alloc] initWithFrame:host.bounds owner:player];
+  NSOpenGLContext *context = [video openGLContext];
+  if (!context) return -4;
+  player->view = video;
+  player->frameSignal->view = video;
   video.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [host addSubview:video positioned:NSWindowBelow relativeTo:above];
-  player->view = video;
-  return 0;
+  // AppKit may defer prepareOpenGL until the first draw, but libmpv must
+  // already have a render context when the caller starts loading a video.
+  [context makeCurrentContext];
+  player->createRenderContext([context CGLContextObj]);
+  [NSOpenGLContext clearCurrentContext];
+  return player->render ? 0 : -5;
 }
 
 int plexy_player_load(PlexyPlayer *player, const char *path, double startSeconds) {

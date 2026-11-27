@@ -28,7 +28,6 @@ use crate::theme;
 use crate::preview::{self, PreviewService};
 
 const HIDE_AFTER: Duration = Duration::from_millis(2600);
-const SPEEDS: [f64; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 const SUBTITLE_EXTENSIONS: [&str; 6] = ["srt", "ass", "ssa", "vtt", "sub", "sup"];
 const PREVIEW_WIDTH: f32 = 208.0;
 
@@ -40,6 +39,8 @@ pub enum Menu {
     Chapters,
     /// Online subtitle search for the open file.
     SubtitleSearch,
+    /// Subtitle size, look, sync and position.
+    SubtitleStyle,
     /// The Settings root: rows that drill into the pages above.
     More,
 }
@@ -74,8 +75,8 @@ struct HeldSeek {
 const AUTOPLAY_COUNTDOWN: Duration = Duration::from_secs(8);
 
 pub struct PlayerView {
-    pub player: Arc<Player>,
-    libmpv: PathBuf,
+    pub player: Player,
+    libmpv: Option<PathBuf>,
     pub media: Option<PathBuf>,
     previews: Option<PreviewService>,
     pub state: PlaybackState,
@@ -146,21 +147,25 @@ pub struct PlayerView {
     pub episode_metas: std::collections::HashMap<PathBuf, crate::catalog::EpisodeMeta>,
     metadata_epoch: u64,
     pub settings_section: crate::shell_ui::SettingsSection,
-    pub title_menu: bool,
     pub selected_season: Option<u32>,
     pub open_select: Option<&'static str>,
-    scan_generation: u64,
+    pub hovered_card: Option<SharedString>,
+    pub left_card: Option<SharedString>,
+    scan_progress: (u64, usize, bool),
     last_auto_scan: Instant,
     last_saved: Instant,
+    last_saved_position: Option<f64>,
     was_paused: bool,
+    sub_was_busy: bool,
+    autoplay_enabled: bool,
+    observed_segments: crate::catalog::SkipSegments,
 }
 
 impl PlayerView {
-    pub fn new(player: Arc<Player>, libmpv: PathBuf, gpui_view: usize, catalog: Catalog, cx: &mut Context<Self>) -> Self {
-        catalog.scan(None, true);
-        Self {
-            player,
-            libmpv,
+    pub fn new(gpui_view: usize, catalog: Catalog, cx: &mut Context<Self>) -> Self {
+        let mut view = Self {
+            player: Player::default(),
+            libmpv: None,
             media: None,
             previews: None,
             state: PlaybackState::default(),
@@ -188,11 +193,11 @@ impl PlayerView {
             identity: None,
             next_episode: None,
             catalog: catalog.clone(),
-            screen: Screen::Home,
-            libraries: catalog.libraries(),
-            items: catalog.items(),
-            personal: catalog.personal(),
-            search_query: String::new(),
+            screen: Screen::from_env(),
+            libraries: Vec::new(),
+            items: Vec::new(),
+            personal: Personal::default(),
+            search_query: std::env::var("PLEXY_SCREEN").ok().and_then(|s| s.strip_prefix("search:").map(str::to_string)).unwrap_or_default(),
             search_focus: cx.focus_handle(),
             collection_draft: String::new(),
             collection_focus: cx.focus_handle(),
@@ -218,16 +223,23 @@ impl PlayerView {
             autoplay_fired: false,
             token_focus: cx.focus_handle(),
             token_status: Default::default(),
-            metadata_epoch: u64::MAX,
-            settings_section: crate::shell_ui::SettingsSection::Playback,
-            title_menu: false,
+            metadata_epoch: catalog.metadata_epoch(),
+            settings_section: if std::env::var("PLEXY_SCREEN").as_deref() == Ok("appearance") { crate::shell_ui::SettingsSection::Appearance } else { crate::shell_ui::SettingsSection::Playback },
             selected_season: None,
             open_select: None,
-            scan_generation: 0,
+            hovered_card: None,
+            left_card: None,
+            scan_progress: (0, 0, false),
             last_auto_scan: Instant::now(),
             last_saved: Instant::now(),
+            last_saved_position: None,
             was_paused: true,
-        }
+            sub_was_busy: false,
+            autoplay_enabled: false,
+            observed_segments: Default::default(),
+        };
+        view.reload_catalog();
+        view
     }
 
     pub fn focus_handle(&self) -> &FocusHandle {
@@ -249,7 +261,21 @@ impl PlayerView {
             self.fullscreen_before_play = window.is_fullscreen();
         }
         self.save_progress();
-        let resolved = mpv::local_media_path(path).unwrap_or_else(|_| path.to_path_buf());
+        let resolved = match mpv::local_media_path(path).and_then(|path| {
+            if self.libmpv.is_none() {
+                let libmpv = mpv::find_libmpv()?;
+                self.player.initialize(&libmpv, self.gpui_view as *mut _)?;
+                self.libmpv = Some(libmpv);
+            }
+            Ok(path)
+        }) {
+            Ok(path) => path,
+            Err(error) => {
+                self.state.error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
         // Resume where this file was left, unless it was finished.
         let saved = self
             .catalog
@@ -262,8 +288,9 @@ impl PlayerView {
         let pref = |key: &str| self.catalog.setting(key).filter(|v| !v.is_empty());
         let _ = self.player.set("alang", &pref("audio_lang").unwrap_or_else(|| "auto".into()));
         let _ = self.player.set("slang", &pref("subtitle_lang").unwrap_or_else(|| "auto".into()));
+        self.apply_subtitle_style();
         let _ = self.player.set("sid", if pref("subtitles_on").as_deref() == Some("no") { "no" } else { "auto" });
-        match self.player.load(path, start) {
+        match self.player.load(&resolved, start) {
             Ok(()) => {
                 let path = resolved;
                 let identity = media::identify(&path);
@@ -273,11 +300,18 @@ impl PlayerView {
                 self.autoplay_at = None;
                 self.autoplay_cancelled = false;
                 self.autoplay_fired = false;
+                self.autoplay_enabled = self.setting_on("autoplay");
+                self.sub_search = Default::default();
+                self.sub_was_busy = false;
+                self.was_paused = true;
+                self.last_saved = Instant::now();
+                self.last_saved_position = None;
+                self.state = self.player.snapshot();
                 self.load_segments(&path);
                 if start > 0.0 {
                     self.flash("play", format!("Resuming from {}", format_time(start)));
                 }
-                self.previews = Some(PreviewService::start(self.libmpv.clone(), &path));
+                self.previews = Some(PreviewService::new(self.libmpv.clone().expect("initialized playback"), &path));
                 self.media = Some(path);
                 self.retire_preview();
                 self.menu = None;
@@ -296,7 +330,7 @@ impl PlayerView {
     /// Cached IntroDB markers for `path`, plus a background lookup when the
     /// cache is missing or expired (needs a matched IMDb id).
     fn load_segments(&mut self, path: &Path) {
-        *self.segments.lock() = None;
+        self.segments = Default::default();
         if !self.setting_on("skip_markers") {
             return;
         }
@@ -368,6 +402,7 @@ impl PlayerView {
             return;
         }
         state.loading = true;
+        self.sub_was_busy = true;
         *self.sub_search.lock() = state;
         let slot = self.sub_search.clone();
         std::thread::spawn(move || {
@@ -394,8 +429,15 @@ impl PlayerView {
 
     fn download_subtitle_result(&mut self, result: crate::metadata::SubtitleResult, cx: &mut Context<Self>) {
         let Some(video) = self.media.clone() else { return };
-        self.sub_search.lock().downloading = Some(result.id.clone());
         let slot = self.sub_search.clone();
+        {
+            let mut state = slot.lock();
+            if state.file.as_ref() != Some(&video) || state.downloading.is_some() {
+                return;
+            }
+            state.downloading = Some(result.id.clone());
+        }
+        self.sub_was_busy = true;
         std::thread::spawn(move || {
             let outcome = crate::metadata::download_subtitle(&result, &video);
             let mut s = slot.lock();
@@ -410,11 +452,14 @@ impl PlayerView {
 
     /// Records the current position for the open file.
     pub fn save_progress(&mut self) {
-        let Some(path) = self.media.clone() else { return };
+        let Some(path) = self.media.as_ref() else { return };
         let state = self.player.snapshot();
-        if state.duration > 0.0 {
+        if state.loaded && state.duration > 0.0 {
             let position = if state.ended { state.duration } else { state.position };
-            self.catalog.record_progress(&path, position, state.duration);
+            if self.last_saved_position != Some(position) {
+                self.catalog.record_progress(path, position, state.duration);
+                self.last_saved_position = Some(position);
+            }
         }
         self.last_saved = Instant::now();
     }
@@ -425,6 +470,10 @@ impl PlayerView {
         let _ = self.player.command(&["stop"]);
         self.media = None;
         self.previews = None;
+        self.sub_search = Default::default();
+        self.sub_was_busy = false;
+        self.segments = Default::default();
+        self.state = PlaybackState::default();
         self.identity = None;
         self.next_episode = None;
         self.menu = None;
@@ -499,13 +548,27 @@ impl PlayerView {
     /// Called ~30 times a second: pull playback state, animate the chrome,
     /// resolve preview frames.
     pub fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.state = self.player.snapshot();
-        if self.media.is_some() && self.state.loaded {
-            let paused_now = self.state.paused || self.state.ended;
-            if (paused_now && !self.was_paused) || self.last_saved.elapsed() > Duration::from_secs(5) {
-                self.save_progress();
+        let previous_revision = self.state.revision;
+        let mut overlay_changed = false;
+        if self.media.is_some() {
+            let state = self.player.snapshot();
+            let just_ended = state.ended && !self.state.ended;
+            overlay_changed = self.state.buffering != state.buffering
+                || self.state.ended != state.ended
+                || self.state.error != state.error
+                || (self.next_episode.is_some() && near_episode_end(&self.state) != near_episode_end(&state));
+            self.state = state;
+            if self.state.loaded {
+                let paused_now = self.state.paused || self.state.ended;
+                let position = if self.state.ended { self.state.duration } else { self.state.position };
+                if just_ended || (paused_now && !self.was_paused)
+                    || (self.last_saved_position != Some(position)
+                        && self.last_saved.elapsed() > Duration::from_secs(5))
+                {
+                    self.save_progress();
+                }
+                self.was_paused = paused_now;
             }
-            self.was_paused = paused_now;
         }
         if let Some(id) = self.state.subtitle_id {
             self.last_subtitle = Some(id);
@@ -514,6 +577,7 @@ impl PlayerView {
         let visible = self.controls_wanted();
         let target = if visible { 1.0 } else { 0.0 };
         let step = if visible { 0.25 } else { 0.12 };
+        let old_opacity = self.controls_opacity;
         self.controls_opacity += (target - self.controls_opacity).clamp(-step, step);
         // Lift subtitles above the transport while the chrome is showing.
         let raise = visible && self.media.is_some();
@@ -528,34 +592,29 @@ impl PlayerView {
 
         if !self.volume_hover && self.volume_hover_until.is_some_and(|t| Instant::now() > t) {
             self.volume_hover_until = None;
+            overlay_changed = true;
         }
         // Library refresh: pick up finished scans, auto-refresh every 15 min.
-        let (generation, scanning) = {
+        let scan_progress = {
             let status = self.catalog.status.lock();
-            (status.generation, status.running)
+            (status.generation, status.scanned, status.running)
         };
-        let scan_finished = generation != self.scan_generation;
-        if scan_finished {
-            self.scan_generation = generation;
-            self.reload_catalog();
-        }
+        let scan_finished = scan_progress.0 != self.scan_progress.0;
+        let scan_changed = std::mem::replace(&mut self.scan_progress, scan_progress) != scan_progress;
         if self.last_auto_scan.elapsed() > Duration::from_secs(15 * 60) {
             self.last_auto_scan = Instant::now();
-            self.catalog.scan(None, true);
+            self.start_auto_scan();
         }
         let epoch = self.catalog.metadata_epoch();
         let meta_changed = epoch != self.metadata_epoch;
-        if meta_changed {
-            self.metadata_epoch = epoch;
+        self.metadata_epoch = epoch;
+        if scan_finished || meta_changed {
             self.reload_catalog();
         }
-        if scan_finished {
+        if scan_finished && self.catalog.tmdb_token().is_some() {
             let catalog = self.catalog.clone();
             std::thread::spawn(move || {
-                let (enriched, _) = crate::metadata::enrich_missing(&catalog);
-                if enriched > 0 {
-                    catalog.bump_metadata_epoch();
-                }
+                crate::metadata::enrich_missing(&catalog);
             });
         }
         let token_changed = {
@@ -574,8 +633,11 @@ impl PlayerView {
             self.add_subtitle(&path, cx);
             self.menu = Some(Menu::Subtitles);
         }
-        let mut autoplay_tick = sub_busy;
-        if self.media.is_some() && self.state.ended && self.next_episode.is_some() && self.setting_on("autoplay") && !self.autoplay_fired && !self.autoplay_cancelled {
+        overlay_changed |= std::mem::replace(&mut self.sub_was_busy, sub_busy) != sub_busy;
+        let segments = self.segments.lock().as_ref().map(|(_, segments)| *segments).unwrap_or_default();
+        overlay_changed |= std::mem::replace(&mut self.observed_segments, segments) != segments;
+        let mut autoplay_tick = false;
+        if self.media.is_some() && self.state.ended && self.next_episode.is_some() && self.autoplay_enabled && !self.autoplay_fired && !self.autoplay_cancelled {
             let started = *self.autoplay_at.get_or_insert_with(Instant::now);
             autoplay_tick = true;
             if started.elapsed() >= AUTOPLAY_COUNTDOWN {
@@ -586,19 +648,36 @@ impl PlayerView {
         }
         let hero_changed = self.media.is_none() && self.tick_hero();
         if let Some(osd) = &self.osd {
-            if osd.at.elapsed() > Duration::from_millis(900) {
+            let age = osd.at.elapsed();
+            if age > Duration::from_millis(900) {
                 self.osd = None;
+                overlay_changed = true;
+            } else if age < Duration::from_millis(250) || age >= Duration::from_millis(600) {
+                overlay_changed = true;
             }
         }
 
+        let previous_preview = self.preview_image.as_ref().map(|(key, _)| *key);
         self.update_preview_image(window);
+        overlay_changed |= previous_preview != self.preview_image.as_ref().map(|(key, _)| *key);
         for image in self.retired_images.drain(..) {
             window.drop_image(image).ok();
         }
-        // Library interactions invalidate the view themselves. Only the
-        // carousel and background scan need to redraw it from this timer.
-        if self.media.is_some() || scanning || scan_finished || hero_changed || meta_changed || token_changed || autoplay_tick {
+        // Input handlers redraw directly. The timer only redraws for visible
+        // playback changes, animation, or background work that changed the UI.
+        let playback_changed = self.media.is_some()
+            && (old_opacity != self.controls_opacity
+                || (self.controls_opacity > 0.0 && previous_revision != self.state.revision));
+        if playback_changed || overlay_changed || scan_changed || hero_changed
+            || meta_changed || token_changed || autoplay_tick
+        {
             cx.notify();
+        }
+    }
+
+    fn start_auto_scan(&self) {
+        if self.libraries.iter().any(|library| library.auto_refresh && !library.roots.is_empty()) {
+            self.catalog.scan(None, true);
         }
     }
 
@@ -751,6 +830,25 @@ impl PlayerView {
         let position = (self.state.subtitle_position + delta).clamp(50.0, 100.0);
         let _ = self.player.set_subtitle_position(position);
         self.flash("subtitles", format!("Subtitle position {position:.0}%"));
+    }
+
+    fn sub_style_index(&self, key: &str, default: usize) -> usize {
+        self.catalog.setting(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+    }
+
+    /// Pushes the saved subtitle size and preset to mpv.
+    pub fn apply_subtitle_style(&self) {
+        let scale = SUB_SIZES.get(self.sub_style_index("sub_size", 2)).map(|s| s.0).unwrap_or(1.0);
+        let _ = self.player.set("sub-scale", &scale.to_string());
+        let props: &[(&str, &str)] = match self.sub_style_index("sub_preset", 0) {
+            1 => &[("sub-color", "#FF111111"), ("sub-border-style", "opaque-box"), ("sub-border-color", "#E6A6A6A6"), ("sub-border-size", "3"), ("sub-shadow-offset", "0")],
+            2 => &[("sub-color", "#FFF5E100"), ("sub-border-style", "opaque-box"), ("sub-border-color", "#FF000000"), ("sub-border-size", "3"), ("sub-shadow-offset", "0")],
+            3 => &[("sub-color", "#FFFFFFFF"), ("sub-border-style", "outline-and-shadow"), ("sub-border-size", "0"), ("sub-shadow-offset", "2"), ("sub-shadow-color", "#C0000000")],
+            _ => &[("sub-color", "#FFFFFFFF"), ("sub-border-style", "outline-and-shadow"), ("sub-border-color", "#FF000000"), ("sub-border-size", "2.5"), ("sub-shadow-offset", "0")],
+        };
+        for (name, value) in props {
+            let _ = self.player.set(name, value);
+        }
     }
 
     fn toggle_menu(&mut self, menu: Menu) {
@@ -946,14 +1044,18 @@ fn white(alpha: f32) -> Hsla {
     Hsla { h: 0., s: 0., l: 1., a: alpha }
 }
 
+/// The player's menu surface: near-black with a cool tint, over video.
+fn panel_bg() -> Hsla {
+    rgba(0x0d131cf5).into()
+}
+
+/// Subtitle sizes: mpv `sub-scale` and the "Aa" preview size.
+const SUB_SIZES: [(f64, f32); 5] = [(0.7, 15.), (0.85, 19.), (1.0, 24.), (1.2, 29.), (1.45, 34.)];
+
 fn black(alpha: f32) -> Hsla {
     Hsla { h: 0., s: 0., l: 0., a: alpha }
 }
 
-/// Plexy's accent: the web app's warm amber.
-fn accent() -> Hsla {
-    rgba(0xf5b83dff).into()
-}
 
 fn icon(name: &str, size_px: f32, color: Hsla) -> impl IntoElement {
     svg().path(format!("icons/{name}.svg")).size(px(size_px)).text_color(color)
@@ -1200,9 +1302,7 @@ impl PlayerView {
                         .h(px(232.))
                         .py(px(14.))
                         .rounded(px(theme::RADIUS_LG))
-                        .bg(theme::overlay().opacity(0.94))
-                        .border_1()
-                        .border_color(theme::border())
+                        .bg(panel_bg())
                         .flex()
                         .justify_center()
                         .cursor_pointer()
@@ -1251,6 +1351,7 @@ impl PlayerView {
             })
     }
 
+    /// A radio row: white highlight on hover, blue radio when selected.
     fn menu_row(
         &self,
         id: impl Into<gpui::ElementId>,
@@ -1260,16 +1361,18 @@ impl PlayerView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
+        let blue: Hsla = rgba(0x1a98ffff).into();
         div()
             .id(id.into())
+            .group("menu-row")
             .flex()
             .items_center()
-            .gap(px(10.))
-            .px(px(10.))
-            .py(px(7.))
+            .gap(px(14.))
+            .px(px(14.))
+            .py(px(10.))
             .rounded(px(8.))
             .cursor_pointer()
-            .hover(|style| style.bg(white(0.1)))
+            .hover(|style| style.bg(white(0.97)))
             .on_click(cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
                 on_click(this, window, cx);
@@ -1277,23 +1380,33 @@ impl PlayerView {
             }))
             .child(
                 div()
-                    .size(px(16.))
+                    .size(px(20.))
                     .flex_none()
-                    .when(selected, |el| el.child(icon("check", 16., accent()))),
+                    .rounded_full()
+                    .border_2()
+                    .border_color(if selected { blue } else { white(0.92) })
+                    .group_hover("menu-row", |s| s.border_color(if selected { blue } else { black(0.9) }))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .when(selected, |el| el.child(div().size(px(10.)).rounded_full().bg(blue))),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
+                    .gap(px(2.))
                     .min_w_0()
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(if selected { white(1.0) } else { white(0.85) })
-                            .font_weight(if selected { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
+                            .text_size(px(16.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(white(0.96))
+                            .group_hover("menu-row", |s| s.text_color(black(0.92)))
+                            .truncate()
                             .child(label),
                     )
-                    .when(!detail.is_empty(), |el| el.child(div().text_xs().text_color(white(0.5)).child(detail))),
+                    .when(!detail.is_empty(), |el| el.child(div().text_size(px(12.)).text_color(white(0.55)).group_hover("menu-row", |s| s.text_color(black(0.55))).truncate().child(detail))),
             )
     }
 
@@ -1356,27 +1469,28 @@ impl PlayerView {
     ) -> impl IntoElement {
         div()
             .id(id)
+            .group("settings-row")
             .flex()
             .items_center()
             .gap(px(14.))
             .px(px(14.))
             .py(px(12.))
-            .rounded(px(theme::RADIUS))
+            .rounded(px(8.))
             .cursor_pointer()
-            .hover(|style| style.bg(theme::default_soft()))
+            .hover(|style| style.bg(white(0.97)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
                 this.menu = Some(page);
                 cx.notify();
             }))
-            .child(icon(icon_name, 22., theme::foreground()))
-            .child(div().flex_1().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child(label))
-            .child(div().text_size(px(17.)).text_color(theme::muted()).child(value))
-            .child(icon("chevron-right", 16., theme::muted()))
+            .child(svg().path(format!("icons/{icon_name}.svg")).size(px(22.)).text_color(white(0.96)).group_hover("settings-row", |s| s.text_color(black(0.92))))
+            .child(div().flex_1().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).group_hover("settings-row", |s| s.text_color(black(0.92))).child(label))
+            .child(div().text_size(px(17.)).text_color(white(0.55)).group_hover("settings-row", |s| s.text_color(black(0.55))).child(value))
+            .child(svg().path("icons/chevron-right.svg").size(px(16.)).text_color(white(0.55)).group_hover("settings-row", |s| s.text_color(black(0.55))))
     }
 
     fn render_menu(&self, menu: Menu, cx: &mut Context<Self>) -> impl IntoElement {
-        let divider = || div().mx(px(14.)).my(px(8.)).h(px(1.)).bg(theme::separator());
+        let divider = || div().mx(px(14.)).my(px(10.)).h(px(1.)).bg(white(0.16));
         let title = match menu {
             Menu::More => "Settings",
             Menu::Audio => "Audio",
@@ -1384,6 +1498,7 @@ impl PlayerView {
             Menu::Speed => "Speed",
             Menu::Chapters => "Chapters",
             Menu::SubtitleSearch => "Search subtitles",
+            Menu::SubtitleStyle => "Subtitles Settings",
         };
         let header = div()
             .relative()
@@ -1391,8 +1506,8 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .child(div().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child(title))
-            .when(menu != Menu::More, |el| {
+            .child(div().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).child(title))
+            .when(menu != Menu::More && menu != Menu::Speed, |el| {
                 el.child(
                     div()
                         .id("menu-back")
@@ -1404,13 +1519,13 @@ impl PlayerView {
                         .justify_center()
                         .rounded_full()
                         .cursor_pointer()
-                        .hover(|style| style.bg(theme::default_soft()))
+                        .hover(|style| style.bg(white(0.1)))
                         .on_click(cx.listener(|this, _, _, cx| {
                             cx.stop_propagation();
-                            this.menu = Some(Menu::More);
+                            this.menu = Some(if this.menu == Some(Menu::SubtitleStyle) || this.menu == Some(Menu::SubtitleSearch) { Menu::Subtitles } else { Menu::More });
                             cx.notify();
                         }))
-                        .child(icon("chevron-left", 18., theme::foreground())),
+                        .child(icon("chevron-left", 20., white(0.96))),
                 )
             });
 
@@ -1418,15 +1533,13 @@ impl PlayerView {
             .id("menu")
             .absolute()
             .right(px(28.))
-            .top(px(96.))
-            .w(px(420.))
-            .max_h(px(520.))
+            .top(px(92.))
+            .w(px(if menu == Menu::Speed { 440. } else { 400. }))
+            .max_h(px(560.))
             .overflow_y_scroll()
             .p(px(10.))
-            .rounded(px(theme::RADIUS_XL))
-            .bg(theme::overlay().opacity(0.96))
-            .border_1()
-            .border_color(theme::border())
+            .rounded(px(14.))
+            .bg(panel_bg())
             .shadow_lg()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_scroll_wheel(|_: &ScrollWheelEvent, _, cx| cx.stop_propagation())
@@ -1513,6 +1626,66 @@ impl PlayerView {
                         this.start_subtitle_search(cx);
                     }))
                     .child(divider())
+                    .child(self.settings_row("set-sub-style", "cog", "Subtitles Settings", String::new(), cx, Menu::SubtitleStyle));
+            }
+            Menu::SubtitleStyle => {
+                let size = self.sub_style_index("sub_size", 2);
+                let preset = self.sub_style_index("sub_preset", 0);
+                let label = |text: &'static str| div().px(px(14.)).pt(px(6.)).pb(px(10.)).text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).child(text);
+                let sizes = div().px(px(14.)).flex().items_end().gap(px(16.)).children(SUB_SIZES.iter().enumerate().map(|(i, (_, font))| {
+                    div()
+                        .id(SharedString::from(format!("sub-size-{i}")))
+                        .cursor_pointer()
+                        .text_size(px(*font))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(if i == size { white(0.97) } else { white(0.4) })
+                        .hover(|s| s.text_color(white(0.8)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.catalog.set_setting("sub_size", &i.to_string());
+                            this.apply_subtitle_style();
+                            cx.notify();
+                        }))
+                        .child("Aa")
+                }));
+                let tile = |i: usize, cx: &mut Context<Self>| {
+                    let selected = i == preset;
+                    let (bg, fg, slash) = match i {
+                        0 => (rgba(0x00000000).into(), white(1.), false),
+                        1 => (white(0.55), black(0.9), true),
+                        2 => (black(1.), rgba(0xf5e100ff).into(), false),
+                        _ => (rgba(0x00000000).into(), white(1.), true),
+                    };
+                    div()
+                        .id(SharedString::from(format!("sub-preset-{i}")))
+                        .relative()
+                        .size(px(56.))
+                        .rounded(px(8.))
+                        .cursor_pointer()
+                        .bg(bg)
+                        .border_2()
+                        .border_color(if selected { white(0.97) } else { rgba(0x00000000).into() })
+                        .hover(|s| s.border_color(white(0.5)))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.catalog.set_setting("sub_preset", &i.to_string());
+                            this.apply_subtitle_style();
+                            cx.notify();
+                        }))
+                        .child(div().text_size(px(22.)).font_weight(gpui::FontWeight::MEDIUM).text_color(fg).child("Aa"))
+                        .when(slash, |el| el.child(div().absolute().left(px(26.)).top(px(-4.)).w(px(1.5)).h(px(60.)).bg(white(0.7)).opacity(0.6)))
+                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(18.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon("check", 11., black(1.)))))
+                };
+                panel = panel
+                    .child(label("Size"))
+                    .child(sizes)
+                    .child(divider())
+                    .child(label("Presets"))
+                    .child(div().px(px(14.)).pt(px(4.)).flex().gap(px(16.)).children((0..4).map(|i| tile(i, cx))))
+                    .child(divider())
                     .child(self.stepper(
                         "sub-delay",
                         "Sync",
@@ -1582,24 +1755,41 @@ impl PlayerView {
                 }
             }
             Menu::Speed => {
-                for speed in SPEEDS {
-                    panel = panel.child(self.menu_row(
-                        SharedString::from(format!("speed-{speed}")),
-                        if speed == 1.0 { "Normal".into() } else { format!("{}x", trim_number(speed)) },
-                        String::new(),
-                        (self.state.speed - speed).abs() < 0.01,
-                        cx,
-                        move |this, _, _| this.set_speed(speed),
-                    ));
-                }
+                panel = panel.child(div().px(px(4.)).pb(px(4.)).flex().gap(px(8.)).children([0.75, 1.0, 1.25, 1.5, 2.0].into_iter().map(|speed: f64| {
+                    let selected = (self.state.speed - speed).abs() < 0.01;
+                    div()
+                        .id(SharedString::from(format!("speed-{speed}")))
+                        .relative()
+                        .flex_1()
+                        .h(px(44.))
+                        .rounded(px(8.))
+                        .cursor_pointer()
+                        .bg(white(0.08))
+                        .border_2()
+                        .border_color(if selected { white(0.97) } else { rgba(0x00000000).into() })
+                        .hover(|s| s.bg(white(0.16)))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(15.))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(white(0.96))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.set_speed(speed);
+                            cx.notify();
+                        }))
+                        .child(format!("{}x", trim_number(speed)))
+                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(17.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon("check", 10., black(1.)))))
+                })));
             }
             Menu::Chapters => {
                 let current = self.state.chapters.iter().rposition(|c| c.time <= self.state.position + 0.25);
-                for (index, chapter) in self.state.chapters.clone().into_iter().enumerate() {
+                for (index, chapter) in self.state.chapters.iter().enumerate() {
                     let time = chapter.time;
                     panel = panel.child(self.menu_row(
                         SharedString::from(format!("chapter-{index}")),
-                        chapter.title,
+                        chapter.title.clone(),
                         format_time(time),
                         current == Some(index),
                         cx,
@@ -1809,9 +1999,7 @@ impl PlayerView {
     fn render_up_next(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let next = self.next_episode.clone()?;
         let state = &self.state;
-        let remaining = state.duration - state.position;
-        let near_end = state.duration > 120.0 && remaining <= 60.0;
-        if !(near_end || state.ended) || self.autoplay_cancelled && state.ended {
+        if !(near_episode_end(state) || state.ended) || self.autoplay_cancelled && state.ended {
             return None;
         }
         let item = self.items.iter().find(|i| i.path == next);
@@ -1858,7 +2046,7 @@ impl PlayerView {
                         .rounded(px(8.))
                         .overflow_hidden()
                         .bg(white(0.08))
-                        .when_some(still, |el, p| el.child(img(p).size_full().rounded(px(8.)).object_fit(gpui::ObjectFit::Cover))),
+                        .when_some(still, |el, p| el.child(crate::assets::artwork_cover(p, 8.))),
                 )
                 .child(
                     div()
@@ -2018,6 +2206,14 @@ impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let has_media = self.media.is_some();
         let opacity = self.controls_opacity;
+        // Light, dark or follow macOS; playback always stays dark.
+        let light = match self.catalog.setting("theme").as_deref() {
+            Some("light") => true,
+            Some("system") => matches!(window.appearance(), gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight),
+            _ => false,
+        };
+        theme::set_light(light && !has_media);
+        self.take_dropdown_dismiss();
 
         div()
             .id("player")
@@ -2026,7 +2222,7 @@ impl Render for PlayerView {
             .size_full()
             .relative()
             .overflow_hidden()
-            .font_family(".SystemUIFont")
+            .font_family("Archivo")
             // No background: the libmpv surface underneath shows through.
             .on_key_down(cx.listener(Self::on_key_down))
             .on_key_up(cx.listener(Self::on_key_up))
@@ -2102,11 +2298,27 @@ impl Render for PlayerView {
     }
 }
 
+fn near_episode_end(state: &PlaybackState) -> bool {
+    state.duration > 120.0 && state.duration - state.position <= 60.0
+}
+
 pub fn start_ticking(window: &mut Window, cx: &mut Context<PlayerView>) {
-    cx.spawn_in(window, async move |this, cx| loop {
-        cx.background_executor().timer(Duration::from_millis(33)).await;
-        if this.update_in(cx, |view, window, cx| view.tick(window, cx)).is_err() {
-            break;
+    cx.observe_window_appearance(window, |_, _, cx| cx.notify()).detach();
+    cx.spawn_in(window, async move |this, cx| {
+        cx.background_executor().timer(Duration::from_millis(200)).await;
+        if this.update(cx, |view, _| view.start_auto_scan()).is_err() {
+            return;
+        }
+        loop {
+            let Ok(next_delay) = this.update_in(cx, |view, window, cx| {
+                view.tick(window, cx);
+                if view.media.is_some() {
+                    Duration::from_millis(33)
+                } else {
+                    Duration::from_millis(250)
+                }
+            }) else { break };
+            cx.background_executor().timer(next_delay).await;
         }
     })
     .detach();

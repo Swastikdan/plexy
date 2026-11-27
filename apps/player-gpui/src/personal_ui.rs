@@ -191,25 +191,25 @@ impl PlayerView {
             .border_1()
             .border_color(if focused { theme::accent() } else { theme::border() })
             .cursor_text()
+            .text_size(px(12.))
             .on_click(cx.listener(move |_, _, window, cx| {
                 window.focus(&focus_for_click);
                 cx.stop_propagation();
             }))
             .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| this.on_field_key(field, event, window, cx)))
+            .when(value.is_empty() && focused, |el| el.child(div().flex_none().w(px(2.)).h(px(14.)).bg(theme::accent())))
             .child(if value.is_empty() {
-                div().text_size(px(11.)).text_color(theme::muted()).child(placeholder).into_any_element()
+                div().text_color(theme::muted()).child(placeholder).into_any_element()
             } else {
                 div()
                     .flex()
                     .items_center()
                     .min_w_0()
-                    .text_size(px(11.))
                     .text_color(theme::foreground())
                     .child(value.to_string())
                     .when(focused, |el| el.child(div().ml(px(1.)).w(px(2.)).h(px(14.)).bg(theme::accent())))
                     .into_any_element()
             })
-            .when(value.is_empty() && focused, |el| el.child(div().w(px(2.)).h(px(14.)).bg(theme::accent())))
     }
 
     // MARK: Title resolution
@@ -239,7 +239,7 @@ impl PlayerView {
 
     pub fn open_title(&mut self, key: &TitleKey, cx: &mut Context<Self>) {
         self.collection_picker = false;
-        self.title_menu = false;
+        self.open_select = None;
         self.selected_season = None;
         self.screen = match key {
             TitleKey::Movie(path) => Screen::Movie(path.clone()),
@@ -618,12 +618,13 @@ impl PlayerView {
             .flat_map(|s| s.episodes().cloned().collect::<Vec<_>>())
             .filter(|e| {
                 let file = e.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                matches(&query, &[e.episode_title.as_deref().unwrap_or_default(), &file]) && !matches(&query, &[&e.title])
+                let tmdb_name = self.episode_metas.get(&e.path).and_then(|m| m.name.clone()).unwrap_or_default();
+                matches(&query, &[e.episode_title.as_deref().unwrap_or_default(), &tmdb_name, &file]) && !matches(&query, &[&e.title])
             })
             .take(40)
             .collect();
         if movies.is_empty() && show_hits.is_empty() && episodes.is_empty() {
-            return page.child(div().text_color(theme::muted()).child(format!("Nothing matches “{query}”."))).into_any_element();
+            return page.child(crate::shell_ui::empty_state("search", "No matches", &format!("Nothing in your library matches “{query}”. Try a title, genre or cast name."), None)).into_any_element();
         }
         if !show_hits.is_empty() {
             page = page.child(section_title("TV Shows")).child(self.title_grid("search-show", show_hits, cx));
@@ -632,25 +633,15 @@ impl PlayerView {
             page = page.child(section_title("Movies")).child(self.title_grid("search-movie", movies, cx));
         }
         if !episodes.is_empty() {
+            let w = self.tile_width();
             let rows: Vec<_> = episodes
                 .into_iter()
                 .map(|e| {
                     let path = e.path.clone();
-                    div()
-                        .id(SharedString::from(format!("search-ep-{}", e.id)))
-                        .flex()
-                        .gap(px(10.))
-                        .p(px(8.))
-                        .rounded(px(theme::RADIUS_LG))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme::surface()))
-                        .on_click(cx.listener(move |this, _, window, cx| this.play_item(path.clone(), window, cx)))
-                        .child(div().text_size(px(12.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).child(e.title.clone()))
-                        .child(div().text_size(px(12.)).text_color(theme::muted()).child(e.episode_label()))
-                        .into_any_element()
+                    self.episode_tile(SharedString::from(format!("search-ep-{}", e.id)), &e, w, None, None, cx, move |this, window, cx| this.play_item(path.clone(), window, cx)).into_any_element()
                 })
                 .collect();
-            page = page.child(section_title("Episodes")).child(div().flex().flex_col().children(rows));
+            page = page.child(section_title("Episodes")).child(div().flex().flex_wrap().gap_x(px(20.)).gap_y(px(28.)).children(rows));
         }
         page.into_any_element()
     }
@@ -665,7 +656,7 @@ impl PlayerView {
             .flex_col()
             .gap(px(14.))
             .child(section_title(title))
-            .when(none, |el| el.child(div().text_color(theme::muted()).child(empty.to_string())))
+            .when(none, |el| el.child(crate::shell_ui::empty_state(match mark { Mark::Watchlist => "bookmark", Mark::Favorite => "heart", _ => "eye-off" }, &format!("No {} yet", title.to_lowercase()), empty, None)))
             .child(self.title_grid(&format!("list-{title}"), titles, cx))
             .into_any_element()
     }
@@ -704,19 +695,12 @@ impl PlayerView {
         );
         if self.personal.collections.is_empty() {
             return page
-                .child(
-                    div()
-                        .pt(px(110.))
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(px(10.))
-                        .child(div().size(px(56.)).mb(px(14.)).rounded(px(16.)).bg(theme::surface_secondary()).border_1().border_color(theme::border()).flex().items_center().justify_center().child(crate::library_ui::icon("folder-heart", 24., theme::muted())))
-                        .child(div().text_size(px(19.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("No collections yet"))
-                        .child(div().text_size(px(14.)).text_color(theme::muted()).child("Plexy groups movies from the same TMDB franchise automatically."))
-                        .child(div().text_size(px(14.)).text_color(theme::muted()).child("Create a collection to group anything else."))
-                        .child(div().pt(px(14.)).child(if creating { field.into_any_element() } else { new_button.into_any_element() })),
-                )
+                .child(crate::shell_ui::empty_state(
+                    "folder-heart",
+                    "No collections yet",
+                    "Plexy groups movies from the same TMDB franchise automatically. Create a collection to group anything else.",
+                    Some(if creating { field.into_any_element() } else { new_button.into_any_element() }),
+                ))
                 .into_any_element();
         }
         page = page.child(div().flex().gap(px(12.)).child(new_button).when(creating, |el| el.child(field)));
@@ -753,13 +737,48 @@ impl PlayerView {
     }
 
     pub fn render_history(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let mut page = div().flex().flex_col().gap(px(14.)).child(section_title("History"));
-        if self.personal.history.is_empty() {
-            return page.child(div().text_color(theme::muted()).child("Finished titles appear here.")).into_any_element();
+        let count = self.personal.history.len();
+        let mut page = div().flex().flex_col().gap(px(28.)).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.))
+                .child(div().text_size(px(32.)).line_height(px(37.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("History"))
+                .child(div().text_size(px(14.)).text_color(theme::muted()).child(if count == 0 { "Everything you finish watching shows up here.".to_string() } else { format!("{count} finished title{}", if count == 1 { "" } else { "s" }) })),
+        );
+        if count == 0 {
+            return page
+                .child(crate::shell_ui::empty_state("clock", "Nothing watched yet", "Finish a movie or an episode and it appears here, newest first, so you can rewatch it in a click.", None))
+                .into_any_element();
         }
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-        let mut list = div().flex().flex_col().gap(px(3.));
+        let group_of = |at: i64| match (now - at) / 86400 {
+            0 => "Today",
+            1 => "Yesterday",
+            2..7 => "This week",
+            7..31 => "This month",
+            _ => "Earlier",
+        };
+        let mut current: Option<&str> = None;
+        let mut group = div().flex().flex_wrap().gap_x(px(20.)).gap_y(px(28.));
+        let mut groups: Vec<gpui::AnyElement> = Vec::new();
+        let flush = |label: &str, body: gpui::Div| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.))
+                .child(div().text_size(px(13.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::muted()).child(label.to_string()))
+                .child(body)
+                .into_any_element()
+        };
         for entry in &self.personal.history {
+            let label = group_of(entry.watched_at);
+            if current != Some(label) {
+                if let Some(prev) = current {
+                    groups.push(flush(prev, std::mem::replace(&mut group, div().flex().flex_wrap().gap_x(px(20.)).gap_y(px(28.)))));
+                }
+                current = Some(label);
+            }
             let id = entry.id;
             let path = entry.path.clone();
             let ago = now - entry.watched_at;
@@ -767,49 +786,34 @@ impl PlayerView {
                 ..60 => "Just now".to_string(),
                 60..3600 => format!("{} min ago", ago / 60),
                 3600..86400 => format!("{} h ago", ago / 3600),
+                86400..172800 => "Yesterday".to_string(),
                 _ => format!("{} days ago", ago / 86400),
             };
-            list = list.child(
-                div()
-                    .id(SharedString::from(format!("history-{id}")))
-                    .flex()
-                    .items_center()
-                    .gap(px(11.))
-                    .p(px(10.))
-                    .rounded(px(theme::RADIUS_LG))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(theme::surface()))
-                    .on_click(cx.listener(move |this, _, window, cx| this.open_at(&path, Some(0.0), window, cx)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .gap(px(8.))
-                            .child(div().text_size(px(12.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).child(entry.title.clone()))
-                            .child(div().text_size(px(12.)).text_color(theme::muted()).truncate().child(entry.label.clone())),
-                    )
-                    .child(div().text_size(px(10.)).text_color(theme::muted()).child(when))
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("history-remove-{id}")))
-                            .px(px(8.))
-                            .py(px(3.))
-                            .rounded_full()
-                            .text_size(px(10.))
-                            .text_color(theme::muted())
-                            .hover(|s| s.bg(theme::default()).text_color(theme::danger()))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.catalog.remove_history(id);
-                                this.reload_catalog();
-                                cx.notify();
-                            }))
-                            .child("Remove"),
-                    ),
-            );
+            let w = self.tile_width();
+            let item = self.items.iter().find(|i| i.path == entry.path).cloned().unwrap_or_else(|| crate::catalog::Item { path: entry.path.clone(), title: entry.title.clone(), ..Default::default() });
+            let remove = div()
+                .id(SharedString::from(format!("history-remove-{id}")))
+                .size(px(30.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(gpui::hsla(0., 0., 0., 0.6))
+                .hover(|s| s.bg(theme::danger()))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.catalog.remove_history(id);
+                    this.reload_catalog();
+                    cx.notify();
+                }))
+                .child(crate::library_ui::icon("trash", 14., gpui::hsla(0., 0., 1., 1.)))
+                .into_any_element();
+            group = group.child(self.episode_tile(SharedString::from(format!("history-{id}")), &item, w, Some(when), Some(remove), cx, move |this, window, cx| this.open_at(&path, Some(0.0), window, cx)));
         }
-        page = page.child(list);
+        if let Some(label) = current {
+            groups.push(flush(label, group));
+        }
+        page = page.children(groups);
         page.into_any_element()
     }
 }

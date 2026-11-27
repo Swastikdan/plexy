@@ -17,7 +17,7 @@
 //! Network is strictly opt-in: with no token the whole module is inert and
 //! the catalog keeps working from filenames and sidecar artwork.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -57,9 +57,10 @@ pub fn token(catalog: &Catalog) -> Option<String> {
 
 /// Checks a TMDB read-access token against `/configuration`.
 pub fn verify_token(token: &str) -> std::result::Result<(), String> {
-    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(12)).build();
+    let agent = ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build();
     match agent.get(&format!("{API_BASE}/configuration")).set("Authorization", &format!("Bearer {}", token.trim())).call() {
-        Ok(_) => Ok(()),
+        Ok(response) if response.status() == 200 => Ok(()),
+        Ok(response) => Err(format!("TMDB answered {}. Try again later.", response.status())),
         Err(ureq::Error::Status(401, _)) => Err("TMDB rejected this token. Use the API Read Access Token (v4).".into()),
         Err(ureq::Error::Status(code, _)) => Err(format!("TMDB answered {code}. Try again later.")),
         Err(_) => Err("Couldn't reach TMDB. Check your connection.".into()),
@@ -77,12 +78,12 @@ pub struct Tmdb {
 
 impl Tmdb {
     pub fn new(catalog: &Catalog) -> Self {
-        Self { agent: ureq::AgentBuilder::new().timeout(Duration::from_secs(12)).build(), token: token(catalog), db: catalog.db_handle(), last_request: AtomicU64::new(0) }
+        Self { agent: ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build(), token: token(catalog), db: catalog.db_handle(), last_request: AtomicU64::new(0) }
     }
 
     #[cfg(test)]
     fn with_db(db: Arc<Mutex<Connection>>) -> Self {
-        Self { agent: ureq::AgentBuilder::new().timeout(Duration::from_secs(12)).build(), token: None, db, last_request: AtomicU64::new(0) }
+        Self { agent: ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(12)).build(), token: None, db, last_request: AtomicU64::new(0) }
     }
 
     pub fn has_token(&self) -> bool {
@@ -94,19 +95,21 @@ impl Tmdb {
     pub fn request(&self, path: &str, ttl_ms: i64) -> Result<Value> {
         let url = format!("{API_BASE}{path}");
         let key = cache_key(&url);
-        if let Some(hit) = self.cache_get(&key, ttl_ms) {
+        if let Some(hit) = self.cache_get(key, path, true) {
             return Ok(hit);
         }
         match self.request_live(&url) {
             Ok(body) => {
                 let value: Value = serde_json::from_str(&body)?;
-                self.cache_put(&key, path, &body, ttl_ms);
+                self.cache_put(key, path, &body, ttl_ms);
                 Ok(value)
             }
-            Err(error) => self.cache_get_stale(&key).ok_or(error),
+            Err(error) => self.cache_get(key, path, false).ok_or(error),
         }
-    }    fn request_live(&self, url: &str) -> Result<String> {
-        let token = self.token.clone().ok_or_else(|| anyhow!("no-token"))?;
+    }
+
+    fn request_live(&self, url: &str) -> Result<String> {
+        let token = self.token.as_deref().ok_or_else(|| anyhow!("no-token"))?;
         let mut body = None;
         for attempt in 0..=2u32 {
             let gap = (self.last_request.load(Ordering::Relaxed) + MIN_GAP_MS).saturating_sub(now_ms() as u64);
@@ -115,7 +118,7 @@ impl Tmdb {
             }
             self.last_request.store(now_ms() as u64, Ordering::Relaxed);
             match self.agent.get(url).set("Authorization", &format!("Bearer {token}")).set("accept", "application/json").call() {
-                Ok(response) => {
+                Ok(response) if response.status() == 200 => {
                     body = Some(response.into_string()?);
                     break;
                 }
@@ -124,9 +127,10 @@ impl Tmdb {
                         return Err(anyhow!("TMDB responded {code}"));
                     }
                     let retry_after = response.header("retry-after").and_then(|v| v.parse::<u64>().ok()).unwrap_or(60);
-                    let backoff = if code == 429 { retry_after * 1000 } else { 500 * 2u64.pow(attempt) };
+                    let backoff = if code == 429 { retry_after.saturating_mul(1000) } else { 500 * 2u64.pow(attempt) };
                     std::thread::sleep(Duration::from_millis(backoff.min(15_000)));
                 }
+                Ok(response) => return Err(anyhow!("TMDB responded {}", response.status())),
                 Err(ureq::Error::Status(code, _)) => return Err(anyhow!("TMDB responded {code}")),
                 Err(error) => return Err(anyhow!(error.to_string())),
             }
@@ -134,31 +138,27 @@ impl Tmdb {
         body.ok_or_else(|| anyhow!("no response body"))
     }
 
-    fn cache_get(&self, key: &u64, _ttl_ms: i64) -> Option<Value> {
-        let db = self.db.lock();
-        let row: Option<String> =
-            db.query_row("SELECT body FROM tmdb_cache WHERE key = ?1 AND expires_at > ?2", rusqlite::params![key, now_ms()], |r| r.get::<_, String>(0)).optional().ok().flatten();
-        row.and_then(|body| serde_json::from_str(&body).ok())
+    fn cache_get(&self, key: u64, endpoint: &str, fresh: bool) -> Option<Value> {
+        let row: String = self.db.lock().query_row(
+            "SELECT body FROM tmdb_cache WHERE key = ?1 AND endpoint = ?2 AND (?3 = 0 OR expires_at > ?4)",
+            rusqlite::params![key as i64, endpoint, fresh, now_ms()],
+            |row| row.get(0),
+        ).optional().ok().flatten()?;
+        serde_json::from_str(&row).ok()
     }
 
-    fn cache_get_stale(&self, key: &u64) -> Option<Value> {
-        let db = self.db.lock();
-        let row: Option<String> = db.query_row("SELECT body FROM tmdb_cache WHERE key = ?1", rusqlite::params![key], |r| r.get::<_, String>(0)).optional().ok().flatten();
-        row.and_then(|body| serde_json::from_str(&body).ok())
-    }
-
-    fn cache_put(&self, key: &u64, endpoint: &str, body: &str, ttl_ms: i64) {
+    fn cache_put(&self, key: u64, endpoint: &str, body: &str, ttl_ms: i64) {
         let _ = self.db.lock().execute(
             "INSERT INTO tmdb_cache(key, endpoint, body, expires_at) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(key) DO UPDATE SET body = excluded.body, endpoint = excluded.endpoint, expires_at = excluded.expires_at",
-            rusqlite::params![key, endpoint, body, now_ms() + ttl_ms],
+            rusqlite::params![key as i64, endpoint, body, now_ms() + ttl_ms],
         );
     }
 
     /// Drop expired search rows; details stay forever for offline use.
     pub fn prune(&self) {
         let _ = self.db.lock().execute(
-            "DELETE FROM tmdb_cache WHERE endpoint LIKE 'search/%' AND expires_at < ?1",
+            "DELETE FROM tmdb_cache WHERE endpoint LIKE '/search/%' AND expires_at < ?1",
             rusqlite::params![now_ms() - 30 * 24 * 3600_000],
         );
     }
@@ -247,19 +247,23 @@ pub fn fetch_image(catalog: &Catalog, tmdb: &Tmdb, path: &str) -> Option<PathBuf
     if file.exists() {
         return Some(file);
     }
-    if let Some(parent) = file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+    let parent = file.parent()?;
+    std::fs::create_dir_all(parent).ok()?;
     let response = tmdb.agent.get(&format!("{IMAGE_BASE}{path}")).call().ok()?;
-    let mut bytes = Vec::new();
-    response.into_reader().read_to_end(&mut bytes).ok()?;
-    if bytes.len() < 64 {
+    if response.status() != 200 {
         return None;
     }
-    // Write-then-rename so a cut-off download never poses as cached art.
-    let partial = file.with_extension("part");
-    std::fs::write(&partial, &bytes).ok()?;
-    std::fs::rename(&partial, &file).ok()?;
+    let max = crate::assets::MAX_ARTWORK_FILE_BYTES;
+    let mut partial = tempfile::NamedTempFile::new_in(parent).ok()?;
+    let size = std::io::copy(&mut response.into_reader().take(max + 1), partial.as_file_mut()).ok()?;
+    if !(64..=max).contains(&size) {
+        return None;
+    }
+    if let Err(error) = partial.persist_noclobber(&file) {
+        if error.error.kind() != std::io::ErrorKind::AlreadyExists {
+            return None;
+        }
+    }
     Some(file)
 }
 
@@ -495,7 +499,7 @@ pub fn fetch_markers(tmdb: &Tmdb, imdb: &str, season: Option<u32>, episode: Opti
         .set("accept", "application/json")
         .call();
     match response {
-        Ok(body) => {
+        Ok(body) if body.status() == 200 => {
             let value: Value = serde_json::from_str(&body.into_string()?)?;
             Ok(SkipSegments {
                 intro: normalize_segment(value.get("intro"), None, SegmentKind::Intro),
@@ -503,6 +507,7 @@ pub fn fetch_markers(tmdb: &Tmdb, imdb: &str, season: Option<u32>, episode: Opti
                 outro: normalize_segment(value.get("outro"), None, SegmentKind::Outro),
             })
         }
+        Ok(response) => Err(anyhow!("IntroDB responded {}", response.status())),
         Err(ureq::Error::Status(404, _)) => Ok(SkipSegments::default()),
         Err(error) => Err(anyhow!(error.to_string())),
     }
@@ -696,6 +701,7 @@ mod tests {
         };
         catalog.store_title_meta(&key, &row);
         let stored = catalog.title_meta(&key).unwrap();
+        assert_eq!(catalog.matched_title_metadata(&[key.clone()].into_iter().collect()).get(&key), Some(&stored));
         assert_eq!(stored.name, "MINDHUNTER");
         assert_eq!(stored.year, Some(2017));
         assert_eq!(stored.rating, Some(8.1));
@@ -741,6 +747,34 @@ mod tests {
     }
 
     #[test]
+    fn cache_uses_all_hash_bits_and_prunes_old_searches() {
+        let (catalog, _guard) = catalog("search_cache");
+        let tmdb = Tmdb::with_db(catalog.db_handle());
+        let endpoint = "/search/movie?query=test";
+        tmdb.cache_put(u64::MAX, endpoint, "{}", DETAIL_TTL_MS);
+        assert_eq!(tmdb.cache_get(u64::MAX, endpoint, true), Some(serde_json::json!({})));
+        assert!(tmdb.cache_get(u64::MAX, "/other", false).is_none());
+        tmdb.cache_put(u64::MAX, endpoint, "{}", -60 * DETAIL_TTL_MS);
+        assert!(tmdb.cache_get(u64::MAX, endpoint, true).is_none());
+        assert!(tmdb.cache_get(u64::MAX, endpoint, false).is_some());
+        tmdb.prune();
+        assert!(tmdb.cache_get(u64::MAX, endpoint, false).is_none());
+    }
+
+    #[test]
+    fn downloaded_subtitle_preserves_existing_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("movie.mkv");
+        let fallback = dir.path().join("cache");
+        let sidecar = save_subtitle(&video, "eng", b"existing", &fallback).unwrap();
+        let downloaded = save_subtitle(&video, "eng", b"new", &fallback).unwrap();
+        assert_eq!(sidecar, dir.path().join("movie.eng.srt"));
+        assert!(downloaded.starts_with(&fallback));
+        assert_eq!(std::fs::read(sidecar).unwrap(), b"existing");
+        assert_eq!(std::fs::read(downloaded).unwrap(), b"new");
+    }
+
+    #[test]
     fn cache_keys_are_stable() {
         assert_eq!(cache_key("https://x/y"), cache_key("https://x/y"));
         assert_ne!(cache_key("https://x/y"), cache_key("https://x/z"));
@@ -782,15 +816,19 @@ pub fn parse_subtitles(value: &Value) -> std::result::Result<Vec<SubtitleResult>
 }
 
 pub fn search_subtitles(imdb: &str, episode: Option<(u32, u32)>) -> std::result::Result<Vec<SubtitleResult>, String> {
-    if !imdb.starts_with("tt") || !imdb[2..].chars().all(|c| c.is_ascii_digit()) {
+    if !imdb.strip_prefix("tt").is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
         return Err("No IMDb match was found for this title.".into());
     }
     let url = match episode {
         Some((s, e)) => format!("https://opensubtitles-v3.strem.io/subtitles/series/{imdb}:{s}:{e}.json"),
         None => format!("https://opensubtitles-v3.strem.io/subtitles/movie/{imdb}.json"),
     };
-    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(15)).build();
-    let body = agent.get(&url).call().map_err(|_| "Couldn’t reach OpenSubtitles. Try again.".to_string())?.into_string().map_err(|_| "Couldn’t read OpenSubtitles' answer.".to_string())?;
+    let agent = ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(15)).build();
+    let response = agent.get(&url).call().map_err(|_| "Couldn’t reach OpenSubtitles. Try again.".to_string())?;
+    if response.status() != 200 {
+        return Err("Unexpected response from OpenSubtitles.".into());
+    }
+    let body = response.into_string().map_err(|_| "Couldn’t read OpenSubtitles' answer.".to_string())?;
     let value: Value = serde_json::from_str(&body).map_err(|_| "Unexpected response from OpenSubtitles.".to_string())?;
     parse_subtitles(&value)
 }
@@ -801,24 +839,42 @@ pub fn download_subtitle(result: &SubtitleResult, video: &std::path::Path) -> st
     if !subtitle_url_ok(&result.url) {
         return Err("Invalid subtitle download link.".into());
     }
-    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build();
+    let agent = ureq::AgentBuilder::new().redirects(0).timeout(Duration::from_secs(20)).build();
     let response = agent.get(&result.url).call().map_err(|_| "Couldn’t download this subtitle.".to_string())?;
+    if response.status() != 200 {
+        return Err("Couldn’t download this subtitle.".into());
+    }
     let mut bytes = Vec::new();
     response.into_reader().take(SUBTITLE_MAX_BYTES as u64 + 1).read_to_end(&mut bytes).map_err(|_| "Couldn’t download this subtitle.".to_string())?;
     let text = String::from_utf8_lossy(&bytes);
     if bytes.len() > SUBTITLE_MAX_BYTES || !text.contains("-->") {
         return Err("This result isn’t a readable subtitle file.".into());
     }
-    let stem = video.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "subtitle".into());
-    let lang: String = result.language.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
-    let file = format!("{stem}.{lang}.srt");
-    let beside = video.parent().map(|d| d.join(&file));
-    if let Some(path) = beside.filter(|p| std::fs::write(p, &bytes).is_ok()) {
-        return Ok(path);
+    save_subtitle(video, &result.language, &bytes, &crate::catalog::data_dir().join("subtitles"))
+        .map_err(|_| "Couldn’t save the subtitle.".to_string())
+}
+
+fn save_subtitle(video: &std::path::Path, language: &str, bytes: &[u8], fallback: &std::path::Path) -> std::io::Result<PathBuf> {
+    let stem = video.file_stem().unwrap_or_else(|| std::ffi::OsStr::new("subtitle"));
+    let lang: String = language.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
+    let mut file = stem.to_os_string();
+    file.push(format!(".{lang}.srt"));
+    if let Some(dir) = video.parent() {
+        let beside = dir.join(file);
+        let save = || -> std::io::Result<()> {
+            let mut partial = tempfile::NamedTempFile::new_in(dir)?;
+            partial.write_all(bytes)?;
+            partial.persist_noclobber(&beside)?;
+            Ok(())
+        };
+        if save().is_ok() {
+            return Ok(beside);
+        }
     }
-    let fallback = crate::catalog::data_dir().join("subtitles");
-    let _ = std::fs::create_dir_all(&fallback);
-    let path = fallback.join(file);
-    std::fs::write(&path, &bytes).map_err(|_| "Couldn’t save the subtitle.".to_string())?;
+    // A unique file also keeps same-named videos from sharing cached subtitles.
+    std::fs::create_dir_all(fallback)?;
+    let mut stored = tempfile::Builder::new().prefix("subtitle-").suffix(".srt").tempfile_in(fallback)?;
+    stored.write_all(bytes)?;
+    let (_, path) = stored.keep()?;
     Ok(path)
 }

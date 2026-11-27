@@ -190,6 +190,29 @@ pub fn language_name(code: &str) -> String {
         "zh" | "chi" | "zho" => "Chinese",
         "hi" | "hin" => "Hindi",
         "ru" | "rus" => "Russian",
+        "ar" | "ara" => "Arabic",
+        "bn" | "ben" => "Bengali",
+        "cs" | "cze" | "ces" => "Czech",
+        "da" | "dan" => "Danish",
+        "nl" | "dut" | "nld" => "Dutch",
+        "fi" | "fin" => "Finnish",
+        "el" | "gre" | "ell" => "Greek",
+        "he" | "heb" => "Hebrew",
+        "hu" | "hun" => "Hungarian",
+        "id" | "ind" => "Indonesian",
+        "ml" | "mal" => "Malayalam",
+        "mr" | "mar" => "Marathi",
+        "no" | "nor" | "nob" => "Norwegian",
+        "pl" | "pol" => "Polish",
+        "ro" | "rum" | "ron" => "Romanian",
+        "sv" | "swe" => "Swedish",
+        "ta" | "tam" => "Tamil",
+        "te" | "tel" => "Telugu",
+        "th" | "tha" => "Thai",
+        "tr" | "tur" => "Turkish",
+        "uk" | "ukr" => "Ukrainian",
+        "vi" | "vie" => "Vietnamese",
+        "ca" | "cat" => "Catalan",
         "und" => "Unknown",
         _ => return code.to_string(),
     }
@@ -219,8 +242,8 @@ pub struct PlaybackState {
     pub subtitle_delay: f64,
     pub subtitle_position: f64,
     pub title: Option<String>,
-    pub tracks: Vec<Track>,
-    pub chapters: Vec<Chapter>,
+    pub tracks: Arc<[Track]>,
+    pub chapters: Arc<[Chapter]>,
     pub loaded: bool,
     pub error: Option<String>,
     /// Bumped on every change so the UI can skip identical frames.
@@ -246,8 +269,8 @@ impl Default for PlaybackState {
             subtitle_delay: 0.0,
             subtitle_position: 100.0,
             title: None,
-            tracks: Vec::new(),
-            chapters: Vec::new(),
+            tracks: Arc::from([]),
+            chapters: Arc::from([]),
             loaded: false,
             error: None,
             revision: 0,
@@ -266,8 +289,8 @@ impl PlaybackState {
 type Shared = Arc<Mutex<PlaybackState>>;
 
 extern "C" fn on_event(context: *mut c_void, kind: c_int, name: *const c_char, text: *const c_char, number: f64) {
-    // SAFETY: `context` is the `Arc` leaked in `Player::new` and reclaimed in
-    // `Drop` only after the native event thread has been joined.
+    // SAFETY: the raw Arc reference created in NativePlayer::new stays live
+    // until Drop has joined the native event thread.
     let state = unsafe { &*(context as *const Mutex<PlaybackState>) };
     let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
     let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
@@ -306,24 +329,42 @@ extern "C" fn on_event(context: *mut c_void, kind: c_int, name: *const c_char, t
 
 /// The playback core. Every method is cheap and non-blocking except where
 /// libmpv itself blocks briefly on a command.
+#[derive(Default)]
 pub struct Player {
+    native: std::cell::OnceCell<NativePlayer>,
+}
+
+struct NativePlayer {
     raw: *mut RawPlayer,
     state: Shared,
     context: *const Mutex<PlaybackState>,
 }
 
-// libmpv's client API is thread-safe; the AppKit pieces are main-thread-only
-// and are only reached through `attach`, which checks.
-unsafe impl Send for Player {}
-unsafe impl Sync for Player {}
-
 impl Player {
-    pub fn new(libmpv: &Path) -> Result<Self> {
+    pub fn initialize(&self, libmpv: &Path, gpui_view: *mut c_void) -> Result<()> {
+        if self.native.get().is_none() {
+            let native = NativePlayer::new(libmpv)?;
+            match unsafe { plexy_player_attach(native.raw, gpui_view) } {
+                0 => {}
+                code => bail!("Could not attach the video surface ({code})"),
+            }
+            let _ = self.native.set(native);
+        }
+        Ok(())
+    }
+
+    fn native(&self) -> Result<&NativePlayer> {
+        self.native.get().ok_or_else(|| anyhow!("No playback core"))
+    }
+}
+
+impl NativePlayer {
+    fn new(libmpv: &Path) -> Result<Self> {
         let state: Shared = Arc::new(Mutex::new(PlaybackState::default()));
         let context = Arc::into_raw(state.clone());
         let lib = cstring(&libmpv.to_string_lossy());
         let mut error = [0 as c_char; 512];
-        let raw = unsafe { plexy_player_create(lib.as_ptr(), on_event, context as *mut c_void, error.as_mut_ptr(), error.len()) };
+        let raw = unsafe { plexy_player_create(lib.as_ptr(), on_event, context.cast_mut().cast(), error.as_mut_ptr(), error.len()) };
         if raw.is_null() {
             unsafe { drop(Arc::from_raw(context)) };
             let message = unsafe { CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
@@ -331,64 +372,66 @@ impl Player {
         }
         Ok(Self { raw, state, context })
     }
+}
 
-    /// Places the video surface under `gpui_view` (the window's GPUI NSView).
-    pub fn attach(&self, gpui_view: *mut c_void) -> Result<()> {
-        match unsafe { plexy_player_attach(self.raw, gpui_view) } {
-            0 => Ok(()),
-            code => bail!("Could not attach the video surface ({code})"),
-        }
-    }
-
+impl Player {
     pub fn load(&self, path: &Path, start: f64) -> Result<()> {
         let path = local_media_path(path)?;
+        let native = self.native()?;
         {
-            let mut state = self.state.lock();
-            *state = PlaybackState { revision: state.revision + 1, ..PlaybackState::default() };
+            let mut state = native.state.lock();
+            *state = PlaybackState {
+                revision: state.revision + 1,
+                volume: state.volume,
+                muted: state.muted,
+                speed: state.speed,
+                subtitle_delay: state.subtitle_delay,
+                subtitle_position: state.subtitle_position,
+                ..PlaybackState::default()
+            };
         }
         let path = cstring(&path.to_string_lossy());
-        check(unsafe { plexy_player_load(self.raw, path.as_ptr(), start) })
+        check(unsafe { plexy_player_load(native.raw, path.as_ptr(), start) })
     }
 
     /// A snapshot for rendering. Track and chapter lists are re-read lazily
     /// after libmpv reports that they changed.
     pub fn snapshot(&self) -> PlaybackState {
+        let Some(native) = self.native.get() else { return PlaybackState::default() };
         let (tracks_dirty, chapters_dirty) = {
-            let state = self.state.lock();
-            (state.tracks_dirty, state.chapters_dirty)
+            let mut state = native.state.lock();
+            (std::mem::take(&mut state.tracks_dirty), std::mem::take(&mut state.chapters_dirty))
         };
         if tracks_dirty {
             let tracks = self.read_tracks();
-            let mut state = self.state.lock();
-            state.tracks = tracks;
-            state.tracks_dirty = false;
+            let mut state = native.state.lock();
+            state.tracks = tracks.into();
             state.revision += 1;
         }
         if chapters_dirty {
             let chapters = self.read_chapters();
-            let mut state = self.state.lock();
-            state.chapters = chapters;
-            state.chapters_dirty = false;
+            let mut state = native.state.lock();
+            state.chapters = chapters.into();
             state.revision += 1;
         }
-        self.state.lock().clone()
+        native.state.lock().clone()
     }
 
     pub fn command(&self, args: &[&str]) -> Result<()> {
         let owned: Vec<CString> = args.iter().map(|arg| cstring(arg)).collect();
         let mut pointers: Vec<*const c_char> = owned.iter().map(|arg| arg.as_ptr()).collect();
         pointers.push(std::ptr::null());
-        check(unsafe { plexy_player_command(self.raw, pointers.as_ptr()) })
+        check(unsafe { plexy_player_command(self.native()?.raw, pointers.as_ptr()) })
     }
 
     pub fn set(&self, name: &str, value: &str) -> Result<()> {
         let (name, value) = (cstring(name), cstring(value));
-        check(unsafe { plexy_player_set_property(self.raw, name.as_ptr(), value.as_ptr()) })
+        check(unsafe { plexy_player_set_property(self.native()?.raw, name.as_ptr(), value.as_ptr()) })
     }
 
     pub fn get(&self, name: &str) -> Option<String> {
         let name = cstring(name);
-        let raw = unsafe { plexy_player_get_property(self.raw, name.as_ptr()) };
+        let raw = unsafe { plexy_player_get_property(self.native.get()?.raw, name.as_ptr()) };
         if raw.is_null() {
             return None;
         }
@@ -403,7 +446,7 @@ impl Player {
         self.set("pause", if paused { "yes" } else { "no" })
     }
     pub fn toggle_pause(&self) -> Result<()> {
-        let state = self.state.lock().clone();
+        let state = self.native()?.state.lock().clone();
         if state.ended {
             self.seek_to(0.0)?;
             return self.set_paused(false);
@@ -414,7 +457,7 @@ impl Player {
         self.command(&["seek", &format!("{:.3}", seconds.max(0.0)), "absolute+exact"])
     }
     pub fn seek_by(&self, delta: f64) -> Result<()> {
-        let state = self.state.lock().clone();
+        let state = self.native()?.state.lock().clone();
         let mut target = state.position + delta;
         if state.duration > 0.0 {
             target = target.min(state.duration);
@@ -505,7 +548,7 @@ impl Player {
     }
 }
 
-impl Drop for Player {
+impl Drop for NativePlayer {
     fn drop(&mut self) {
         unsafe {
             plexy_player_destroy(self.raw);
@@ -557,7 +600,7 @@ impl Preview {
         }
         let mut preview = Self { raw, width: max_side, height: max_side * 9 / 16 };
         // The first frame loads the file; afterwards the video size is known.
-        let _ = preview.frame(0.0);
+        preview.frame(0.0)?;
         let dimension = |name: &str| {
             let name = cstring(name);
             let raw = unsafe { plexy_preview_get_property(preview.raw, name.as_ptr()) };

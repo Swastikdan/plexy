@@ -60,7 +60,7 @@ pub struct Root {
     pub available: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Item {
     pub id: i64,
     pub library_id: i64,
@@ -234,6 +234,7 @@ impl Catalog {
                title TEXT NOT NULL, year INTEGER, season INTEGER, episode INTEGER, episode_title TEXT,
                poster TEXT, added_at INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0);
              CREATE INDEX IF NOT EXISTS items_library ON items(library_id);
+             CREATE INDEX IF NOT EXISTS items_root ON items(root_id);
              CREATE TABLE IF NOT EXISTS progress (
                key TEXT PRIMARY KEY, path TEXT NOT NULL, position REAL NOT NULL, duration REAL NOT NULL,
                updated INTEGER NOT NULL);
@@ -454,7 +455,7 @@ impl Catalog {
             *status = ScanStatus { running: true, generation: status.generation, ..ScanStatus::default() };
         }
         let catalog = self.clone();
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name("plexy-scan".into())
             .spawn(move || {
                 for library in catalog.libraries().into_iter().filter(|l| only.is_none_or(|id| id == l.id) && (!automatic || l.auto_refresh)) {
@@ -470,8 +471,14 @@ impl Catalog {
                 status.current = None;
                 status.finished_at = Some(now());
                 status.generation += 1;
-            })
-            .expect("scan thread");
+            });
+        if let Err(error) = worker {
+            let mut status = self.status.lock();
+            status.running = false;
+            status.finished_at = Some(now());
+            status.errors.push(error.to_string());
+            status.generation += 1;
+        }
     }
 
     fn scan_root(&self, library: &Library, root: &Root) -> Result<()> {
@@ -481,19 +488,24 @@ impl Catalog {
         let mut files = Vec::new();
         let mut stack = vec![root.path.clone()];
         while let Some(dir) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().into_owned();
+            for entry in std::fs::read_dir(&dir)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
                 if name.starts_with('.') {
                     continue;
                 }
-                if path.is_dir() {
-                    // Skip extras folders the way media servers do.
+                let kind = entry.file_type()?;
+                let path = entry.path();
+                if kind.is_dir() {
+                    // Nested directory symlinks can lead outside the root or back into it.
                     if !matches!(name.to_lowercase().as_str(), "extras" | "featurettes" | "behind the scenes" | "sample" | "samples" | "trailers") {
                         stack.push(path);
                     }
-                } else if media::is_video(&path) && !name.to_lowercase().contains("sample") {
+                } else if (kind.is_file() || (kind.is_symlink() && path.is_file()))
+                    && media::is_video(&path)
+                    && !name.to_lowercase().contains("sample")
+                {
                     files.push(path);
                 }
             }
@@ -521,10 +533,10 @@ impl Catalog {
                 // Artwork can be added later without touching the video.
                 let poster = find_poster(&path).map(|p| p.display().to_string());
                 let backdrop = find_backdrop(&path).map(|p| p.display().to_string());
-                let _ = self.db.lock().execute(
-                    "UPDATE items SET missing = 0, poster = ?2, backdrop = ?3 WHERE path = ?1",
-                    params![key, poster, backdrop],
-                );
+                self.db.lock().prepare_cached(
+                    "UPDATE items SET missing = 0, poster = ?2, backdrop = ?3
+                     WHERE path = ?1 AND (missing != 0 OR poster IS NOT ?2 OR backdrop IS NOT ?3)",
+                )?.execute(params![key, poster, backdrop])?;
                 continue;
             }
             let identity = media::identify(&path);
@@ -553,8 +565,9 @@ impl Catalog {
         }
         // Gone from a reachable root: keep the row (and its progress) but hide it.
         let db = self.db.lock();
+        let mut mark_missing = db.prepare_cached("UPDATE items SET missing = 1 WHERE path = ?1 AND missing = 0")?;
         for path in known.keys().filter(|p| !seen.contains(*p)) {
-            db.execute("UPDATE items SET missing = 1 WHERE path = ?1", params![path])?;
+            mark_missing.execute(params![path])?;
         }
         Ok(())
     }
@@ -757,8 +770,10 @@ impl Catalog {
     /// Where an artwork download for a TMDB image path should live. TMDB
     /// paths are `/abcd1234….jpg`, so the file name alone is unique.
     pub fn artwork_cache_path(&self, image_path: &str) -> Option<PathBuf> {
-        let name = image_path.trim_start_matches('/');
-        if name.contains("..") || name.is_empty() {
+        let name = image_path.strip_prefix('/')?;
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+            || !name.as_bytes()[0].is_ascii_alphanumeric()
+        {
             return None;
         }
         Some(data_dir().join("artwork").join(name))
@@ -827,71 +842,79 @@ impl Catalog {
         self.bump_metadata_epoch();
     }
 
-    /// Cached metadata for a title, if any.
-    pub fn title_meta(&self, key: &TitleKey) -> Option<TitleMeta> {
-        let encoded = key.encode();
-        self.db
-            .lock()
-            .query_row(
-                "SELECT tmdb_id, kind, name, overview, year, rating, runtime, certification, genres, cast_json,
-                        poster_file, backdrop_file, logo_file, imdb_id, manual, matched
-                 FROM title_metadata WHERE title_key = ?1",
-                params![encoded],
-                |r| {
-                    let cast_json: String = r.get(9)?;
-                    let cast: Vec<serde_json::Value> = serde_json::from_str(&cast_json).unwrap_or_default();
-                    Ok(TitleMeta {
-                        tmdb_id: r.get(0)?,
-                        kind: r.get(1)?,
-                        name: r.get(2)?,
-                        overview: r.get(3)?,
-                        year: r.get::<_, Option<i64>>(4)?.map(|y| y as u32),
-                        rating: r.get(5)?,
-                        runtime: r.get::<_, Option<i64>>(6)?.map(|v| v as u32),
-                        certification: r.get(7)?,
-                        genres: serde_json::from_str(&r.get::<_, String>(8).unwrap_or_default()).unwrap_or_default(),
-                        cast: cast
-                            .iter()
-                            .map(|c| CastMember {
-                                name: c.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                                role: c.get("role").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                                photo: c.get("photo").and_then(|v| v.as_str()).map(PathBuf::from),
-                            })
-                            .collect(),
-                        poster: r.get::<_, Option<String>>(10)?.map(PathBuf::from),
-                        backdrop: r.get::<_, Option<String>>(11)?.map(PathBuf::from),
-                        logo: r.get::<_, Option<String>>(12)?.map(PathBuf::from),
-                        imdb_id: r.get(13)?,
-                        manual: r.get::<_, i64>(14)? != 0,
-                        matched: r.get::<_, i64>(15)? != 0,
-                    })
-                },
-            )
-            .optional()
-            .ok()
-            .flatten()
+    const TITLE_META_COLUMNS: &str = "tmdb_id, kind, name, overview, year, rating, runtime, certification, genres, cast_json,
+                        poster_file, backdrop_file, logo_file, imdb_id, manual, matched";
+
+    fn read_title_meta(r: &rusqlite::Row<'_>) -> rusqlite::Result<TitleMeta> {
+        let cast_json: String = r.get(9)?;
+        let cast: Vec<serde_json::Value> = serde_json::from_str(&cast_json).unwrap_or_default();
+        Ok(TitleMeta {
+            tmdb_id: r.get(0)?,
+            kind: r.get(1)?,
+            name: r.get(2)?,
+            overview: r.get(3)?,
+            year: r.get::<_, Option<i64>>(4)?.map(|y| y as u32),
+            rating: r.get(5)?,
+            runtime: r.get::<_, Option<i64>>(6)?.map(|v| v as u32),
+            certification: r.get(7)?,
+            genres: serde_json::from_str(&r.get::<_, String>(8).unwrap_or_default()).unwrap_or_default(),
+            cast: cast
+                .iter()
+                .map(|c| CastMember {
+                    name: c.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                    role: c.get("role").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                    photo: c.get("photo").and_then(|v| v.as_str()).map(PathBuf::from),
+                })
+                .collect(),
+            poster: r.get::<_, Option<String>>(10)?.map(PathBuf::from),
+            backdrop: r.get::<_, Option<String>>(11)?.map(PathBuf::from),
+            logo: r.get::<_, Option<String>>(12)?.map(PathBuf::from),
+            imdb_id: r.get(13)?,
+            manual: r.get::<_, i64>(14)? != 0,
+            matched: r.get::<_, i64>(15)? != 0,
+        })
     }
 
-    /// One episode's TMDB still and name for a local file.
-    pub fn episode_meta(&self, path: &Path) -> EpisodeMeta {
-        let default = EpisodeMeta { still: None, name: None, overview: None };
-        self.db
-            .lock()
-            .query_row(
-                "SELECT still_file, name, overview FROM episode_metadata WHERE path = ?1",
-                params![path.display().to_string()],
-                |r| {
-                    Ok(EpisodeMeta {
-                        still: r.get::<_, Option<String>>(0)?.map(PathBuf::from),
-                        name: r.get(1)?,
-                        overview: r.get(2)?,
-                    })
-                },
-            )
-            .optional()
-            .ok()
-            .flatten()
-            .unwrap_or(default)
+    /// Cached metadata for a title, if any.
+    pub fn title_meta(&self, key: &TitleKey) -> Option<TitleMeta> {
+        let query = format!("SELECT {} FROM title_metadata WHERE title_key = ?1", Self::TITLE_META_COLUMNS);
+        self.db.lock().prepare_cached(&query).ok()?
+            .query_row(params![key.encode()], Self::read_title_meta)
+            .optional().ok().flatten()
+    }
+
+    pub fn matched_title_metadata(&self, keys: &HashSet<TitleKey>) -> std::collections::HashMap<TitleKey, TitleMeta> {
+        let db = self.db.lock();
+        let query = format!("SELECT {}, title_key FROM title_metadata WHERE matched != 0", Self::TITLE_META_COLUMNS);
+        let Ok(mut stmt) = db.prepare_cached(&query) else { return Default::default() };
+        let Ok(mut rows) = stmt.query([]) else { return Default::default() };
+        let mut metas = std::collections::HashMap::new();
+        while let Ok(Some(row)) = rows.next() {
+            let Some(key) = row.get::<_, String>(16).ok().and_then(|key| TitleKey::decode(&key)) else { continue };
+            if keys.contains(&key) {
+                if let Ok(meta) = Self::read_title_meta(row) {
+                    metas.insert(key, meta);
+                }
+            }
+        }
+        metas
+    }
+
+    pub fn library_episode_metadata(&self) -> std::collections::HashMap<PathBuf, EpisodeMeta> {
+        let db = self.db.lock();
+        let Ok(mut stmt) = db.prepare_cached(
+            "SELECT e.path, e.still_file, e.name, e.overview
+             FROM episode_metadata e JOIN items i ON i.path = e.path
+             WHERE i.season IS NOT NULL AND (e.still_file IS NOT NULL OR e.name IS NOT NULL)",
+        ) else { return Default::default() };
+        let Ok(rows) = stmt.query_map([], |row| {
+            Ok((PathBuf::from(row.get::<_, String>(0)?), EpisodeMeta {
+                still: row.get::<_, Option<String>>(1)?.map(PathBuf::from),
+                name: row.get(2)?,
+                overview: row.get(3)?,
+            }))
+        }) else { return Default::default() };
+        rows.flatten().collect()
     }
 
     pub fn store_episode_meta(&self, path: &Path, still: Option<String>, name: Option<String>, overview: Option<String>) {
@@ -1314,6 +1337,7 @@ mod tests {
         let tv = base.join("TV/Test Show/Season 1");
         std::fs::create_dir_all(&tv).unwrap();
         std::fs::create_dir_all(base.join("data")).unwrap();
+        std::os::unix::fs::symlink(base.join("TV"), tv.join("directory-loop")).unwrap();
         for name in ["Test.Show.S01E01.Pilot.mkv", "Test.Show.S01E02.Second.mkv", "Test.Show.S01E01.Pilot.sample.mkv"] {
             std::fs::write(tv.join(name), name).unwrap();
         }

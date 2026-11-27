@@ -87,8 +87,11 @@ they receive stable updates. Retire Electron packaging once that transition is r
 | `src/library_ui.rs` | Home, Movies, TV, show page, Libraries |
 | `src/personal_ui.rs` | Search, sort/filters, title pages, watchlist, favorites, ratings, hidden, collections, history |
 | `src/shell_ui.rs` | Top navigation, Home hero carousel, Library page, title hero pages, Settings |
-| `src/theme.rs` | Plexy HeroUI dark tokens |
+| `src/theme.rs` | Plexy HeroUI dark/light tokens |
 | `assets/icons/` | The web app's icons (Video.js neutral for the player, lucide elsewhere); regenerate with `bun apps/player-gpui/tools/extract-icons.ts` from the repo root |
+| [`docs/README.md`](docs/README.md) | Parent orchestration log for the Rust UI work: status board, order of work, handoff protocol, verification matrices |
+| [`docs/UI_KIT.md`](docs/UI_KIT.md) | Proposed reusable components, typed icon library, tokens, scene workflow, canonical menu/artwork specs and migration phases (design only) |
+| [`docs/MOTION.md`](docs/MOTION.md) | Animation audit, motion engine design and frame-performance plan (design only) |
 
 ## Verify
 
