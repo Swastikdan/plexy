@@ -208,7 +208,6 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
       type="button"
       isIconOnly
       aria-label={label}
-      title={label}
       onPress={onClick}
       isDisabled={disabled}
       className="h-8 w-8 rounded-lg bg-transparent text-muted transition-colors hover:bg-surface-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
@@ -1002,7 +1001,6 @@ export function ServerPreferencesPanel() {
                       type="button"
                       onPress={() => copyLanUrl(url)}
                       className="inline-flex h-auto shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground transition-[background-color,color,transform] duration-150 hover:bg-surface-tertiary active:scale-95 md:h-auto [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
-                      title="Copy address"
                     >
                       {copiedUrl === url ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
                       <span>{copiedUrl === url ? "Copied" : "Copy"}</span>
@@ -1768,7 +1766,6 @@ function OptimizerSettings() {
                 setTimeout(() => setCopied(false), 2000);
               }}
               className="inline-flex h-auto items-center gap-1.5 rounded-lg border border-border bg-surface-secondary px-2.5 py-1 text-xs font-medium text-foreground transition-[background-color,color,transform] duration-150 hover:bg-surface-tertiary active:scale-95 md:h-auto [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3.5"
-              title="Copy path"
             >
               {copied ? <Check size={13} className="text-success-soft-foreground" /> : <Copy size={13} />}
               <span>{copied ? "Copied" : "Copy"}</span>

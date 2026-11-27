@@ -270,7 +270,6 @@ function CollectionsRoute() {
                           }}
                           isIconOnly
                           aria-label={`Remove ${item.name} from collection`}
-                          title="Remove from collection"
                           className="absolute right-2 top-2 h-7 w-7 rounded-full border border-white/20 bg-black/65 text-white opacity-0 backdrop-blur transition-opacity hover:bg-black/85 group-hover:opacity-100 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-3"
                         >
                           <X size={12} />
@@ -293,7 +292,7 @@ function CollectionsRoute() {
         confirmLabel="Delete collection"
         onConfirm={() => {
           if (id == null) return;
-          void api.deleteCollection(current.collection.id).then(async () => {
+          void api.deleteCollection(id).then(async () => {
             await refresh();
             void navigate({ to: "/collections", search: {} });
           });

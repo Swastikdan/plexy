@@ -113,7 +113,6 @@ function HistoryRoute() {
                   isDisabled={busy !== null}
                   isIconOnly
                   aria-label={`Remove ${item.name} from history`}
-                  title="Remove from history"
                   className="h-6 w-6 rounded-full bg-transparent text-muted opacity-0 transition-[color,background-color,opacity] hover:bg-surface-secondary hover:text-foreground group-hover:opacity-100 disabled:opacity-30 [&_svg]:mx-0 [&_svg]:my-0 [&_svg]:size-[11px]"
                 >
                   <X size={11} />
