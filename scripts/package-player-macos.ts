@@ -33,6 +33,92 @@ function bundleIcon(staging: string, resources: string) {
   run("iconutil", ["-c", "icns", iconset, "-o", join(resources, "AppIcon.icns")]);
 }
 
+/** Render the branded installer background and merge it into a retina TIFF. */
+function dmgBackground(staging: string): string {
+  const source = join(root, "build", "player-dmg-background.svg");
+  const retina = join(staging, "dmg-background@2x.png");
+  const standard = join(staging, "dmg-background.png");
+  const tiff = join(staging, "dmg-background.tiff");
+  capture("sips", ["-s", "format", "png", source, "--out", retina]);
+  capture("sips", ["-z", "400", "640", retina, "--out", standard]);
+  capture("tiffutil", ["-cathidpicheck", standard, retina, "-out", tiff]);
+  return tiff;
+}
+
+/** Detach a stale installer volume so Finder never bakes a " 2" suffix into .DS_Store. */
+function detachStalePlayerVolumes() {
+  try {
+    for (const name of readdirSync("/Volumes")) {
+      if (!/^Plexy Beta( \d+)?$/.test(name)) continue;
+      try {
+        execFileSync("hdiutil", ["detach", `/Volumes/${name}`, "-force"], { stdio: "ignore", timeout: 15_000 });
+      } catch {
+        /* already gone */
+      }
+    }
+  } catch {
+    /* /Volumes unavailable */
+  }
+}
+
+function attachWritable(dmg: string): string {
+  const info = capture("hdiutil", ["attach", "-readwrite", "-noverify", "-noautoopen", "-plist", dmg]);
+  const match = info.match(/<key>mount-point<\/key>\s*<string>([^<]+)<\/string>/);
+  if (!match) throw new Error("hdiutil attach did not report a mount point.");
+  return match[1].replaceAll("&amp;", "&");
+}
+
+/** Author the Finder window, icon positions and background, then compress. */
+function styledDmg(imageRoot: string, staging: string, dmg: string) {
+  const background = join(imageRoot, ".background");
+  mkdirSync(background);
+  copyFileSync(dmgBackground(staging), join(background, "background.tiff"));
+  detachStalePlayerVolumes();
+  const rw = join(staging, "Plexy-Beta-rw.dmg");
+  run("hdiutil", ["create", "-srcfolder", imageRoot, "-volname", appName, "-fs", "HFS+", "-format", "UDRW", "-ov", rw]);
+  const mount = attachWritable(rw);
+  try {
+    const script = `
+with timeout of 120 seconds
+  tell application "Finder"
+    tell disk "${appName}"
+      open
+      set current view of container window to icon view
+      set toolbar visible of container window to false
+      set statusbar visible of container window to false
+      set the bounds of container window to {400, 36, 1040, 436}
+      set viewOptions to the icon view options of container window
+      set arrangement of viewOptions to not arranged
+      set icon size of viewOptions to 96
+      set text size of viewOptions to 13
+      set background picture of viewOptions to file ".background:background.tiff"
+      set position of item "${appName}.app" of container window to {162, 188}
+      set position of item "Applications" of container window to {470, 188}
+      update without registering applications
+      delay 2
+      close
+    end tell
+  end tell
+end timeout
+`;
+    run("osascript", ["-e", script]);
+    // Finder normalizes the volume root while writing .DS_Store; restore the
+    // custom icon afterwards so it survives the detach/convert.
+    copyFileSync(join(imageRoot, `${appName}.app`, "Contents", "Resources", "AppIcon.icns"), join(mount, ".VolumeIcon.icns"));
+    run("SetFile", ["-a", "C", mount]);
+  } finally {
+    try {
+      execFileSync("hdiutil", ["detach", mount, "-force"], { stdio: "ignore", timeout: 30_000 });
+    } catch {
+      /* already detached */
+    }
+  }
+
+  rmSync(dmg, { force: true });
+  run("hdiutil", ["convert", rw, "-format", "UDZO", "-imagekey", "zlib-level=9", "-o", dmg]);
+  rmSync(rw, { force: true });
+}
+
 function verifyRuntime(executable: string, frameworks: string): string {
   const libraryNames = new Set(readdirSync(frameworks).filter((name) => name.endsWith(".dylib")));
   if (!libraryNames.has("libmpv.2.dylib")) throw new Error("The bundle is missing libmpv.2.dylib.");
@@ -114,7 +200,7 @@ async function main() {
     symlinkSync("/Applications", join(imageRoot, "Applications"));
     const dmgName = `Plexy-Beta-${version}-mac-arm64.dmg`;
     const dmg = join(staging, dmgName);
-    run("hdiutil", ["create", "-srcfolder", imageRoot, "-volname", appName, "-format", "UDZO", dmg]);
+    styledDmg(imageRoot, staging, dmg);
 
     const finalApp = join(output, basename(app));
     rmSync(finalApp, { recursive: true, force: true });
