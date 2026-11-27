@@ -9,6 +9,7 @@ import { immersiveTransition, pushTransition } from "@/shared/navigation/transit
 import "@/global.css";
 import { MobileProvider } from "@/core/mobile-provider";
 import { RemoteProvider } from "@/features/remote/remote-provider";
+import { MovyProvider } from "@/features/movy/movy-provider";
 export const unstable_settings = { initialRouteName: "(tabs)" };
 export default function RootLayout() {
   const colors = useColors();
@@ -20,6 +21,7 @@ export default function RootLayout() {
           <AppDialogProvider>
           <UpdateProvider>
           <RemoteProvider>
+          <MovyProvider>
           <Stack
             screenOptions={pushTransition(reducedMotion, colors.canvas)}
           >
@@ -33,6 +35,7 @@ export default function RootLayout() {
             />
             <Stack.Screen name="player/remote" options={immersiveTransition} />
           </Stack>
+          </MovyProvider>
           </RemoteProvider>
           </UpdateProvider>
           </AppDialogProvider>
