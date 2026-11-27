@@ -38,8 +38,23 @@ pub enum Menu {
     Subtitles,
     Speed,
     Chapters,
+    /// Online subtitle search for the open file.
+    SubtitleSearch,
     /// The Settings root: rows that drill into the pages above.
     More,
+}
+
+/// Online subtitle search state, written by worker threads.
+#[derive(Clone, Default)]
+pub struct SubSearch {
+    pub file: Option<PathBuf>,
+    pub loading: bool,
+    pub error: Option<String>,
+    pub results: Vec<crate::metadata::SubtitleResult>,
+    pub language: Option<String>,
+    /// A finished download waiting for the UI thread to load it into mpv.
+    pub ready: Option<PathBuf>,
+    pub downloading: Option<String>,
 }
 
 #[derive(Clone)]
@@ -54,6 +69,9 @@ struct HeldSeek {
     key: char,
     started: Instant,
 }
+
+/// Seconds the "Playing next" card waits before autoplay.
+const AUTOPLAY_COUNTDOWN: Duration = Duration::from_secs(8);
 
 pub struct PlayerView {
     pub player: Arc<Player>,
@@ -106,6 +124,27 @@ pub struct PlayerView {
     pub hero_index: usize,
     pub hero_paused: bool,
     pub hero_since: Instant,
+    pub hero_prev: Option<usize>,
+    pub shell_scroll: gpui::ScrollHandle,
+    pub metas: std::collections::HashMap<TitleKey, crate::catalog::TitleMeta>,
+    pub token_draft: String,
+    pub token_focus: FocusHandle,
+    /// (ok, message) from the last token check; written by a worker thread.
+    pub token_status: Arc<parking_lot::Mutex<(bool, String)>>,
+    token_seen: String,
+    /// IntroDB markers for the open file; filled at open and by the lookup thread.
+    pub segments: Arc<parking_lot::Mutex<Option<(PathBuf, crate::catalog::SkipSegments)>>>,
+    /// Autoplay countdown start once the episode ends; `None` when idle.
+    pub autoplay_at: Option<Instant>,
+    pub autoplay_cancelled: bool,
+    /// The window was already fullscreen when playback started (from the
+    /// library), so closing the player keeps it fullscreen.
+    fullscreen_before_play: bool,
+    pub last_screen: std::cell::RefCell<Option<Screen>>,
+    pub sub_search: Arc<parking_lot::Mutex<SubSearch>>,
+    autoplay_fired: bool,
+    pub episode_metas: std::collections::HashMap<PathBuf, crate::catalog::EpisodeMeta>,
+    metadata_epoch: u64,
     pub settings_section: crate::shell_ui::SettingsSection,
     pub title_menu: bool,
     pub selected_season: Option<u32>,
@@ -159,11 +198,27 @@ impl PlayerView {
             collection_focus: cx.focus_handle(),
             collection_picker: false,
             collection_target: None,
-            sort: Sort::Title,
+            sort: Sort::Added,
             watch_filter: WatchFilter::All,
             hero_index: 0,
             hero_paused: false,
             hero_since: Instant::now(),
+            hero_prev: None,
+            shell_scroll: gpui::ScrollHandle::new(),
+            metas: Default::default(),
+            episode_metas: Default::default(),
+            token_draft: String::new(),
+            token_seen: String::new(),
+            segments: Default::default(),
+            autoplay_at: None,
+            autoplay_cancelled: false,
+            fullscreen_before_play: false,
+            last_screen: Default::default(),
+            sub_search: Default::default(),
+            autoplay_fired: false,
+            token_focus: cx.focus_handle(),
+            token_status: Default::default(),
+            metadata_epoch: u64::MAX,
             settings_section: crate::shell_ui::SettingsSection::Playback,
             title_menu: false,
             selected_season: None,
@@ -190,6 +245,9 @@ impl PlayerView {
 
     /// Opens at `start` seconds, or at the saved resume point when `None`.
     pub fn open_at(&mut self, path: &Path, start: Option<f64>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.media.is_none() {
+            self.fullscreen_before_play = window.is_fullscreen();
+        }
         self.save_progress();
         let resolved = mpv::local_media_path(path).unwrap_or_else(|_| path.to_path_buf());
         // Resume where this file was left, unless it was finished.
@@ -212,6 +270,10 @@ impl PlayerView {
                 window.set_window_title(&identity.title);
                 self.next_episode = self.catalog_next(&path).or_else(|| media::next_episode(&path));
                 self.identity = Some(identity);
+                self.autoplay_at = None;
+                self.autoplay_cancelled = false;
+                self.autoplay_fired = false;
+                self.load_segments(&path);
                 if start > 0.0 {
                     self.flash("play", format!("Resuming from {}", format_time(start)));
                 }
@@ -224,6 +286,125 @@ impl PlayerView {
             }
             Err(error) => self.state.error = Some(error.to_string()),
         }
+        cx.notify();
+    }
+
+    pub fn setting_on(&self, key: &str) -> bool {
+        self.catalog.setting(key).as_deref() == Some("on")
+    }
+
+    /// Cached IntroDB markers for `path`, plus a background lookup when the
+    /// cache is missing or expired (needs a matched IMDb id).
+    fn load_segments(&mut self, path: &Path) {
+        *self.segments.lock() = None;
+        if !self.setting_on("skip_markers") {
+            return;
+        }
+        *self.segments.lock() = Some((path.to_path_buf(), self.catalog.stored_segments(path, None)));
+        let fresh = self.catalog.skip_lookup(path).is_some_and(|(_, expires)| expires > crate::catalog::now());
+        if fresh {
+            return;
+        }
+        let Some(item) = self.items.iter().find(|i| i.path == path).cloned() else { return };
+        let is_movie = !self.tv_library_ids().contains(&item.library_id);
+        let key = if is_movie { TitleKey::Movie(item.path.clone()) } else { TitleKey::Show(item.show_key()) };
+        let Some(imdb) = self.metas.get(&key).and_then(|m| m.imdb_id.clone()) else { return };
+        let (catalog, slot, path) = (self.catalog.clone(), self.segments.clone(), path.to_path_buf());
+        std::thread::spawn(move || {
+            let tmdb = crate::metadata::Tmdb::new(&catalog);
+            match crate::metadata::fetch_markers(&tmdb, &imdb, item.season, item.episode, is_movie) {
+                Ok(segments) => {
+                    let found = segments != Default::default();
+                    catalog.store_segments(&path, &imdb, &segments, "introdb");
+                    catalog.record_skip_lookup(&path, if found { "found" } else { "none" }, Some(&imdb), if found { 30 * 86400 } else { 3 * 86400 });
+                    let mut slot = slot.lock();
+                    if slot.as_ref().is_some_and(|(p, _)| p == &path) {
+                        *slot = Some((path, segments));
+                    }
+                }
+                Err(_) => catalog.record_skip_lookup(&path, "error", Some(&imdb), 3600),
+            }
+        });
+    }
+
+    /// The skip action for the playhead: IntroDB marker first, else an
+    /// intro chapter. Returns (label, seek target).
+    pub fn skip_action(&self) -> Option<(String, f64)> {
+        let position = self.state.position;
+        if let Some((_, segments)) = self.segments.lock().as_ref() {
+            if let Some((kind, window)) = segments.active(position) {
+                let end = if self.state.duration > 0.0 { window.end.min(self.state.duration) } else { window.end };
+                return Some((format!("Skip {}", kind.label()), end));
+            }
+        }
+        self.intro_end().map(|end| ("Skip intro".to_string(), end))
+    }
+
+    /// Starts an OpenSubtitles search for the open file (needs its IMDb id).
+    fn start_subtitle_search(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.media.clone() else { return };
+        {
+            let current = self.sub_search.lock();
+            if current.file.as_ref() == Some(&path) && (current.loading || !current.results.is_empty()) {
+                return;
+            }
+        }
+        let item = self.items.iter().find(|i| i.path == path).cloned();
+        let is_movie = item.as_ref().is_none_or(|i| !self.tv_library_ids().contains(&i.library_id));
+        let key = item.as_ref().map(|i| if is_movie { TitleKey::Movie(i.path.clone()) } else { TitleKey::Show(i.show_key()) });
+        let imdb = key.and_then(|k| self.metas.get(&k)).and_then(|m| m.imdb_id.clone());
+        let mut state = SubSearch { file: Some(path.clone()), language: self.catalog.setting("subtitle_lang").filter(|l| !l.is_empty()), ..Default::default() };
+        let Some(imdb) = imdb else {
+            state.error = Some("Identify this title first: connect TMDB in Settings → Metadata.".into());
+            *self.sub_search.lock() = state;
+            cx.notify();
+            return;
+        };
+        let episode = if is_movie { None } else { item.as_ref().and_then(|i| Some((i.season?, i.episode?))) };
+        if !is_movie && episode.is_none() {
+            state.error = Some("Identify the season and episode before searching for subtitles.".into());
+            *self.sub_search.lock() = state;
+            cx.notify();
+            return;
+        }
+        state.loading = true;
+        *self.sub_search.lock() = state;
+        let slot = self.sub_search.clone();
+        std::thread::spawn(move || {
+            let result = crate::metadata::search_subtitles(&imdb, episode);
+            let mut s = slot.lock();
+            if s.file.as_ref() != Some(&path) {
+                return;
+            }
+            s.loading = false;
+            match result {
+                Ok(results) if results.is_empty() => s.error = Some("No subtitles found for this title.".into()),
+                Ok(results) => {
+                    // Keep the preferred language only when results exist for it.
+                    if s.language.as_ref().is_some_and(|l| !results.iter().any(|r| &r.language == l)) {
+                        s.language = None;
+                    }
+                    s.results = results;
+                }
+                Err(e) => s.error = Some(e),
+            }
+        });
+        cx.notify();
+    }
+
+    fn download_subtitle_result(&mut self, result: crate::metadata::SubtitleResult, cx: &mut Context<Self>) {
+        let Some(video) = self.media.clone() else { return };
+        self.sub_search.lock().downloading = Some(result.id.clone());
+        let slot = self.sub_search.clone();
+        std::thread::spawn(move || {
+            let outcome = crate::metadata::download_subtitle(&result, &video);
+            let mut s = slot.lock();
+            s.downloading = None;
+            match outcome {
+                Ok(path) => s.ready = Some(path),
+                Err(e) => s.error = Some(e),
+            }
+        });
         cx.notify();
     }
 
@@ -248,7 +429,8 @@ impl PlayerView {
         self.next_episode = None;
         self.menu = None;
         self.retire_preview();
-        if window.is_fullscreen() {
+        // Only undo fullscreen the player itself entered.
+        if window.is_fullscreen() && !self.fullscreen_before_play {
             window.toggle_fullscreen();
         }
         window.set_window_title("Plexy");
@@ -348,8 +530,12 @@ impl PlayerView {
             self.volume_hover_until = None;
         }
         // Library refresh: pick up finished scans, auto-refresh every 15 min.
-        let generation = self.catalog.status.lock().generation;
-        if generation != self.scan_generation {
+        let (generation, scanning) = {
+            let status = self.catalog.status.lock();
+            (status.generation, status.running)
+        };
+        let scan_finished = generation != self.scan_generation;
+        if scan_finished {
             self.scan_generation = generation;
             self.reload_catalog();
         }
@@ -357,7 +543,48 @@ impl PlayerView {
             self.last_auto_scan = Instant::now();
             self.catalog.scan(None, true);
         }
-        self.tick_hero();
+        let epoch = self.catalog.metadata_epoch();
+        let meta_changed = epoch != self.metadata_epoch;
+        if meta_changed {
+            self.metadata_epoch = epoch;
+            self.reload_catalog();
+        }
+        if scan_finished {
+            let catalog = self.catalog.clone();
+            std::thread::spawn(move || {
+                let (enriched, _) = crate::metadata::enrich_missing(&catalog);
+                if enriched > 0 {
+                    catalog.bump_metadata_epoch();
+                }
+            });
+        }
+        let token_changed = {
+            let status = self.token_status.lock();
+            let changed = status.1 != self.token_seen;
+            if changed {
+                self.token_seen = status.1.clone();
+            }
+            changed
+        };
+        let (sub_ready, sub_busy) = {
+            let mut s = self.sub_search.lock();
+            (s.ready.take(), s.loading || s.downloading.is_some())
+        };
+        if let Some(path) = sub_ready {
+            self.add_subtitle(&path, cx);
+            self.menu = Some(Menu::Subtitles);
+        }
+        let mut autoplay_tick = sub_busy;
+        if self.media.is_some() && self.state.ended && self.next_episode.is_some() && self.setting_on("autoplay") && !self.autoplay_fired && !self.autoplay_cancelled {
+            let started = *self.autoplay_at.get_or_insert_with(Instant::now);
+            autoplay_tick = true;
+            if started.elapsed() >= AUTOPLAY_COUNTDOWN {
+                self.autoplay_fired = true;
+                self.autoplay_at = None;
+                self.play_next(window, cx);
+            }
+        }
+        let hero_changed = self.media.is_none() && self.tick_hero();
         if let Some(osd) = &self.osd {
             if osd.at.elapsed() > Duration::from_millis(900) {
                 self.osd = None;
@@ -368,7 +595,11 @@ impl PlayerView {
         for image in self.retired_images.drain(..) {
             window.drop_image(image).ok();
         }
-        cx.notify();
+        // Library interactions invalidate the view themselves. Only the
+        // carousel and background scan need to redraw it from this timer.
+        if self.media.is_some() || scanning || scan_finished || hero_changed || meta_changed || token_changed || autoplay_tick {
+            cx.notify();
+        }
     }
 
     fn controls_wanted(&self) -> bool {
@@ -641,6 +872,9 @@ impl PlayerView {
     }
 
     fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.media.is_none() {
+            return;
+        }
         self.poke();
         let seek = self.seek_bounds.get();
         if self.scrub_fraction.is_some() {
@@ -1149,6 +1383,7 @@ impl PlayerView {
             Menu::Subtitles => "Subtitles",
             Menu::Speed => "Speed",
             Menu::Chapters => "Chapters",
+            Menu::SubtitleSearch => "Search subtitles",
         };
         let header = div()
             .relative()
@@ -1273,6 +1508,10 @@ impl PlayerView {
                         this.menu = None;
                         this.prompt_subtitle(window, cx);
                     }))
+                    .child(self.menu_row("sub-search", "Search subtitles…".into(), "OpenSubtitles".into(), false, cx, |this, _, cx| {
+                        this.menu = Some(Menu::SubtitleSearch);
+                        this.start_subtitle_search(cx);
+                    }))
                     .child(divider())
                     .child(self.stepper(
                         "sub-delay",
@@ -1290,6 +1529,57 @@ impl PlayerView {
                         |this| this.nudge_subtitle_position(-5.0),
                         |this| this.nudge_subtitle_position(5.0),
                     ));
+            }
+            Menu::SubtitleSearch => {
+                let s = self.sub_search.lock().clone();
+                if s.loading {
+                    panel = panel.child(div().p(px(18.)).flex().items_center().gap(px(10.)).text_size(px(14.)).text_color(theme::muted()).child(gpui::AnimationExt::with_animation(div().child(icon("spinner", 18., theme::muted())), "sub-spin", gpui::Animation::new(Duration::from_millis(900)).repeat(), |el, t| el.opacity(0.4 + 0.6 * (t * std::f32::consts::PI).sin()))).child("Searching OpenSubtitles…"));
+                }
+                if let Some(error) = &s.error {
+                    panel = panel.child(div().p(px(14.)).text_size(px(13.)).text_color(theme::danger()).child(error.clone()));
+                }
+                if !s.results.is_empty() {
+                    let mut langs: Vec<String> = s.results.iter().map(|r| r.language.clone()).collect();
+                    langs.sort();
+                    langs.dedup();
+                    let chip = |id: SharedString, label: String, active: bool, value: Option<String>| {
+                        div()
+                            .id(id)
+                            .h(px(28.))
+                            .px(px(11.))
+                            .flex()
+                            .items_center()
+                            .rounded_full()
+                            .cursor_pointer()
+                            .text_size(px(12.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .bg(if active { theme::foreground() } else { theme::default() })
+                            .text_color(if active { theme::background() } else { theme::foreground() })
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.sub_search.lock().language = value.clone();
+                                cx.notify();
+                            }))
+                            .child(label)
+                    };
+                    panel = panel.child(
+                        div()
+                            .px(px(8.))
+                            .pb(px(8.))
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(6.))
+                            .child(chip("sub-lang-all".into(), "All".into(), s.language.is_none(), None))
+                            .children(langs.into_iter().map(|l| chip(SharedString::from(format!("sub-lang-{l}")), mpv::language_name(&l), s.language.as_deref() == Some(l.as_str()), Some(l)))),
+                    );
+                    for result in s.results.iter().filter(|r| s.language.as_ref().is_none_or(|l| &r.language == l)).take(60).cloned() {
+                        let busy = s.downloading.as_deref() == Some(result.id.as_str());
+                        let detail = if busy { "Downloading…".to_string() } else { mpv::language_name(&result.language) };
+                        panel = panel.child(self.menu_row(SharedString::from(format!("sub-result-{}", result.id)), result.name.clone(), detail, false, cx, move |this, _, cx| {
+                            this.download_subtitle_result(result.clone(), cx);
+                        }));
+                    }
+                }
             }
             Menu::Speed => {
                 for speed in SPEEDS {
@@ -1514,6 +1804,100 @@ impl PlayerView {
     }
 
     /// Bottom: time · seek line · duration, centred transport, and the
+    /// "Up next" card: a preview in the last minute, and the autoplay
+    /// countdown (Cancel / Play now) once the episode ends.
+    fn render_up_next(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let next = self.next_episode.clone()?;
+        let state = &self.state;
+        let remaining = state.duration - state.position;
+        let near_end = state.duration > 120.0 && remaining <= 60.0;
+        if !(near_end || state.ended) || self.autoplay_cancelled && state.ended {
+            return None;
+        }
+        let item = self.items.iter().find(|i| i.path == next);
+        let em = self.episode_metas.get(&next);
+        let still = em.and_then(|m| m.still.clone()).or_else(|| item.and_then(|i| i.backdrop.clone().or(i.poster.clone())));
+        let code = item.and_then(|i| i.episode).map(|e| format!("Episode {e}")).unwrap_or_else(|| "Next episode".into());
+        let name = em.and_then(|m| m.name.clone()).or_else(|| item.and_then(|i| i.episode_title.clone()));
+        let countdown = self.autoplay_at.map(|at| AUTOPLAY_COUNTDOWN.saturating_sub(at.elapsed()).as_secs_f32().ceil() as u32);
+        let button = |id: &'static str, label: &'static str, primary: bool| {
+            div()
+                .id(id)
+                .h(px(32.))
+                .px(px(14.))
+                .flex()
+                .items_center()
+                .rounded(px(theme::RADIUS))
+                .cursor_pointer()
+                .text_size(px(13.))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .when(primary, |el| el.bg(white(0.97)).text_color(black(0.95)).hover(|s| s.bg(white(0.85))))
+                .when(!primary, |el| el.bg(rgba(0x262626e6)).text_color(white(0.97)).hover(|s| s.bg(rgba(0x3a3a3af0))))
+                .child(label)
+        };
+        Some(
+            div()
+                .absolute()
+                .right(px(28.))
+                .bottom(px(150.))
+                .w(px(340.))
+                .p(px(10.))
+                .flex()
+                .gap(px(12.))
+                .rounded(px(14.))
+                .bg(rgba(0x141414f0))
+                .border_1()
+                .border_color(white(0.12))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .relative()
+                        .w(px(128.))
+                        .h(px(72.))
+                        .flex_none()
+                        .rounded(px(8.))
+                        .overflow_hidden()
+                        .bg(white(0.08))
+                        .when_some(still, |el, p| el.child(img(p).size_full().rounded(px(8.)).object_fit(gpui::ObjectFit::Cover))),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .child(div().text_size(px(11.)).text_color(white(0.6)).child(match countdown {
+                            Some(n) => format!("Playing next in {n}s"),
+                            None => "Up next".into(),
+                        }))
+                        .child(div().text_size(px(14.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(white(0.97)).truncate().child(match name {
+                            Some(n) => format!("{code} · {n}"),
+                            None => code,
+                        }))
+                        .child(
+                            div()
+                                .pt(px(4.))
+                                .flex()
+                                .gap(px(8.))
+                                .child(button("up-next-play", "Play now", true).on_click(cx.listener(|this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.autoplay_fired = true;
+                                    this.play_next(window, cx);
+                                })))
+                                .when(countdown.is_some(), |el| {
+                                    el.child(button("up-next-cancel", "Cancel", false).on_click(cx.listener(|this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.autoplay_cancelled = true;
+                                        this.autoplay_at = None;
+                                        cx.notify();
+                                    })))
+                                }),
+                        ),
+                ),
+        )
+    }
+
     /// Next Episode / Skip Intro actions on the right.
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = &self.state;
@@ -1537,7 +1921,7 @@ impl PlayerView {
                 .when(!primary, |el| el.bg(rgba(0x262626e6)).text_color(white(0.97)).hover(|s| s.bg(rgba(0x3a3a3af0))))
                 .child(label)
         };
-        let intro_end = self.intro_end();
+        let skip = self.skip_action();
         let next = self.next_episode.is_some();
 
         div()
@@ -1618,8 +2002,8 @@ impl PlayerView {
                                     this.play_next(window, cx);
                                 })))
                             })
-                            .when_some(intro_end, |el, end| {
-                                el.child(action("skip-intro", "Skip Intro", true).on_click(cx.listener(move |this, _, _, cx| {
+                            .when_some(skip, |el, (label, end)| {
+                                el.child(action("skip-intro", "", true).child(label).on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
                                     let _ = this.player.seek_to(end);
                                     cx.notify();
@@ -1694,6 +2078,7 @@ impl Render for PlayerView {
                     )
                 })
                 .children(self.render_osd())
+                .children(self.render_up_next(cx))
                 .child(div().absolute().inset_0().opacity(opacity).child(self.render_header(window, cx)).child(self.render_footer(cx)))
                 .when_some(self.menu.filter(|_| opacity > 0.5), |el, menu| el.child(self.render_menu(menu, cx)))
             })

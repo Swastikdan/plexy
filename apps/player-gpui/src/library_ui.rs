@@ -11,7 +11,7 @@ use gpui::{div, img, prelude::*, px, svg, Context, MouseButton, ObjectFit, PathP
 
 use crate::app::{format_time, PlayerView};
 use crate::catalog::{self, Item, LibraryKind, Mark, Show, TitleKey};
-use crate::personal_ui::Field;
+use crate::personal_ui::{Field, TitleView};
 use crate::theme;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +34,10 @@ pub enum Screen {
 
 pub(crate) fn icon(name: &str, size: f32, color: gpui::Hsla) -> impl IntoElement {
     svg().path(format!("icons/{name}.svg")).size(px(size)).text_color(color)
+}
+
+fn white(alpha: f32) -> gpui::Hsla {
+    gpui::Hsla { a: alpha, ..theme::foreground() }
 }
 
 pub(crate) fn section_title(text: &str) -> impl IntoElement {
@@ -76,6 +80,16 @@ impl PlayerView {
         self.libraries = self.catalog.libraries();
         self.items = self.catalog.items();
         self.personal = self.catalog.personal();
+        let mut keys: Vec<TitleKey> = self.shows().into_iter().map(|s| TitleKey::Show(s.key)).collect();
+        keys.extend(self.items.iter().filter(|i| i.season.is_none()).map(|i| TitleKey::Movie(i.path.clone())));
+        self.episode_metas = self
+            .items
+            .iter()
+            .filter(|i| i.season.is_some())
+            .map(|i| (i.path.clone(), self.catalog.episode_meta(&i.path)))
+            .filter(|(_, m)| m.still.is_some() || m.name.is_some())
+            .collect();
+        self.metas = keys.into_iter().filter_map(|k| self.catalog.title_meta(&k).filter(|m| m.matched).map(|m| (k, m))).collect();
     }
 
     fn add_library(&mut self, kind: LibraryKind, window: &mut Window, cx: &mut Context<Self>) {
@@ -165,27 +179,33 @@ impl PlayerView {
             .child(label.into())
     }
 
+    /// Poster width: ~8 per row like the web grid.
+    pub(crate) fn poster_width(&self) -> f32 {
+        ((self.page_width() - 7. * 20.) / 8.).clamp(112., 200.)
+    }
+
     pub(crate) fn poster(&self, poster: Option<PathBuf>, title: &str, width: f32, height: f32) -> impl IntoElement {
         div()
             .w(px(width))
             .h(px(height))
-            .rounded(px(theme::RADIUS_LG))
+            .rounded(px(10.))
             .overflow_hidden()
             .bg(theme::surface_secondary())
-            .border_1()
-            .border_color(theme::border())
-            .when_some(poster, |el, path| el.child(img(path).size_full().object_fit(ObjectFit::Cover)))
-            .when(true, |el| {
+            .when_some(poster.clone(), |el, path| el.child(img(path).size_full().rounded(px(10.)).object_fit(ObjectFit::Cover)))
+            .when(poster.is_none(), |el| {
+                // Tinted placeholder with the title, like the web app's
+                // no-artwork state.
                 el.child(
                     div()
                         .absolute()
                         .inset_0()
-                        .p(px(10.))
+                        .p(px(12.))
                         .flex()
-                        .items_end()
-                        .text_size(px(12.))
+                        .flex_col()
+                        .justify_end()
+                        .text_size(px(14.))
                         .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(gpui::Hsla { a: 0.0, ..theme::foreground() })
+                        .text_color(white(0.55))
                         .child(title.to_string()),
                 )
             })
@@ -246,7 +266,8 @@ impl PlayerView {
             )
     }
 
-    /// Portrait card for movies and shows.
+    /// Portrait card for movies and shows, matching the web app's poster
+    /// cards: 2:3 art, title and meta caption below.
     pub(crate) fn poster_card(
         &self,
         id: String,
@@ -258,41 +279,27 @@ impl PlayerView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
-        let has_poster = poster.is_some();
+        let width = self.poster_width();
         div()
             .id(SharedString::from(id))
-            .w(px(134.))
+            .w(px(width))
+            .flex_none()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(px(7.))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
             .child(
                 div()
                     .relative()
-                    .child(self.poster(poster, &title, 168., 252.))
-                    .when(!has_poster, |el| {
-                        el.child(
-                            div()
-                                .absolute()
-                                .inset_0()
-                                .p(px(11.))
-                                .flex()
-                                .flex_col()
-                                .justify_end()
-                                .text_size(px(14.))
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(theme::foreground())
-                                .child(title.clone()),
-                        )
-                    })
+                    .child(self.poster(poster, &title, width, width * 1.5))
                     .when(watched, |el| {
                         el.child(
                             div()
                                 .absolute()
-                                .top(px(6.))
-                                .right(px(6.))
-                                .size(px(19.))
+                                .top(px(7.))
+                                .right(px(7.))
+                                .size(px(20.))
                                 .rounded_full()
                                 .bg(theme::accent())
                                 .flex()
@@ -301,10 +308,10 @@ impl PlayerView {
                                 .child(icon("check", 14., theme::accent_foreground())),
                         )
                     })
-                    .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(6.)).right(px(6.)).bottom(px(6.)).child(progress_bar(fraction)))),
+                    .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(7.)).right(px(7.)).bottom(px(7.)).child(progress_bar(fraction)))),
             )
-            .child(div().text_size(px(11.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).truncate().child(title))
-            .child(div().text_size(px(10.)).text_color(theme::muted()).truncate().child(subtitle))
+            .child(div().text_size(px(15.)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme::foreground()).truncate().child(title))
+            .child(div().text_size(px(12.)).text_color(theme::muted()).truncate().child(subtitle))
     }
 
     fn row(&self, id: &'static str, title: &str, children: Vec<gpui::AnyElement>) -> impl IntoElement {
@@ -407,7 +414,7 @@ impl PlayerView {
         let titles: Vec<_> = self
             .visible_movies()
             .iter()
-            .filter_map(|m| self.title_view(&TitleKey::Movie(m.path.clone())))
+            .map(TitleView::from_movie)
             .collect();
         let titles = self.sort_and_filter(titles);
         let empty = titles.is_empty();
@@ -425,7 +432,7 @@ impl PlayerView {
         let titles: Vec<_> = self
             .visible_shows()
             .iter()
-            .filter_map(|s| self.title_view(&TitleKey::Show(s.key.clone())))
+            .map(TitleView::from_show)
             .collect();
         let titles = self.sort_and_filter(titles);
         let empty = titles.is_empty();
@@ -734,7 +741,7 @@ impl PlayerView {
             Screen::History => self.render_history(cx),
             _ => div().into_any_element(),
         };
-        let personal = matches!(screen, Screen::Watchlist | Screen::Favorites | Screen::Hidden | Screen::Collections);
+        let personal = matches!(screen, Screen::Watchlist | Screen::Favorites | Screen::Hidden) || (screen == Screen::Collections && !self.personal.collections.is_empty());
         div().flex().flex_col().gap(px(19.)).when(personal, |el| el.child(lists(self, cx))).child(body).into_any_element()
     }
 

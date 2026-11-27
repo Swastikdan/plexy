@@ -606,6 +606,6 @@ impl Drop for Preview {
 
 /// Shows Plexy's app icon in the Dock when running an unbundled binary.
 pub fn set_app_icon() {
-    static ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../desktop/build/icon.png"));
+    static ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../build/icon.png"));
     unsafe { plexy_set_app_icon(ICON.as_ptr(), ICON.len()) }
 }

@@ -157,6 +157,7 @@ Mobile app code further splits into `apps/mobile/src/core` (infrastructure), `sr
 | Command | Output |
 | --- | --- |
 | `bun run build:desktop` | Apple Silicon app, DMG + ZIP under `dist/mac` |
+| `bun run build:player:mac` | Plexy Beta Rust app + DMG for Apple Silicon under `dist/player-mac` ([requirements](apps/player-gpui/README.md#package-for-macos)) |
 | `bun run build:server` | `dist/server/plexy-server` + `ffmpeg`, `migrations/`, `web/` |
 | `bun run build:mobile` | ARM64 Android APK under `.build/native` |
 | `bun run build` | All three (reuses one frontend build) |
@@ -172,7 +173,10 @@ Desktop packaging needs macOS; server builds target the host; Android builds nee
 
 ## Release
 
-Open [Actions → Build & Release](https://github.com/Swastikdan/plexy/actions/workflows/build.yml), click **Run workflow**, and select **main**. Check any combination of **macOS desktop**, **Linux backend**, **macOS backend**, and **Android**. A push or merge does not launch a release.
+The Rust desktop preview ships as Plexy Beta through its own build and release
+workflow. See the [Plexy Beta release guide](apps/player-gpui/README.md#ci-and-beta-releases).
+
+For stable releases, open [Actions → Build & Release](https://github.com/Swastikdan/plexy/actions/workflows/build.yml), click **Run workflow**, and select **main**. Check any combination of **macOS desktop**, **Linux backend**, **macOS backend**, and **Android**. A push or merge does not launch a release.
 
 - **Desktop** builds the web UI and server executable it embeds, then publishes the macOS DMG and ZIP.
 - **Backend** defaults to a self-contained archive with the executable, web UI, migrations, and FFmpeg. Select **binary** for an archive containing only the executable, then supply its runtime files separately. Select either or both backend platforms.

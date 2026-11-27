@@ -17,6 +17,7 @@
     "build:web": "turbo run build --filter=@plexy/web",
     "build:desktop": "bun run build:web && turbo run package:desktop --filter=@plexy/desktop",
     "build:desktop:minimal": "PLEXY_FFMPEG_VARIANT=custom bun run build:desktop",
+    "build:player:mac": "bun --no-env-file scripts/package-player-macos.ts",
     "ffmpeg:minimal": "bash scripts/build-minimal-ffmpeg.sh",
     "build:server": "bun run build:web && turbo run assemble:server --filter=@plexy/server",
     "build:server:minimal": "PLEXY_FFMPEG_VARIANT=custom bun run build:server",

@@ -1,4 +1,4 @@
-//! Plexy Player: local playback for Apple Silicon macOS on GPUI + libmpv.
+//! Plexy Beta: local playback for Apple Silicon macOS on GPUI + libmpv.
 //!
 //! Usage: `plexy-player [FILE] [--self-test REPORT.json]`
 
@@ -7,6 +7,7 @@ mod assets;
 mod catalog;
 mod library_ui;
 mod media;
+mod metadata;
 mod mpv;
 mod personal_ui;
 mod preview;
@@ -26,6 +27,8 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use app::PlayerView;
 
 actions!(plexy, [Quit, Open]);
+
+const APP_NAME: &str = "Plexy Beta";
 
 struct Args {
     file: Option<PathBuf>,
@@ -74,7 +77,7 @@ fn main() {
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-o", Open, None)]);
         cx.set_menus(vec![
-            Menu { name: "Plexy Player".into(), items: vec![MenuItem::action("Quit Plexy Player", Quit)] },
+            Menu { name: APP_NAME.into(), items: vec![MenuItem::action(format!("Quit {APP_NAME}"), Quit)] },
             Menu { name: "File".into(), items: vec![MenuItem::action("Open…", Open)] },
         ]);
         cx.on_window_closed(|cx| cx.quit()).detach();
@@ -99,7 +102,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Plexy Player".into()),
+                        title: Some(APP_NAME.into()),
                         appears_transparent: true,
                         traffic_light_position: Some(gpui::point(px(14.), px(14.))),
                     }),

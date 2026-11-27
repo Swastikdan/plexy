@@ -29,6 +29,7 @@ pub enum WatchFilter {
 pub enum Field {
     Search,
     Collection,
+    Token,
 }
 
 /// A resolved title for cards and lists.
@@ -43,6 +44,36 @@ pub struct TitleView {
     pub year: Option<u32>,
 }
 
+impl TitleView {
+    pub fn from_movie(movie: &Item) -> Self {
+        Self {
+            key: TitleKey::Movie(movie.path.clone()),
+            title: movie.title.clone(),
+            subtitle: movie.year.map(|y| y.to_string()).unwrap_or_else(|| "Movie".into()),
+            poster: movie.poster.clone(),
+            fraction: movie.progress.map(|p| p.fraction()).unwrap_or(0.0),
+            watched: movie.watched(),
+            added_at: movie.added_at,
+            year: movie.year,
+        }
+    }
+
+    pub fn from_show(show: &Show) -> Self {
+        let total = show.episodes().count();
+        let unwatched = show.unwatched();
+        Self {
+            key: TitleKey::Show(show.key.clone()),
+            title: show.title.clone(),
+            subtitle: if unwatched == 0 { format!("{total} episodes · Watched") } else { format!("{total} episodes · {unwatched} unwatched") },
+            poster: show.poster.clone(),
+            fraction: 0.0,
+            watched: unwatched == 0,
+            added_at: show.added_at,
+            year: None,
+        }
+    }
+}
+
 fn matches(query: &str, haystacks: &[&str]) -> bool {
     let words: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
     let joined = haystacks.join(" ").to_lowercase().replace(['.', '_'], " ");
@@ -55,6 +86,29 @@ impl PlayerView {
     /// Minimal single-line editing: typing, Backspace, ⌘⌫ to clear, ⌘V to
     /// paste, Enter to submit, Escape to clear. Keystrokes never reach the
     /// player shortcuts while a field has focus.
+    /// Verifies the drafted TMDB token off the UI thread, saves it, then
+    /// enriches the library in the background.
+    pub fn save_token(&mut self, cx: &mut Context<Self>) {
+        let token = self.token_draft.trim().to_string();
+        if token.is_empty() {
+            return;
+        }
+        *self.token_status.lock() = (true, "Checking token…".into());
+        let (status, catalog) = (self.token_status.clone(), self.catalog.clone());
+        std::thread::spawn(move || match crate::metadata::verify_token(&token) {
+            Ok(()) => {
+                catalog.set_tmdb_token(&token);
+                *status.lock() = (true, "Connected. Fetching artwork and details…".into());
+                let (enriched, review) = crate::metadata::enrich_missing(&catalog);
+                catalog.bump_metadata_epoch();
+                *status.lock() = (true, format!("Connected. Matched {enriched} title{}{}.", if enriched == 1 { "" } else { "s" }, if review > 0 { format!(", {review} need review") } else { String::new() }));
+            }
+            Err(message) => *status.lock() = (false, message),
+        });
+        self.token_draft.clear();
+        cx.notify();
+    }
+
     pub fn on_field_key(&mut self, field: Field, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         cx.stop_propagation();
         let keystroke = &event.keystroke;
@@ -62,6 +116,7 @@ impl PlayerView {
         let mut text = match field {
             Field::Search => self.search_query.clone(),
             Field::Collection => self.collection_draft.clone(),
+            Field::Token => self.token_draft.clone(),
         };
         match keystroke.key.as_str() {
             "backspace" if mods.platform || mods.alt => text.clear(),
@@ -70,6 +125,10 @@ impl PlayerView {
             }
             "escape" => text.clear(),
             "enter" => {
+                if field == Field::Token {
+                    self.save_token(cx);
+                    return;
+                }
                 if field == Field::Collection {
                     if let Some(id) = self.catalog.create_collection(&text) {
                         if let Some(key) = self.collection_target.clone() {
@@ -102,6 +161,7 @@ impl PlayerView {
                 }
             }
             Field::Collection => self.collection_draft = text,
+            Field::Token => self.token_draft = text,
         }
         cx.notify();
     }
@@ -168,34 +228,12 @@ impl PlayerView {
 
     pub fn title_view(&self, key: &TitleKey) -> Option<TitleView> {
         match key {
-            TitleKey::Movie(path) => {
-                let movie = self.items.iter().find(|i| &i.path == path && !i.missing)?;
-                Some(TitleView {
-                    key: key.clone(),
-                    title: movie.title.clone(),
-                    subtitle: movie.year.map(|y| y.to_string()).unwrap_or_else(|| "Movie".into()),
-                    poster: movie.poster.clone(),
-                    fraction: movie.progress.map(|p| p.fraction()).unwrap_or(0.0),
-                    watched: movie.watched(),
-                    added_at: movie.added_at,
-                    year: movie.year,
-                })
-            }
-            TitleKey::Show(show_key) => {
-                let show = self.shows().into_iter().find(|s| &s.key == show_key)?;
-                let total = show.episodes().count();
-                let unwatched = show.unwatched();
-                Some(TitleView {
-                    key: key.clone(),
-                    title: show.title.clone(),
-                    subtitle: if unwatched == 0 { format!("{total} episodes · Watched") } else { format!("{total} episodes · {unwatched} unwatched") },
-                    poster: show.poster.clone(),
-                    fraction: 0.0,
-                    watched: unwatched == 0,
-                    added_at: show.added_at,
-                    year: None,
-                })
-            }
+            TitleKey::Movie(path) => self.items.iter()
+                .find(|item| &item.path == path && !item.missing)
+                .map(TitleView::from_movie),
+            TitleKey::Show(show_key) => self.shows().iter()
+                .find(|show| &show.key == show_key)
+                .map(TitleView::from_show),
         }
     }
 
@@ -210,9 +248,30 @@ impl PlayerView {
         cx.notify();
     }
 
+    /// Fills poster and the `2017 · ★ 7.5` caption from TMDB when matched.
+    pub fn enrich_view(&self, mut t: TitleView) -> TitleView {
+        if let Some(meta) = self.metas.get(&t.key) {
+            if meta.poster.is_some() {
+                t.poster = meta.poster.clone();
+            }
+            let mut parts = Vec::new();
+            if let Some(y) = meta.year.or(t.year) {
+                parts.push(y.to_string());
+            }
+            if let Some(r) = meta.rating.filter(|r| *r > 0.0) {
+                parts.push(format!("★ {r:.1}"));
+            }
+            if !parts.is_empty() {
+                t.subtitle = parts.join(" · ");
+            }
+        }
+        t
+    }
+
     pub fn title_grid(&self, id_prefix: &str, titles: Vec<TitleView>, cx: &mut Context<Self>) -> impl IntoElement {
         let cards: Vec<_> = titles
             .into_iter()
+            .map(|t| self.enrich_view(t))
             .map(|t| {
                 let key = t.key.clone();
                 self.poster_card(
@@ -228,7 +287,7 @@ impl PlayerView {
                 .into_any_element()
             })
             .collect();
-        div().flex().flex_wrap().gap(px(16.)).children(cards)
+        div().flex().flex_wrap().gap(px(20.)).children(cards)
     }
 
     // MARK: Sort and filter
@@ -504,23 +563,55 @@ impl PlayerView {
 
     pub fn render_search(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search_query.trim().to_string();
-        let mut page = div().flex().flex_col().gap(px(19.)).child(section_title("Search")).child(
-            div().w(px(384.)).child(self.text_field("search-page", Field::Search, &self.search_focus, &self.search_query, "Titles, episodes or file names", window, cx)),
+        let field = self
+            .text_field("search-page", Field::Search, &self.search_focus, &self.search_query, "Search your films and shows...", window, cx)
+            .h(px(48.))
+            .pl(px(46.))
+            .pr(px(20.))
+            .rounded_full()
+            .bg(theme::surface())
+            .text_size(px(15.));
+        let mut page = div().flex().flex_col().gap(px(28.)).child(
+            div()
+                .pb(px(8.))
+                .relative()
+                .child(field)
+                .child(div().absolute().left(px(18.)).top(px(14.)).child(crate::library_ui::icon("search", 20., theme::muted()))),
         );
         if query.is_empty() {
-            return page.child(div().text_color(theme::muted()).child("Type to search your library.")).into_any_element();
+            let mut resuming: Vec<&Item> = self.items.iter().filter(|i| !i.missing && i.progress.is_some_and(|p| p.resumable())).collect();
+            resuming.sort_by_key(|i| std::cmp::Reverse(i.progress.map(|p| p.updated).unwrap_or(0)));
+            if !resuming.is_empty() {
+                let cards: Vec<gpui::AnyElement> = resuming.iter().take(12).map(|i| self.continue_card(i, cx).into_any_element()).collect();
+                page = page.child(self.shell_section("Jump back in", None, div().id("row-jump").flex().gap(px(20.)).overflow_x_scroll().children(cards)));
+            }
+            let mut all: Vec<TitleView> = self.visible_shows().iter().map(TitleView::from_show).chain(self.visible_movies().iter().map(TitleView::from_movie)).collect();
+            all.sort_by_key(|t| std::cmp::Reverse(t.added_at));
+            all.truncate(8);
+            if !all.is_empty() {
+                page = page.child(self.shell_section("Recently added", Some(self.see_all_link("search-see-all", Screen::Library, cx)), self.title_grid("search-recent", all, cx)));
+            }
+            return page.into_any_element();
         }
+        // Genre and cast matches from TMDB metadata, like the web search.
+        let meta_hit = |key: &TitleKey| {
+            self.metas.get(key).is_some_and(|m| {
+                let mut hay: Vec<&str> = m.genres.iter().map(String::as_str).collect();
+                hay.extend(m.cast.iter().map(|c| c.name.as_str()));
+                hay.iter().any(|h| matches(&query, &[h]))
+            })
+        };
         let movies: Vec<TitleView> = self
             .visible_movies()
             .iter()
-            .filter(|m| matches(&query, &[&m.title, &m.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()]))
-            .filter_map(|m| self.title_view(&TitleKey::Movie(m.path.clone())))
+            .filter(|m| matches(&query, &[&m.title, &m.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()]) || meta_hit(&TitleKey::Movie(m.path.clone())))
+            .map(TitleView::from_movie)
             .collect();
         let shows = self.visible_shows();
         let show_hits: Vec<TitleView> = shows
             .iter()
-            .filter(|s| matches(&query, &[&s.title]))
-            .filter_map(|s| self.title_view(&TitleKey::Show(s.key.clone())))
+            .filter(|s| matches(&query, &[&s.title]) || meta_hit(&TitleKey::Show(s.key.clone())))
+            .map(TitleView::from_show)
             .collect();
         let episodes: Vec<Item> = shows
             .iter()
@@ -580,12 +671,55 @@ impl PlayerView {
     }
 
     pub fn render_collections(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let mut page = div().flex().flex_col().gap(px(14.)).child(section_title("Collections")).child(
-            div().w(px(336.)).child(self.text_field("collection-create", Field::Collection, &self.collection_focus, &self.collection_draft, "New collection name, then Return", window, cx)),
+        let creating = self.collection_focus.is_focused(window) || !self.collection_draft.is_empty();
+        let field = div().w(px(336.)).child(self.text_field("collection-create", Field::Collection, &self.collection_focus, &self.collection_draft, "New collection name, then Return", window, cx));
+        let focus = self.collection_focus.clone();
+        let new_button = div()
+            .id("collection-new")
+            .h(px(42.))
+            .px(px(18.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .rounded(px(12.))
+            .bg(theme::foreground())
+            .text_color(theme::background())
+            .text_size(px(14.))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .cursor_pointer()
+            .hover(|s| s.opacity(0.9))
+            .on_click(cx.listener(move |_, _, window, cx| {
+                window.focus(&focus);
+                cx.notify();
+            }))
+            .child(crate::library_ui::icon("plus", 16., theme::background()))
+            .child("New collection");
+        let mut page = div().flex().flex_col().gap(px(14.)).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.))
+                .child(div().text_size(px(32.)).line_height(px(37.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("Collections"))
+                .child(div().text_size(px(14.)).text_color(theme::muted()).child("Franchise collections from TMDB appear automatically. Create your own to group titles for a mood or a movie night.")),
         );
         if self.personal.collections.is_empty() {
-            page = page.child(div().text_color(theme::muted()).child("No collections yet. Create one here or from a title page."));
+            return page
+                .child(
+                    div()
+                        .pt(px(110.))
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(10.))
+                        .child(div().size(px(56.)).mb(px(14.)).rounded(px(16.)).bg(theme::surface_secondary()).border_1().border_color(theme::border()).flex().items_center().justify_center().child(crate::library_ui::icon("folder-heart", 24., theme::muted())))
+                        .child(div().text_size(px(19.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("No collections yet"))
+                        .child(div().text_size(px(14.)).text_color(theme::muted()).child("Plexy groups movies from the same TMDB franchise automatically."))
+                        .child(div().text_size(px(14.)).text_color(theme::muted()).child("Create a collection to group anything else."))
+                        .child(div().pt(px(14.)).child(if creating { field.into_any_element() } else { new_button.into_any_element() })),
+                )
+                .into_any_element();
         }
+        page = page.child(div().flex().gap(px(12.)).child(new_button).when(creating, |el| el.child(field)));
         for collection in &self.personal.collections {
             let id = collection.id;
             let titles: Vec<TitleView> = collection.titles.iter().filter_map(|k| self.title_view(k)).collect();

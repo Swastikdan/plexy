@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -132,7 +133,7 @@ pub struct ScanStatus {
     pub generation: u64,
 }
 
-fn now() -> i64 {
+pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
@@ -208,8 +209,10 @@ fn find_poster(path: &Path) -> Option<PathBuf> {
 pub struct Catalog {
     db: Arc<Mutex<Connection>>,
     pub status: Arc<Mutex<ScanStatus>>,
+    /// Bumped when background metadata or marker work changes the database,
+    /// so the UI can reload without polling the network.
+    metadata_epoch: Arc<AtomicU64>,
 }
-
 impl Catalog {
     pub fn open() -> Result<Self> {
         let dir = data_dir();
@@ -249,7 +252,29 @@ impl Catalog {
         // Additive migrations for databases created by earlier builds.
         let _ = db.execute("ALTER TABLE items ADD COLUMN backdrop TEXT", []);
         db.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
-        let catalog = Self { db: Arc::new(Mutex::new(db)), status: Arc::new(Mutex::new(ScanStatus::default())) };
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS tmdb_cache (
+               key INTEGER PRIMARY KEY, endpoint TEXT NOT NULL, body TEXT NOT NULL, expires_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS title_metadata (
+               title_key TEXT PRIMARY KEY, tmdb_id INTEGER NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL,
+               overview TEXT, year INTEGER, rating REAL, runtime INTEGER, certification TEXT,
+               genres TEXT NOT NULL DEFAULT '[]', cast_json TEXT NOT NULL DEFAULT '[]',
+               poster_file TEXT, backdrop_file TEXT, logo_file TEXT, imdb_id TEXT,
+               manual INTEGER NOT NULL DEFAULT 0, matched INTEGER NOT NULL DEFAULT 1, fetched_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS episode_metadata (
+               path TEXT PRIMARY KEY, still_file TEXT, name TEXT, overview TEXT);
+             CREATE TABLE IF NOT EXISTS manual_matches (
+               title_key TEXT PRIMARY KEY, kind TEXT NOT NULL, tmdb_id INTEGER NOT NULL, created_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS match_status (
+               title_key TEXT PRIMARY KEY, status TEXT NOT NULL, attempted_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS skip_segments (
+               path TEXT NOT NULL, kind TEXT NOT NULL, start_seconds REAL NOT NULL, end_seconds REAL NOT NULL,
+               confidence REAL, submission_count INTEGER, source TEXT NOT NULL, updated_at INTEGER NOT NULL,
+               PRIMARY KEY(path, kind));
+             CREATE TABLE IF NOT EXISTS skip_lookups (
+               path TEXT PRIMARY KEY, status TEXT NOT NULL, imdb_id TEXT, expires_at INTEGER NOT NULL);",
+        )?;
+        let catalog = Self { db: Arc::new(Mutex::new(db)), status: Arc::new(Mutex::new(ScanStatus::default())), metadata_epoch: Arc::new(AtomicU64::new(0)) };
         catalog.import_legacy_progress(&dir);
         Ok(catalog)
     }
@@ -542,6 +567,109 @@ pub enum TitleKey {
     Show(String),
 }
 
+/// One credited person: cast member or key crew.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CastMember {
+    pub name: String,
+    pub role: String,
+    pub photo: Option<PathBuf>,
+}
+
+/// Stored TMDB details for a movie or a whole show.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TitleMeta {
+    pub tmdb_id: i64,
+    /// `"movie"` or `"tv"`.
+    pub kind: String,
+    pub name: String,
+    pub overview: Option<String>,
+    pub year: Option<u32>,
+    /// Community rating out of 10.
+    pub rating: Option<f64>,
+    /// Minutes.
+    pub runtime: Option<u32>,
+    /// Age rating such as `TV-MA` or `R`.
+    pub certification: Option<String>,
+    pub genres: Vec<String>,
+    pub cast: Vec<CastMember>,
+    pub poster: Option<PathBuf>,
+    pub backdrop: Option<PathBuf>,
+    pub logo: Option<PathBuf>,
+    pub imdb_id: Option<String>,
+    /// Set by the manual-match flow and never second-guessed by search.
+    pub manual: bool,
+    pub matched: bool,
+}
+
+/// TMDB episode details for one local file.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EpisodeMeta {
+    pub still: Option<PathBuf>,
+    pub name: Option<String>,
+    pub overview: Option<String>,
+}
+
+/// A title queued for the metadata pass.
+#[derive(Clone, Debug)]
+pub struct EnrichTarget {
+    pub key: TitleKey,
+    pub title: String,
+    pub year: Option<u32>,
+    pub is_show: bool,
+}
+
+/// Which community marker a window describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SegmentKind {
+    Intro,
+    Recap,
+    Outro,
+}
+
+impl SegmentKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Intro => "intro",
+            Self::Recap => "recap",
+            Self::Outro => "credits",
+        }
+    }
+}
+
+/// One skip window in seconds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SegmentWindow {
+    pub start: f64,
+    pub end: f64,
+    pub confidence: Option<f64>,
+    pub submission_count: Option<i64>,
+}
+
+/// Community skip markers for one file. `Default` is "checked, nothing found".
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SkipSegments {
+    pub intro: Option<SegmentWindow>,
+    pub recap: Option<SegmentWindow>,
+    pub outro: Option<SegmentWindow>,
+}
+
+impl SkipSegments {
+    pub fn kind(self, kind: SegmentKind) -> Option<SegmentWindow> {
+        match kind {
+            SegmentKind::Intro => self.intro,
+            SegmentKind::Recap => self.recap,
+            SegmentKind::Outro => self.outro,
+        }
+    }
+
+    /// The window the playhead is inside right now, if any.
+    pub fn active(self, position: f64) -> Option<(SegmentKind, SegmentWindow)> {
+        [SegmentKind::Intro, SegmentKind::Recap, SegmentKind::Outro]
+            .into_iter()
+            .find_map(|kind| self.kind(kind).filter(|w| position >= w.start && position < w.end).map(|w| (kind, w)))
+    }
+}
+
 impl TitleKey {
     pub fn encode(&self) -> String {
         match self {
@@ -622,6 +750,403 @@ impl Catalog {
             "INSERT INTO settings(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],
         );
+    }
+
+    // MARK: Metadata store
+
+    /// Where an artwork download for a TMDB image path should live. TMDB
+    /// paths are `/abcd1234….jpg`, so the file name alone is unique.
+    pub fn artwork_cache_path(&self, image_path: &str) -> Option<PathBuf> {
+        let name = image_path.trim_start_matches('/');
+        if name.contains("..") || name.is_empty() {
+            return None;
+        }
+        Some(data_dir().join("artwork").join(name))
+    }
+
+    pub fn tmdb_token(&self) -> Option<String> {
+        crate::metadata::token(self)
+    }
+
+    pub fn set_tmdb_token(&self, token: &str) {
+        self.set_setting("tmdb_token", token.trim());
+        self.bump_metadata_epoch();
+    }
+
+    pub fn bump_metadata_epoch(&self) {
+        self.metadata_epoch.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn metadata_epoch(&self) -> u64 {
+        self.metadata_epoch.load(Ordering::Relaxed)
+    }
+
+    /// Handle for background workers that share the connection (the TMDB
+    /// response cache lives in the same database).
+    pub(crate) fn db_handle(&self) -> Arc<Mutex<Connection>> {
+        self.db.clone()
+    }
+
+    pub fn store_title_meta(&self, key: &TitleKey, meta: &TitleMeta) {
+        let cast = serde_json::to_string(
+            &meta.cast.iter().map(|c| serde_json::json!({ "name": c.name, "role": c.role, "photo": c.photo.as_ref().map(|p| p.display().to_string()) })).collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+        let genres = serde_json::to_string(&meta.genres).unwrap_or_default();
+        let _ = self.db.lock().execute(
+            "INSERT INTO title_metadata(title_key, tmdb_id, kind, name, overview, year, rating, runtime, certification,
+                                        genres, cast_json, poster_file, backdrop_file, logo_file, imdb_id, manual, matched, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+             ON CONFLICT(title_key) DO UPDATE SET
+               tmdb_id = excluded.tmdb_id, kind = excluded.kind, name = excluded.name, overview = excluded.overview,
+               year = excluded.year, rating = excluded.rating, runtime = excluded.runtime, certification = excluded.certification,
+               genres = excluded.genres, cast_json = excluded.cast_json, poster_file = excluded.poster_file,
+               backdrop_file = excluded.backdrop_file, logo_file = excluded.logo_file, imdb_id = excluded.imdb_id,
+               manual = excluded.manual, matched = excluded.matched, fetched_at = excluded.fetched_at",
+            params![
+                key.encode(),
+                meta.tmdb_id,
+                meta.kind,
+                meta.name,
+                meta.overview,
+                meta.year.map(|y| y as i64),
+                meta.rating,
+                meta.runtime.map(|r| r as i64),
+                meta.certification,
+                genres,
+                cast,
+                meta.poster.as_ref().map(|p| p.display().to_string()),
+                meta.backdrop.as_ref().map(|p| p.display().to_string()),
+                meta.logo.as_ref().map(|p| p.display().to_string()),
+                meta.imdb_id,
+                meta.manual as i64,
+                meta.matched as i64,
+                now(),
+            ],
+        );
+        self.bump_metadata_epoch();
+    }
+
+    /// Cached metadata for a title, if any.
+    pub fn title_meta(&self, key: &TitleKey) -> Option<TitleMeta> {
+        let encoded = key.encode();
+        self.db
+            .lock()
+            .query_row(
+                "SELECT tmdb_id, kind, name, overview, year, rating, runtime, certification, genres, cast_json,
+                        poster_file, backdrop_file, logo_file, imdb_id, manual, matched
+                 FROM title_metadata WHERE title_key = ?1",
+                params![encoded],
+                |r| {
+                    let cast_json: String = r.get(9)?;
+                    let cast: Vec<serde_json::Value> = serde_json::from_str(&cast_json).unwrap_or_default();
+                    Ok(TitleMeta {
+                        tmdb_id: r.get(0)?,
+                        kind: r.get(1)?,
+                        name: r.get(2)?,
+                        overview: r.get(3)?,
+                        year: r.get::<_, Option<i64>>(4)?.map(|y| y as u32),
+                        rating: r.get(5)?,
+                        runtime: r.get::<_, Option<i64>>(6)?.map(|v| v as u32),
+                        certification: r.get(7)?,
+                        genres: serde_json::from_str(&r.get::<_, String>(8).unwrap_or_default()).unwrap_or_default(),
+                        cast: cast
+                            .iter()
+                            .map(|c| CastMember {
+                                name: c.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                                role: c.get("role").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                                photo: c.get("photo").and_then(|v| v.as_str()).map(PathBuf::from),
+                            })
+                            .collect(),
+                        poster: r.get::<_, Option<String>>(10)?.map(PathBuf::from),
+                        backdrop: r.get::<_, Option<String>>(11)?.map(PathBuf::from),
+                        logo: r.get::<_, Option<String>>(12)?.map(PathBuf::from),
+                        imdb_id: r.get(13)?,
+                        manual: r.get::<_, i64>(14)? != 0,
+                        matched: r.get::<_, i64>(15)? != 0,
+                    })
+                },
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// One episode's TMDB still and name for a local file.
+    pub fn episode_meta(&self, path: &Path) -> EpisodeMeta {
+        let default = EpisodeMeta { still: None, name: None, overview: None };
+        self.db
+            .lock()
+            .query_row(
+                "SELECT still_file, name, overview FROM episode_metadata WHERE path = ?1",
+                params![path.display().to_string()],
+                |r| {
+                    Ok(EpisodeMeta {
+                        still: r.get::<_, Option<String>>(0)?.map(PathBuf::from),
+                        name: r.get(1)?,
+                        overview: r.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .unwrap_or(default)
+    }
+
+    pub fn store_episode_meta(&self, path: &Path, still: Option<String>, name: Option<String>, overview: Option<String>) {
+        let _ = self.db.lock().execute(
+            "INSERT INTO episode_metadata(path, still_file, name, overview) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET still_file = COALESCE(excluded.still_file, still_file),
+               name = COALESCE(excluded.name, name), overview = COALESCE(excluded.overview, overview)",
+            params![path.display().to_string(), still, name, overview],
+        );
+    }
+
+    /// Every local season of a show with its files: (season, [(path, episode)]).
+    pub fn title_show_files(&self, key: &TitleKey) -> Vec<(u32, Vec<(PathBuf, Option<u32>)>)> {
+        let TitleKey::Show(show) = key else { return Vec::new() };
+        let mut seasons: BTreeMap<u32, Vec<(PathBuf, Option<u32>)>> = BTreeMap::new();
+        for item in &self.items() {
+            if item.missing || item.show_key() != *show || item.season.is_none() {
+                continue;
+            }
+            seasons.entry(item.season.unwrap_or(0)).or_default().push((item.path.clone(), item.episode));
+        }
+        seasons.into_iter().collect()
+    }
+
+    // MARK: Matching
+
+    pub fn manual_match(&self, key: &TitleKey) -> Option<(String, i64)> {
+        self.db
+            .lock()
+            .query_row("SELECT kind, tmdb_id FROM manual_matches WHERE title_key = ?1", params![key.encode()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    /// Record a corrected match and drop the derived metadata it replaces.
+    pub fn set_manual_match(&self, key: &TitleKey, kind: &str, tmdb_id: i64) {
+        let db = self.db.lock();
+        let _ = db.execute(
+            "INSERT INTO manual_matches(title_key, kind, tmdb_id, created_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(title_key) DO UPDATE SET kind = excluded.kind, tmdb_id = excluded.tmdb_id, created_at = excluded.created_at",
+            params![key.encode(), kind, tmdb_id, now()],
+        );
+        let _ = db.execute("DELETE FROM title_metadata WHERE title_key = ?1 AND manual = 0", params![key.encode()]);
+        let _ = db.execute("DELETE FROM episode_metadata", []);
+        drop(db);
+        self.bump_metadata_epoch();
+    }
+
+    pub fn clear_manual_match(&self, key: &TitleKey) {
+        let db = self.db.lock();
+        let _ = db.execute("DELETE FROM manual_matches WHERE title_key = ?1", params![key.encode()]);
+        let _ = db.execute("DELETE FROM title_metadata WHERE title_key = ?1", params![key.encode()]);
+        drop(db);
+        self.bump_metadata_epoch();
+    }
+
+    /// (status, attempted_at) of the last automatic identity attempt.
+    pub fn match_status(&self, key: &TitleKey) -> Option<(String, i64)> {
+        self.db
+            .lock()
+            .query_row("SELECT status, attempted_at FROM match_status WHERE title_key = ?1", params![key.encode()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn record_match_status(&self, key: &TitleKey, status: &str) {
+        let _ = self.db.lock().execute(
+            "INSERT INTO match_status(title_key, status, attempted_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(title_key) DO UPDATE SET status = excluded.status, attempted_at = excluded.attempted_at",
+            params![key.encode(), status, now()],
+        );
+    }
+
+    /// Whether the title may be attempted again: never-attempted, or the last
+    /// attempt is older than `cooldown_ms` (review results cool down too so
+    /// ambiguous titles do not hammer the search endpoint).
+    pub fn recently_attempted(&self, key: &TitleKey, cooldown_ms: i64) -> bool {
+        match self.match_status(key) {
+            Some((_, at)) => now() * 1000 - at * 1000 > cooldown_ms,
+            None => true,
+        }
+    }
+
+    /// Titles that want metadata: no stored row, or a stale attempt. Shows
+    /// first (their artwork covers every episode card), then movies.
+    pub fn titles_missing_metadata(&self) -> Vec<EnrichTarget> {
+        let items = self.items();
+        let tv = self.tv_library_ids_pub();
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut targets = Vec::new();
+        let mut push = |key: TitleKey, title: String, year: Option<u32>, is_show: bool, targets: &mut Vec<EnrichTarget>| {
+            if seen.contains(&key.encode()) {
+                return;
+            }
+            seen.insert(key.encode());
+            let needs = match self.title_meta(&key) {
+                None => true,
+                // Matched before artwork downloads worked: backfill the art.
+                Some(meta) => meta.matched && (meta.poster.is_none() || meta.backdrop.is_none() || meta.logo.is_none()),
+            };
+            if needs && self.recently_attempted(&key, 30 * 60_000) {
+                targets.push(EnrichTarget { key, title, year, is_show });
+            }
+        };
+        for item in items.iter().filter(|i| !i.missing && tv.contains(&i.library_id) && i.season.is_some()) {
+            push(TitleKey::Show(item.show_key()), item.title.clone(), None, true, &mut targets);
+        }
+        for item in items.iter().filter(|i| !i.missing && !tv.contains(&i.library_id)) {
+            push(TitleKey::Movie(item.path.clone()), item.title.clone(), item.year, false, &mut targets);
+        }
+        targets
+    }
+
+    /// (genre, title count) across matched titles, best-attended first.
+    pub fn genre_counts(&self) -> Vec<(String, usize)> {
+        let db = self.db.lock();
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let Ok(mut stmt) = db.prepare("SELECT genres FROM title_metadata WHERE matched = 1") else { return Vec::new() };
+        let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) else { return Vec::new() };
+        for row in rows.flatten() {
+            for genre in serde_json::from_str::<Vec<String>>(&row).unwrap_or_default() {
+                *counts.entry(genre).or_default() += 1;
+            }
+        }
+        let mut list: Vec<(String, usize)> = counts.into_iter().collect();
+        list.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        list
+    }
+
+    /// Title keys whose metadata carries a genre matching the query.
+    pub fn titles_with_genre(&self, genre: &str) -> Vec<String> {
+        let needle = genre.to_lowercase();
+        let db = self.db.lock();
+        let Ok(mut stmt) = db.prepare("SELECT title_key, genres FROM title_metadata WHERE matched = 1") else { return Vec::new() };
+        let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) else { return Vec::new() };
+        rows.flatten()
+            .filter(|(_, genres)| serde_json::from_str::<Vec<String>>(genres).unwrap_or_default().iter().any(|g| g.to_lowercase().contains(&needle)))
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    /// Title keys whose metadata credits a person matching the query.
+    pub fn titles_with_person(&self, person: &str) -> Vec<String> {
+        let needle = person.to_lowercase();
+        let db = self.db.lock();
+        let Ok(mut stmt) = db.prepare("SELECT title_key, cast_json FROM title_metadata WHERE matched = 1") else { return Vec::new() };
+        let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) else { return Vec::new() };
+        rows.flatten()
+            .filter(|(_, cast)| {
+                serde_json::from_str::<Vec<serde_json::Value>>(cast)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|c| c.get("name").and_then(|v| v.as_str()).map(|n| n.to_lowercase().contains(&needle)).unwrap_or(false))
+            })
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    // MARK: Skip markers
+
+    pub fn store_segments(&self, path: &Path, imdb: &str, segments: &SkipSegments, source: &str) {
+        let db = self.db.lock();
+        let _ = db.execute("DELETE FROM skip_segments WHERE path = ?1", params![path.display().to_string()]);
+        for (kind, window) in [("intro", &segments.intro), ("recap", &segments.recap), ("outro", &segments.outro)] {
+            if let Some(window) = window {
+                let _ = db.execute(
+                    "INSERT INTO skip_segments(path, kind, start_seconds, end_seconds, confidence, submission_count, source, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![path.display().to_string(), kind, window.start, window.end, window.confidence, window.submission_count, source, now()],
+                );
+            }
+        }
+        let found = segments.intro.is_some() || segments.recap.is_some() || segments.outro.is_some();
+        drop(db);
+        self.record_skip_lookup(path, if found { "found" } else { "none" }, Some(imdb), if found { 30 * 24 * 3600 } else { 7 * 24 * 3600 });
+    }
+
+    /// Cached markers clamped against the current file duration.
+    pub fn stored_segments(&self, path: &Path, duration: Option<f64>) -> SkipSegments {
+        let db = self.db.lock();
+        let Ok(mut stmt) = db.prepare("SELECT kind, start_seconds, end_seconds, confidence, submission_count FROM skip_segments WHERE path = ?1") else {
+            return SkipSegments::default();
+        };
+        let Ok(rows) = stmt.query_map(params![path.display().to_string()], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, r.get::<_, f64>(2)?, r.get::<_, Option<f64>>(3)?, r.get::<_, Option<i64>>(4)?))
+        }) else {
+            return SkipSegments::default();
+        };
+        let mut segments = SkipSegments::default();
+        for (kind, start, end, confidence, submission_count) in rows.flatten() {
+            let (kind, clamp_duration) = match kind.as_str() {
+                "intro" => (SegmentKind::Intro, duration),
+                "recap" => (SegmentKind::Recap, duration),
+                "outro" => (SegmentKind::Outro, duration),
+                _ => continue,
+            };
+            let window = crate::metadata::clamp_window(start, end, clamp_duration, kind, confidence, submission_count);
+            match kind {
+                SegmentKind::Intro => segments.intro = window,
+                SegmentKind::Recap => segments.recap = window,
+                SegmentKind::Outro => segments.outro = window,
+            }
+        }
+        segments
+    }
+
+    pub fn skip_lookup(&self, path: &Path) -> Option<(String, i64)> {
+        self.db
+            .lock()
+            .query_row("SELECT status, expires_at FROM skip_lookups WHERE path = ?1", params![path.display().to_string()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn record_skip_lookup(&self, path: &Path, status: &str, imdb: Option<&str>, ttl_seconds: i64) {
+        let _ = self.db.lock().execute(
+            "INSERT INTO skip_lookups(path, status, imdb_id, expires_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET status = excluded.status, imdb_id = excluded.imdb_id, expires_at = excluded.expires_at",
+            params![path.display().to_string(), status, imdb, now() + ttl_seconds],
+        );
+    }
+
+    /// Playable files with a matched IMDb id but no fresh marker lookup:
+    /// (path, imdb, season, episode, is_movie).
+    pub fn paths_missing_markers(&self) -> Vec<(PathBuf, String, Option<u32>, Option<u32>, bool)> {
+        let mut out = Vec::new();
+        let tv = self.tv_library_ids_pub();
+        for item in self.items().into_iter().filter(|i| !i.missing) {
+            let is_show = tv.contains(&item.library_id);
+            let key = if is_show && item.season.is_some() {
+                TitleKey::Show(item.show_key())
+            } else if !is_show {
+                TitleKey::Movie(item.path.clone())
+            } else {
+                continue;
+            };
+            let Some(meta) = self.title_meta(&key) else { continue };
+            let Some(imdb) = meta.imdb_id.clone() else { continue };
+            let fresh = self.skip_lookup(&item.path).is_some_and(|(_, expires)| expires > now());
+            if !fresh {
+                out.push((item.path.clone(), imdb, item.season, item.episode, !is_show));
+            }
+        }
+        out
+    }
+
+    fn tv_library_ids_pub(&self) -> HashSet<i64> {
+        self.db
+            .lock()
+            .prepare("SELECT id FROM libraries WHERE kind = 'tv'")
+            .and_then(|mut stmt| stmt.query_map([], |r| r.get::<_, i64>(0)).map(|rows| rows.flatten().collect()))
+            .unwrap_or_default()
     }
 
     pub fn toggle_mark(&self, key: &TitleKey, mark: Mark) {
@@ -766,11 +1291,25 @@ pub fn shows(items: &[Item], tv_libraries: &HashSet<i64>) -> Vec<Show> {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Catalogs read `PLEXY_PLAYER_DATA`, which is process-global, so tests
+    /// that set it run one at a time.
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    pub fn lock() -> MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn scans_groups_and_keeps_state_when_root_disappears() {
+        let _guard = crate::catalog::test_support::lock();
         let base = std::env::temp_dir().join(format!("plexy-catalog-{}", std::process::id()));
         let tv = base.join("TV/Test Show/Season 1");
         std::fs::create_dir_all(&tv).unwrap();

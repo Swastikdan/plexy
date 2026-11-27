@@ -1,19 +1,78 @@
-# Plexy (GPUI, Apple Silicon macOS)
+# Plexy Beta
 
-Standalone local Plexy: GPUI interface, SQLite catalog and libmpv playback in
-one Rust app. No server, no listening port, no remux or transcode — originals
-open by filesystem path.
+Plexy Beta is the Rust desktop preview for Apple Silicon macOS. It uses GPUI,
+SQLite, and libmpv to browse local libraries and play original files directly.
+Install it alongside Plexy, the stable Electron app, while the Rust app reaches
+feature parity.
 
 ## Run
 
+From the repository root, with Rust and Xcode including the Metal toolchain installed:
+
 ```sh
-brew install mpv            # libmpv until the .app bundles its own
-cargo run --release -- [FILE]
+brew install mpv
+cargo run --locked --release --manifest-path apps/player-gpui/Cargo.toml
 ```
 
-`PLEXY_LIBMPV` overrides the libmpv path. App data (library database, watch
-state) lives in `~/Library/Application Support/Plexy Player`, or in
-`PLEXY_PLAYER_DATA` when set.
+Append `-- /path/to/video.mkv` to open a file at launch. `PLEXY_LIBMPV` overrides
+the libmpv path. Beta uses the existing Rust player's
+data directory at `~/Library/Application Support/Plexy Player`. Set
+`PLEXY_PLAYER_DATA` to use a separate local test catalog.
+
+## Package for macOS
+
+On Apple Silicon, install native Bun and Rust, Xcode with the Metal toolchain,
+and Homebrew mpv. From the repository root:
+
+```sh
+bun run build:player:mac
+```
+
+This writes `Plexy Beta.app` and `Plexy-Beta-<version>-mac-arm64.dmg` to
+`dist/player-mac/`, using the version in `Cargo.toml`. The app's bundle ID is
+`com.plexy.beta`. Open the DMG and drag the app to Applications. The app carries
+libmpv and its dependent dylibs, so Homebrew is only needed on the build machine.
+The executable lives inside the app at `Contents/MacOS/plexy-player`.
+
+Set `PLEXY_LIBMPV_SOURCE` to an alternate arm64 `libmpv.2.dylib` to package a
+different runtime. The build reports the highest macOS deployment target of
+the executable and bundled dylibs and writes it to the app's `Info.plist`.
+Choose a libmpv build and dependencies that support the oldest macOS version
+you want to run. The package is ad-hoc signed for local testing. Downloaded
+copies may require Gatekeeper approval.
+
+## CI and beta releases
+
+The [Plexy Beta workflow](../../.github/workflows/plexy-beta.yml) runs locked
+Rust tests and packages a DMG on an Apple Silicon runner. Pull requests that
+touch beta build inputs and manual build-only runs produce a
+`plexy-beta-mac-arm64` Actions artifact containing the DMG and `SHA256SUMS`.
+
+1. Choose the beta version in [Cargo.toml](Cargo.toml). For subsequent releases,
+   bump it and run `cargo check --manifest-path apps/player-gpui/Cargo.toml`
+   to refresh [Cargo.lock](Cargo.lock). Merge the version and lockfile into `main`.
+2. In GitHub Actions, open **Plexy Beta**, choose `main`, and turn on
+   **Create a GitHub prerelease draft**. Add notes describing the preview
+   features and known limitations for this build. The existing `RELEASE_ACTORS`
+   repository variable controls who can create the draft. It defaults to the
+   repository owner when unset.
+3. Download the draft's DMG and `SHA256SUMS` together and run
+   `shasum -a 256 -c SHA256SUMS`. Check the minimum macOS version in
+   `Plexy Beta.app/Contents/Info.plist` and include it in the notes. On a clean
+   Apple Silicon Mac without Homebrew, install the beta alongside stable Plexy,
+   scan a local library, play a file, seek, switch tracks, and verify resume
+   after relaunch. Review the redistribution notices and corresponding source
+   for the exact bundled libmpv build and its dependencies before publishing.
+4. Publish the draft from GitHub Releases as a pre-release. Its tag is
+   `plexy-beta-v<version>` and points to the tested commit. Give a corrected build
+   a new version once the prior version is public. Users install beta updates by
+   downloading the new DMG.
+
+Stable Plexy continues through [Build & Release](../../.github/workflows/build.yml)
+and its Electron updater. Use the [Plexy feature audit](../../docs/APP_FEATURE_AUDIT.md)
+as the baseline for preview scope and parity. After feature parity, validate
+how existing Plexy installations and libraries move to the Rust app and how
+they receive stable updates. Retire Electron packaging once that transition is ready.
 
 ## Layout
 
@@ -33,8 +92,10 @@ state) lives in `~/Library/Application Support/Plexy Player`, or in
 
 ## Verify
 
+From `apps/player-gpui`:
+
 ```sh
-cargo test
+cargo test --locked --release -- --test-threads=1
 cargo run -- "/path/Multi Audio.mkv" --self-test /tmp/plexy/report.json
 cargo run -- --add-library tv=/path/TV --add-library movies=/path/Movies --library-test /tmp/plexy
 ```
