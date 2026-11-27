@@ -77,12 +77,11 @@ export function resolveLibmpvSource(): string | null {
   return candidates.find((candidate) => candidate && existsSync(candidate)) ?? null;
 }
 
-export async function bundleLibmpv(rootDir: string): Promise<boolean> {
+export async function bundleLibmpv(rootDir: string, outdir = join(rootDir, "dist", "bin", "mpv-libs")): Promise<boolean> {
   if (process.platform !== "darwin") {
     console.log("• Skipping libmpv bundling (macOS only)");
     return true;
   }
-  const outdir = join(rootDir, "dist", "bin", "mpv-libs");
   const target = join(outdir, "libmpv.2.dylib");
   if (existsSync(target) && process.env.PLEXY_LIBMPV_REFRESH !== "1") {
     console.log("✓ Reusing bundled libmpv");
@@ -148,7 +147,8 @@ export async function bundleLibmpv(rootDir: string): Promise<boolean> {
 
   // install_name_tool invalidates each library's signature. macOS kills a
   // process that loads an invalidly signed dylib, so re-sign the bundle.
-  for (const name of copied.values()) {
+  const names = new Set(copied.values());
+  for (const name of names) {
     try {
       execFileSync("codesign", ["--force", "--sign", "-", join(outdir, name)], { stdio: "ignore" });
     } catch {
@@ -164,7 +164,7 @@ export async function bundleLibmpv(rootDir: string): Promise<boolean> {
   }
 
   let bytes = 0;
-  for (const name of copied.values()) {
+  for (const name of names) {
     try {
       bytes += statSync(join(outdir, name)).size;
     } catch {
@@ -172,7 +172,7 @@ export async function bundleLibmpv(rootDir: string): Promise<boolean> {
     }
   }
   console.log(
-    `✓ Bundled libmpv with ${copied.size} libraries (${(bytes / 1024 / 1024).toFixed(1)} MB) in dist/bin/mpv-libs`,
+    `✓ Bundled libmpv with ${names.size} libraries (${(bytes / 1024 / 1024).toFixed(1)} MiB) in ${outdir}`,
   );
   return true;
 }
