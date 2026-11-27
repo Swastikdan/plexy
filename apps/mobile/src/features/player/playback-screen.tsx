@@ -8,7 +8,7 @@ import Reanimated from "react-native-reanimated";
 import { GestureDetector } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
 import { triggerHaptic } from "@/shared/lib/haptics";
-import { ArrowLeft, Play, Pause, SlidersHorizontal, PictureInPicture, Maximize, Crop, MoveHorizontal , Lock, Unlock } from "@/shared/ui/icons";
+import { ArrowLeft, Play, Pause, SlidersHorizontal, PictureInPicture, Maximize, Crop, MoveHorizontal , Lock, Unlock, AudioLines } from "@/shared/ui/icons";
 import { useKeepAwake } from "expo-keep-awake";
 import {
   isPictureInPictureSupported,
@@ -304,6 +304,10 @@ export function PlaybackScreen({
   const [ended, setEnded] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [autoNextCancelled, setAutoNextCancelled] = useState(false);
+  // Audio-only hides the video surface for the current playback session. The
+  // player keeps running so subtitles, tracks and progress bookkeeping stay in
+  // sync when the user switches back to video.
+  const [audioOnly, setAudioOnly] = useState(false);
   const [nativeAudio, setNativeAudio] = useState<
     typeof player.availableAudioTracks
   >([]);
@@ -323,6 +327,7 @@ export function PlaybackScreen({
   const autoSkipEnd = useRef(-1);
   const mounted = useRef(true);
   const pip = useRef(false);
+  const pipStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preferencesRef = useRef(preferences);
   useLayoutEffect(() => { preferencesRef.current = preferences; }, [preferences]);
   const lastSaved = useRef(0);
@@ -373,6 +378,24 @@ export function PlaybackScreen({
   useEffect(() => {
     playerRef.current = player;
   }, [player]);
+  useEffect(() => {
+    // Keep the native player in sync when the toggle is changed from the
+    // in-player settings sheet instead of the app Settings screen.
+    try {
+      updateNativePlayer(
+        player,
+        "staysActiveInBackground",
+        preferences.backgroundPlay,
+      );
+      updateNativePlayer(
+        player,
+        "showNowPlayingNotification",
+        preferences.backgroundPlay,
+      );
+    } catch {
+      /* The player was released while the screen was closing. */
+    }
+  }, [player, preferences.backgroundPlay]);
   useEffect(() => {
     updateNativePlayer(player, "bufferOptions", bufferOptionsForDuration(duration));
   }, [player, duration]);
@@ -659,6 +682,10 @@ export function PlaybackScreen({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (pipStopTimer.current) {
+        clearTimeout(pipStopTimer.current);
+        pipStopTimer.current = null;
+      }
       releaseOptimizedCopy();
     };
   }, [releaseOptimizedCopy]);
@@ -1031,17 +1058,29 @@ export function PlaybackScreen({
     player,
     surfaceType: "textureView" as const,
     fullscreenOptions: { enable: false },
-    allowsPictureInPicture: true,
+    // Audio-only has no video surface worth showing, so PiP is disabled while
+    // it is active. Background play still keeps the audio running.
+    allowsPictureInPicture: !audioOnly,
     // Arm the system home gesture only for active playback. Keeping this false
     // while paused or finished prevents the app shrinking into an idle PiP.
     startsPictureInPictureAutomatically:
-      playing && hasLoaded && !ended && isPictureInPictureSupported(),
+      !audioOnly && playing && hasLoaded && !ended && isPictureInPictureSupported(),
     onPictureInPictureStart: () => {
       pip.current = true;
     },
     onPictureInPictureStop: () => {
       pip.current = false;
       reveal();
+      // Expanding the PiP window brings the app back and should keep playing.
+      // Closing (swiping away) the window leaves the app backgrounded; give
+      // the activity a moment to become active, then end the session.
+      if (pipStopTimer.current) clearTimeout(pipStopTimer.current);
+      pipStopTimer.current = setTimeout(() => {
+        pipStopTimer.current = null;
+        if (!mounted.current || AppState.currentState === "active") return;
+        save(false, true);
+        player.pause();
+      }, 500);
     },
     contentFit: fitMode,
     subtitleFontSize: preferences.subtitleSize,
@@ -1065,6 +1104,40 @@ export function PlaybackScreen({
           className="absolute inset-0 bg-black"
           style={brightnessStyle}
         />
+        {audioOnly && (
+          <View
+            pointerEvents="none"
+            className="absolute inset-0 items-center justify-center bg-black"
+            accessibilityLabel="Audio only mode"
+          >
+            <LinearGradient
+              colors={["#121217", "#000000"]}
+              style={StyleSheet.absoluteFill}
+            />
+            <View className="items-center gap-4 px-12">
+              <View className="h-28 w-28 items-center justify-center rounded-full border border-white/10 bg-white/[0.06]">
+                <AudioLines size={46} color="rgba(255,255,255,0.92)" />
+              </View>
+              <Text
+                numberOfLines={2}
+                className="max-w-[560px] text-center text-[22px] font-archivo-bold text-white"
+              >
+                {chromeTitle}
+              </Text>
+              <View className="flex-row items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-3.5 py-1.5">
+                <AudioLines size={14} color="rgba(255,255,255,0.75)" />
+                <Text className="text-[12px] font-archivo-bold uppercase tracking-[1.1px] text-white/70">
+                  Audio only
+                </Text>
+              </View>
+              {!preferences.backgroundPlay && (
+                <Text className="max-w-[420px] text-center text-[12px] text-white/40">
+                  Turn on Background play to keep listening with the screen off.
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
 
         {openingVideo && !resume && <PlayerLoading />}
         {(optimizing || (choice.uri && visible)) && (
@@ -1166,7 +1239,7 @@ export function PlaybackScreen({
             </View>
           </>
         )}
-        {!!text && (
+        {!!text && !audioOnly && (
           <View
             pointerEvents="none"
             style={{
@@ -1309,17 +1382,33 @@ export function PlaybackScreen({
               top: Math.max(insets.top, 10) + 8,
             }}
           >
-            <PlayerControl accessibilityLabel={`Video fit: ${fitMode}. Change fit`} size={48} bg="rgba(0,0,0,0.4)" onPress={() => {
-              const modes = ["contain", "cover", "fill"] as const;
-              const mode = modes[(modes.indexOf(fitMode) + 1) % modes.length]!;
-              applyFit(mode, 1);
-              showFitToast(mode === "contain" ? "Best fit" : mode === "cover" ? "Crop" : "Stretch");
-            }}>
-              {fitMode === "cover" ? <Crop size={22} color="#fff" /> : fitMode === "fill" ? <MoveHorizontal size={22} color="#fff" /> : <Maximize size={22} color="#fff" />}
+            <PlayerControl
+              accessibilityLabel={audioOnly ? "Show video" : "Audio only"}
+              onPress={() => setAudioOnly((value) => !value)}
+              size={48}
+              bg="rgba(0,0,0,0.4)"
+              active={audioOnly}
+            >
+              <AudioLines
+                size={22}
+                color={audioOnly ? "#000000" : "#ffffff"}
+              />
             </PlayerControl>
-            {isPictureInPictureSupported() && <PlayerControl accessibilityLabel="Picture in picture" size={48} bg="rgba(0,0,0,0.4)" onPress={() => {
-              void video.current?.startPictureInPicture().catch(() => setMessage("Picture in picture is unavailable on this device."));
-            }}><PictureInPicture size={22} color="#fff" /></PlayerControl>}
+            {!audioOnly && (
+              <>
+                <PlayerControl accessibilityLabel={`Video fit: ${fitMode}. Change fit`} size={48} bg="rgba(0,0,0,0.4)" onPress={() => {
+                  const modes = ["contain", "cover", "fill"] as const;
+                  const mode = modes[(modes.indexOf(fitMode) + 1) % modes.length]!;
+                  applyFit(mode, 1);
+                  showFitToast(mode === "contain" ? "Best fit" : mode === "cover" ? "Crop" : "Stretch");
+                }}>
+                  {fitMode === "cover" ? <Crop size={22} color="#fff" /> : fitMode === "fill" ? <MoveHorizontal size={22} color="#fff" /> : <Maximize size={22} color="#fff" />}
+                </PlayerControl>
+                {isPictureInPictureSupported() && <PlayerControl accessibilityLabel="Picture in picture" size={48} bg="rgba(0,0,0,0.4)" onPress={() => {
+                  void video.current?.startPictureInPicture().catch(() => setMessage("Picture in picture is unavailable on this device."));
+                }}><PictureInPicture size={22} color="#fff" /></PlayerControl>}
+              </>
+            )}
             <PlayerControl
               accessibilityLabel="Player settings"
               onPress={() => setMenu("settings")}
@@ -1559,6 +1648,7 @@ export function PlaybackScreen({
       <PlayerDrawer
         menu={menu}
         sleep={sleep}
+        playback={{ audioOnly, setAudioOnly }}
         extraActions={[
           ...(addExternalToLibrary ? [{ label: "Add to library", onPress: addExternalToLibrary }] : []),
           ...(cast.available && !optimizing ? [cast.active

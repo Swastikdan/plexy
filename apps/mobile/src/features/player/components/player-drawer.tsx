@@ -20,6 +20,7 @@ import { useClient } from "@/core/client/client-provider";
 import type { ItemCard, Playability } from "@/core/library/catalog-api";
 import { cn } from "@/shared/lib/cn";
 import { PosterImage } from "@/shared/ui/poster-image";
+import { ToggleSwitch } from "@/shared/ui/toggle-switch";
 import { SheetChips, SheetSection } from "./player-sheet";
 
 // Fixed row height lets the episode list jump straight to the playing title
@@ -42,7 +43,38 @@ interface PlayerDrawerProps {
   subtitles: { position: number; setPosition: (position: number) => void };
   setPlaybackRate: (rate: number) => void;
   sleep: { choice: SleepChoice; choose: (choice: SleepChoice) => void };
+  playback: { audioOnly: boolean; setAudioOnly: (value: boolean) => void };
   extraActions?: { label: string; onPress: () => void }[];
+}
+
+function DrawerToggle({
+  label,
+  hint,
+  value,
+  onValueChange,
+  accessibilityLabel,
+}: {
+  label: string;
+  hint: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  accessibilityLabel: string;
+}) {
+  return (
+    <View className="flex-row items-center justify-between gap-3 px-4 py-3">
+      <View className="flex-1">
+        <Text className="text-foreground text-[14px] font-semibold">
+          {label}
+        </Text>
+        <Text className="mt-0.5 text-foreground/45 text-[12px]">{hint}</Text>
+      </View>
+      <ToggleSwitch
+        value={value}
+        onValueChange={onValueChange}
+        accessibilityLabel={accessibilityLabel}
+      />
+    </View>
+  );
 }
 
 export function PlayerDrawer({
@@ -57,6 +89,7 @@ export function PlayerDrawer({
   subtitles,
   setPlaybackRate,
   sleep,
+  playback,
   extraActions,
 }: PlayerDrawerProps) {
   const colors = useColors();
@@ -335,6 +368,25 @@ export function PlayerDrawer({
                 {renderedMenu === "settings" && (
                   <>
                     <SheetSection label="Playback" />
+                    <View className="mx-5 mt-2 overflow-hidden rounded-xl border border-foreground/10 bg-foreground/[0.04]">
+                      <DrawerToggle
+                        label="Background play"
+                        hint="Keep audio when you leave the app"
+                        value={preferences.backgroundPlay}
+                        onValueChange={(value) =>
+                          updatePreferences({ backgroundPlay: value })
+                        }
+                        accessibilityLabel="Background play"
+                      />
+                      <View className="ml-4 h-[0.33px] bg-foreground/10" />
+                      <DrawerToggle
+                        label="Audio only"
+                        hint="Hide the video and keep listening"
+                        value={playback.audioOnly}
+                        onValueChange={playback.setAudioOnly}
+                        accessibilityLabel="Audio only"
+                      />
+                    </View>
                     <SheetChips
                       label="Speed"
                       options={[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => ({
