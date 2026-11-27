@@ -11,10 +11,12 @@ use gpui::{div, ease_out_quint, img, Animation, AnimationExt, linear_color_stop,
 
 use crate::app::{format_time, PlayerView};
 use crate::catalog::{Item, Mark, TitleKey};
-use crate::library_ui::{icon, Screen};
+use crate::library_ui::Screen;
 use crate::mpv::language_name;
 use crate::personal_ui::{Sort, TitleView, WatchFilter};
 use crate::theme;
+use crate::ui::icon::{icon, Icon};
+use crate::ui::motion::{Easing, MotionSpec, TweenExt};
 
 /// Left inset of the hero copy and dots, clear of the 40px prev arrow.
 const HERO_GUTTER: f32 = 76.;
@@ -137,40 +139,7 @@ fn cover_r(image: Option<PathBuf>, radius: f32) -> impl IntoElement {
         .inset_0()
         .bg(theme::surface_secondary())
         .when_some(image, |el, path| el.child(crate::assets::artwork_cover(path, radius)))
-        .when(radius > 0., |el| el.child(corner_mask(radius, theme::background())))
-}
-
-/// A soft veil that fades in when the card's `group` is hovered: it lifts
-/// dark artwork a touch and dims light artwork, so it reads in both themes.
-pub fn hover_ring(group: SharedString, radius: f32) -> impl IntoElement {
-    let veil = if theme::is_light() { ink(0.12) } else { snow(0.07) };
-    div().absolute().inset_0().rounded(px(radius)).bg(veil).opacity(0.).group_hover(group, |s| s.opacity(1.))
-}
-
-/// Paints `color` outside rounded corners of radius `r`, so artwork that
-/// GPUI rounds on its overflowing rect still reads as a clean rounded card.
-pub fn corner_mask(r: f32, color: Hsla) -> impl IntoElement {
-    gpui::canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            let (o, w, h) = (bounds.origin, f32::from(bounds.size.width), f32::from(bounds.size.height));
-            // (corner x, corner y, arc centre x, arc centre y, start angle)
-            for (x, y, cx_, cy_, start) in [(0., 0., r, r, 0.5f32), (w, 0., w - r, r, 0.75), (w, h, w - r, h - r, 0.0), (0., h, r, h - r, 0.25)] {
-                let mut b = gpui::PathBuilder::fill();
-                b.move_to(gpui::point(o.x + px(x), o.y + px(y)));
-                for step in 0..=8 {
-                    let a = (start + 0.25 * step as f32 / 8.) * std::f32::consts::TAU;
-                    b.line_to(gpui::point(o.x + px(cx_ + (r + 0.4) * a.cos()), o.y + px(cy_ + (r + 0.4) * a.sin())));
-                }
-                b.close();
-                if let Ok(path) = b.build() {
-                    window.paint_path(path, color);
-                }
-            }
-        },
-    )
-    .absolute()
-    .inset_0()
+        .when(radius > 0., |el| el.child(crate::ui::artwork::corner_mask(radius, theme::background())))
 }
 
 /// `hero-copy-in`: rise 12px and fade in over 700ms, staggered 60ms per child.
@@ -222,7 +191,7 @@ pub fn circle_mask(size: f32, color: Hsla) -> impl IntoElement {
 }
 
 /// The one empty state used across the app: icon tile, title, copy, action.
-pub fn empty_state(icon_name: &'static str, title: &str, body: &str, action: Option<AnyElement>) -> impl IntoElement {
+pub fn empty_state(icon_name: Icon, title: &str, body: &str, action: Option<AnyElement>) -> impl IntoElement {
     div()
         .w_full()
         .py(px(88.))
@@ -258,9 +227,12 @@ static DROPDOWN_TRIGGER: std::sync::Mutex<Option<(gpui::Bounds<gpui::Pixels>, gp
 /// opens the menu below it, or above when there is no room, and aligns it to
 /// the trigger's left edge, or its right edge near the window's right side.
 pub fn dropdown(items: Vec<AnyElement>, width: f32) -> impl IntoElement {
-    let est_h = (items.len() as f32 * 34. + 12.).min(340.);
+    let est_h = (items.len() as f32 * crate::ui::menu::ROW_HEIGHT
+        + items.len().saturating_sub(1) as f32 * 2.
+        + 2. * crate::ui::menu::PANEL_PADDING)
+        .min(340.);
     let measured = *DROPDOWN_TRIGGER.lock().unwrap();
-    let menu = div()
+    let menu = crate::ui::menu::panel(crate::ui::menu::MenuTone::App)
         .id("dropdown")
         .occlude()
         .on_mouse_down_out(|_, window, _| {
@@ -268,16 +240,8 @@ pub fn dropdown(items: Vec<AnyElement>, width: f32) -> impl IntoElement {
             window.refresh();
         })
         .w(px(width))
-        .p(px(5.))
-        .rounded(px(theme::RADIUS_LG))
-        .bg(theme::overlay())
-        .border_1()
-        .border_color(theme::border())
-        .shadow_lg()
         .max_h(px(340.))
         .overflow_y_scroll()
-        .flex()
-        .flex_col()
         .children(items)
         .with_animation("dropdown-in", Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()), |el, t| el.opacity(t));
     div()
@@ -320,20 +284,21 @@ pub fn dropdown(items: Vec<AnyElement>, width: f32) -> impl IntoElement {
 
 impl PlayerView {
     /// Card art that grows 3% while hovered and eases back when the pointer
-    /// leaves, without moving the cards around it.
-    pub fn lift(&self, key: SharedString, w: f32, h: f32, art: gpui::Div, cx: &mut Context<Self>) -> AnyElement {
+    /// leaves, without moving the cards around it. The fixed-size frame clips
+    /// the growth; the caller keeps badges, progress and hover layers outside
+    /// this layer so only the artwork moves.
+    pub fn lift(&self, key: SharedString, w: f32, h: f32, radius: f32, tone: crate::ui::artwork::FrameTone, art: gpui::Div, cx: &mut Context<Self>) -> AnyElement {
         let hovered = self.hovered_card.as_ref() == Some(&key);
-        let leaving = !hovered && self.left_card.as_ref() == Some(&key);
-        let place = move |el: gpui::Div, s: f32| {
-            let (dw, dh) = (w * 0.015 * s, h * 0.015 * s);
+        let place = move |el: gpui::Div, t: f32| {
+            let (dw, dh) = (w * 0.015 * t, h * 0.015 * t);
             el.absolute().left(px(-dw)).top(px(-dh)).w(px(w + 2. * dw)).h(px(h + 2. * dh))
         };
-        let art = if hovered || leaving {
-            art.with_animation(SharedString::from(format!("lift-{key}-{hovered}")), Animation::new(Duration::from_millis(220)).with_easing(ease_out_quint()), move |el, t| place(el, if hovered { t } else { 1. - t }))
-                .into_any_element()
-        } else {
-            place(art, 0.).into_any_element()
-        };
+        let art = art.with_tween(
+            SharedString::from(format!("lift-{key}")),
+            if hovered { 1. } else { 0. },
+            MotionSpec::new(Duration::from_millis(220), Duration::ZERO, Easing::Standard),
+            move |el, t| place(el, t),
+        );
         let k = key.clone();
         div()
             .id(gpui::ElementId::Name(SharedString::from(format!("lift-{key}"))))
@@ -343,14 +308,20 @@ impl PlayerView {
             .h(px(h))
             .on_hover(cx.listener(move |this, over: &bool, _, cx| {
                 if *over {
-                    this.hovered_card = Some(k.clone());
+                    if this.hovered_card.as_ref() != Some(&k) {
+                        this.hovered_card = Some(k.clone());
+                        cx.notify();
+                    }
                 } else if this.hovered_card.as_ref() == Some(&k) {
                     this.hovered_card = None;
-                    this.left_card = Some(k.clone());
+                    cx.notify();
                 }
-                cx.notify();
             }))
-            .child(art)
+            .child(
+                crate::ui::artwork::framed(radius, tone, art)
+                    .w(px(w))
+                    .h(px(h)),
+            )
             .into_any_element()
     }
 
@@ -374,22 +345,12 @@ impl PlayerView {
 }
 
 /// One row of a `dropdown`.
-pub fn menu_item(id: impl Into<SharedString>, icon_name: Option<&'static str>, label: impl Into<SharedString>, selected: bool) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(gpui::ElementId::Name(id.into()))
-        .h(px(34.))
-        .px(px(10.))
-        .flex()
-        .items_center()
-        .gap(px(10.))
-        .rounded(px(theme::RADIUS))
-        .cursor_pointer()
-        .text_size(px(13.))
-        .text_color(theme::foreground())
-        .hover(|s| s.bg(theme::default()))
-        .when_some(icon_name, |el, n| el.child(icon(n, 16., theme::muted())))
-        .child(div().flex_1().child(label.into()))
-        .when(selected, |el| el.child(icon("check", 15., theme::accent())))
+pub fn menu_item(id: impl Into<SharedString>, icon_name: Option<crate::ui::icon::Icon>, label: impl Into<SharedString>, selected: bool) -> crate::ui::menu::MenuRow {
+    let row = crate::ui::menu::MenuRow::action(id, label).selected(selected);
+    match icon_name {
+        Some(icon) => row.icon(icon),
+        None => row,
+    }
 }
 
 fn genre_chip(name: String) -> impl IntoElement {
@@ -427,7 +388,7 @@ fn badge(text: impl Into<SharedString>) -> impl IntoElement {
 impl PlayerView {
     // MARK: Building blocks
 
-    pub fn pill_button(&self, id: impl Into<SharedString>, icon_name: Option<&'static str>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
+    pub fn pill_button(&self, id: impl Into<SharedString>, icon_name: Option<Icon>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
         div()
             .id(gpui::ElementId::Name(id.into()))
             .h(px(42.))
@@ -445,7 +406,7 @@ impl PlayerView {
             .child(label.into())
     }
 
-    pub fn circle_button(&self, id: impl Into<SharedString>, icon_name: &'static str, active: bool) -> gpui::Stateful<gpui::Div> {
+    pub fn circle_button(&self, id: impl Into<SharedString>, icon_name: Icon, active: bool) -> gpui::Stateful<gpui::Div> {
         div()
             .id(gpui::ElementId::Name(id.into()))
             .size(px(42.))
@@ -482,7 +443,7 @@ impl PlayerView {
                 cx.notify();
             }))
             .child("See all")
-            .child(icon("arrow-right", 14., theme::foreground()))
+            .child(icon(Icon::ArrowRight, 14., theme::foreground()))
     }
 
     pub fn shell_section(&self, title: &str, action: Option<AnyElement>, body: impl IntoElement) -> impl IntoElement {
@@ -504,7 +465,7 @@ impl PlayerView {
 
     // MARK: Top navigation
 
-    fn nav_icon(&self, id: &'static str, icon_name: &'static str, label: &'static str, screen: Screen, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn nav_icon(&self, id: &'static str, icon_name: Icon, label: &'static str, screen: Screen, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active = match (&self.screen, &screen) {
             (Screen::Movies | Screen::Shows | Screen::Movie(_) | Screen::Show(_) | Screen::Genre(_), Screen::Library) => true,
             (Screen::Watchlist | Screen::Favorites | Screen::Hidden, Screen::Collections) => true,
@@ -543,7 +504,7 @@ impl PlayerView {
             })
     }
 
-    fn round_icon(&self, id: &'static str, icon_name: &'static str, active: bool, cx: &mut Context<Self>, screen: Screen) -> impl IntoElement {
+    fn round_icon(&self, id: &'static str, icon_name: Icon, active: bool, cx: &mut Context<Self>, screen: Screen) -> impl IntoElement {
         div()
             .id(id)
             .size(px(37.))
@@ -617,7 +578,7 @@ impl PlayerView {
                                 this.go_back();
                                 cx.notify();
                             }))
-                            .child(icon("arrow-left", 20., nav_ink(1.)))
+                            .child(icon(Icon::ArrowLeft, 20., nav_ink(1.)))
                             .into_any_element(),
                     })
                     .child(div().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(nav_ink(1.)).truncate().child(title.unwrap_or_else(|| "Plexy".into()))),
@@ -627,18 +588,18 @@ impl PlayerView {
                     .flex()
                     .items_center()
                     .gap(px(3.))
-                    .child(self.nav_icon("top-home", "home", "Home", Screen::Home, window, cx))
-                    .child(self.nav_icon("top-library", "library", "Library", Screen::Library, window, cx))
-                    .child(self.nav_icon("top-collections", "folder-heart", "Collections", Screen::Collections, window, cx))
-                    .child(self.nav_icon("top-history", "clock", "History", Screen::History, window, cx)),
+                    .child(self.nav_icon("top-home", Icon::Home, "Home", Screen::Home, window, cx))
+                    .child(self.nav_icon("top-library", Icon::Library, "Library", Screen::Library, window, cx))
+                    .child(self.nav_icon("top-collections", Icon::FolderHeart, "Collections", Screen::Collections, window, cx))
+                    .child(self.nav_icon("top-history", Icon::Clock, "History", Screen::History, window, cx)),
             )
             .child(div().flex_1())
             .child(
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(self.round_icon("top-search", "search", self.screen == Screen::Search, cx, Screen::Search))
-                    .child(self.round_icon("top-settings", "settings", self.screen == Screen::Settings, cx, Screen::Settings)),
+                    .child(self.round_icon("top-search", Icon::Search, self.screen == Screen::Search, cx, Screen::Search))
+                    .child(self.round_icon("top-settings", Icon::Settings, self.screen == Screen::Settings, cx, Screen::Settings)),
             )
     }
 
@@ -762,7 +723,7 @@ impl PlayerView {
             }
             this.hero_since = Instant::now();
         };
-        let arrow = |id: &'static str, name: &'static str, step: isize| {
+        let arrow = |id: &'static str, name: Icon, step: isize| {
             div()
                 .id(id)
                 .size(px(40.))
@@ -842,13 +803,13 @@ impl PlayerView {
                 .flex()
                 .gap(px(10.))
                 .child(
-                    self.pill_button("hero-play", Some("play"), if hero.resume { "Continue watching" } else { "Play" }, true)
+                    self.pill_button("hero-play", Some(Icon::Play), if hero.resume { "Continue watching" } else { "Play" }, true)
                         .h(px(44.))
                         .px(px(22.))
                         .on_click(cx.listener(move |this, _, window, cx| this.play_item(play.clone(), window, cx))),
                 )
                 .child(self.pill_button("hero-details", None, "Details", false).h(px(44.)).on_click(cx.listener(move |this, _, _, cx| this.open_title(&details, cx))))
-                .child(self.circle_button("hero-bookmark", "bookmark", in_watchlist).size(px(44.)).on_click(cx.listener(move |this, _, _, cx| {
+                .child(self.circle_button("hero-bookmark", Icon::Bookmark, in_watchlist).size(px(44.)).on_click(cx.listener(move |this, _, _, cx| {
                     this.catalog.toggle_mark(&mark, Mark::Watchlist);
                     this.reload_catalog();
                     cx.notify();
@@ -882,7 +843,7 @@ impl PlayerView {
                                 this.hero_since = Instant::now();
                                 cx.notify();
                             }))
-                            .child(icon(if self.hero_paused { "play" } else { "pause" }, 12., snow(0.8))),
+                            .child(icon(if self.hero_paused { Icon::Play } else { Icon::Pause }, 12., snow(0.8))),
                     )
                     .children((0..count).map(|i| {
                         let active = i == index;
@@ -929,8 +890,8 @@ impl PlayerView {
                 .child(div().absolute().left(px(HERO_GUTTER)).right(px(HERO_GUTTER)).bottom(px(88.)).max_w(px(704.)).flex().flex_col().gap(px(16.)).children(copy))
                 .children(dots)
                 .when(count > 1, |el| {
-                    el.child(div().absolute().left(px(14.)).top(px(hero_h / 2. - 20.)).child(arrow("hero-prev", "chevron-left", -1)))
-                        .child(div().absolute().right(px(14.)).top(px(hero_h / 2. - 20.)).child(arrow("hero-next", "chevron-right", 1)))
+                    el.child(div().absolute().left(px(14.)).top(px(hero_h / 2. - 20.)).child(arrow("hero-prev", Icon::ChevronLeft, -1)))
+                        .child(div().absolute().right(px(14.)).top(px(hero_h / 2. - 20.)).child(arrow("hero-next", Icon::ChevronRight, 1)))
                 }),
         )
     }
@@ -1026,12 +987,19 @@ impl PlayerView {
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
             .child(
-                self.lift(group.clone(), width, h, div()
+                div()
                     .relative()
-                    .w_full()
+                    .w(px(width))
                     .h(px(h))
-                    .rounded(px(theme::RADIUS_LG))
-                    .child(cover_r(self.card_art(item), theme::RADIUS_LG))
+                    .child(self.lift(
+                        group.clone(),
+                        width,
+                        h,
+                        theme::RADIUS_LG,
+                        crate::ui::artwork::FrameTone::Page,
+                        div().child(cover_r(self.card_art(item), theme::RADIUS_LG)),
+                        cx,
+                    ))
                     .child(
                         div()
                             .absolute()
@@ -1043,13 +1011,13 @@ impl PlayerView {
                             .bg(ink(0.35))
                             .opacity(0.)
                             .group_hover(group.clone(), |s| s.opacity(1.))
-                            .child(div().size(px(44.)).rounded_full().bg(snow(0.92)).flex().items_center().justify_center().child(icon("play", 20., ink(1.)))),
+                            .child(div().size(px(44.)).rounded_full().bg(snow(0.92)).flex().items_center().justify_center().child(icon(Icon::Play, 20., ink(1.)))),
                     )
                     .when_some(progress, |el, p| {
                         el.child(div().absolute().left(px(10.)).right(px(10.)).bottom(px(10.)).h(px(4.)).rounded_full().bg(snow(0.3)).child(div().h_full().rounded_full().w(gpui::relative(p.fraction() as f32)).bg(snow(1.))))
                     })
                     .children(action.map(|a| div().absolute().top(px(8.)).right(px(8.)).opacity(0.).group_hover(group.clone(), |s| s.opacity(1.)).child(a)))
-                    .child(hover_ring(group.clone(), theme::RADIUS_LG)), cx),
+                    .child(crate::ui::artwork::hover_veil(group.clone(), theme::RADIUS_LG)),
             )
             .child(
                 div()
@@ -1120,7 +1088,7 @@ impl PlayerView {
             )
             .child(
                 div().px(px(PAGE_X)).pt(px(12.)).pb(px(48.)).child(if titles.is_empty() {
-                    empty_state("film", "Nothing here yet", "Titles tagged with this genre appear once their details are fetched from TMDB.", None).into_any_element()
+                    empty_state(Icon::Film, "Nothing here yet", "Titles tagged with this genre appear once their details are fetched from TMDB.", None).into_any_element()
                 } else {
                     self.title_grid("genre", titles, cx).into_any_element()
                 }),
@@ -1171,7 +1139,7 @@ impl PlayerView {
         finished + started
     }
 
-    fn category_card(&self, id: &'static str, icon_name: &'static str, title: &str, count: usize, tint: Hsla, screen: Screen, cx: &mut Context<Self>) -> impl IntoElement {
+    fn category_card(&self, id: &'static str, icon_name: Icon, title: &str, count: usize, tint: Hsla, screen: Screen, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id(id)
             .relative()
@@ -1209,7 +1177,7 @@ impl PlayerView {
                             .text_size(px(11.))
                             .text_color(theme::muted())
                             .child(format!("{count} title{}", if count == 1 { "" } else { "s" }))
-                            .child(icon("arrow-right", 13., theme::muted())),
+                            .child(icon(Icon::ArrowRight, 13., theme::muted())),
                     ),
             )
     }
@@ -1217,19 +1185,19 @@ impl PlayerView {
     fn genre_card(&self, index: usize, genre: String, _count: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let lower = genre.to_lowercase();
         let (icon_name, tint) = if lower.contains("drama") {
-            ("drama", gpui::hsla(0.07, 0.6, 0.35, 1.))
+            (Icon::Drama, gpui::hsla(0.07, 0.6, 0.35, 1.))
         } else if lower.contains("crime") {
-            ("shield", gpui::hsla(0.6, 0.1, 0.3, 1.))
+            (Icon::Shield, gpui::hsla(0.6, 0.1, 0.3, 1.))
         } else if lower.contains("action") || lower.contains("adventure") || lower.contains("war") {
-            ("swords", gpui::hsla(0.6, 0.5, 0.35, 1.))
+            (Icon::Swords, gpui::hsla(0.6, 0.5, 0.35, 1.))
         } else if lower.contains("mystery") || lower.contains("thriller") {
-            ("eye", gpui::hsla(0.66, 0.5, 0.35, 1.))
+            (Icon::Eye, gpui::hsla(0.66, 0.5, 0.35, 1.))
         } else if lower.contains("sci-fi") || lower.contains("fantasy") || lower.contains("science") {
-            ("wand-sparkles", gpui::hsla(0.74, 0.5, 0.35, 1.))
+            (Icon::WandSparkles, gpui::hsla(0.74, 0.5, 0.35, 1.))
         } else if lower.contains("comedy") || lower.contains("family") || lower.contains("animation") {
-            ("smile", gpui::hsla(0.13, 0.6, 0.35, 1.))
+            (Icon::Smile, gpui::hsla(0.13, 0.6, 0.35, 1.))
         } else {
-            ("film", gpui::hsla(0.55, 0.3, 0.3, 1.))
+            (Icon::Film, gpui::hsla(0.55, 0.3, 0.3, 1.))
         };
         let query = genre.clone();
         div()
@@ -1341,12 +1309,24 @@ impl PlayerView {
                             .absolute()
                             .right_0()
                             .top(px(4.))
-                            .child(self.lift(group.clone(), card_w, card_h, div()
-                            .rounded(px(theme::RADIUS_LG))
-                            .child(cover_r(image, theme::RADIUS_LG))
-                            .child(div().absolute().left_0().right_0().bottom_0().h(px(card_h * 0.5)).rounded_b(px(theme::RADIUS_LG)).bg(linear_gradient(180., linear_color_stop(ink(0.), 0.), linear_color_stop(ink(0.75), 1.))))
-                            .child(div().absolute().left(px(14.)).right(px(14.)).bottom(px(12.)).text_size(px(15.)).font_weight(gpui::FontWeight::BOLD).text_color(snow(1.)).truncate().child(t.title.clone()))
-                            .child(hover_ring(group.clone(), theme::RADIUS_LG)), cx)),
+                            .child(
+                                div()
+                                    .relative()
+                                    .w(px(card_w))
+                                    .h(px(card_h))
+                                    .child(self.lift(
+                                        group.clone(),
+                                        card_w,
+                                        card_h,
+                                        theme::RADIUS_LG,
+                                        crate::ui::artwork::FrameTone::Page,
+                                        div().child(cover_r(image, theme::RADIUS_LG)),
+                                        cx,
+                                    ))
+                                    .child(div().absolute().left_0().right_0().bottom_0().h(px(card_h * 0.5)).rounded_b(px(theme::RADIUS_LG)).bg(linear_gradient(180., linear_color_stop(ink(0.), 0.), linear_color_stop(ink(0.75), 1.))))
+                                    .child(div().absolute().left(px(14.)).right(px(14.)).bottom(px(12.)).text_size(px(15.)).font_weight(gpui::FontWeight::BOLD).text_color(snow(1.)).truncate().child(t.title.clone()))
+                                    .child(crate::ui::artwork::hover_veil(group.clone(), theme::RADIUS_LG)),
+                            ),
                     )
                     .into_any_element()
             })
@@ -1412,7 +1392,7 @@ impl PlayerView {
                                         cx.notify();
                                     }))
                                     .child(div().text_size(px(13.)).text_color(theme::foreground()).child(sort_label))
-                                    .child(icon("chevron-down", 16., theme::foreground()))
+                                    .child(icon(Icon::ChevronDown, 16., theme::foreground()))
                                     .when(sort_open, |el| {
                                         el.child(dropdown(
                                             [(Sort::Added, "Recently added"), (Sort::Title, "Title"), (Sort::Year, "Year")]
@@ -1453,11 +1433,11 @@ impl PlayerView {
                         .flex()
                         .flex_wrap()
                         .gap(px(14.))
-                        .child(self.category_card("cat-movies", "film", "Movies", movie_count, theme::warning(), Screen::Movies, cx))
-                        .child(self.category_card("cat-shows", "tv", "TV Shows", show_count, theme::accent(), Screen::Shows, cx))
-                        .child(self.category_card("cat-watchlist", "bookmark", "Watchlist", self.personal.marked(Mark::Watchlist).len(), theme::success(), Screen::Watchlist, cx))
-                        .child(self.category_card("cat-favorites", "heart", "Favorites", self.personal.marked(Mark::Favorite).len(), theme::danger(), Screen::Favorites, cx))
-                        .child(self.category_card("cat-collections", "folder-heart", "Collections", self.personal.collections.len(), theme::segment(), Screen::Collections, cx)),
+                        .child(self.category_card("cat-movies", Icon::Film, "Movies", movie_count, theme::warning(), Screen::Movies, cx))
+                        .child(self.category_card("cat-shows", Icon::Tv, "TV Shows", show_count, theme::accent(), Screen::Shows, cx))
+                        .child(self.category_card("cat-watchlist", Icon::Bookmark, "Watchlist", self.personal.marked(Mark::Watchlist).len(), theme::success(), Screen::Watchlist, cx))
+                        .child(self.category_card("cat-favorites", Icon::Heart, "Favorites", self.personal.marked(Mark::Favorite).len(), theme::danger(), Screen::Favorites, cx))
+                        .child(self.category_card("cat-collections", Icon::FolderHeart, "Collections", self.personal.collections.len(), theme::segment(), Screen::Collections, cx)),
                 ),
             ))
             .when(!top_cards.is_empty(), |el| {
@@ -1466,7 +1446,7 @@ impl PlayerView {
                         .flex()
                         .flex_col()
                         .gap(px(14.))
-                        .child(div().flex().items_center().gap(px(8.)).child(icon("trending-up", 22., theme::accent())).child(h2("Top 10 in your library")))
+                        .child(div().flex().items_center().gap(px(8.)).child(icon(Icon::TrendingUp, 22., theme::accent())).child(h2("Top 10 in your library")))
                         .child(div().id("row-top").flex().gap(px(28.)).overflow_x_scroll().pb(px(24.)).children(top_cards)),
                 )
             })
@@ -1555,43 +1535,43 @@ impl PlayerView {
                                     .when_some(play, |el, (path, resume_at)| {
                                         let restart = path.clone();
                                         el.child(
-                                            self.pill_button("title-play", Some("play"), match resume_at {
+                                            self.pill_button("title-play", Some(Icon::Play), match resume_at {
                                                 Some(at) => format!("Resume  {}", format_time(at)),
                                                 None => "Play".into(),
                                             }, true)
                                             .on_click(cx.listener(move |this, _, window, cx| this.play_item(path.clone(), window, cx))),
                                         )
                                         .when(resume_at.is_some(), |el| {
-                                            el.child(self.pill_button("title-restart", Some("restart"), "Start over", false).on_click(cx.listener(move |this, _, window, cx| {
+                                            el.child(self.pill_button("title-restart", Some(Icon::Restart), "Start over", false).on_click(cx.listener(move |this, _, window, cx| {
                                                 this.open_at(&restart, Some(0.0), window, cx)
                                             })))
                                         })
                                     })
-                                    .child(self.circle_button("title-watched", if watched { "circle-check" } else { "circle" }, watched).on_click(cx.listener(move |this, _, _, cx| {
+                                    .child(self.circle_button("title-watched", if watched { Icon::CircleCheck } else { Icon::Circle }, watched).on_click(cx.listener(move |this, _, _, cx| {
                                         on_watched(this, cx);
                                         this.reload_catalog();
                                         cx.notify();
                                     })))
-                                    .child(self.circle_button("title-watchlist", "bookmark", in_watchlist).on_click(cx.listener(move |this, _, _, cx| {
+                                    .child(self.circle_button("title-watchlist", Icon::Bookmark, in_watchlist).on_click(cx.listener(move |this, _, _, cx| {
                                         this.catalog.toggle_mark(&k1, Mark::Watchlist);
                                         this.reload_catalog();
                                         cx.notify();
                                     })))
-                                    .child(self.circle_button("title-favorite", "star", favorite).on_click(cx.listener(move |this, _, _, cx| {
+                                    .child(self.circle_button("title-favorite", Icon::Star, favorite).on_click(cx.listener(move |this, _, _, cx| {
                                         this.catalog.toggle_mark(&k2, Mark::Favorite);
                                         this.reload_catalog();
                                         cx.notify();
                                     })))
                                     .child(
                                         div()
-                                            .child(self.circle_button("title-more", "ellipsis", self.open_select == Some("title-more")).on_click(cx.listener(|this, _, _, cx| {
+                                            .child(self.circle_button("title-more", Icon::Ellipsis, self.open_select == Some("title-more")).on_click(cx.listener(|this, _, _, cx| {
                                                 this.toggle_select("title-more");
                                                 cx.notify();
                                             })))
                                             .when(self.open_select == Some("title-more"), |el| {
                                                 el.child(dropdown(
                                                     vec![
-                                                        menu_item("title-hide", Some("eye-off"), if hidden { "Unhide" } else { "Hide from library" }, false)
+                                                        menu_item("title-hide", Some(Icon::EyeOff), if hidden { "Unhide" } else { "Hide from library" }, false)
                                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                                 this.open_select = None;
                                                                 this.catalog.toggle_mark(&k3, Mark::Hidden);
@@ -1599,7 +1579,7 @@ impl PlayerView {
                                                                 cx.notify();
                                                             }))
                                                             .into_any_element(),
-                                                        menu_item("title-collection", Some("folder-heart"), "Add to collection", false)
+                                                        menu_item("title-collection", Some(Icon::FolderHeart), "Add to collection", false)
                                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                                 this.open_select = None;
                                                                 this.collection_picker = true;
@@ -1619,7 +1599,7 @@ impl PlayerView {
             .when(self.collection_picker, |el| el.child(self.title_actions(key, window, cx)))
     }
 
-    fn panel(&self, title: &str, icon_name: Option<&'static str>, body: impl IntoElement) -> impl IntoElement {
+    fn panel(&self, title: &str, icon_name: Option<Icon>, body: impl IntoElement) -> impl IntoElement {
         div()
             .rounded(px(19.))
             .bg(theme::surface())
@@ -1714,7 +1694,7 @@ impl PlayerView {
 
     pub fn render_show_page(&self, key: &str, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(show) = self.shows().into_iter().find(|s| s.key == key) else {
-            return div().px(px(PAGE_X)).pt(px(84.)).child(empty_state("tv", "Show not found", "This show is no longer in your library.", None)).into_any_element();
+            return div().px(px(PAGE_X)).pt(px(84.)).child(empty_state(Icon::Tv, "Show not found", "This show is no longer in your library.", None)).into_any_element();
         };
         let title_key = TitleKey::Show(show.key.clone());
         let next = show.next_up().cloned();
@@ -1770,7 +1750,7 @@ impl PlayerView {
                         cx.notify();
                     }))
                     .child(season_name(season))
-                    .child(icon("chevron-down", 16., theme::foreground())),
+                    .child(icon(Icon::ChevronDown, 16., theme::foreground())),
             )
             .when(season_open && seasons.len() > 1, |el| {
                 el.child(dropdown(
@@ -1818,30 +1798,38 @@ impl PlayerView {
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, window, cx| this.play_item(play.clone(), window, cx)))
                     .child(
-                        self.lift(group.clone(), card_w, card_w * 0.5625, div()
+                        div()
                             .relative()
-                            .w_full()
+                            .w(px(card_w))
                             .h(px(card_w * 0.5625))
-                            .rounded(px(theme::RADIUS_LG))
-                            .child(cover_r(em.still.clone().or(episode.backdrop.clone()).or(show_art).or(episode.poster.clone()), theme::RADIUS_LG))
+                            .child(self.lift(
+                                group.clone(),
+                                card_w,
+                                card_w * 0.5625,
+                                theme::RADIUS_LG,
+                                crate::ui::artwork::FrameTone::Page,
+                                div().child(cover_r(em.still.clone().or(episode.backdrop.clone()).or(show_art).or(episode.poster.clone()), theme::RADIUS_LG)),
+                                cx,
+                            ))
                             .child(
                                 div()
                                     .absolute()
                                     .inset_0()
+                                    .rounded(px(theme::RADIUS_LG))
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .bg(gpui::hsla(0., 0., 0., 0.35))
                                     .opacity(0.)
                                     .group_hover(group.clone(), |s| s.opacity(1.))
-                                    .child(div().size(px(48.)).rounded_full().bg(gpui::hsla(0., 0., 1., 0.92)).flex().items_center().justify_center().child(icon("play", 22., gpui::hsla(0., 0., 0., 1.)))),
+                                    .child(div().size(px(48.)).rounded_full().bg(gpui::hsla(0., 0., 1., 0.92)).flex().items_center().justify_center().child(icon(Icon::Play, 22., gpui::hsla(0., 0., 0., 1.)))),
                             )
                             .when_some(progress, |el, p| {
                                 let left = ((p.duration - p.position) / 60.).ceil().max(1.) as u32;
                                 el.child(div().absolute().right(px(8.)).bottom(px(12.)).child(badge(format!("{left} min left"))))
                                     .child(div().absolute().left_0().right_0().bottom_0().h(px(4.)).bg(gpui::hsla(0., 0., 1., 0.3)).child(div().h_full().w(gpui::relative(p.fraction() as f32)).bg(gpui::hsla(0., 0., 1., 1.))))
                             })
-                            .child(hover_ring(group.clone(), theme::RADIUS_LG)), cx),
+                            .child(crate::ui::artwork::hover_veil(group.clone(), theme::RADIUS_LG)),
                     )
                     .child(div().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).truncate().group_hover(group.clone(), |s| s.text_color(theme::accent())).child(format!("{number}. {name}")))
                     .when_some(em.overview.clone().filter(|o| !o.is_empty()), |el, o| el.child(div().text_size(px(14.)).line_height(px(20.)).text_color(theme::muted()).line_clamp(2).text_ellipsis().child(o)))
@@ -1853,7 +1841,7 @@ impl PlayerView {
                             .text_size(px(13.))
                             .text_color(theme::muted())
                             .when_some(minutes, |el, m| el.child(format!("{m}min")))
-                            .when(watched, |el| el.child(div().flex().items_center().gap(px(5.)).child(icon("circle-check", 14., theme::accent())).child("Watched"))),
+                            .when(watched, |el| el.child(div().flex().items_center().gap(px(5.)).child(icon(Icon::CircleCheck, 14., theme::accent())).child("Watched"))),
                     ),
             );
         }
@@ -1895,7 +1883,7 @@ impl PlayerView {
                     .gap(px(22.))
                     .items_start()
                     .children(self.cast_panel(&title_key).map(|c| div().flex_1().min_w_0().child(c)))
-                    .child(div().flex_1().min_w_0().child(self.panel("Details", Some("list"), details))),
+                    .child(div().flex_1().min_w_0().child(self.panel("Details", Some(Icon::List), details))),
             )
             .when(!others.is_empty(), |el| el.child(self.section("More like this", None, self.title_grid("more", others, cx))))
             .into_any_element()
@@ -1903,7 +1891,7 @@ impl PlayerView {
 
     pub fn render_movie_page(&self, path: &PathBuf, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(movie) = self.items.iter().find(|i| &i.path == path).cloned() else {
-            return div().px(px(PAGE_X)).pt(px(84.)).child(empty_state("film", "Movie not found", "This movie is no longer in your library.", None)).into_any_element();
+            return div().px(px(PAGE_X)).pt(px(84.)).child(empty_state(Icon::Film, "Movie not found", "This movie is no longer in your library.", None)).into_any_element();
         };
         let key = TitleKey::Movie(path.clone());
         let watched = movie.watched();
@@ -1937,7 +1925,7 @@ impl PlayerView {
             .flex_col()
             .gap(px(29.))
             .child(hero)
-            .child(div().flex().gap(px(22.)).items_start().children(self.cast_panel(&key).map(|c| div().w(px(496.)).child(c))).child(div().w(px(496.)).child(self.panel("Details", Some("list"), details))))
+            .child(div().flex().gap(px(22.)).items_start().children(self.cast_panel(&key).map(|c| div().w(px(496.)).child(c))).child(div().w(px(496.)).child(self.panel("Details", Some(Icon::List), details))))
             .when(!others.is_empty(), |el| el.child(self.section("More like this", None, self.title_grid("more-movies", others, cx))))
             .into_any_element()
     }
@@ -1987,7 +1975,7 @@ impl PlayerView {
                         cx.notify();
                     }))
                     .child(div().text_size(px(14.)).text_color(theme::foreground()).child(label))
-                    .child(icon("chevron-down", 16., theme::foreground())),
+                    .child(icon(Icon::ChevronDown, 16., theme::foreground())),
             )
             .when(open, |el| {
                 el.child(dropdown(
@@ -2008,7 +1996,7 @@ impl PlayerView {
             })
     }
 
-    fn settings_card(&self, icon_name: &'static str, title: &str, rows: Vec<AnyElement>) -> impl IntoElement {
+    fn settings_card(&self, icon_name: Icon, title: &str, rows: Vec<AnyElement>) -> impl IntoElement {
         div()
             .rounded(px(19.))
             .bg(theme::surface())
@@ -2046,7 +2034,7 @@ impl PlayerView {
 
     pub fn render_settings_page(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let section = if self.screen == Screen::Libraries { SettingsSection::Libraries } else { self.settings_section };
-        let nav = |id: &'static str, icon_name: &'static str, label: &'static str, target: SettingsSection, cx: &mut Context<Self>| {
+        let nav = |id: &'static str, icon_name: Icon, label: &'static str, target: SettingsSection, cx: &mut Context<Self>| {
             let active = section == target;
             div()
                 .id(id)
@@ -2081,16 +2069,16 @@ impl PlayerView {
                     .flex_col()
                     .gap(px(18.))
                     .child(self.settings_card(
-                        "captions",
+                        Icon::Captions,
                         "Subtitles",
                         vec![
                             Self::setting_row("Turn on subtitles", self.toggle("set-subs-on", subs_on, cx, move |this| this.catalog.set_setting("subtitles_on", if subs_on { "no" } else { "yes" }))),
                             Self::setting_row("Preferred subtitle language", self.language_select("set-sub-lang", "subtitle_lang", cx)),
                         ],
                     ))
-                    .child(self.settings_card("audio-lines", "Audio language", vec![Self::setting_row("Preferred audio language", self.language_select("set-audio-lang", "audio_lang", cx))]))
+                    .child(self.settings_card(Icon::AudioLines, "Audio language", vec![Self::setting_row("Preferred audio language", self.language_select("set-audio-lang", "audio_lang", cx))]))
                     .child(self.settings_card(
-                        "skip-forward",
+                        Icon::SkipForward,
                         "Episodes",
                         vec![
                             Self::setting_row("Autoplay next episode", self.toggle("set-autoplay", autoplay, cx, move |this| this.catalog.set_setting("autoplay", if autoplay { "off" } else { "on" }))),
@@ -2109,7 +2097,7 @@ impl PlayerView {
                     .flex_col()
                     .gap(px(18.))
                     .child(self.settings_card(
-                        "film",
+                        Icon::Film,
                         "TMDB",
                         vec![
                             Self::setting_row("Status", div().text_size(px(13.)).text_color(if connected { theme::success() } else { theme::muted() }).child(if connected { "Connected" } else { "Not connected — artwork and details stay local" })),
@@ -2126,7 +2114,7 @@ impl PlayerView {
             SettingsSection::Libraries => self.render_libraries_public(cx),
             SettingsSection::Appearance => {
                 let current = self.catalog.setting("theme").unwrap_or_else(|| "dark".into());
-                let choice = |value: &'static str, label: &'static str, icon_name: &'static str, cx: &mut Context<Self>| {
+                let choice = |value: &'static str, label: &'static str, icon_name: Icon, cx: &mut Context<Self>| {
                     let selected = current == value;
                     // Swatch: a tiny page in that theme (System is split).
                     let pane = |bg: u32, card: u32, line: u32| {
@@ -2170,7 +2158,7 @@ impl PlayerView {
                                 .items_center()
                                 .justify_between()
                                 .child(div().size(px(28.)).rounded(px(6.)).border_1().border_color(theme::border()).bg(theme::background()).flex().items_center().justify_center().child(icon(icon_name, 14., theme::foreground())))
-                                .when(selected, |el| el.child(div().size(px(20.)).rounded_full().bg(theme::accent()).flex().items_center().justify_center().child(icon("check", 12., theme::accent_foreground())))),
+                                .when(selected, |el| el.child(div().size(px(20.)).rounded_full().bg(theme::accent()).flex().items_center().justify_center().child(icon(Icon::Check, 12., theme::accent_foreground())))),
                         )
                         .child(div().text_size(px(13.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).child(label))
                         .child(swatch)
@@ -2180,9 +2168,9 @@ impl PlayerView {
                     .flex_col()
                     .gap(px(14.))
                     .child(self.settings_card(
-                        "palette",
+                        Icon::Palette,
                         "Theme",
-                        vec![div().flex().flex_wrap().gap(px(12.)).child(choice("light", "Light", "sun", cx)).child(choice("dark", "Dark", "moon", cx)).child(choice("system", "System", "monitor", cx)).into_any_element()],
+                        vec![div().flex().flex_wrap().gap(px(12.)).child(choice("light", "Light", Icon::Sun, cx)).child(choice("dark", "Dark", Icon::Moon, cx)).child(choice("system", "System", Icon::Monitor, cx)).into_any_element()],
                     ))
                     .child(div().px(px(4.)).text_size(px(12.)).text_color(theme::muted()).child("System follows your Mac's appearance. The player always stays dark."))
                     .into_any_element()
@@ -2208,11 +2196,11 @@ impl PlayerView {
                     .flex_col()
                     .gap(px(3.))
                     .child(group("Preferences"))
-                    .child(nav("settings-playback", "captions", "Playback", SettingsSection::Playback, cx))
-                    .child(nav("settings-appearance", "palette", "Appearance", SettingsSection::Appearance, cx))
-                    .child(nav("settings-metadata", "film", "Metadata", SettingsSection::Metadata, cx))
+                    .child(nav("settings-playback", Icon::Captions, "Playback", SettingsSection::Playback, cx))
+                    .child(nav("settings-appearance", Icon::Palette, "Appearance", SettingsSection::Appearance, cx))
+                    .child(nav("settings-metadata", Icon::Film, "Metadata", SettingsSection::Metadata, cx))
                     .child(group("Library"))
-                    .child(nav("settings-libraries", "library", "Libraries", SettingsSection::Libraries, cx)),
+                    .child(nav("settings-libraries", Icon::Library, "Libraries", SettingsSection::Libraries, cx)),
             )
             .child(
                 div()

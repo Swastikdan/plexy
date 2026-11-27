@@ -9,14 +9,16 @@ the two children:
 | [UI_KIT.md](UI_KIT.md) | Reusable components, typed icons, tokens, scene workflow, canonical menu and artwork specs, migration phases |
 | [MOTION.md](MOTION.md) | Animation audit, GPUI 0.2.2 constraints, motion engine, performance/memoization plan, motion rollout |
 
-**Status:** design and audit complete; implementation not started. No Rust
-source was changed by the documentation pass.
+**Status:** implementation underway. The first slice landed: typed icons, the
+`src/ui` module, canonical menu panel/rows, clipped artwork frames, and the
+motion engine. HOT-3/visual verification and the remaining kit phases are
+pending.
 
-**Next action:** HOT-1 — implement the canonical `MenuPanel`/`MenuRow`/
-`Dropdown` from [UI_KIT.md §6.1](UI_KIT.md#61-canonical-menu-and-dropdown) and
-adopt every menu. Then HOT-2 (artwork frames), then HOT-3 (light theme).
+**Next action:** run the light/dark visual pass for HOT-1/HOT-2 (menus and
+hover frames), then finish KIT-0 tokens/gallery and continue the kit phases.
+Motion is already wired for the player chrome and the card lift.
 
-**Last updated:** 2026-11-27 19:38 IST.
+**Last updated:** 2026-11-27 20:05 IST.
 
 ## 1. Working rules
 
@@ -38,41 +40,48 @@ adopt every menu. Then HOT-2 (artwork frames), then HOT-3 (light theme).
 
 ## 2. Current snapshot
 
-Taken from the working tree on 2026-11-27 around 19:25 IST. The tree is moving;
-re-measure if the counts look stale.
+Taken from the working tree on 2026-11-27 around 20:00 IST.
 
 | Item | Value |
 | --- | --- |
 | Crate | `apps/player-gpui` |
-| Total Rust | ~10,570 lines |
-| UI-facing files | `shell_ui.rs` ~2,300 · `app.rs` ~2,330 · `library_ui.rs` ~860 · `personal_ui.rs` ~820 · `theme.rs` 60 · `assets.rs` 184 |
-| Icons | 68 SVGs, 272 KB, stringly typed |
+| Total Rust | ~10,480 lines (including ~1,750 in `src/ui/`) |
+| UI-facing files | `shell_ui.rs` ~2,300 · `app.rs` ~2,300 · `library_ui.rs` ~860 · `personal_ui.rs` ~800 · `theme.rs` 60 · `assets.rs` 184 |
+| Icons | 68 SVGs, typed `ui::Icon`, asset-parity tests |
 | Type | 20 distinct font sizes |
 | Radii | 10 distinct corner radii |
-| Interaction | 45 `.hover()`, 14 `group_hover()`, 3 `.active()` |
-| Animation | 7 `with_animation` + 2 `with_animations`; chrome/OSD still manual 30 Hz |
-| Theme | dark + light tokens now exist; the player stays dark |
+| Interaction | 41 `.hover()`, 6 `group_hover()`, 3 `.active()`; the hover veil is shared |
+| Animation | 6 `with_animation` + 2 `with_animations`; 2 `with_tween` call sites (chrome, card lift) |
+| Theme | dark + light tokens; the player stays dark |
 
-Structure today: most widgets are `impl PlayerView` methods, so they borrow
-catalog/navigation state and cannot be reused. The shell, library, personal
-and player files each own their own versions of buttons, cards and menus.
+Structure today: `src/ui/{icon,menu,artwork,motion}` exists and is used by the
+hotfix surfaces. The remaining catalog (buttons, text, fields, general cards)
+is still in the feature files; the migration plan in [UI_KIT.md](UI_KIT.md)
+continues from there.
 
-Recent tree changes that matter to this plan:
+Implemented in this slice:
 
-- Light theme tokens were added to `theme.rs`.
-- `hover_ring`, `corner_mask`, `episode_tile` and a light-theme hero fade were
-  added. Hover feedback is still instant.
-- A `lift()` helper now animates card art to 103% over 220 ms by changing
-  width/height/left/top. The art sits in a fixed wrapper that does not clip, so
-  the grown image is the primary "bleeding out" cause.
-- The shell dropdown now measures its trigger and flips/aligns itself with a
-  window margin. Keep that behavior when extracting `Dropdown`; the remaining
-  problem is item/panel geometry, not anchoring.
-- Menu anatomy diverged further: shell dropdown items, player settings rows,
-  player track rows and the collection picker are four different systems.
-- Some episode art frames have no `overflow_hidden`, and one hover overlay has
-  no radius. This is the rest of the reported bleed, most visible in light
-  theme.
+- `ui::icon`: typed enum for all 68 assets, static paths, no string names or
+  `format!` paths in feature code.
+- `ui::menu`: canonical `MenuPanel`/`MenuRow`, app/media tones, canonical
+  36/48/40 px rows, adopted by shell dropdowns and player Settings/track
+  menus.
+- `ui::artwork`: clipped frame, tone-aware corner restoration, hover veil and
+  optional inset ring; `lift()` now grows only the art inside a clipped frame.
+- `ui::motion`: exact easing, motion tokens, target-driven interruptible
+  `Tween`, presence state; used by the player chrome fade and card lift.
+- Tests: 35 passing, including icon parity, menu metrics, easing, tween
+  interruption and presence.
+
+Known remaining work:
+
+- HOT-3 visual pass in both themes (not yet captured).
+- KIT-0 tokens/full gallery and KIT-1..5 catalog extraction.
+- MOT-1 OSD/spinner/icon swaps, MOT-2 hover/memoization, MOT-3 presence/page
+  transitions, MOT-4 hero/reduced motion.
+- The shell dropdown still uses global measurement/dismiss statics; its
+  geometry is canonical, but the state should move into the component later.
+
 
 ## 3. Status board
 
@@ -81,46 +90,54 @@ Legend: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`.
 | ID | Milestone | Status | Depends on | Done when |
 | --- | --- | --- | --- | --- |
 | ORCH-0 | Audit + docs + parent log | DONE | — | This file, UI_KIT.md, MOTION.md exist and link each other |
-| HOT-1 | Canonical menus + dropdown behavior | TODO | ORCH-0 | Every menu in §6 uses one row/panel anatomy; dropdown checklist passes |
-| HOT-2 | Artwork frame + hover clipping | TODO | ORCH-0 | `lift` grows only inside a clipped frame; no square corners/page-colored wedges on any card, either theme |
+| HOT-1 | Canonical menus + dropdown behavior | IN PROGRESS | ORCH-0 | Row/panel geometry landed across shell and player; visual pass pending |
+| HOT-2 | Artwork frame + hover clipping | IN PROGRESS | ORCH-0 | `lift` is clipped and uses the motion tween; visual pass pending |
 | HOT-3 | Light-theme regression pass | TODO | HOT-1, HOT-2 | Home/Library/Title/Search/Settings pass in light theme |
-| KIT-0 | `src/ui` + tokens + typed icons | TODO | HOT-1, HOT-2 | `ui::icon`, tokens, asset-parity tests, gallery skeleton |
-| KIT-1 | Foundation/media atoms | TODO | KIT-0 | Artwork frame, text, scrim, progress, badge, empty, spinner |
+| KIT-0 | `src/ui` + tokens + typed icons | IN PROGRESS | HOT-1, HOT-2 | `ui::icon` + tests done; full tokens/gallery pending |
+| KIT-1 | Foundation/media atoms | IN PROGRESS | KIT-0 | Artwork frame/icon done; text/scrim/progress/badge/empty/spinner pending |
 | KIT-2 | Controls | TODO | KIT-1 | Button, icon button, chip, toggle, segmented, field, stars |
 | KIT-3 | Surfaces + cards | TODO | KIT-1 | Panel, settings card/row, poster/wide/episode/tile/cast |
-| KIT-4 | Overlays | TODO | KIT-2, KIT-3 | Dropdown/menu/popover/presence, adopted everywhere |
+| KIT-4 | Overlays | IN PROGRESS | KIT-2, KIT-3 | Menu panel/row done; dropdown/popover/presence migration pending |
 | KIT-5 | Screens compose | TODO | KIT-4 | Feature files contain no duplicated visual recipes |
-| MOT-0 | Motion engine + token layer | TODO | KIT-0 | Tween/easing/presence/spring in `ui::motion`; unit tests |
-| MOT-1 | Chrome/OSD/spinner/icon swaps | TODO | MOT-0, HOT-2 | Display-clock, time-based, no 30 Hz UI fade |
-| MOT-2 | Hover/press + memoization | TODO | MOT-1 | Smooth hover, one tween per surface, no per-frame model rebuild |
+| MOT-0 | Motion engine + token layer | DONE | KIT-0 | `Easing`, `MotionSpec`, `Tween`, `PresenceState` + 11 tests |
+| MOT-1 | Chrome/OSD/spinner/icon swaps | IN PROGRESS | MOT-0, HOT-2 | Chrome fade moved to `Tween`; OSD/spinner/icon swaps pending |
+| MOT-2 | Hover/press + memoization | IN PROGRESS | MOT-1 | Card lift uses the tween; hover/press and model cache pending |
 | MOT-3 | Overlay presence + page transitions | TODO | MOT-2, KIT-4 | Enter and exit; no ghost clicks |
 | MOT-4 | Hero + reduced motion | TODO | MOT-3 | Two-slot crossfade, one copy timeline, reduced-motion setting |
 | QA-1 | Scene gallery + screenshots | TODO | KIT-0 | Every scene/state/icon in the gallery, both themes |
 
 ## 4. Where the next agent starts
 
-Do **HOT-1 first**, then **HOT-2**, then **HOT-3**. Do not start with motion.
+The code for **HOT-1** and **HOT-2** has landed. The next task is **HOT-3:
+visual verification in both themes**, because compile + unit tests cannot
+prove dropdown geometry, clipped hover frames or light-theme corner masks.
 
-Why this order:
+Concrete next task:
 
-1. They are user-visible issues today: inconsistent menus and hover bleed.
-2. They create the first real kit modules (`ui/menu`, `ui/artwork`) instead of
-   throwaway patches.
-3. Motion (MOT-1 onward) must not animate an unclipped frame or a menu whose
-   geometry is about to change.
+1. Launch the app in dark and light theme.
+2. Walk every row of §6 (menus) and §7 (hover/clipping).
+3. Capture Home, Library, Show, Search, Settings and the player menus.
+4. Fix only regressions caused by the new `ui::menu` / `ui::artwork` geometry;
+   do not redesign the screens.
+5. When the matrices pass, mark HOT-1/HOT-2/HOT-3 `DONE`, then finish KIT-0
+   (tokens + gallery) and continue KIT-1..5.
 
-Concrete first task:
+The implemented slice:
 
-1. Read [UI_KIT.md §6.1](UI_KIT.md#61-canonical-menu-and-dropdown).
-2. Add `src/ui/menu.rs` (or equivalent) with `MenuPanel`, `MenuRow` and the
-   `Dropdown` behavior contract.
-3. Replace the shell dropdown rows first (Library sort, title more, season,
-   Settings language), then the player Settings root and track menus, then
-   the collection picker.
-4. Capture every open menu in light and dark; tick the matrix in §6.
-5. Update the status board and append a log entry, then move to HOT-2.
+| File | What landed |
+| --- | --- |
+| `src/ui/icon.rs` | 68 typed icons, static paths, `all()`, asset-parity tests |
+| `src/ui/menu.rs` | `MenuTone`, `panel`, `divider`, `MenuRow` (action/radio/navigation/collection) |
+| `src/ui/artwork.rs` | clipped `frame`, `framed`, tone-aware corner mask, hover veil/ring |
+| `src/ui/motion.rs` | easing, motion tokens, target-driven `Tween`, presence state |
+| `src/shell_ui.rs` | all icons typed; shell menus use `MenuRow`; `lift()` clipped + tweened |
+| `src/app.rs` | all icons typed; player menus use `MenuRow`; chrome fade uses `Tween` |
+| `src/library_ui.rs` | typed icons; poster card uses clipped lift frame |
+| `src/personal_ui.rs` | typed icons; search/history cards clipped; collection picker uses menu panel/rows |
+| `src/main.rs` | `mod ui;` |
 
-Do not attempt the whole `src/ui` tree in the same patch.
+Do not mark HOT-1/HOT-2 done until the visual pass is recorded in §11.
+Do not start MOT-3/MOT-4 before KIT-4.
 
 ## 5. Canonical decisions (short form)
 
@@ -297,6 +314,7 @@ previous entry with a new one if needed.
 | 2026-11-27 19:00 | docs pass | Audited UI and motion; created `UI_KIT.md` and `MOTION.md`; linked from the app README | Review the plan, then start extraction |
 | 2026-11-27 19:25 | re-audit | Source changed after the first pass (light theme, `hover_ring`, `corner_mask`, `episode_tile`). Confirmed four menu item systems; identified episode hover clipping/radius and page-background corner mask as bleed contributors. Added canonical menu/artwork specs, scene workflow, and this parent log. | Start HOT-1: `ui::menu` + adopt all menus |
 | 2026-11-27 19:32 | re-audit 2 | Source changed again. Added `lift()` (art grows 3% via width/height/left/top over 220 ms) and measured dropdown anchoring. `lift` is now the primary bleed cause because its fixed wrapper does not clip. Updated UI_KIT §6.2, motion counts (7+2 animations, 14 group_hover, 10,573 lines) and the hover matrix. | HOT-1, then HOT-2 with `ArtworkFrame::lift` |
+| 2026-11-27 20:05 | implementation | Added `src/ui` with typed icons, canonical menu panel/rows, clipped artwork frame/veil, and the motion engine. Migrated all icon call sites, shell dropdowns, player menus, collection picker, poster/episode/Top 10 frames, chrome fade and card lift. `cargo check` passes; 35 tests pass. No visual capture yet. | HOT-3 light/dark visual pass, then KIT-0 tokens/gallery |
 |  |  |  |  |
 
 ### Log template

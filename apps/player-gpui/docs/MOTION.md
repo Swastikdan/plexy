@@ -1,8 +1,11 @@
 # Rust player motion engine and performance
 
-Design document for `apps/player-gpui`, pinned to **GPUI 0.2.2**. **No source
-was changed for this pass.** The component and icon proposals live in
-[UI_KIT.md](UI_KIT.md).
+Design document and implementation checkpoint for `apps/player-gpui`, pinned
+to **GPUI 0.2.2**. The first motion slice is now in the tree:
+`ui::motion::{Easing, MotionSpec, Tween, PresenceState}` exists with 11 tests,
+the player chrome fade uses a display-clock `Tween`, and the card lift is a
+clipped, target-driven tween. The remaining motion surfaces are still todo.
+The component and icon work lives in [UI_KIT.md](UI_KIT.md).
 
 ## 1. Summary
 
@@ -13,9 +16,10 @@ happen: UI motion driven by the playback timer instead of the display clock.
 
 The symptoms are visible:
 
-- 45 `.hover()`, 14 `group_hover()` and 3 `.active()` calls snap to their end
+- 41 `.hover()`, 6 `group_hover()` and 3 `.active()` calls snap to their end
   state. Menus, dropdowns, the volume popover, the seek thumb, toggles and
-  play/pause icons appear or change with no transition.
+  play/pause icons appear or change with no transition (the card lift and
+  player chrome no longer do).
 - The player chrome fades in fixed 0.25/0.12 steps on the 33 ms playback
   timer, not with time-based easing at display refresh. Fast on a fast tick,
   slower when the tick runs late; linear either way.
@@ -49,7 +53,32 @@ So the work splits in two:
   growing and clipping the art inside a fixed frame (as `lift` does), which is
   layout work. SVG rotates and scales, so icon motion can match.
 
+### Implementation checkpoint (2026-11-27)
+
+Landed:
+
+- `ui::motion`: exact cubic-bezier easings, motion tokens, target-driven
+  interruptible `Tween`, `PresenceState`, unit tests.
+- Player chrome fade: replaced the 30 Hz manual opacity stepping with
+  `with_tween` (180 ms in / 220 ms out, standard curve). `tick()` no longer
+  advances UI opacity.
+- Card lift: replaced the one-shot `with_animation` with a target-driven
+  tween; the art now grows inside a clipped `ArtworkFrame`.
+- Subtitle search spinner: rotates the SVG on the display clock instead of
+  pulsing its opacity.
+- `tick()` only notifies when control visibility changes; the tween requests
+  its own frames.
+
+Still open: OSD keyframes, spinner rotation, hover/press ramps, presence for
+menus/popovers, page transitions, hero choreography, reduced motion, and the
+Home/Library model memoization.
+
 ## 2. Current animation inventory
+
+The table below is the **baseline audit** that motivated the engine. Rows 8
+(chrome) and 21 (lift) have since moved to `ui::motion`; the rest are still
+the current behavior unless the implementation-checkpoint list above says
+otherwise.
 
 | # | Surface | Trigger | Current implementation | Why it feels weak |
 | --- | --- | --- | --- | --- |
@@ -60,10 +89,10 @@ So the work splits in two:
 | 5 | Top-nav active label | active nav | 200 ms width 0 → measured + opacity | Exit is instant; width animation reflows the nav group |
 | 6 | Dropdown | open | 140 ms opacity; measured trigger position, flip/align and window margin | Entrance only; no exit; static `"dropdown"` id; anchoring is custom global-state code |
 | 7 | Page enter | screen change | 140 ms opacity 0.94 → 1 on the whole page | Too subtle to read as a transition; wraps the entire page subtree |
-| 8 | Player chrome | pointer/play state | `controls_opacity += ±step` in `tick()` (33 ms) | Frame-dependent, linear, 30 Hz; not an animation |
+| 8 | Player chrome | pointer/play state | `controls_opacity += ±step` in `tick()` (33 ms) | **Fixed:** now `with_tween`, 180/220 ms; see checkpoint |
 | 9 | OSD (play/pause/seek flash) | action | `age` → opacity 1 until 600 ms, then out by 900 ms; icon size 1.12 → 1 over 250 ms | Sampled at 30 Hz; size is layout; no interruptible fade |
-| 10 | Subtitle spinner | search busy | 900 ms repeat, opacity `0.4 + 0.6·sin(πt)` | Pulses instead of rotating; `Animation::repeat()` keeps a frame loop for as long as it is mounted |
-| 11 | Hover / press | everywhere | 45 `.hover()`, 14 `group_hover()`, 3 `.active()` paint-time styles | Instant; no transition duration, no glow ramp for most controls |
+| 10 | Subtitle spinner | search busy | 900 ms repeat, opacity `0.4 + 0.6·sin(πt)` | **Fixed:** SVG rotation on the display clock while unmounted otherwise |
+| 11 | Hover / press | everywhere | 41 `.hover()`, 6 `group_hover()`, 3 `.active()` paint-time styles | Instant; no transition duration, no glow ramp for most controls; card lift is now tweened |
 | 12 | Volume popover | hover/until timer | `when(open)` adds/removes the element | Appears/disappears with no motion |
 | 13 | Player menus | open/close | `when_some(menu)` adds/removes | Instant; no slide/fade; no exit |
 | 14 | Up next card | near end/ended | Appears fully rendered; countdown text changes per second | No entrance, no attention cue, countdown jumps |
@@ -73,7 +102,7 @@ So the work splits in two:
 | 18 | Progress bar/ring | tick | Width/fraction jumps at 30 Hz | Visible stair-stepping on short content; ring has no catch-up |
 | 19 | Play/pause, mute, fullscreen icons | state | Icon path swaps instantly | Visual discontinuity in the primary control |
 | 20 | Sidebar/settings selection | click | Background + accent bar snap | The selection indicator jumps between rows |
-| 21 | Card lift | card hover | 220 ms `ease_out_quint` changing width/height/left/top by 3%; art fixed wrapper is unclipped | Layout animation; art, badges, veil and actions grow past the card; primary hover-bleed cause |
+| 21 | Card lift | card hover | 220 ms `ease_out_quint` changing width/height/left/top by 3%; art fixed wrapper is unclipped | **Fixed:** clipped frame + target tween; decorations stay fixed |
 
 Since the first audit, the working tree added `hover_ring`, `corner_mask`,
 `episode_tile` and `lift`. The veil/overlays use instant `group_hover`; `lift`

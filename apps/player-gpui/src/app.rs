@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, size, svg, App, Bounds,
+    canvas, div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, size, Animation, AnimationExt, App, Bounds,
     ClickEvent, Context, ExternalPaths, FocusHandle, Hsla, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PathPromptOptions, Pixels, Point, RenderImage, ScrollWheelEvent, SharedString,
     Window,
@@ -25,6 +25,8 @@ use crate::library_ui::Screen;
 use crate::media::{self, Identity};
 use crate::mpv::{self, PlaybackState, Player, TrackKind};
 use crate::theme;
+use crate::ui::icon::{icon, Icon};
+use crate::ui::motion::{Easing, MotionSpec, TweenExt};
 use crate::preview::{self, PreviewService};
 
 const HIDE_AFTER: Duration = Duration::from_millis(2600);
@@ -60,7 +62,7 @@ pub struct SubSearch {
 
 #[derive(Clone)]
 struct Osd {
-    icon: &'static str,
+    icon: Icon,
     text: SharedString,
     at: Instant,
 }
@@ -84,7 +86,7 @@ pub struct PlayerView {
     pub gpui_view: usize,
 
     last_activity: Instant,
-    controls_opacity: f32,
+    controls_visible: bool,
     cursor_hidden: bool,
     subs_raised: bool,
     pub menu: Option<Menu>,
@@ -150,7 +152,6 @@ pub struct PlayerView {
     pub selected_season: Option<u32>,
     pub open_select: Option<&'static str>,
     pub hovered_card: Option<SharedString>,
-    pub left_card: Option<SharedString>,
     scan_progress: (u64, usize, bool),
     last_auto_scan: Instant,
     last_saved: Instant,
@@ -172,7 +173,7 @@ impl PlayerView {
             focus: cx.focus_handle(),
             gpui_view,
             last_activity: Instant::now(),
-            controls_opacity: 1.0,
+            controls_visible: true,
             cursor_hidden: false,
             subs_raised: false,
             menu: None,
@@ -228,7 +229,6 @@ impl PlayerView {
             selected_season: None,
             open_select: None,
             hovered_card: None,
-            left_card: None,
             scan_progress: (0, 0, false),
             last_auto_scan: Instant::now(),
             last_saved: Instant::now(),
@@ -309,7 +309,7 @@ impl PlayerView {
                 self.state = self.player.snapshot();
                 self.load_segments(&path);
                 if start > 0.0 {
-                    self.flash("play", format!("Resuming from {}", format_time(start)));
+                    self.flash(Icon::Play, format!("Resuming from {}", format_time(start)));
                 }
                 self.previews = Some(PreviewService::new(self.libmpv.clone().expect("initialized playback"), &path));
                 self.media = Some(path);
@@ -539,8 +539,8 @@ impl PlayerView {
 
     pub fn add_subtitle(&mut self, path: &Path, cx: &mut Context<Self>) {
         match self.player.add_subtitle(path) {
-            Ok(()) => self.flash("subtitles", format!("Added {}", display_name(path))),
-            Err(error) => self.flash("subtitles", error.to_string()),
+            Ok(()) => self.flash(Icon::Subtitles, format!("Added {}", display_name(path))),
+            Err(error) => self.flash(Icon::Subtitles, error.to_string()),
         }
         cx.notify();
     }
@@ -575,10 +575,8 @@ impl PlayerView {
         }
 
         let visible = self.controls_wanted();
-        let target = if visible { 1.0 } else { 0.0 };
-        let step = if visible { 0.25 } else { 0.12 };
-        let old_opacity = self.controls_opacity;
-        self.controls_opacity += (target - self.controls_opacity).clamp(-step, step);
+        let visibility_changed = visible != self.controls_visible;
+        self.controls_visible = visible;
         // Lift subtitles above the transport while the chrome is showing.
         let raise = visible && self.media.is_some();
         if raise != self.subs_raised {
@@ -666,8 +664,7 @@ impl PlayerView {
         // Input handlers redraw directly. The timer only redraws for visible
         // playback changes, animation, or background work that changed the UI.
         let playback_changed = self.media.is_some()
-            && (old_opacity != self.controls_opacity
-                || (self.controls_opacity > 0.0 && previous_revision != self.state.revision));
+            && (visibility_changed || (visible && previous_revision != self.state.revision));
         if playback_changed || overlay_changed || scan_changed || hero_changed
             || meta_changed || token_changed || autoplay_tick
         {
@@ -699,7 +696,7 @@ impl PlayerView {
         self.cursor_hidden = false;
     }
 
-    fn flash(&mut self, icon: &'static str, text: impl Into<SharedString>) {
+    fn flash(&mut self, icon: Icon, text: impl Into<SharedString>) {
         self.osd = Some(Osd { icon, text: text.into(), at: Instant::now() });
     }
 
@@ -742,12 +739,12 @@ impl PlayerView {
     fn toggle_pause(&mut self) {
         let _ = self.player.toggle_pause();
         let paused = !self.state.paused || self.state.ended;
-        self.flash(if paused { "pause" } else { "play" }, "");
+        self.flash(if paused { Icon::Pause } else { Icon::Play }, "");
     }
 
     fn seek_by(&mut self, delta: f64) {
         let _ = self.player.seek_by(delta);
-        let icon = if delta < 0.0 { "back" } else { "forward" };
+        let icon = if delta < 0.0 { Icon::Back } else { Icon::Forward };
         self.flash(icon, format!("{}{}s", if delta < 0.0 { "−" } else { "+" }, delta.abs().round()));
     }
 
@@ -769,7 +766,7 @@ impl PlayerView {
     fn toggle_subtitles(&mut self) {
         if self.state.subtitle_id.is_some() {
             let _ = self.player.select_subtitle(None);
-            self.flash("subtitles", "Subtitles off");
+            self.flash(Icon::Subtitles, "Subtitles off");
             return;
         }
         let subtitles: Vec<_> = self.state.tracks_of(TrackKind::Subtitle).cloned().collect();
@@ -780,9 +777,9 @@ impl PlayerView {
         match choice {
             Some(track) => {
                 let _ = self.player.select_subtitle(Some(track.id));
-                self.flash("subtitles-on", track.label());
+                self.flash(Icon::SubtitlesOn, track.label());
             }
-            None => self.flash("subtitles", "No subtitles"),
+            None => self.flash(Icon::Subtitles, "No subtitles"),
         }
     }
 
@@ -801,15 +798,15 @@ impl PlayerView {
         match (kind, next) {
             (TrackKind::Audio, Some(track)) => {
                 let _ = self.player.select_audio(track.id);
-                self.flash("audio", track.label());
+                self.flash(Icon::Audio, track.label());
             }
             (_, Some(track)) => {
                 let _ = self.player.select_subtitle(Some(track.id));
-                self.flash("subtitles-on", track.label());
+                self.flash(Icon::SubtitlesOn, track.label());
             }
             (_, None) => {
                 let _ = self.player.select_subtitle(None);
-                self.flash("subtitles", "Subtitles off");
+                self.flash(Icon::Subtitles, "Subtitles off");
             }
         }
     }
@@ -817,19 +814,19 @@ impl PlayerView {
     fn set_speed(&mut self, speed: f64) {
         let speed = speed.clamp(0.25, 4.0);
         let _ = self.player.set_speed(speed);
-        self.flash("speed", format!("{}×", trim_number(speed)));
+        self.flash(Icon::Speed, format!("{}×", trim_number(speed)));
     }
 
     fn nudge_subtitle_delay(&mut self, delta: f64) {
         let delay = ((self.state.subtitle_delay + delta) * 10.0).round() / 10.0;
         let _ = self.player.set_subtitle_delay(delay);
-        self.flash("subtitles", format!("Subtitle delay {}", signed_seconds(delay)));
+        self.flash(Icon::Subtitles, format!("Subtitle delay {}", signed_seconds(delay)));
     }
 
     fn nudge_subtitle_position(&mut self, delta: f64) {
         let position = (self.state.subtitle_position + delta).clamp(50.0, 100.0);
         let _ = self.player.set_subtitle_position(position);
-        self.flash("subtitles", format!("Subtitle position {position:.0}%"));
+        self.flash(Icon::Subtitles, format!("Subtitle position {position:.0}%"));
     }
 
     fn sub_style_index(&self, key: &str, default: usize) -> usize {
@@ -941,7 +938,7 @@ impl PlayerView {
                 let fraction = (digit.as_bytes()[0] - b'0') as f64 / 10.0;
                 if self.state.duration > 0.0 {
                     let _ = self.player.seek_to(self.state.duration * fraction);
-                    self.flash("forward", format_time(self.state.duration * fraction));
+                    self.flash(Icon::Forward, format_time(self.state.duration * fraction));
                 }
             }
             _ => return,
@@ -1057,17 +1054,14 @@ fn black(alpha: f32) -> Hsla {
 }
 
 
-fn icon(name: &str, size_px: f32, color: Hsla) -> impl IntoElement {
-    svg().path(format!("icons/{name}.svg")).size(px(size_px)).text_color(color)
-}
 
-fn volume_icon(volume: f64, muted: bool) -> &'static str {
+fn volume_icon(volume: f64, muted: bool) -> Icon {
     if muted || volume <= 0.0 {
-        "mute"
+        Icon::Mute
     } else if volume < 50.0 {
-        "volume-low"
+        Icon::VolumeLow
     } else {
-        "volume"
+        Icon::Volume
     }
 }
 
@@ -1351,63 +1345,23 @@ impl PlayerView {
             })
     }
 
-    /// A radio row: white highlight on hover, blue radio when selected.
+    /// A track row: canonical media-tone radio row with an optional detail.
     fn menu_row(
         &self,
-        id: impl Into<gpui::ElementId>,
+        id: impl Into<SharedString>,
         label: String,
         detail: String,
         selected: bool,
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> impl IntoElement {
-        let blue: Hsla = rgba(0x1a98ffff).into();
-        div()
-            .id(id.into())
-            .group("menu-row")
-            .flex()
-            .items_center()
-            .gap(px(14.))
-            .px(px(14.))
-            .py(px(10.))
-            .rounded(px(8.))
-            .cursor_pointer()
-            .hover(|style| style.bg(white(0.97)))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                cx.stop_propagation();
-                on_click(this, window, cx);
-                cx.notify();
-            }))
-            .child(
-                div()
-                    .size(px(20.))
-                    .flex_none()
-                    .rounded_full()
-                    .border_2()
-                    .border_color(if selected { blue } else { white(0.92) })
-                    .group_hover("menu-row", |s| s.border_color(if selected { blue } else { black(0.9) }))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(selected, |el| el.child(div().size(px(10.)).rounded_full().bg(blue))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .min_w_0()
-                    .child(
-                        div()
-                            .text_size(px(16.))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(white(0.96))
-                            .group_hover("menu-row", |s| s.text_color(black(0.92)))
-                            .truncate()
-                            .child(label),
-                    )
-                    .when(!detail.is_empty(), |el| el.child(div().text_size(px(12.)).text_color(white(0.55)).group_hover("menu-row", |s| s.text_color(black(0.55))).truncate().child(detail))),
-            )
+    ) -> crate::ui::menu::MenuRow {
+        let row = crate::ui::menu::MenuRow::radio(id, label, selected).tone(crate::ui::menu::MenuTone::Media);
+        let row = if detail.is_empty() { row } else { row.detail(detail) };
+        row.on_click(cx.listener(move |this, _, window, cx| {
+            cx.stop_propagation();
+            on_click(this, window, cx);
+            cx.notify();
+        }))
     }
 
     fn stepper(
@@ -1419,7 +1373,7 @@ impl PlayerView {
         minus: impl Fn(&mut Self) + 'static,
         plus: impl Fn(&mut Self) + 'static,
     ) -> impl IntoElement {
-        let small = |id: String, name: &'static str| {
+        let small = |id: String, name: Icon| {
             div()
                 .id(SharedString::from(id))
                 .size(px(26.))
@@ -1444,13 +1398,13 @@ impl PlayerView {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(small(format!("{id}-minus"), "minus").on_click(cx.listener(move |this, _, _, cx| {
+                    .child(small(format!("{id}-minus"), Icon::Minus).on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         minus(this);
                         cx.notify();
                     })))
                     .child(div().w(px(52.)).text_center().text_sm().text_color(white(0.95)).child(value))
-                    .child(small(format!("{id}-plus"), "plus").on_click(cx.listener(move |this, _, _, cx| {
+                    .child(small(format!("{id}-plus"), Icon::Plus).on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         plus(this);
                         cx.notify();
@@ -1461,36 +1415,23 @@ impl PlayerView {
     fn settings_row(
         &self,
         id: &'static str,
-        icon_name: &'static str,
+        icon_name: crate::ui::icon::Icon,
         label: &'static str,
         value: String,
         cx: &mut Context<Self>,
         page: Menu,
-    ) -> impl IntoElement {
-        div()
-            .id(id)
-            .group("settings-row")
-            .flex()
-            .items_center()
-            .gap(px(14.))
-            .px(px(14.))
-            .py(px(12.))
-            .rounded(px(8.))
-            .cursor_pointer()
-            .hover(|style| style.bg(white(0.97)))
+    ) -> crate::ui::menu::MenuRow {
+        crate::ui::menu::MenuRow::navigation(id, icon_name, label, value)
+            .tone(crate::ui::menu::MenuTone::Media)
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
                 this.menu = Some(page);
                 cx.notify();
             }))
-            .child(svg().path(format!("icons/{icon_name}.svg")).size(px(22.)).text_color(white(0.96)).group_hover("settings-row", |s| s.text_color(black(0.92))))
-            .child(div().flex_1().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).group_hover("settings-row", |s| s.text_color(black(0.92))).child(label))
-            .child(div().text_size(px(17.)).text_color(white(0.55)).group_hover("settings-row", |s| s.text_color(black(0.55))).child(value))
-            .child(svg().path("icons/chevron-right.svg").size(px(16.)).text_color(white(0.55)).group_hover("settings-row", |s| s.text_color(black(0.55))))
     }
 
     fn render_menu(&self, menu: Menu, cx: &mut Context<Self>) -> impl IntoElement {
-        let divider = || div().mx(px(14.)).my(px(10.)).h(px(1.)).bg(white(0.16));
+        let divider = || crate::ui::menu::divider(crate::ui::menu::MenuTone::Media);
         let title = match menu {
             Menu::More => "Settings",
             Menu::Audio => "Audio",
@@ -1502,18 +1443,18 @@ impl PlayerView {
         };
         let header = div()
             .relative()
-            .h(px(48.))
+            .h(px(40.))
             .flex()
             .items_center()
             .justify_center()
-            .child(div().text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).child(title))
+            .child(div().text_size(px(14.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(white(0.96)).child(title))
             .when(menu != Menu::More && menu != Menu::Speed, |el| {
                 el.child(
                     div()
                         .id("menu-back")
                         .absolute()
-                        .left(px(4.))
-                        .size(px(36.))
+                        .left(px(0.))
+                        .size(px(28.))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -1525,11 +1466,11 @@ impl PlayerView {
                             this.menu = Some(if this.menu == Some(Menu::SubtitleStyle) || this.menu == Some(Menu::SubtitleSearch) { Menu::Subtitles } else { Menu::More });
                             cx.notify();
                         }))
-                        .child(icon("chevron-left", 20., white(0.96))),
+                        .child(icon(Icon::ChevronLeft, 18., white(0.96))),
                 )
             });
 
-        let mut panel = div()
+        let mut panel = crate::ui::menu::panel(crate::ui::menu::MenuTone::Media)
             .id("menu")
             .absolute()
             .right(px(28.))
@@ -1537,14 +1478,8 @@ impl PlayerView {
             .w(px(if menu == Menu::Speed { 440. } else { 400. }))
             .max_h(px(560.))
             .overflow_y_scroll()
-            .p(px(10.))
-            .rounded(px(14.))
-            .bg(panel_bg())
-            .shadow_lg()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_scroll_wheel(|_: &ScrollWheelEvent, _, cx| cx.stop_propagation())
-            .flex()
-            .flex_col()
             .child(header);
 
         let track_label = |kind: TrackKind, id: Option<i64>| {
@@ -1557,7 +1492,7 @@ impl PlayerView {
                 panel = panel
                     .child(self.settings_row(
                         "set-subtitles",
-                        "subtitles",
+                        Icon::Subtitles,
                         "Subtitles",
                         track_label(TrackKind::Subtitle, self.state.subtitle_id).unwrap_or_else(|| "Off".into()),
                         cx,
@@ -1565,14 +1500,14 @@ impl PlayerView {
                     ))
                     .child(self.settings_row(
                         "set-audio",
-                        "audio",
+                        Icon::Audio,
                         "Audio",
                         track_label(TrackKind::Audio, self.state.audio_id).unwrap_or_else(|| "—".into()),
                         cx,
                         Menu::Audio,
                     ))
                     .child(divider())
-                    .child(self.settings_row("set-speed", "speed", "Speed", format!("{}x", trim_number(self.state.speed)), cx, Menu::Speed));
+                    .child(self.settings_row("set-speed", Icon::Speed, "Speed", format!("{}x", trim_number(self.state.speed)), cx, Menu::Speed));
                 if !self.state.chapters.is_empty() {
                     let current = self
                         .state
@@ -1581,7 +1516,7 @@ impl PlayerView {
                         .rposition(|c| c.time <= self.state.position + 0.25)
                         .map(|i| self.state.chapters[i].title.clone())
                         .unwrap_or_default();
-                    panel = panel.child(self.settings_row("set-chapters", "chapters", "Chapters", current, cx, Menu::Chapters));
+                    panel = panel.child(self.settings_row("set-chapters", Icon::Chapters, "Chapters", current, cx, Menu::Chapters));
                 }
             }
             Menu::Audio => {
@@ -1626,7 +1561,7 @@ impl PlayerView {
                         this.start_subtitle_search(cx);
                     }))
                     .child(divider())
-                    .child(self.settings_row("set-sub-style", "cog", "Subtitles Settings", String::new(), cx, Menu::SubtitleStyle));
+                    .child(self.settings_row("set-sub-style", Icon::Cog, "Subtitles Settings", String::new(), cx, Menu::SubtitleStyle));
             }
             Menu::SubtitleStyle => {
                 let size = self.sub_style_index("sub_size", 2);
@@ -1677,7 +1612,7 @@ impl PlayerView {
                         }))
                         .child(div().text_size(px(22.)).font_weight(gpui::FontWeight::MEDIUM).text_color(fg).child("Aa"))
                         .when(slash, |el| el.child(div().absolute().left(px(26.)).top(px(-4.)).w(px(1.5)).h(px(60.)).bg(white(0.7)).opacity(0.6)))
-                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(18.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon("check", 11., black(1.)))))
+                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(18.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon(Icon::Check, 11., black(1.)))))
                 };
                 panel = panel
                     .child(label("Size"))
@@ -1706,7 +1641,7 @@ impl PlayerView {
             Menu::SubtitleSearch => {
                 let s = self.sub_search.lock().clone();
                 if s.loading {
-                    panel = panel.child(div().p(px(18.)).flex().items_center().gap(px(10.)).text_size(px(14.)).text_color(theme::muted()).child(gpui::AnimationExt::with_animation(div().child(icon("spinner", 18., theme::muted())), "sub-spin", gpui::Animation::new(Duration::from_millis(900)).repeat(), |el, t| el.opacity(0.4 + 0.6 * (t * std::f32::consts::PI).sin()))).child("Searching OpenSubtitles…"));
+                    panel = panel.child(div().p(px(18.)).flex().items_center().gap(px(10.)).text_size(px(14.)).text_color(theme::muted()).child(icon(Icon::Spinner, 18., theme::muted()).with_animation("sub-spin", Animation::new(Duration::from_millis(900)).repeat(), |svg, t| svg.with_transformation(gpui::Transformation::rotate(gpui::percentage(t))))).child("Searching OpenSubtitles…"));
                 }
                 if let Some(error) = &s.error {
                     panel = panel.child(div().p(px(14.)).text_size(px(13.)).text_color(theme::danger()).child(error.clone()));
@@ -1780,7 +1715,7 @@ impl PlayerView {
                             cx.notify();
                         }))
                         .child(format!("{}x", trim_number(speed)))
-                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(17.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon("check", 10., black(1.)))))
+                        .when(selected, |el| el.child(div().absolute().top(px(-7.)).right(px(-7.)).size(px(17.)).rounded_full().bg(white(1.)).flex().items_center().justify_center().child(icon(Icon::Check, 10., black(1.)))))
                 })));
             }
             Menu::Chapters => {
@@ -1846,7 +1781,7 @@ impl PlayerView {
     fn icon_button(
         &self,
         id: &'static str,
-        icon_name: &'static str,
+        icon_name: Icon,
         size_px: f32,
         active: bool,
         cx: &mut Context<Self>,
@@ -1872,7 +1807,7 @@ impl PlayerView {
             .relative()
             .child(icon(icon_name, size_px, white(0.95)))
             // The web player labels its seek buttons with the step.
-            .when(icon_name == "back" || icon_name == "forward", |el| {
+            .when(matches!(icon_name, Icon::Back | Icon::Forward), |el| {
                 el.child(
                     div()
                         .absolute()
@@ -1921,7 +1856,7 @@ impl PlayerView {
                     .items_start()
                     .gap(px(14.))
                     .min_w_0()
-                    .child(self.icon_button("close", "close", 24., false, cx, |this, window, cx| this.close_media(window, cx)))
+                    .child(self.icon_button("close", Icon::Close, 24., false, cx, |this, window, cx| this.close_media(window, cx)))
                     .child(
                         div()
                             .flex()
@@ -1951,7 +1886,7 @@ impl PlayerView {
                     .flex_none()
                     .child(self.icon_button(
                         "subtitles",
-                        if self.state.subtitle_id.is_some() { "subtitles-on" } else { "subtitles" },
+                        if self.state.subtitle_id.is_some() { Icon::SubtitlesOn } else { Icon::Subtitles },
                         22.,
                         menu == Some(Menu::Subtitles),
                         cx,
@@ -1960,7 +1895,7 @@ impl PlayerView {
                     .child(self.render_volume(cx))
                     .child(self.icon_button(
                         "fullscreen",
-                        if fullscreen { "fullscreen-exit" } else { "fullscreen" },
+                        if fullscreen { Icon::FullscreenExit } else { Icon::Fullscreen },
                         22.,
                         false,
                         cx,
@@ -1989,7 +1924,7 @@ impl PlayerView {
                             }))
                             .child(format!("{}x", trim_number(self.state.speed))),
                     )
-                    .child(self.icon_button("more", "more", 22., menu == Some(Menu::More), cx, |this, _, _| this.toggle_menu(Menu::More))),
+                    .child(self.icon_button("more", Icon::More, 22., menu == Some(Menu::More), cx, |this, _, _| this.toggle_menu(Menu::More))),
             )
     }
 
@@ -2152,7 +2087,7 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(px(28.))
-                            .child(self.icon_button("back", "back", 28., false, cx, |this, _, _| this.seek_by(-10.0)))
+                            .child(self.icon_button("back", Icon::Back, 28., false, cx, |this, _, _| this.seek_by(-10.0)))
                             .child(
                                 div()
                                     .id("play")
@@ -2171,9 +2106,9 @@ impl PlayerView {
                                         this.toggle_pause();
                                         cx.notify();
                                     }))
-                                    .child(icon(if playing { "pause" } else { "play" }, 30., white(1.0))),
+                                    .child(icon(if playing { Icon::Pause } else { Icon::Play }, 30., white(1.0))),
                             )
-                            .child(self.icon_button("forward", "forward", 28., false, cx, |this, _, _| this.seek_by(10.0))),
+                            .child(self.icon_button("forward", Icon::Forward, 28., false, cx, |this, _, _| this.seek_by(10.0))),
                     )
                     .child(
                         div()
@@ -2205,7 +2140,7 @@ impl PlayerView {
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let has_media = self.media.is_some();
-        let opacity = self.controls_opacity;
+        let chrome_target = if self.controls_wanted() { 1.0 } else { 0.0 };
         // Light, dark or follow macOS; playback always stays dark.
         let light = match self.catalog.setting("theme").as_deref() {
             Some("light") => true,
@@ -2275,8 +2210,20 @@ impl Render for PlayerView {
                 })
                 .children(self.render_osd())
                 .children(self.render_up_next(cx))
-                .child(div().absolute().inset_0().opacity(opacity).child(self.render_header(window, cx)).child(self.render_footer(cx)))
-                .when_some(self.menu.filter(|_| opacity > 0.5), |el, menu| el.child(self.render_menu(menu, cx)))
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .child(self.render_header(window, cx))
+                        .child(self.render_footer(cx))
+                        .with_tween(
+                            "player-chrome",
+                            chrome_target,
+                            MotionSpec::new(Duration::from_millis(if chrome_target > 0.5 { 180 } else { 220 }), Duration::ZERO, Easing::Standard),
+                            |el, t| el.opacity(t),
+                        ),
+                )
+                .when_some(self.menu.filter(|_| self.controls_wanted()), |el, menu| el.child(self.render_menu(menu, cx)))
             })
             .when_some(self.state.error.clone(), |el, error| {
                 el.child(

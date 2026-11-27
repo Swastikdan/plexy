@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use gpui::{div, prelude::*, px, svg, Context, MouseButton, PathPromptOptions, SharedString, Window};
+use gpui::{div, prelude::*, px, Context, MouseButton, PathPromptOptions, SharedString, Window};
 
 use crate::app::{format_time, PlayerView};
 use crate::catalog::{self, Item, LibraryKind, Mark, Show, TitleKey};
@@ -54,9 +54,7 @@ impl Screen {
     }
 }
 
-pub(crate) fn icon(name: &str, size: f32, color: gpui::Hsla) -> impl IntoElement {
-    svg().path(format!("icons/{name}.svg")).size(px(size)).text_color(color)
-}
+use crate::ui::icon::{icon, Icon};
 
 fn white(alpha: f32) -> gpui::Hsla {
     gpui::Hsla { a: alpha, ..theme::foreground() }
@@ -272,7 +270,7 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(div().size(px(38.)).rounded_full().bg(gpui::Hsla { a: 0.55, ..theme::background() }).flex().items_center().justify_center().child(icon("play", 22., theme::foreground()))),
+                            .child(div().size(px(38.)).rounded_full().bg(gpui::Hsla { a: 0.55, ..theme::background() }).flex().items_center().justify_center().child(icon(Icon::Play, 22., theme::foreground()))),
                     )
                     .when(fraction > 0.0, |el| el.child(div().absolute().left(px(8.)).right(px(8.)).bottom(px(8.)).child(progress_bar(fraction)))),
             )
@@ -316,12 +314,11 @@ impl PlayerView {
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
             .child(
-                self.lift(
-                    group.clone(),
-                    width,
-                    width * 1.5,
-                    div()
-                    .child(self.poster(poster, &title, width, width * 1.5).size_full())
+                div()
+                    .relative()
+                    .w(px(width))
+                    .h(px(width * 1.5))
+                    .child(self.lift(group.clone(), width, width * 1.5, 10., crate::ui::artwork::FrameTone::Page, div().child(self.poster(poster, &title, width, width * 1.5).size_full()), cx))
                     .when(watched, |el| {
                         el.child(
                             div()
@@ -334,13 +331,11 @@ impl PlayerView {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .child(icon("check", 14., theme::accent_foreground())),
+                                .child(icon(Icon::Check, 14., theme::accent_foreground())),
                         )
                     })
                     .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(7.)).right(px(7.)).bottom(px(7.)).child(progress_bar(fraction))))
-                    .child(crate::shell_ui::hover_ring(group.clone(), 10.)),
-                    cx,
-                ),
+                    .child(crate::ui::artwork::hover_veil(group.clone(), 10.)),
             )
             .child(div().text_size(px(15.)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme::foreground()).truncate().group_hover(group.clone(), |s| s.text_color(theme::accent())).child(title))
             .child(div().text_size(px(12.)).text_color(theme::muted()).truncate().child(subtitle))
@@ -428,7 +423,7 @@ impl PlayerView {
             .justify_center()
             .gap(px(11.))
             .py(px(96.))
-            .child(icon("film", 56., theme::accent()))
+            .child(icon(Icon::Film, 56., theme::accent()))
             .child(div().text_size(px(21.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("Welcome to Plexy"))
             .child(div().text_size(px(12.)).text_color(theme::muted()).child("Add your movie and TV folders. Everything stays on this Mac."))
             .child(
@@ -573,7 +568,7 @@ impl PlayerView {
                                     this.reload_catalog();
                                     cx.notify();
                                 }))
-                                .child(icon("check", 14., if watched { theme::accent() } else { theme::muted() }))
+                                .child(icon(Icon::Check, 14., if watched { theme::accent() } else { theme::muted() }))
                                 .child(if watched { "Watched" } else { "Mark watched" }),
                         ),
                 );
@@ -636,7 +631,7 @@ impl PlayerView {
             );
         }
         if self.libraries.is_empty() {
-            page = page.child(crate::shell_ui::empty_state("library", "No libraries yet", "Add a Movies or TV folder to start building your library.", None));
+            page = page.child(crate::shell_ui::empty_state(Icon::Library, "No libraries yet", "Add a Movies or TV folder to start building your library.", None));
         }
         for library in &self.libraries {
             let id = library.id;
@@ -704,7 +699,7 @@ impl PlayerView {
                         .py(px(6.))
                         .rounded(px(theme::RADIUS))
                         .bg(theme::surface_secondary())
-                        .child(icon("folder", 16., theme::muted()))
+                        .child(icon(Icon::Folder, 16., theme::muted()))
                         .child(div().flex_1().min_w_0().text_size(px(10.)).text_color(theme::foreground()).truncate().child(root.path.display().to_string()))
                         .when(!root.available, |el| el.child(div().text_size(px(10.)).text_color(theme::warning()).child("Unavailable — entries kept")))
                         .child(

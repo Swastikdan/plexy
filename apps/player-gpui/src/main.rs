@@ -14,6 +14,7 @@ mod preview;
 mod selftest;
 mod shell_ui;
 mod theme;
+mod ui;
 
 use std::path::PathBuf;
 

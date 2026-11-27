@@ -7,7 +7,8 @@ use gpui::{div, prelude::*, px, Context, FocusHandle, KeyDownEvent, SharedString
 
 use crate::app::{format_time, PlayerView};
 use crate::catalog::{Item, Mark, Show, TitleKey};
-use crate::library_ui::{icon, progress_bar, section_title, Screen};
+use crate::library_ui::{progress_bar, section_title, Screen};
+use crate::ui::icon::{icon, Icon};
 use crate::theme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -386,7 +387,7 @@ impl PlayerView {
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .when(active, |el| el.bg(gpui::Hsla { a: 0.18, ..theme::accent() }).text_color(theme::accent()))
             .when(!active, |el| el.bg(theme::default()).text_color(theme::foreground()).hover(|s| s.bg(theme::segment())))
-            .when(active, |el| el.child(icon("check", 14., theme::accent())))
+            .when(active, |el| el.child(icon(Icon::Check, 14., theme::accent())))
             .child(label)
     }
 
@@ -443,43 +444,27 @@ impl PlayerView {
         );
         let mut column = div().flex().flex_col().gap(px(10.)).child(row);
         if self.collection_picker {
-            let mut picker = div()
-                .w(px(288.))
-                .p(px(8.))
-                .rounded(px(theme::RADIUS_XL))
-                .bg(theme::surface())
-                .border_1()
-                .border_color(theme::border())
-                .flex()
-                .flex_col()
-                .gap(px(3.));
+            let mut picker = crate::ui::menu::panel(crate::ui::menu::MenuTone::App)
+                .id("collection-picker")
+                .overflow_y_scroll()
+                .w(px(288.));
             for collection in &self.personal.collections {
                 let id = collection.id;
                 let key = key.clone();
                 let member = collection.titles.contains(&key);
                 picker = picker.child(
-                    div()
-                        .id(SharedString::from(format!("pick-{id}")))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .px(px(8.))
-                        .py(px(6.))
-                        .rounded(px(theme::RADIUS))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme::default_soft()))
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                    crate::ui::menu::MenuRow::collection(format!("pick-{id}"), collection.name.clone(), member).on_click(cx.listener(
+                        move |this, _, _, cx| {
                             this.catalog.toggle_in_collection(id, &key);
                             this.reload_catalog();
                             cx.notify();
-                        }))
-                        .child(div().size(px(13.)).when(member, |el| el.child(icon("check", 16., theme::accent()))))
-                        .child(div().text_size(px(11.)).text_color(theme::foreground()).child(collection.name.clone())),
+                        },
+                    )),
                 );
             }
             let draft = self.collection_draft.clone();
             picker = picker.child(
-                div().pt(px(5.)).child(self.text_field(
+                div().px(px(4.)).pt(px(4.)).pb(px(2.)).child(self.text_field(
                     "new-collection",
                     Field::Collection,
                     &self.collection_focus,
@@ -576,7 +561,7 @@ impl PlayerView {
                 .pb(px(8.))
                 .relative()
                 .child(field)
-                .child(div().absolute().left(px(18.)).top(px(14.)).child(crate::library_ui::icon("search", 20., theme::muted()))),
+                .child(div().absolute().left(px(18.)).top(px(14.)).child(icon(Icon::Search, 20., theme::muted()))),
         );
         if query.is_empty() {
             let mut resuming: Vec<&Item> = self.items.iter().filter(|i| !i.missing && i.progress.is_some_and(|p| p.resumable())).collect();
@@ -624,7 +609,7 @@ impl PlayerView {
             .take(40)
             .collect();
         if movies.is_empty() && show_hits.is_empty() && episodes.is_empty() {
-            return page.child(crate::shell_ui::empty_state("search", "No matches", &format!("Nothing in your library matches “{query}”. Try a title, genre or cast name."), None)).into_any_element();
+            return page.child(crate::shell_ui::empty_state(Icon::Search, "No matches", &format!("Nothing in your library matches “{query}”. Try a title, genre or cast name."), None)).into_any_element();
         }
         if !show_hits.is_empty() {
             page = page.child(section_title("TV Shows")).child(self.title_grid("search-show", show_hits, cx));
@@ -656,7 +641,7 @@ impl PlayerView {
             .flex_col()
             .gap(px(14.))
             .child(section_title(title))
-            .when(none, |el| el.child(crate::shell_ui::empty_state(match mark { Mark::Watchlist => "bookmark", Mark::Favorite => "heart", _ => "eye-off" }, &format!("No {} yet", title.to_lowercase()), empty, None)))
+            .when(none, |el| el.child(crate::shell_ui::empty_state(match mark { Mark::Watchlist => Icon::Bookmark, Mark::Favorite => Icon::Heart, _ => Icon::EyeOff }, &format!("No {} yet", title.to_lowercase()), empty, None)))
             .child(self.title_grid(&format!("list-{title}"), titles, cx))
             .into_any_element()
     }
@@ -683,7 +668,7 @@ impl PlayerView {
                 window.focus(&focus);
                 cx.notify();
             }))
-            .child(crate::library_ui::icon("plus", 16., theme::background()))
+            .child(icon(Icon::Plus, 16., theme::background()))
             .child("New collection");
         let mut page = div().flex().flex_col().gap(px(14.)).child(
             div()
@@ -696,7 +681,7 @@ impl PlayerView {
         if self.personal.collections.is_empty() {
             return page
                 .child(crate::shell_ui::empty_state(
-                    "folder-heart",
+                    Icon::FolderHeart,
                     "No collections yet",
                     "Plexy groups movies from the same TMDB franchise automatically. Create a collection to group anything else.",
                     Some(if creating { field.into_any_element() } else { new_button.into_any_element() }),
@@ -748,7 +733,7 @@ impl PlayerView {
         );
         if count == 0 {
             return page
-                .child(crate::shell_ui::empty_state("clock", "Nothing watched yet", "Finish a movie or an episode and it appears here, newest first, so you can rewatch it in a click.", None))
+                .child(crate::shell_ui::empty_state(Icon::Clock, "Nothing watched yet", "Finish a movie or an episode and it appears here, newest first, so you can rewatch it in a click.", None))
                 .into_any_element();
         }
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
@@ -806,7 +791,7 @@ impl PlayerView {
                     this.reload_catalog();
                     cx.notify();
                 }))
-                .child(crate::library_ui::icon("trash", 14., gpui::hsla(0., 0., 1., 1.)))
+                .child(icon(Icon::Trash, 14., gpui::hsla(0., 0., 1., 1.)))
                 .into_any_element();
             group = group.child(self.episode_tile(SharedString::from(format!("history-{id}")), &item, w, Some(when), Some(remove), cx, move |this, window, cx| this.open_at(&path, Some(0.0), window, cx)));
         }

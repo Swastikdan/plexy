@@ -1,11 +1,13 @@
 # Rust player UI kit and icon library
 
-Design document for `apps/player-gpui`. **No source was changed for this pass.**
-Everything under "target" is a proposal; the current code still uses the
-symbols named under "current".
+Design document and implementation checkpoint for `apps/player-gpui`. The first
+slice is now in the tree: typed `ui::Icon`, canonical `ui::menu` panel/rows,
+clipped `ui::artwork` frames, and the `ui::motion` engine. The rest of the
+catalog is still being extracted.
 
 The companion document is [MOTION.md](MOTION.md): the animation audit, the
-motion engine, and the frame-performance plan.
+motion engine, and the frame-performance plan. The parent orchestration log is
+[README.md](README.md).
 
 ## 1. The problem
 
@@ -44,11 +46,11 @@ Approximate snapshot of the UI-facing code:
 | `src/app.rs` | ~2,330 | Player chrome, seek bar, volume, menus, OSD, Up next, icon button, menu rows |
 | `src/assets.rs` | 184 | Embedded SVG assets and the artwork decode cache |
 
-Measured in this snapshot: **10,573 lines** across the crate, **68 SVG icons**
-(272 KB), **20 distinct font sizes**, **10 distinct corner radii**,
-**45 `.hover()`**, **3 `.active()`** and **14 `group_hover()` calls**, and
-**9 animation wrappers** (7 single `with_animation`, 2 `with_animations`). The
-counts are a symptom index, not a target.
+Measured in this snapshot: **10,483 lines** across the crate, **68 SVG icons**
+(272 KB, now typed), **20 distinct font sizes**, **10 distinct corner radii**,
+**41 `.hover()`**, **3 `.active()`** and **6 `group_hover()` calls**, and
+**8 animation wrappers** (6 single `with_animation`, 2 `with_animations`) plus
+**2 `with_tween` call sites**. The counts are a symptom index, not a target.
 
 ### Where the duplication lives
 
@@ -64,7 +66,7 @@ counts are a symptom index, not a target.
 | Progress | `progress_bar`, `progress_ring` | Two implementations, one visual idea |
 | Artwork | `cover`, `cover_r`, `poster`, `card_art`, `corner_mask`, `hover_ring` | Artwork source precedence, clipping and hover decoration mixed together |
 | Empty | `empty_state` | Already centralized — the model to follow |
-| Hover/press | 45 `.hover()` + 14 `group_hover()` + 3 `.active()` | Instant style swaps, no transition; some hover layers are not clipped |
+| Hover/press | 41 `.hover()` + 6 `group_hover()` + 3 `.active()` | Instant style swaps, no transition; card hover is now a clipped tween |
 
 Two structure problems matter more than duplicated lines:
 
@@ -306,6 +308,11 @@ themes. Keep that distinction visible in the name; don't reuse
 ## 5. Icon library
 
 ### What exists
+
+As of the first implementation slice, `src/ui/icon.rs` is in the tree with the
+typed enum, `path()`, `all()` and asset-parity tests. Every UI call site now
+uses `ui::icon(Icon::…)`; the old string helper is gone from the feature
+files. The pipeline below remains the contract for adding icons.
 
 - `tools/extract-icons.ts` copies icons from the web app (Video.js neutral for
   player chrome, lucide for the rest) into `assets/icons/*.svg`.
@@ -557,8 +564,9 @@ Two GPUI specifics to keep in mind while implementing:
 ### 6.1 Canonical menu and dropdown
 
 This is the fix for the reported inconsistency: "settings dropdown items look
-different from the details-page dropdowns". There are currently **four**
-menu item anatomies, all doing the same job.
+different from the details-page dropdowns". There were **four** menu item
+anatomies, all doing the same job; `src/ui/menu.rs` now implements the
+canonical panel/row and the shell/player/collection surfaces adopt it.
 
 | Surface | Container | Row | Type | Anatomy |
 | --- | --- | --- | --- | --- |
@@ -567,10 +575,10 @@ menu item anatomies, all doing the same job.
 | Player audio/subtitle/chapters menus | same player panel | `menu_row`: `px(14) py(10)`, gap 14, radius 8 | 16 + 12 detail | 20 radio, label, detail |
 | Collection picker | `p(8)`, radius 16 | `px(8) py(6)`, gap 8 | 11 px | fixed 13 check slot, name |
 
-The result is three different vertical rhythms (34 / 44 / 48 px), two text
-scales (13 vs 16/17), two icon scales (16 vs 20/22), and three panel paddings
-(5 / 8 / 10). The player is always dark, which hides some of the drift; in
-light theme the shell popovers expose it.
+The previous result was three different vertical rhythms (34 / 44 / 48 px),
+two text scales (13 vs 16/17), two icon scales (16 vs 20/22), and three panel
+paddings (5 / 8 / 10). The player is always dark, which hid some of the drift;
+in light theme the shell popovers exposed it.
 
 The measurements below are the convergence target. Capture the current web
 player menu and the shell dropdown before freezing them; if a 1 px change
@@ -687,13 +695,20 @@ Target call shape:
 The exact builder name can change; the behavior and measurements above are the
 contract.
 
+Implemented today: `ui::menu::{panel, divider, MenuRow}` with
+`MenuRow::{action, radio, navigation, collection}`. The `Dropdown` wrapper
+name above is the intended next step; the shell currently keeps its measured
+anchoring function and composes these rows.
+
 ### 6.2 Artwork frames and hover clipping
 
-Reported symptom: on some title and episode cards, hovering makes the image
-"bleed out" of its rounded frame, mostly in the light theme. The current code
-has five contributors.
+Reported symptom: on some title and episode cards, hovering made the image
+"bleed out" of its rounded frame, mostly in the light theme. The pre-hotfix
+code had five contributors. The implementation now uses
+`ui::artwork::{frame, framed, corner_mask, hover_veil}` and keeps decorations
+outside the growing art; the notes below remain the contract.
 
-| Cause | Evidence in the current tree | Effect |
+| Cause | Evidence in the pre-hotfix tree | Effect |
 | --- | --- | --- |
 | The lift grows the art outside its fixed wrapper | `lift()` places art at `left(-w·0.015)`, `top(-h·0.015)`, `w(w·1.03)`, `h(h·1.03)`; the fixed `relative` wrapper has no `rounded`/`overflow_hidden` | The art (and everything inside it) grows past the card boundary on hover — the primary bleed |
 | No clip on the art frame | `episode_tile` and the show-page episode frame are `relative` + `rounded` with no `overflow_hidden`; `poster_card`'s outer frame is unclipped | Even without the lift, overlay/action/veil layers can paint outside the rounded art |
@@ -819,11 +834,11 @@ Do this in small, independently reviewable commits. The current working tree
 has UI parity work in flight; coordinate with that branch and do not mix a
 structural refactor with visual changes.
 
-### Hotfix lane — visual correctness (do first)
+### Hotfix lane — visual correctness (started)
 
-These are user-visible issues today and are the first real pieces of the kit.
-They can land before the full extraction because they create `ui::menu` and
-`ui::artwork` rather than throwaway patches.
+These were the first real pieces of the kit. **HOT-1 and HOT-2 code landed on
+2026-11-27; HOT-3 (visual verification) is the remaining step.** Do not mark
+them done until the parent matrices are checked in both themes.
 
 - **H1 — menus and dropdowns.** Add `MenuPanel`, `MenuRow` and the `Dropdown`
   behavior from §6.1. Adopt them in the shell dropdowns (Library sort, title

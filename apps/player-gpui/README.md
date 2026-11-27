@@ -90,8 +90,8 @@ they receive stable updates. Retire Electron packaging once that transition is r
 | `src/theme.rs` | Plexy HeroUI dark/light tokens |
 | `assets/icons/` | The web app's icons (Video.js neutral for the player, lucide elsewhere); regenerate with `bun apps/player-gpui/tools/extract-icons.ts` from the repo root |
 | [`docs/README.md`](docs/README.md) | Parent orchestration log for the Rust UI work: status board, order of work, handoff protocol, verification matrices |
-| [`docs/UI_KIT.md`](docs/UI_KIT.md) | Proposed reusable components, typed icon library, tokens, scene workflow, canonical menu/artwork specs and migration phases (design only) |
-| [`docs/MOTION.md`](docs/MOTION.md) | Animation audit, motion engine design and frame-performance plan (design only) |
+| [`docs/UI_KIT.md`](docs/UI_KIT.md) | Reusable components, typed icon library, tokens, scene workflow, canonical menu/artwork specs and migration phases |
+| [`docs/MOTION.md`](docs/MOTION.md) | Animation audit, motion engine design and frame-performance plan |
 
 ## Verify
 
