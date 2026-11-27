@@ -1,0 +1,148 @@
+//! Plexy Beta: local playback for Apple Silicon macOS on GPUI + libmpv.
+//!
+//! Usage: `plexy-player [FILE] [--self-test REPORT.json]`
+
+mod app;
+mod assets;
+mod catalog;
+mod library_ui;
+mod media;
+mod metadata;
+mod mpv;
+mod personal_ui;
+mod preview;
+mod selftest;
+mod shell_ui;
+mod theme;
+mod ui;
+
+use std::path::PathBuf;
+
+use gpui::{
+    actions, prelude::*, px, size, App, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
+    WindowBackgroundAppearance, WindowBounds, WindowOptions,
+};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+use app::PlayerView;
+
+actions!(plexy, [Quit, Open]);
+
+const APP_NAME: &str = "Plexy Beta";
+
+struct Args {
+    file: Option<PathBuf>,
+    self_test: Option<PathBuf>,
+    library_test: Option<PathBuf>,
+    add_libraries: Vec<(catalog::LibraryKind, PathBuf)>,
+}
+
+fn parse_args() -> Args {
+    let mut args = Args { file: None, self_test: None, library_test: None, add_libraries: Vec::new() };
+    let mut iter = std::env::args().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--self-test" => args.self_test = iter.next().map(PathBuf::from),
+            "--library-test" => args.library_test = iter.next().map(PathBuf::from),
+            // `--add-library tv=/path` or `movies=/path` (used by tests and scripts).
+            "--add-library" => {
+                if let Some((kind, path)) = iter.next().as_deref().and_then(|v| v.split_once('=')) {
+                    let kind = if kind == "tv" { catalog::LibraryKind::Shows } else { catalog::LibraryKind::Movies };
+                    args.add_libraries.push((kind, PathBuf::from(path)));
+                }
+            }
+            "-h" | "--help" => {
+                println!("Usage: plexy-player [FILE] [--self-test REPORT.json]");
+                std::process::exit(0);
+            }
+            _ if !arg.starts_with('-') => args.file = Some(PathBuf::from(arg)),
+            other => eprintln!("Ignoring unknown option {other}"),
+        }
+    }
+    args
+}
+
+fn main() {
+    let args = parse_args();
+    Application::new().with_assets(assets::Assets).run(move |cx: &mut App| {
+        cx.set_global(assets::ArtworkCache::default());
+        mpv::set_app_icon();
+        // Archivo, the web app's UI font (SIL OFL, assets/fonts/OFL.txt).
+        let fonts: Vec<std::borrow::Cow<'static, [u8]>> = vec![
+            include_bytes!("../assets/fonts/Archivo_400Regular.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_500Medium.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_600SemiBold.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_700Bold.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_800ExtraBold.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/Archivo_900Black.ttf").as_slice().into(),
+        ];
+        if let Err(error) = cx.text_system().add_fonts(fonts) {
+            eprintln!("fonts: {error}");
+        }
+        cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-o", Open, None)]);
+        cx.set_menus(vec![
+            Menu { name: APP_NAME.into(), items: vec![MenuItem::action(format!("Quit {APP_NAME}"), Quit)] },
+            Menu { name: "File".into(), items: vec![MenuItem::action("Open…", Open)] },
+        ]);
+        cx.on_window_closed(|cx| cx.quit()).detach();
+
+        let bounds = Bounds::centered(None, size(px(1280.), px(760.)), cx);
+        let file = args.file.clone();
+        let self_test = args.self_test.clone();
+        let library_test = args.library_test.clone();
+        let add_libraries = args.add_libraries.clone();
+        let window = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some(APP_NAME.into()),
+                        appears_transparent: true,
+                        traffic_light_position: Some(gpui::point(px(14.), px(14.))),
+                    }),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_min_size: Some(size(px(480.), px(300.))),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    // GPUI draws into a layer-backed NSView inside the
+                    // window's content view; the video surface goes directly
+                    // beneath it.
+                    let gpui_view = match window.window_handle().map(|h| h.as_raw()) {
+                        Ok(RawWindowHandle::AppKit(handle)) => handle.ns_view.as_ptr(),
+                        _ => std::ptr::null_mut(),
+                    };
+                    let catalog = catalog::Catalog::open().expect("open the library database");
+                    for (kind, path) in &add_libraries {
+                        if !catalog.libraries().iter().any(|l| l.roots.iter().any(|r| &r.path == path)) {
+                            let _ = catalog.add_library(*kind, path);
+                        }
+                    }
+                    let view = cx.new(|cx| PlayerView::new(gpui_view as usize, catalog, cx));
+                    view.update(cx, |view, cx| {
+                        window.focus(view.focus_handle());
+                        if let Some(file) = &file {
+                            view.open(file, window, cx);
+                        }
+                        app::start_ticking(window, cx);
+                        if let Some(dir) = &library_test {
+                            selftest::run_library(dir.clone(), window, cx);
+                        }
+                        if let Some(report) = &self_test {
+                            selftest::run(report.clone(), window, cx);
+                        }
+                    });
+                    view
+                },
+            )
+            .expect("open window");
+
+        cx.on_action(move |_: &Open, cx| {
+            window
+                .update(cx, |view, window, cx| view.prompt_open(window, cx))
+                .ok();
+        });
+        cx.activate(true);
+    });
+}

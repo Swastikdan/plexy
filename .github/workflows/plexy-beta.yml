@@ -1,0 +1,112 @@
+name: Plexy Beta
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/plexy-beta.yml
+      - apps/player-gpui/**
+      - apps/desktop/native/mpv-embed/include/**
+      - scripts/package-player-macos.ts
+      - scripts/bundle-libmpv.ts
+      - build/icon.png
+      - package.json
+  workflow_dispatch:
+    inputs:
+      draft_release:
+        description: Create a GitHub prerelease draft (main only)
+        type: boolean
+        default: false
+      release_notes:
+        description: Preview features and known limitations for this version
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Test and package for Apple Silicon
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.artifact.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Ensure the Metal shader compiler is available
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent metalToolchain
+            xcrun -sdk macosx metal --version
+          fi
+      - name: Run locked Rust tests
+        # Catalog fixtures change the process-wide data directory.
+        run: cargo test --locked --release --manifest-path apps/player-gpui/Cargo.toml -- --test-threads=1
+      - name: Install libmpv
+        run: brew install mpv
+      - name: Build the beta DMG
+        run: bun run build:player:mac
+      - name: Verify the disk image and record its checksum
+        id: artifact
+        working-directory: dist/player-mac
+        run: |
+          images=(Plexy-Beta-*-mac-arm64.dmg)
+          [[ ${#images[@]} -eq 1 && -f "${images[0]}" ]]
+          dmg="${images[0]}"
+          version="${dmg#Plexy-Beta-}"
+          version="${version%-mac-arm64.dmg}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          hdiutil verify "$dmg"
+          shasum -a 256 "$dmg" > SHA256SUMS
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plexy-beta-mac-arm64
+          path: |
+            dist/player-mac/Plexy-Beta-*-mac-arm64.dmg
+            dist/player-mac/SHA256SUMS
+          if-no-files-found: error
+
+  draft:
+    name: Draft the GitHub prerelease
+    needs: package
+    if: |
+      github.event_name == 'workflow_dispatch' && inputs.draft_release &&
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: plexy-beta-draft
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.package.outputs.version }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: plexy-beta-mac-arm64
+          path: release-beta
+      - name: Create a draft with the tested DMG
+        working-directory: release-beta
+        run: |
+          tag="plexy-beta-v$VERSION"
+          dmg="Plexy-Beta-$VERSION-mac-arm64.dmg"
+          sha256sum --check SHA256SUMS
+          existing_refs="$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" --jq '.[].ref')"
+          existing_releases="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\") | .id")"
+          if [[ -n "$existing_refs" || -n "$existing_releases" ]]; then
+            echo "::error::A tag or release already uses $tag. Review the existing release or bump the Rust app version."
+            exit 1
+          fi
+          printf '%s\n\n%s\n' 'Plexy Beta is an Apple Silicon macOS preview of the Rust desktop app for local libraries and playback.' "$RELEASE_NOTES" > release-notes.md
+          gh release create "$tag" "$dmg" SHA256SUMS \
+            --draft --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "Plexy Beta $VERSION" --notes-file release-notes.md
