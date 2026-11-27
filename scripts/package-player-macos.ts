@@ -104,7 +104,7 @@ end timeout
     run("osascript", ["-e", script]);
     // Finder normalizes the volume root while writing .DS_Store; restore the
     // custom icon afterwards so it survives the detach/convert.
-    copyFileSync(join(root, "build", "icon.icns"), join(mount, ".VolumeIcon.icns"));
+    copyFileSync(join(imageRoot, `${appName}.app`, "Contents", "Resources", "AppIcon.icns"), join(mount, ".VolumeIcon.icns"));
     run("SetFile", ["-a", "C", mount]);
   } finally {
     try {
