@@ -47,6 +47,8 @@ jobs:
         run: brew install mpv
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Install the bundled FFmpeg runtime
+        run: node scripts/install-ffmpeg.mjs
       - name: Build the bundled server
         if: inputs.app == 'server' || inputs.app == 'both'
         run: bun run build:server
