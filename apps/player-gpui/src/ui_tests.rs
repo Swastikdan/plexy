@@ -221,3 +221,23 @@ fn title_grid_mounts_rows_on_scroll_and_opens_the_selected_movie(cx: &mut TestAp
         Screen::Movie("/Movie 119.mkv".into()),
     );
 }
+
+#[gpui_kit::test]
+fn available_update_exposes_the_install_button(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (handle, view) = open_settings(cx, dir.path(), SettingsSection::Overview);
+    cx.update(|cx| {
+        view.update(cx, |view, cx| {
+            view.update_status = crate::updates::UpdateStatus::Available {
+                version: "9.9.9".into(),
+                download: "/tmp/Plexy-9.9.9-mac-arm64.dmg".into(),
+            };
+            cx.notify();
+        })
+    });
+    cx.update_window(handle, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(window.find("install-update").visible());
+    })
+    .unwrap();
+}

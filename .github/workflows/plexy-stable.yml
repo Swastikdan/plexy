@@ -8,6 +8,13 @@ on:
         type: choice
         options: [both, client, server]
         default: both
+      draft_release:
+        description: Create GitHub draft releases for the built apps
+        type: boolean
+        default: false
+      release_notes:
+        description: Notes to attach to the draft releases
+        type: string
 
 permissions:
   contents: read
@@ -65,3 +72,48 @@ jobs:
             dist/server-mac/Plexy-Server-1.0.0-mac-arm64.dmg
             dist/SHA256SUMS
           if-no-files-found: error
+
+  draft:
+    name: Draft GitHub releases
+    needs: package
+    if: |
+      github.event_name == 'workflow_dispatch' && inputs.draft_release &&
+      github.ref == 'refs/heads/main' &&
+      contains(format(',{0},', vars.RELEASE_ACTORS || github.repository_owner), format(',{0},', github.actor))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: plexy-stable-mac-arm64
+          path: release
+      - name: Create draft releases
+        working-directory: release
+        run: |
+          notes="${RELEASE_NOTES:-Stable Plexy macOS build.}"
+          if [[ -f Plexy-1.1.0-mac-arm64.dmg ]]; then
+            tag="plexy-v1.1.0"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "::error::Release $tag already exists. Bump the app version before publishing again."
+              exit 1
+            fi
+            gh release create "$tag" Plexy-1.1.0-mac-arm64.dmg SHA256SUMS \
+              --draft --latest=false --target "$GITHUB_SHA" \
+              --title "Plexy 1.1.0" --notes "$notes"
+          fi
+          if [[ -f Plexy-Server-1.0.0-mac-arm64.dmg ]]; then
+            tag="plexy-server-v1.0.0"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "::error::Release $tag already exists. Bump the server app version before publishing again."
+              exit 1
+            fi
+            gh release create "$tag" Plexy-Server-1.0.0-mac-arm64.dmg SHA256SUMS \
+              --draft --latest=false --target "$GITHUB_SHA" \
+              --title "Plexy Server 1.0.0" --notes "$notes"
+          fi
