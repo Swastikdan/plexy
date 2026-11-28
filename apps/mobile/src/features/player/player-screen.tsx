@@ -27,7 +27,7 @@ export function PlayerScreen({
   usePlayerOrientation(() => {});
   const router = useRouter();
   const { api, progress, preferences } = useClient();
-  const onlineMode = !offlineOnly && preferences.source === "remote";
+  const onlineMode = !offlineOnly && preferences.source === "online";
   const resource = useResource(async () => {
     const manifest = await api.play(fileId);
     const pending = manifest.itemId

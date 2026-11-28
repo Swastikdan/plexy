@@ -2,7 +2,7 @@ export type AppMode = "local" | "hybrid" | "online";
 export const modeLabels: Record<AppMode, string> = { local: "Local only", hybrid: "Hybrid", online: "Fully online" };
 
 export function modePreferences(mode: AppMode) {
-  return { mode, source: mode === "online" ? "remote" as const : "local" as const };
+  return { mode, source: mode === "online" ? "online" as const : mode === "hybrid" ? "all" as const : "device" as const };
 }
 
 export function restoredMode(stored: { mode?: unknown; onboardingCompleted?: unknown; source?: unknown }, hasMedia: boolean) {
@@ -10,7 +10,7 @@ export function restoredMode(stored: { mode?: unknown; onboardingCompleted?: unk
   return {
     mode,
     onboardingCompleted: typeof stored.onboardingCompleted === "boolean"
-      ? stored.onboardingCompleted : stored.source === "remote" || hasMedia,
+      ? stored.onboardingCompleted : stored.source === "remote" || stored.source === "online" || stored.source === "server" || stored.source === "all" || hasMedia,
   };
 }
 

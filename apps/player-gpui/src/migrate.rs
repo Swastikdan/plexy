@@ -2,7 +2,6 @@
 //!
 //! Plexy imports the Electron/server library and the owner's watch state into
 //! its native catalog while leaving the server store in place for hosting.
-//! Plexy Local copies the Plexy Beta catalog into its own data directory.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -25,7 +24,6 @@ pub fn run(catalog: &Catalog) -> Result<Option<String>> {
     let variant = variant::current();
     let outcome = match variant {
         AppVariant::Plexy => migrate_electron(catalog),
-        AppVariant::Local => migrate_beta(catalog),
         AppVariant::Beta => Ok(None),
     };
     if let Ok(Some(message)) = &outcome {
@@ -41,26 +39,6 @@ fn app_support(name: &str) -> Option<PathBuf> {
             .join("Application Support")
             .join(name)
     })
-}
-
-fn migrate_beta(catalog: &Catalog) -> Result<Option<String>> {
-    if !catalog.libraries().is_empty() || catalog.setting("migrated_from_beta").is_some() {
-        return Ok(None);
-    }
-    let Some(source) = app_support("Plexy Player").map(|dir| dir.join("library.sqlite")) else {
-        return Ok(None);
-    };
-    if !source.is_file() {
-        return Ok(None);
-    }
-    catalog
-        .import_beta_database(&source)
-        .with_context(|| format!("import {}", source.display()))?;
-    catalog.set_setting("migrated_from_beta", &crate::catalog::now().to_string());
-    catalog.set_setting("migrated_from", "Plexy Beta");
-    Ok(Some(
-        "Imported the Plexy Beta library and watch state.".into(),
-    ))
 }
 
 fn migrate_electron(catalog: &Catalog) -> Result<Option<String>> {
@@ -361,33 +339,6 @@ mod tests {
         );
         let key = title_key(items.get(&2).unwrap(), &items).unwrap();
         assert_eq!(key, TitleKey::Show("the bear".into()));
-    }
-
-    #[test]
-    fn beta_import_copies_libraries_progress_and_marks() {
-        let source_dir = tempfile::tempdir().unwrap();
-        let source = Catalog::open_in(source_dir.path().to_path_buf()).unwrap();
-        let media = tempfile::tempdir().unwrap();
-        let file = media.path().join("Movie.mkv");
-        std::fs::write(&file, b"data").unwrap();
-        let id = source.add_library(LibraryKind::Movies, media.path()).unwrap();
-        source.rename_library(id, "Beta Movies");
-        source.record_progress(&file, 12.0, 100.0);
-        source.toggle_mark(&TitleKey::Movie(file.clone()), Mark::Watchlist);
-        drop(source);
-
-        let destination_dir = tempfile::tempdir().unwrap();
-        let destination = Catalog::open_in(destination_dir.path().to_path_buf()).unwrap();
-        destination
-            .import_beta_database(&source_dir.path().join("library.sqlite"))
-            .unwrap();
-        let libraries = destination.libraries();
-        assert_eq!(libraries.len(), 1);
-        assert_eq!(libraries[0].name, "Beta Movies");
-        assert!(destination.progress(&file).is_some());
-        assert!(destination
-            .personal()
-            .has(&TitleKey::Movie(file), Mark::Watchlist));
     }
 
     #[test]

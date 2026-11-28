@@ -1098,6 +1098,20 @@ impl PlayerView {
         };
         let unwatched = self.watch_filter == WatchFilter::Unwatched;
         let sort_open = self.open_select == Some("lib-sort");
+        let source_filter = self.server.client.is_some().then(|| {
+            crate::ui::controls::segmented(
+                "lib-source",
+                [("All", None), ("This Mac", None), ("Plexy Server", None)],
+                self.server.filter as usize,
+                {
+                    let view = cx.entity().downgrade();
+                    move |index, _, cx| {
+                        view.update(cx, |this, cx| this.server_set_filter(index as u8, cx))
+                            .ok();
+                    }
+                },
+            )
+        });
         let resuming: Vec<AnyElement> = {
             let mut r: Vec<&Item> = self.items.iter().filter(|i| !i.missing && i.progress.is_some_and(|p| p.resumable())).collect();
             r.sort_by_key(|i| std::cmp::Reverse(i.progress.map(|p| p.updated).unwrap_or(0)));
@@ -1200,6 +1214,7 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(px(11.))
+                            .when_some(source_filter, |el, control| el.child(control))
                             .child(div().text_size(px(11.)).text_color(theme::muted()).child(format!("{total} titles")))
                             .child(
                                 div()

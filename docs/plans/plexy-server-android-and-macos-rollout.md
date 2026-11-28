@@ -1,80 +1,80 @@
-# Plexy Server, Android, and macOS rollout
+# Plexy Server, macOS, and Android rollout
 
-Ship Plexy Server as a standalone bundle with the existing web UI. Add access to external Plexy Server libraries in the current Android app using its existing browsing and playback screens. Keep stable Electron available while the native Rust app is tested as Plexy Beta. Promote Rust to stable only after the upgrade from Electron and the agreed Mac feature set pass verification.
+Ship three apps from one backend contract:
+
+1. **Plexy Server** — a standalone Swift menu bar app that runs the existing backend and opens the web UI for setup and administration.
+2. **Plexy** — the stable Mac client for local libraries and external Plexy Server libraries.
+3. **Plexy Android** — the existing mobile app with local, online, and Plexy Server sources.
+
+The Mac client never bundles or hosts the server. The server app owns the server process and its data; the client only reads the public API.
 
 ## Confirmed decisions
 
-- **Android source selection:** Keep the three watching modes. Plexy Server is a library source inside Hybrid, where device and server titles merge into one Home and one search result set with source badges. When the same title exists on both, the device copy appears by default and the title page offers the server copy. Local only stays device-only; Fully online stays online-only. Connection and sign-in live in onboarding and Settings.
-- **Android sign-in and downloads:** Support pairing codes and username/password. Download the server's direct playable file at its stored quality; do not add transcoding or quality caps in this milestone.
-- **Stable Mac apps:** Ship two Rust apps. **Plexy** is the unified app (local folders, external Plexy Server, and hosted server) at version 1.1.0 with bundle ID `com.plexy.desktop`; it replaces Electron and imports the existing Plexy data. **Plexy Local** is local-only at version 1.0.0 with bundle ID `com.plexy.local`, a neutral accent icon, and its own data and update channel. Plexy Local replaces Plexy Beta and imports Beta data.
-- **Mac libraries and server lifetime:** Plexy merges local folders and the connected server into one Home, Library, and Search with source badges. The hosted server starts and stops with the app by default; a setting can keep the app running in the menu bar after the window closes, and Quit from the menu bar stops the server.
-- **Mac upgrade and migration:** Existing Electron users move to Plexy through a manual DMG. The first launch imports libraries and roots, progress and history, favorites and ratings, collections, and supported settings from the Electron server store.
+- **Server app:** A Swift AppKit menu bar app with no Dock icon. Right-clicking the status item opens **Open Library**, **Open Server Setup**, **Copy Server Address**, **Start/Stop Server**, **Start at Login**, and **Quit Plexy Server**. Setup happens in the web UI. The app can start at login as an optional setting.
+- **Server data:** The server app uses the existing `~/Library/Application Support/Plexy` store, the standard logs directory, and the bundled FFmpeg, migrations, and web assets. It reuses an already-running server on the same port instead of opening the database twice.
+- **Mac client:** `Plexy` at version 1.1.0 with bundle ID `com.plexy.desktop`. It keeps its native catalog in `~/Library/Application Support/Plexy/Player` and connects to an external server with a pairing code or username/password. Server titles appear in Home, Movies, TV Shows, and Search with an **All / This Mac / Plexy Server** source filter. The title page offers the other copy when a title exists locally and on the server.
+- **No Plexy Local:** The stable Mac lineup is the Plexy client and the Plexy Server app. Plexy Beta remains the local-only preview channel.
+- **Android:** Plexy Server is a source available in every watching mode, not only Hybrid. The library source picker offers **All**, **This device**, **Plexy Server**, and **Online** (where the mode allows online). Onboarding and Settings expose server setup; existing Local only, Hybrid, and Fully online behavior stays intact.
+- **Mac upgrade:** Existing Electron users move to Plexy through a manual DMG. The first launch imports libraries and roots, progress and history, favorites and ratings, collections, and supported settings from the Electron server store.
 
-## 1. Plexy Server
+## 1. Plexy Server backend
 
 1. Use the existing full bundle for Linux x64 and Apple Silicon macOS. It contains the server executable, FFmpeg, SQL migrations, and the built web assets. Keep server state and media paths outside the application bundle. [Backend packaging](../../scripts/package-backend.sh) · [Release workflow](../../.github/workflows/build.yml)
-2. Document the full setup path for a fresh installation and the move from an existing Electron-hosted library. Create the owner through the bundled UI on the host, add media roots, enable LAN HTTPS, and confirm the server address from a second device. When moving an existing server, identify its actual data directory, stop the old process, and use a consistent database backup. Verify media paths on the destination and keep the old installation available for rollback. [Server setup](../../README.md#running-the-server) · [Server data paths](../../apps/server/src/paths.ts)
-3. Reuse the existing HTTP API for accounts and devices, catalog and artwork, playback and subtitles, and per-user progress, history, flags, and collections. Check the Android flows against the current contract before adding endpoints. If an endpoint needs to change, preserve compatibility with the bundled web UI and stable Electron. [API reference](../../docs/API.md) · [Shared API client](../../packages/api-client/src/index.ts)
-4. Verify a fresh install and an upgrade using the packaged artifact. Cover owner and viewer sign-in, device pairing and revocation, library scanning, playback and byte-range seeking, subtitles, and persistence across a restart. Run the server typecheck and test suite plus `bun run smoke:playback` under the repository’s Bun workflow. [Testing guide](../../docs/TESTING.md)
+2. Document the full setup path for a fresh installation and the move from an existing Electron-hosted library. Create the owner through the bundled UI, add media roots, enable LAN HTTPS, and confirm the server address from a second device. [Server setup](../../docs/SERVER_SETUP.md) · [Server data paths](../../apps/server/src/paths.ts)
+3. Reuse the HTTP API for accounts and devices, catalog and artwork, playback and subtitles, and per-user progress, history, flags, and collections. Preserve compatibility with the bundled web UI, the Mac client, and Android. [API reference](../../docs/API.md) · [Shared API client](../../packages/api-client/src/index.ts)
+4. Verify a fresh install and an upgrade using the packaged artifact. Cover owner and viewer sign-in, device pairing and revocation, library scanning, playback and byte-range seeking, subtitles, and persistence across a restart. [Testing guide](../../docs/TESTING.md)
 
-## 2. Bundled web UI
+## 2. Plexy Server menu bar app
 
-1. Package the current `apps/web` build with the server. Keep the web source intact. Use the bundled browser app for owner setup, user and device management, library administration, and browser playback. [Web API configuration](../../apps/web/src/server-config.ts) · [Server app assembly](../../apps/server/src/app.ts)
+1. Build `Plexy Server.app` as a Swift AppKit status-item app (`LSUIElement`) with bundle ID `com.plexy.server` and version 1.0.0. The menu opens the server library or setup page in the browser, copies the address, starts or stops the bundled process, toggles **Start at Login**, and quits. [Menu bar source](../../apps/server-macos/Sources/main.swift) · [Packaging](../../scripts/package-server-macos.ts)
+2. Bundle `plexy-server`, FFmpeg, migrations, and `web/` under `Contents/Resources/server`. Start the process with `PORT`, `PLEXY_DATA_DIR`, `PLEXY_LOG_DIR`, `PLEXY_FFMPEG`, and `PLEXY_RESOURCES_DIR`. Detect an existing Plexy server on the preferred port and attach to it instead of opening the same store twice.
+3. Test the first launch, web setup, LAN HTTPS, menu actions, start-at-login registration, quit shutdown, and restart on a clean Mac. Keep the ad-hoc signing limitation and Gatekeeper approval in the release notes.
+
+## 3. Bundled web UI
+
+1. Package the current `apps/web` build with the server. Keep the web source intact. Use it for owner setup, user and device management, library administration, and browser playback. [Web API configuration](../../apps/web/src/server-config.ts) · [Server app assembly](../../apps/server/src/app.ts)
 2. Test the bundle on loopback for first-run owner setup and on LAN HTTPS for sign-in as an existing account. Check that refreshing a page preserves the session and that artwork, subtitles, playback, and seeking use the same browser session.
-3. After any API change, verify web browsing and playback against the packaged server. Test as both the owner and a viewer with access to only one library.
+3. After any API change, verify web browsing and playback against the packaged server as both the owner and a viewer with access to only one library.
 
-## 3. Android
+## 4. Plexy Mac client
 
-1. Add the Plexy Server source in onboarding and Settings. Implement server address entry, status and server ID checks, and sign-in with either a pairing code or username and password through the existing API. Store the credential in the app’s protected store and scope it to the server and account. Give users a way to disconnect and recover from a revoked session or a changed server address. Verify the existing LAN HTTPS certificate flow on a physical device. [Onboarding](../../apps/mobile/src/features/onboarding/onboarding-screen.tsx) · [Settings](../../apps/mobile/src/features/settings/settings-screen.tsx)
-2. Add a server-backed catalog adapter behind the current client and catalog interfaces. In Hybrid, merge device and server titles into Home, libraries, and search, with source badges and the device copy preferred for duplicates; keep online results in their own source. Local only stays device-only and Fully online stays online-only. Hide or disable device-only actions on server items when the server offers no equivalent. [Mobile client provider](../../apps/mobile/src/core/client/client-provider.tsx) · [Catalog interface](../../apps/mobile/src/core/library/catalog-api.ts)
-3. Reuse the existing player UI with a server playback source. Fetch the playback manifest and authenticate stream, artwork, and subtitle requests as required. Verify seeking, episode transitions, resume, and useful errors when the server is unreachable or preparing a playable version. Add downloads at the server’s stored quality using the existing queue and Wi-Fi-only preference; no transcoding or quality caps. [Android player](../../apps/mobile/src/features/player/player-screen.tsx) · [Playback API](../../docs/API.md#playback-endpoints)
-4. Send server watch updates to the signed-in account. Keep queued writes and caches scoped to their original server and account so switching sources cannot replay progress into another library. Verify progress recorded on Android appears in the bundled web UI and that the Android player resumes from progress recorded in the browser. [Mobile progress queue](../../apps/mobile/src/core/client/progress-queue.ts)
-5. Run the mobile typecheck, tests, and Android bundle checks, then verify on an actual Android development client or the emulator workflow. Cover existing Local only, Hybrid, and Fully online behavior, server setup, source switching, a second account, access restrictions, network loss, and offline local playback. [Android testing](../../docs/TESTING.md#android-e2e)
+1. Keep Plexy Beta as the local-only preview channel. Build the stable `Plexy.app` without the server bundle. It imports the Electron library and the owner’s progress, marks, ratings, and collections on first launch. [Rust packaging](../../scripts/package-player-macos.ts) · [Rust catalog schema](../../apps/player-gpui/src/catalog.rs)
+2. Add the Plexy Server connection in Settings: address entry, status and server ID checks, pairing or username/password sign-in, Keychain storage, disconnect, and recovery from a revoked session. [Server client](../../apps/player-gpui/src/server_client.rs) · [Settings](../../apps/player-gpui/src/settings_ui.rs)
+3. Fetch server Home, movies, series, episodes, artwork, and watch state through the public API. Convert them into display items and merge them with the local catalog. Add the **All / This Mac / Plexy Server** source filter to the library page. [Server UI](../../apps/player-gpui/src/server_ui.rs) · [Display merge](../../apps/player-gpui/src/library_ui.rs)
+4. Play authenticated server streams through libmpv with `http-header-fields`. Keep local playback unchanged. Route remote progress to the server and keep remote playback out of the local progress database. [Native player](../../apps/player-gpui/src/mpv.rs) · [Playback routing](../../apps/player-gpui/src/app.rs)
+5. Test local-only use, server connection, source switching, server movies and episodes, resume, seeking, network loss, a revoked token, and a server ID change. Verify the Mac client on a clean Apple Silicon Mac and alongside the server app.
 
-## 4. Plexy Beta and the stable Rust app
+## 5. Plexy Android
 
-1. Keep the current native Beta build and its independent release channel during testing. Establish a baseline on a clean Apple Silicon Mac and an existing Beta installation. Test local scan, play and resume, seeking, tracks and subtitles, watch history, collections, app updates, and offline use. Record any Electron features users depend on before deciding which ones are required for stable. [Beta testing and releases](../../apps/player-gpui/README.md)
-2. Build external server support behind a Rust HTTP client using the public Plexy API. Merge local folders and the connected server into Home, Library, and Search with source badges. Keep connection, catalog, and playback views in GPUI. Use Keychain for credentials and validate how libmpv receives authorized stream and subtitle requests. The existing local playback path stays available for device media. [Native player](../../apps/player-gpui/src/mpv.rs)
-3. Build hosting as a user-controlled feature. The app starts and stops the bundled server by default, and a setting keeps the app running in the menu bar after the window closes so the server stays available. Quit from the menu bar stops the server. Verify port conflicts, data ownership, and takeover of an Electron-hosted instance. The app remains native, and the server’s web administration opens in the system browser.
-4. Create two stable packaging targets. Build `Plexy.app` at version 1.1.0 with bundle ID `com.plexy.desktop` for the unified app, and `Plexy Local.app` at version 1.0.0 with bundle ID `com.plexy.local` for local-only use. Give Plexy Local a neutral accent icon and separate data and update channels. Verify version ordering against published Electron releases. Prepare both DMGs and test signing and Gatekeeper behavior on a clean Mac. [Rust packaging](../../scripts/package-player-macos.ts) · [Electron package identity](../../apps/desktop/electron-builder.json)
+1. Keep the existing Plexy Server connection in onboarding and Settings: address and server-ID checks, pairing or username/password, protected credential storage, disconnect, and retry. [Onboarding](../../apps/mobile/src/features/onboarding/onboarding-screen.tsx) · [Settings](../../apps/mobile/src/features/settings/settings-screen.tsx)
+2. Expose the source picker in every mode: **All** merges device and server, **This device** is local-only, **Plexy Server** is server-only, and **Online** is the online catalog where the watching mode allows it. Keep device-first duplicate handling and the title-page server copy. [Mobile client provider](../../apps/mobile/src/core/client/client-provider.tsx) · [Merged catalog](../../apps/mobile/src/core/server/merged-catalog.ts)
+3. Reuse the player UI with the authenticated server stream, subtitles, resume, and original-quality downloads. Keep queued writes and caches scoped to the server and account. [Android player](../../apps/mobile/src/features/player/player-screen.tsx) · [Mobile progress queue](../../apps/mobile/src/core/client/progress-queue.ts)
+4. Run mobile typecheck, tests, and Android bundle checks. Verify on a physical device or the emulator: server setup, certificate installation, source switching, playback, downloads, a second account, access restrictions, network loss, and offline local playback. [Android testing](../../docs/TESTING.md#android-e2e)
 
-## 5. Stable Electron replacement
+## 6. Release and migration
 
-1. Leave the Electron stable release available during the Beta test period. Before publishing Rust stable, inventory the Electron server database and config, desktop connection preferences, and the Rust Beta SQLite store. Map libraries and roots, progress and history, favorites and ratings, collections, and supported settings into Plexy. For Electron’s server-owned accounts and shared watch state, keep the server store for continued hosting, and import the signed-in owner’s watch state into Plexy. [Electron server data](../../apps/desktop/src/main/server.ts) · [Rust catalog schema](../../apps/player-gpui/src/catalog.rs)
-2. Make first-launch migration repeatable. Read from a consistent backup, apply changes to staging or in a transaction, validate the result, and record completion after the data is usable. Preserve original stores for recovery. Import Plexy Beta data into Plexy Local separately, and preserve the Beta store until the user confirms the new app works. Exercise the case where the existing Electron bundle hosts Android or web clients and confirm where those clients connect after the upgrade.
-3. For the **manual DMG**, verify that dragging the stable Rust build into Applications replaces the existing `Plexy.app`. Document how to quit Electron before replacement and launch Rust afterward. The existing Electron updater is not reused for this transition; Plexy’s own updater handles later releases. [Electron updater](../../apps/desktop/src/main/updater.ts)
-4. Keep the two apps distinct through migration testing: Plexy for Electron users, and Plexy Local for Beta users. Plexy Local uses `~/Library/Application Support/Plexy Local` and does not read the Electron server store. [Beta package identity](../../apps/player-gpui/README.md#package-for-macos)
-5. Rehearse the cutover with an Electron-only Mac, a Beta-only Mac, a Mac with both, and a clean install. Include a populated catalog with films and episodes, unavailable media paths, and an interrupted first launch. Verify the supported settings and watch state, a subsequent Rust update, and recovery by restoring the last Electron build and its original or backed-up data.
-6. Publish Plexy and Plexy Local only after the agreed upgrade paths pass end to end. Point stable Mac downloads at the matching Rust app and retain the final Electron and Beta artifacts for rollback. Keep the backend and Android releases independently installable.
+1. Leave Electron stable available during the Beta period. Before publishing Plexy, inventory the Electron server database and config, desktop connection preferences, and the Rust Beta SQLite store. Keep the server store for the Plexy Server app and import the signed-in owner’s watch state into the Plexy client. [Electron server data](../../apps/desktop/src/main/server.ts)
+2. Make first-launch migration repeatable. Read from a consistent backup, apply changes in a transaction, validate the result, and record completion after the data is usable. Preserve original stores for recovery.
+3. For the manual DMG, verify that dragging `Plexy.app` into Applications replaces Electron, that the old server store is still usable by `Plexy Server.app`, and that rollback restores the last Electron build and its data.
+4. Rehearse with an Electron-only Mac, a Mac with Electron and Beta, and a clean install. Include a populated catalog with films and episodes, unavailable media paths, an interrupted first launch, server connection, and a subsequent client update.
+5. Publish the Plexy client and Plexy Server independently. Retain the final Electron artifact and the Beta channel for rollback. Keep the backend, client, server app, and Android releases independently installable.
 
 ## Order and effort
 
 | Work | Estimated engineering time |
 | --- | --- |
-| Full server bundle and existing web UI verification | 1–2 days |
-| Android server-backed browsing, playback, and resume with one agreed source-selection flow | 5–10 days |
-| Rust Beta verification and stable Mac cutover with data migration and rollback | 5–10 days, depending on data scope and updater compatibility |
-| Native Rust support for an external server | 5–10 additional days |
-| Native Rust hosting and the two app variants | 3–6 additional days |
+| Server bundle and web UI verification | 1–2 days |
+| Plexy Server menu bar app, login item, and lifecycle | 2–4 days |
+| Mac client server connection, merged source, and remote playback | 5–10 days |
+| Electron-to-Plexy migration and cutover | 3–6 days |
+| Android server source in every mode, downloads, and device verification | 3–6 days |
 
-The baseline is roughly **11–22 engineering days** for server and web verification, Android integration, and the Mac cutover. Android work and Mac release preparation can overlap after confirming the API and migration scope. Time spent gathering Beta feedback is separate from these estimates.
+The first implementation pass covers the server bundle, the Android server source, the Plexy Server menu bar app, and the Mac client connection/merged library foundation. Physical-device verification, full Mac remote playback testing, and the release cutover remain.
 
 ## Implementation status
 
-The standalone server now uses platform data and log directories and ships
-with a setup and migration guide. Its certificate endpoint supports installing
-the LAN trust anchor on Android while keeping cleartext traffic disabled.
-
-Android has the Plexy Server source in Hybrid: address and server-ID checks,
-pairing and password sign-in, secure credential storage, merged device and
-server Home/Library/Search with device-first duplicates, an alternate-source
-action on the title page, authenticated playback and subtitles, per-server
-progress queues, and original-quality downloads that import into the device
-library.
-
-The Mac app has the three variant identities, two stable packaging targets,
-the neutral `Plexy Local` icon, bundled-server hosting with status and
-lifecycle controls, first-launch imports from Electron and Plexy Beta, and the
-separate stable update channels. Native browsing of an external Plexy Server
-inside the GPUI app, the menu-bar keep-running surface, and physical-device
-verification are not part of this implementation pass.
+- Standalone server bundle, platform data paths, setup guide, and certificate endpoint are in place.
+- `Plexy Server.app` is a Swift menu bar app that launches the bundled backend, opens the library/setup web UI, and optionally starts at login.
+- The Plexy Mac client connects to an external server, merges server titles into the local library, offers the All / This Mac / Plexy Server filter, and plays authenticated streams through libmpv.
+- Android exposes the Plexy Server source in every mode, with onboarding, pairing/password sign-in, merged or server-only catalogs, playback, progress scoping, and downloads.
+- Remaining verification: clean-Mac server setup and login-item behavior, real-server Mac playback/seek/subtitle checks, physical Android certificate and playback checks, and the Electron cutover rehearsal.

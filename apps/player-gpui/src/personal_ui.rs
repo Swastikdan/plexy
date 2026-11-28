@@ -414,6 +414,13 @@ impl PlayerView {
         self.collection_picker = false;
         self.open_select = None;
         self.selected_season = None;
+        if let TitleKey::Show(show_key) = key {
+            if let Some(show) = self.shows().into_iter().find(|show| &show.key == show_key) {
+                if let Some(remote) = show.remote.clone() {
+                    self.fetch_server_episodes(remote, cx);
+                }
+            }
+        }
         self.screen = match key {
             TitleKey::Movie(path) => Screen::Movie(path.clone()),
             TitleKey::Show(show) => Screen::Show(show.clone()),

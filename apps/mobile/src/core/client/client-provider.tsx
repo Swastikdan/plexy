@@ -52,10 +52,11 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
     const [preferences, setPreferences] = useState(defaultPreferences);
     const mergedApi = useMemo(() => serverCatalog ? new MergedCatalog(runtime.api, serverCatalog) : runtime.api, [runtime.api, serverCatalog]);
     const api = useMemo(() => {
-        if (preferences.mode === "online") return catalogForMode(runtime.api, "online");
-        if (preferences.mode === "local") return runtime.api;
+        if (preferences.source === "online") return catalogForMode(runtime.api, "online");
+        if (preferences.source === "server") return serverCatalog ?? catalogForMode(runtime.api, "online");
+        if (preferences.source === "device") return runtime.api;
         return mergedApi;
-    }, [mergedApi, preferences.mode, runtime.api]);
+    }, [mergedApi, preferences.source, runtime.api, serverCatalog]);
     const apiRef = useRef(api);
     useEffect(() => {
         apiRef.current = api;
@@ -97,8 +98,11 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             };
             saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
             Object.assign(saved, restoredMode(stored, !runtime.needsSetup()));
-            if (saved.mode !== "hybrid") Object.assign(saved, modePreferences(saved.mode));
-            if (saved.source !== "remote") saved.source = "local";
+            // Migrate the two-value source from earlier builds.
+            if ((stored.source as string | undefined) === "local") saved.source = "device";
+            if ((stored.source as string | undefined) === "remote") saved.source = "online";
+            if (!["device", "server", "all", "online"].includes(saved.source)) saved.source = "device";
+            if (saved.mode === "local" && saved.source === "online") saved.source = "device";
             if (![5, 10, 15, 20, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
             if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
             if (typeof saved.onlineEpisodeSelector !== "boolean") saved.onlineEpisodeSelector = true;

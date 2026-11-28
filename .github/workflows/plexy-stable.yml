@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: Build the unified Plexy app, Plexy Local, or both
+        description: Build the Plexy client, Plexy Server, or both
         type: choice
-        options: [both, unified, local]
+        options: [both, client, server]
         default: both
 
 permissions:
@@ -39,20 +39,20 @@ jobs:
       - name: Install libmpv
         run: brew install mpv
       - name: Build the bundled server
-        if: inputs.app == 'unified' || inputs.app == 'both'
+        if: inputs.app == 'server' || inputs.app == 'both'
         run: bun run build:server
       - name: Build Plexy
-        if: inputs.app == 'unified' || inputs.app == 'both'
+        if: inputs.app == 'client' || inputs.app == 'both'
         run: bun run build:plexy:mac
-      - name: Build Plexy Local
-        if: inputs.app == 'local' || inputs.app == 'both'
-        run: bun run build:plexy-local:mac
+      - name: Build Plexy Server
+        if: inputs.app == 'server' || inputs.app == 'both'
+        run: bun run build:server:mac
       - name: Verify the disk images and write checksums
-        working-directory: dist/player-mac
+        working-directory: dist
         run: |
           images=()
-          [[ -f Plexy-1.1.0-mac-arm64.dmg ]] && images+=(Plexy-1.1.0-mac-arm64.dmg)
-          [[ -f Plexy-Local-1.0.0-mac-arm64.dmg ]] && images+=(Plexy-Local-1.0.0-mac-arm64.dmg)
+          [[ -f player-mac/Plexy-1.1.0-mac-arm64.dmg ]] && images+=(player-mac/Plexy-1.1.0-mac-arm64.dmg)
+          [[ -f server-mac/Plexy-Server-1.0.0-mac-arm64.dmg ]] && images+=(server-mac/Plexy-Server-1.0.0-mac-arm64.dmg)
           [[ ${#images[@]} -gt 0 ]]
           for image in "${images[@]}"; do hdiutil verify "$image"; done
           shasum -a 256 "${images[@]}" > SHA256SUMS
@@ -62,6 +62,6 @@ jobs:
           name: plexy-stable-mac-arm64
           path: |
             dist/player-mac/Plexy-1.1.0-mac-arm64.dmg
-            dist/player-mac/Plexy-Local-1.0.0-mac-arm64.dmg
-            dist/player-mac/SHA256SUMS
+            dist/server-mac/Plexy-Server-1.0.0-mac-arm64.dmg
+            dist/SHA256SUMS
           if-no-files-found: error

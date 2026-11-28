@@ -16,9 +16,9 @@ test("only Local only requires a folder and each selection chooses a usable sour
   expect(canFinishOnboarding("local", 1)).toBe(true);
   expect(canFinishOnboarding("hybrid", 0)).toBe(true);
   expect(canFinishOnboarding("online", 0)).toBe(true);
-  expect(modePreferences("local").source).toBe("local");
-  expect(modePreferences("hybrid").source).toBe("local");
-  expect(modePreferences("online").source).toBe("remote");
+  expect(modePreferences("local").source).toBe("device");
+  expect(modePreferences("hybrid").source).toBe("all");
+  expect(modePreferences("online").source).toBe("online");
 });
 
 test("online-only catalog hides existing media and preserves bound utility methods", async () => {

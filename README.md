@@ -158,9 +158,9 @@ Mobile app code further splits into `apps/mobile/src/core` (infrastructure), `sr
 | --- | --- |
 | `bun run build:desktop` | Apple Silicon app, DMG + ZIP under `dist/mac` |
 | `bun run build:player:mac` | Plexy Beta Rust app + DMG for Apple Silicon under `dist/player-mac` ([requirements](apps/player-gpui/README.md#package-for-macos)) |
-| `bun run build:plexy:mac` | Unified `Plexy.app` 1.1.0 + DMG, with the bundled server ([variants](apps/player-gpui/README.md#stable-variants)) |
-| `bun run build:plexy-local:mac` | Local-only `Plexy Local.app` 1.0.0 + DMG ([variants](apps/player-gpui/README.md#stable-variants)) |
-| `bun run build:mac-apps` | Both stable Mac apps; build the server bundle first |
+| `bun run build:plexy:mac` | Stable `Plexy.app` 1.1.0 + DMG, for local libraries and external Plexy Server connections |
+| `bun run build:server:mac` | Standalone `Plexy Server.app` menu bar app + DMG; build the server bundle first |
+| `bun run build:mac-apps` | Both stable Mac apps |
 | `bun run build:server` | `dist/server/plexy-server` + `ffmpeg`, `migrations/`, `web/` |
 | `bun run build:mobile` | ARM64 Android APK under `.build/native` |
 | `bun run build` | All three (reuses one frontend build) |
@@ -178,7 +178,7 @@ Desktop packaging needs macOS; server builds target the host; Android builds nee
 
 The Rust desktop preview ships as Plexy Beta through its own build and release
 workflow. See the [Plexy Beta release guide](apps/player-gpui/README.md#ci-and-beta-releases).
-The two stable Mac apps use [Plexy Stable Mac](.github/workflows/plexy-stable.yml),
+The stable Mac apps use [Plexy Stable Mac](.github/workflows/plexy-stable.yml),
 which runs the locked Rust tests, builds the selected DMGs, verifies them, and
 uploads the images and `SHA256SUMS`.
 
@@ -219,7 +219,9 @@ The next **Force APK** release uploads the APK first, then the manifest, and rem
 
 The [Plexy Server setup and migration guide](docs/SERVER_SETUP.md) covers
 archive verification, first-run setup, LAN HTTPS, account pairing, data
-locations, moving an Electron library, upgrades, and troubleshooting.
+locations, moving an Electron library, upgrades, and troubleshooting. On macOS,
+the [Plexy Server menu bar app](apps/server-macos/README.md) runs the same
+backend and opens the web UI from the status item.
 
 Keep `web/`, `migrations/`, and FFmpeg next to the executable:
 

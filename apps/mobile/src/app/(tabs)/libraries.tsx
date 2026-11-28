@@ -12,7 +12,7 @@ export default function LibrariesRoute() {
     <Screen
       edges={TAB_EDGES}
       animated={false}
-      header={preferences.source !== "remote" && <LibraryAttention />}
+      header={preferences.source !== "online" && <LibraryAttention />}
     >
       <LibraryScreen {...navigation} />
     </Screen>

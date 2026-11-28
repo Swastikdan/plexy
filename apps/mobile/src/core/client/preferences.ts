@@ -22,8 +22,8 @@ export interface Preferences {
   mode: AppMode;
   onboardingCompleted: boolean;
   theme: "light" | "dark" | "system";
-  /** Which catalog the app browses. Local is the on-device library. */
-  source: "local" | "remote";
+  /** Which catalog the app browses. "all" merges device and Plexy Server. */
+  source: "device" | "server" | "all" | "online";
   audioLanguage: string;
   autoSubtitles: boolean;
   subtitleLanguage: string;
@@ -64,7 +64,7 @@ export const defaultPreferences: Preferences = {
   mode: "hybrid",
   onboardingCompleted: false,
   theme: "system",
-  source: "local",
+  source: "device",
   audioLanguage: "",
   autoSubtitles: true,
   subtitleLanguage: "en",

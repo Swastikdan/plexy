@@ -380,7 +380,7 @@ export function HomeScreen({
             </View>
           )}
 
-          {preferences.source !== "remote" && <LibraryAttention />}
+          {preferences.source !== "online" && <LibraryAttention />}
 
           {/* Continue watching row with full series or movie cards */}
           {continueItems.length > 0 && (

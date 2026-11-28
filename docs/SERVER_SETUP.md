@@ -92,6 +92,21 @@ API must be configured with `PLEXY_ALLOWED_ORIGINS`.
 `PLEXY_ALLOWED_ORIGINS` is only for a web UI hosted on a different origin. The
 bundled UI and the Android app do not need it.
 
+## macOS menu bar app
+
+`Plexy Server.app` packages the same backend, FFmpeg, migrations, and web UI
+behind a menu bar status item. Build it with `bun run build:server` followed by
+`bun run build:server:mac`. The menu opens the library or setup page, copies
+the address, starts or stops the server, registers **Start at Login**, and
+quits. The app has no Dock icon and keeps using `~/Library/Application
+Support/Plexy`.
+
+The Plexy Mac client connects to the loopback address
+`http://127.0.0.1:8765` by default, or to the address shown by the server app.
+A remote LAN address uses the server's self-signed HTTPS listener; install a
+trusted certificate or use a trusted reverse proxy before connecting a client
+that does not already trust that certificate.
+
 ## Data and backups
 
 The data directory contains:

@@ -548,7 +548,7 @@ int plexy_player_attach(PlexyPlayer *player, void **outView) {
 }
 
 int plexy_player_load(PlexyPlayer *player, const char *path, double startSeconds) {
-  if (!player || !path || path[0] != '/') return MPV_ERROR_INVALID_PARAMETER;
+  if (!player || !path || (path[0] != '/' && strncmp(path, "http://", 7) != 0 && strncmp(path, "https://", 8) != 0)) return MPV_ERROR_INVALID_PARAMETER;
   std::string options;
   if (startSeconds > 0) options = "start=+" + std::to_string(startSeconds);
   gApi.mpv_set_property_string(player->mpv, "pause", "no");

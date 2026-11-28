@@ -43,7 +43,7 @@ export function CollectionsScreen() {
   const local = useResource((signal) => api.home(signal), [api]);
   const collection = collections.find((entry) => entry.id === selected);
   const localCards = local.value?.rows.find((row) => row.key === "titles")?.items ?? [];
-  const remoteTitles = new Map(saved.filter(({ title }) => preferences.source === "remote" &&
+  const remoteTitles = new Map(saved.filter(({ title }) => preferences.source === "online" &&
     !isHidden(remotePublicId(title.mediaType, title.tmdbId)) && isReleased(title.releaseDate) &&
     familyAllows(certificationFor(title, preferences.familyRegion), preferences.familyLevel, preferences.familyBlockUnrated),
   ).map(({ title }) => [remotePublicId(title.mediaType, title.tmdbId), title]));

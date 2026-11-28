@@ -155,7 +155,7 @@ export function TitleScreen({
   const remoteNavigation = useRemoteNavigation();
   const insets = useSafeAreaInsets();
   const onlineEnabled =
-    !offlineOnly && preferences.mode !== "local" && (preferences.source === "remote" || input.source === "remote");
+    !offlineOnly && preferences.mode !== "local" && (preferences.source === "online" || input.source === "remote");
   const media = useMediaTitle(input, api, onlineEnabled);
   const detail = media.detail;
   const item = detail?.item ?? null;

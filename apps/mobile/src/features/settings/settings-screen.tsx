@@ -395,44 +395,52 @@ export function SettingsScreen({
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow navigation title="Watching mode" icon={Tv} value={modeLabels[preferences.mode]} onPress={() => push("/watching-mode")} />
             </View>
-            {preferences.mode === "hybrid" && (
-              <>
-                <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
-                  Plexy Server
-                </Text>
-                <View className="overflow-hidden rounded-[18px] bg-surface">
-                  <SettingsRow
-                    navigation
-                    title="Plexy Server"
-                    icon={HardDrive}
-                    value={serverValue}
-                    onPress={() => push("/server-connect")}
-                  />
-                  <SettingsRow
-                    navigation
-                    title="Hybrid source"
-                    icon={Library}
-                    value={preferences.source === "local" ? "Library" : "Online"}
-                    onPress={() =>
-                      setPicker({
-                        title: "Hybrid source",
-                        description:
-                          "Library shows this device and Plexy Server together. Online adds the TMDB catalog on top.",
-                        value: preferences.source,
-                        options: [
-                          ["local", "Library"],
-                          ["remote", "Online"],
-                        ],
-                        onSelect: (source) =>
-                          updatePreferences({
-                            source: source === "remote" ? "remote" : "local",
-                          }),
-                      })
-                    }
-                  />
-                </View>
-              </>
-            )}
+            <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+              Plexy Server & sources
+            </Text>
+            <View className="overflow-hidden rounded-[18px] bg-surface">
+              <SettingsRow
+                navigation
+                title="Plexy Server"
+                icon={HardDrive}
+                value={serverValue}
+                onPress={() => push("/server-connect")}
+              />
+              <SettingsRow
+                navigation
+                title="Library source"
+                icon={Library}
+                value={
+                  preferences.source === "all"
+                    ? "All"
+                    : preferences.source === "server"
+                      ? "Plexy Server"
+                      : preferences.source === "device"
+                        ? "This device"
+                        : "Online"
+                }
+                onPress={() =>
+                  setPicker({
+                    title: "Library source",
+                    description:
+                      "Choose what Home, Library, and Search show. All combines this device with Plexy Server.",
+                    value: preferences.source,
+                    options: [
+                      ["all", "All"],
+                      ["device", "This device"],
+                      ["server", "Plexy Server"],
+                      ...(preferences.mode === "local"
+                        ? []
+                        : [["online", "Online"] as [string, string]]),
+                    ] as [string, string][],
+                    onSelect: (source) =>
+                      updatePreferences({
+                        source: source as "device" | "server" | "all" | "online",
+                      }),
+                  })
+                }
+              />
+            </View>
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Kids & family
             </Text>

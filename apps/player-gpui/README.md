@@ -21,36 +21,31 @@ the app's saved preferences live in `library.sqlite`. Set `PLEXY_PLAYER_DATA`
 to use a separate directory for both. Set `PLEXY_SCREEN=settings:playback`
 to open a specific Settings section for local checks.
 
-## Stable variants
+## Stable app
 
-The same executable is packaged into three bundles. The bundle path selects the
-variant, and `PLEXY_APP_VARIANT` overrides it for development.
+The stable client is packaged as `Plexy.app` with bundle ID
+`com.plexy.desktop` and version 1.1.0. It keeps its native catalog in
+`~/Library/Application Support/Plexy/Player`, separate from the standalone
+Plexy Server store in the parent directory. On first launch it imports the
+Electron library and the owner's progress, marks, ratings, and collections.
 
-| Bundle | Bundle ID | Version | Data | Server |
-| --- | --- | --- | --- | --- |
-| `Plexy Beta.app` | `com.plexy.beta` | Cargo version | `~/Library/Application Support/Plexy Player` | No |
-| `Plexy.app` | `com.plexy.desktop` | 1.1.0 | `~/Library/Application Support/Plexy/Player` | Hosts the bundled server and imports the Electron library |
-| `Plexy Local.app` | `com.plexy.local` | 1.0.0 | `~/Library/Application Support/Plexy Local` | No; imports Plexy Beta data |
+The client can connect to an external Plexy Server from **Settings → Plexy
+Server** with a pairing code or username/password. The server library is
+available as an external source and is merged with the local Movies and TV
+libraries; a source filter switches between All, This Mac, and Plexy Server.
 
-`Plexy` keeps the hosted server store in `~/Library/Application Support/Plexy`
-and its native catalog in the `Player` subdirectory, so the two SQLite files
-never collide. `Plexy Local` has a neutral accent icon (`build/icon-local.png`).
-Both stable apps use their own update tags: `plexy-v*` and `plexy-local-v*`.
-
-The unified app starts the bundled server at launch when the setting is on,
-shows its status in **Settings → Plexy Server**, and opens the web admin for
-owner setup, library roots, LAN access, and device pairing. `Plexy` imports the
-Electron library and the owner's progress, marks, ratings, and collections on
-first launch. `Plexy Local` imports the Plexy Beta catalog on first launch.
+The server is a separate app: `Plexy Server.app` runs the bundled backend and
+web UI from the menu bar. The client never starts or bundles that server.
 
 ```sh
 bun run build:plexy:mac
-bun run build:plexy-local:mac
+bun run build:server:mac
 bun run build:mac-apps
 ```
 
-`build:plexy:mac` needs `bun run build:server` first so the packaging step can
-bundle the server executable, FFmpeg, migrations, and web UI.
+`build:server:mac` needs `bun run build:server` first so the packaging step can
+bundle the server executable, FFmpeg, migrations, and web UI. The stable
+client uses the `plexy-v*` update channel.
 
 ## Package for macOS
 
@@ -115,8 +110,9 @@ they receive stable updates. Retire Electron packaging once that transition is r
 | `src/mpv.rs` | Rust-callable player interface replacing the Electron bridge |
 | `src/preview.rs` | Seek previews off the playback core, latest-request-wins, cached |
 | `src/catalog.rs` | SQLite libraries, roots, items, watch progress; incremental background scan |
-| `src/variant.rs` | Beta, unified Plexy, and Plexy Local identities, data paths, and update channels |
-| `src/server_host.rs` | Bundled Plexy Server lifecycle, status, and the keep-running preference |
+| `src/variant.rs` | Beta and stable Plexy client identities, data paths, and update channels |
+| `src/server_client.rs` | External Plexy Server API client, pairing/password sign-in, Keychain session |
+| `src/server_ui.rs` | Server display items, source paths, and artwork cache |
 | `src/migrate.rs` | Electron and Plexy Beta first-launch imports |
 | `src/media.rs` | Filename identification (`S01E02`, `1x02`, `Movie (2019)`), next episode |
 | `src/app.rs` | Player chrome, shortcuts, menus |

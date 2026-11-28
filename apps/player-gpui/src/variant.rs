@@ -1,9 +1,9 @@
-//! Build variants of the native Mac app.
+//! Native Mac app variants.
 //!
-//! One executable is packaged into three bundles. The bundle path selects the
-//! variant, so a local build still behaves like the Beta preview while the two
-//! stable bundles stay independent. `PLEXY_APP_VARIANT` overrides detection
-//! for development and tests.
+//! One executable is packaged into two bundles: the Beta preview and the
+//! stable Plexy client. The bundle path selects the variant, so a local build
+//! still behaves like Beta while the stable bundle has its own identity and
+//! data directory. `PLEXY_APP_VARIANT` overrides detection for development.
 
 use std::path::PathBuf;
 
@@ -11,7 +11,6 @@ use std::path::PathBuf;
 pub enum AppVariant {
     Beta,
     Plexy,
-    Local,
 }
 
 impl AppVariant {
@@ -23,14 +22,11 @@ impl AppVariant {
         {
             "beta" => return Self::Beta,
             "plexy" | "unified" => return Self::Plexy,
-            "local" => return Self::Local,
             _ => {}
         }
         let executable = std::env::current_exe().unwrap_or_default();
         let path = executable.to_string_lossy();
-        if path.contains("/Plexy Local.app/") {
-            Self::Local
-        } else if path.contains("/Plexy.app/") {
+        if path.contains("/Plexy.app/") {
             Self::Plexy
         } else {
             Self::Beta
@@ -41,7 +37,6 @@ impl AppVariant {
         match self {
             Self::Beta => "Plexy Beta",
             Self::Plexy => "Plexy",
-            Self::Local => "Plexy Local",
         }
     }
 
@@ -49,7 +44,6 @@ impl AppVariant {
         match self {
             Self::Beta => "com.plexy.beta",
             Self::Plexy => "com.plexy.desktop",
-            Self::Local => "com.plexy.local",
         }
     }
 
@@ -57,7 +51,6 @@ impl AppVariant {
         match self {
             Self::Beta => env!("CARGO_PKG_VERSION"),
             Self::Plexy => "1.1.0",
-            Self::Local => "1.0.0",
         }
     }
 
@@ -65,26 +58,14 @@ impl AppVariant {
     pub fn data_subdir(self) -> PathBuf {
         match self {
             Self::Beta => PathBuf::from("Plexy Player"),
-            // Keep the native catalog separate from the hosted server's
-            // library.sqlite in the parent directory.
+            // Keep the native catalog separate from the standalone Plexy
+            // Server store in the parent directory.
             Self::Plexy => PathBuf::from("Plexy").join("Player"),
-            Self::Local => PathBuf::from("Plexy Local"),
         }
     }
 
-    /// The hosted Plexy Server store, shared with the Electron app.
-    pub fn server_data_subdir(self) -> Option<PathBuf> {
-        match self {
-            Self::Plexy => Some(PathBuf::from("Plexy")),
-            _ => None,
-        }
-    }
-
+    /// The stable client can connect to an external Plexy Server.
     pub fn supports_server(self) -> bool {
-        matches!(self, Self::Plexy)
-    }
-
-    pub fn supports_hosting(self) -> bool {
         matches!(self, Self::Plexy)
     }
 
@@ -92,7 +73,6 @@ impl AppVariant {
         match self {
             Self::Beta => "plexy-beta-v",
             Self::Plexy => "plexy-v",
-            Self::Local => "plexy-local-v",
         }
     }
 
@@ -100,7 +80,6 @@ impl AppVariant {
         match self {
             Self::Beta => "Plexy-Beta",
             Self::Plexy => "Plexy",
-            Self::Local => "Plexy-Local",
         }
     }
 
@@ -108,7 +87,6 @@ impl AppVariant {
         match self {
             Self::Beta => "Plexy-Beta",
             Self::Plexy => "Plexy",
-            Self::Local => "Plexy-Local",
         }
     }
 }
@@ -122,13 +100,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stable_variants_have_distinct_identities() {
+    fn stable_client_has_its_own_identity_and_data() {
         assert_eq!(AppVariant::Plexy.name(), "Plexy");
         assert_eq!(AppVariant::Plexy.bundle_id(), "com.plexy.desktop");
-        assert_eq!(AppVariant::Local.name(), "Plexy Local");
-        assert_eq!(AppVariant::Local.bundle_id(), "com.plexy.local");
-        assert_ne!(AppVariant::Plexy.data_subdir(), AppVariant::Local.data_subdir());
-        assert!(AppVariant::Plexy.supports_hosting());
-        assert!(!AppVariant::Local.supports_server());
+        assert_eq!(AppVariant::Plexy.version(), "1.1.0");
+        assert!(AppVariant::Plexy.supports_server());
+        assert_ne!(AppVariant::Plexy.data_subdir(), AppVariant::Beta.data_subdir());
     }
 }

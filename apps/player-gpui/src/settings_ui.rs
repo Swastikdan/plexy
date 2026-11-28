@@ -7,6 +7,8 @@ use crate::catalog::TitleKey;
 use crate::library_ui::Screen;
 use crate::personal_ui::Field;
 use crate::shell_ui::PAGE_X;
+use crate::server_client::{self, ServerClient, ServerSession};
+use crate::server_ui::{self, ServerInputs};
 use crate::ui::motion::MotionSpec;
 use crate::theme;
 use crate::ui::icon::{icon, Icon};
@@ -186,6 +188,45 @@ impl PlayerView {
     pub(crate) fn ensure_setting_selects(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         use gpui_kit::component::{select::{SelectEvent, SelectState}, IndexPath};
         use gpui_kit::component::input::{InputEvent, InputState};
+        if self.server.inputs.is_none() {
+            let initial_address = self.server.address.clone();
+            let initial_code = self.server.code.clone();
+            let initial_username = self.server.username.clone();
+            let initial_password = self.server.password.clone();
+            let address = cx.new(|cx| InputState::new(window, cx).placeholder("http://127.0.0.1:8765"));
+            address.update(cx, |input, cx| input.set_value(&initial_address, window, cx));
+            let code = cx.new(|cx| InputState::new(window, cx).placeholder("Pairing code"));
+            code.update(cx, |input, cx| input.set_value(&initial_code, window, cx));
+            let username = cx.new(|cx| InputState::new(window, cx).placeholder("Username"));
+            username.update(cx, |input, cx| input.set_value(&initial_username, window, cx));
+            let password = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Password"));
+            password.update(cx, |input, cx| input.set_value(&initial_password, window, cx));
+            let subscription = cx.subscribe_in(&address, window, |this, input, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.server.address = input.read(cx).value().to_string();
+                }
+            });
+            self.select_subscriptions.push(subscription);
+            let subscription = cx.subscribe_in(&code, window, |this, input, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.server.code = input.read(cx).value().to_string();
+                }
+            });
+            self.select_subscriptions.push(subscription);
+            let subscription = cx.subscribe_in(&username, window, |this, input, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.server.username = input.read(cx).value().to_string();
+                }
+            });
+            self.select_subscriptions.push(subscription);
+            let subscription = cx.subscribe_in(&password, window, |this, input, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.server.password = input.read(cx).value().to_string();
+                }
+            });
+            self.select_subscriptions.push(subscription);
+            self.server.inputs = Some(ServerInputs { address, code, username, password });
+        }
         if self.token_clear {
             self.token_clear = false;
             if let Some(input) = &self.token_input {
@@ -478,7 +519,7 @@ impl PlayerView {
             .child(item("settings-libraries", "Libraries", Icon::Library, SettingsSection::Libraries, cx))
             .child(item("settings-matches", "Fix matches", Icon::Search, SettingsSection::FixMatches, cx))
             .child(item("settings-metadata", "Metadata & markers", Icon::Film, SettingsSection::Metadata, cx))
-            .when(crate::variant::current().supports_hosting(), |el| el.child(item("settings-server", "Plexy Server", Icon::Server, SettingsSection::Server, cx)))
+            .when(crate::variant::current().supports_server(), |el| el.child(item("settings-server", "Plexy Server", Icon::Server, SettingsSection::Server, cx)))
             .child(item("settings-maintenance", "Maintenance", Icon::Server, SettingsSection::Maintenance, cx))
             .into_any_element()
     }
@@ -547,69 +588,391 @@ impl PlayerView {
 
     // MARK: Libraries
 
-    fn render_server_settings(&self, cx: &mut Context<Self>) -> AnyElement {
-        let (running, starting, failed, url, message) = {
-            let host = crate::server_host::host();
-            (
-                host.is_running(),
-                host.state() == crate::server_host::HostState::Starting,
-                host.state() == crate::server_host::HostState::Failed,
-                host.url(),
-                host.message()
-                    .unwrap_or("Plexy Server is part of the unified Plexy app.")
-                    .to_string(),
-            )
-        };
-        let state_label = if running {
-            "Running"
-        } else if starting {
-            "Starting…"
-        } else if failed {
-            "Stopped with an error"
-        } else {
-            "Stopped"
-        };
-        let status_color = if running {
-            theme::accent()
-        } else if failed {
-            theme::warning()
-        } else {
-            theme::muted()
-        };
-        let run_on_launch = self.catalog.setting("run_server_on_launch").as_deref() != Some("0");
-        let keep = self.keep_server_running;
-        let data = crate::server_host::ServerHost::data_dir()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "Unavailable".into());
-        let actions = div()
-            .flex()
-            .gap(px(8.))
-            .child(
-                Button::new(
-                    "server-start-stop",
-                    if running || starting { "Stop server" } else { "Start server" },
-                )
-                .icon(if running || starting { Icon::Pause } else { Icon::Play })
-                .primary()
-                .build()
-                .on_click(cx.listener(|_, _, _, cx| {
-                    let mut host = crate::server_host::host();
-                    if host.is_running() || host.state() == crate::server_host::HostState::Starting {
-                        host.stop();
-                    } else {
-                        host.start();
+    fn server_connect(&mut self, cx: &mut Context<Self>) {
+        if self.server.busy {
+            return;
+        }
+        let address = self.server.address.trim().to_string();
+        let code = self.server.code.trim().to_string();
+        let username = self.server.username.trim().to_string();
+        let password = self.server.password.clone();
+        let mode = self.server.auth_mode;
+        if address.is_empty() {
+            self.server.error = Some("Enter the server address.".into());
+            cx.notify();
+            return;
+        }
+        if mode == 0 && code.is_empty() {
+            self.server.error = Some("Enter the pairing code.".into());
+            cx.notify();
+            return;
+        }
+        if mode == 1 && (username.is_empty() || password.is_empty()) {
+            self.server.error = Some("Enter the username and password.".into());
+            cx.notify();
+            return;
+        }
+        self.server.busy = true;
+        self.server.error = None;
+        self.server.status = "Connecting…".into();
+        cx.notify();
+        let work = cx.background_spawn(async move {
+            let session = if mode == 0 {
+                server_client::pair(&address, &code)
+            } else {
+                server_client::login(&address, &username, &password)
+            }?;
+            let client = ServerClient::new(session.clone());
+            let (home, cards) = server_ui::fetch_catalog(&client)?;
+            let mut artwork = std::collections::HashMap::new();
+            server_ui::download_catalog_art(&client, &cards, &mut artwork);
+            Ok::<_, server_client::ServerError>((session, home, cards, artwork))
+        });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| {
+                this.server.busy = false;
+                match result {
+                    Ok((session, home, cards, artwork)) => {
+                        if let Err(error) = session.save() {
+                            this.server.error = Some(error.to_string());
+                        }
+                        this.server.address = session.address.clone();
+                        this.server.client = Some(ServerClient::new(session.clone()));
+                        this.server.home = Some(home);
+                        this.server.cards = cards;
+                        this.server.artwork = artwork;
+                        this.server.episodes.clear();
+                        this.server.status = format!("Connected to {}", session.address);
+                        this.server.filter = server_ui::SOURCE_ALL;
+                        this.apply_server_cards();
                     }
-                    cx.notify();
-                })),
-            )
-            .when_some(url.clone(), |el, url| {
-                el.child(
-                    Button::new("server-open-admin", "Open server admin")
-                        .icon(Icon::Server)
-                        .build()
-                        .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&url))),
+                    Err(error) => {
+                        this.server.status = "Not connected".into();
+                        this.server.error = Some(error.message);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn server_refresh_catalog(&mut self, cx: &mut Context<Self>) {
+        let Some(client) = self.server.client.clone() else {
+            return;
+        };
+        self.server.busy = true;
+        self.server.error = None;
+        self.server.status = "Refreshing server library…".into();
+        cx.notify();
+        let work = cx.background_spawn(async move {
+            let result = server_ui::fetch_catalog(&client)?;
+            let mut artwork = std::collections::HashMap::new();
+            server_ui::download_catalog_art(&client, &result.1, &mut artwork);
+            Ok::<_, server_client::ServerError>((result.0, result.1, artwork))
+        });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| {
+                this.server.busy = false;
+                match result {
+                    Ok((home, cards, artwork)) => {
+                        this.server.home = Some(home);
+                        this.server.cards = cards;
+                        this.server.artwork = artwork;
+                        this.server.episodes.clear();
+                        this.server.status = "Connected".into();
+                        this.apply_server_cards();
+                    }
+                    Err(error) => {
+                        if error.unauthorized {
+                            ServerSession::clear();
+                            this.server.client = None;
+                            this.server.cards.clear();
+                            this.server.episodes.clear();
+                            this.server_items.clear();
+                            this.server.filter = server_ui::SOURCE_LOCAL;
+                            this.refresh_display_items();
+                            this.server.status = "Signed out".into();
+                        }
+                        this.server.error = Some(error.message);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn apply_server_cards(&mut self) {
+        let server_id = self
+            .server
+            .client
+            .as_ref()
+            .map(|client| client.session.server_id.clone())
+            .unwrap_or_default();
+        let mut items: Vec<crate::catalog::Item> = self
+            .server
+            .cards
+            .iter()
+            .map(|card| server_ui::card_to_item(&server_id, card, &self.server.artwork))
+            .collect();
+        for episodes in self.server.episodes.values() {
+            for card in episodes {
+                let item = server_ui::card_to_item(&server_id, card, &self.server.artwork);
+                if !items.iter().any(|existing| existing.path == item.path) {
+                    items.push(item);
+                }
+            }
+        }
+        self.server_items = items;
+        self.rebuild_server_meta();
+        self.refresh_display_items();
+    }
+
+    pub(crate) fn rebuild_server_meta(&mut self) {
+        let server_id = self
+            .server
+            .client
+            .as_ref()
+            .map(|client| client.session.server_id.clone())
+            .unwrap_or_default();
+        let cards = self.server.cards.clone();
+        for card in cards {
+            if card.is_episode() {
+                continue;
+            }
+            let path = server_ui::card_path(&server_id, &card);
+            let key = if card.is_series() {
+                TitleKey::Show(card.name.to_lowercase())
+            } else {
+                TitleKey::Movie(path.clone())
+            };
+            if self.metas.contains_key(&key) {
+                continue;
+            }
+            let item = self.server_items.iter().find(|item| item.path == path);
+            self.metas.insert(
+                key,
+                crate::catalog::TitleMeta {
+                    tmdb_id: card.tmdb_id.unwrap_or(0),
+                    kind: if card.is_series() { "tv".into() } else { "movie".into() },
+                    name: card.name.clone(),
+                    overview: card.overview.clone(),
+                    year: card.year,
+                    rating: card.rating,
+                    runtime: card.runtime,
+                    certification: card.certification.clone(),
+                    genres: card.genres.clone(),
+                    cast: Vec::new(),
+                    poster: item.and_then(|item| item.poster.clone()),
+                    backdrop: item.and_then(|item| item.backdrop.clone()),
+                    logo: None,
+                    imdb_id: None,
+                    manual: false,
+                    matched: true,
+                },
+            );
+        }
+    }
+
+    pub(crate) fn fetch_server_episodes(&mut self, remote: crate::catalog::ServerRef, cx: &mut Context<Self>) {
+        if remote.kind != "series" || self.server.episodes.contains_key(&remote.public_id) {
+            return;
+        }
+        let Some(client) = self.server.client.clone() else {
+            return;
+        };
+        self.server.episodes.insert(remote.public_id.clone(), Vec::new());
+        let id = remote.public_id.clone();
+        let work = cx.background_spawn(async move { client.detail(&id) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| {
+                match result {
+                    Ok(detail) => {
+                        let server_id = remote.server_id.clone();
+                        let episodes = detail.episodes.clone().unwrap_or_default();
+                        let items = server_ui::detail_episode_items(
+                            &server_id,
+                            &detail,
+                            &this.server.artwork,
+                        );
+                        this.server
+                            .episodes
+                            .insert(remote.public_id.clone(), episodes);
+                        for item in items {
+                            if !this
+                                .server_items
+                                .iter()
+                                .any(|existing| existing.path == item.path)
+                            {
+                                this.server_items.push(item);
+                            }
+                        }
+                        this.rebuild_server_meta();
+                        this.refresh_display_items();
+                    }
+                    Err(error) => {
+                        this.server.episodes.remove(&remote.public_id);
+                        this.server.error = Some(error.message);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn server_disconnect(&mut self, cx: &mut Context<Self>) {
+        ServerSession::clear();
+        self.server.client = None;
+        self.server.home = None;
+        self.server.cards.clear();
+        self.server.episodes.clear();
+        self.server_items.clear();
+        self.server.filter = server_ui::SOURCE_LOCAL;
+        self.server.status = "Not connected".into();
+        self.server.error = None;
+        self.refresh_display_items();
+        cx.notify();
+    }
+
+    pub(crate) fn server_set_filter(&mut self, filter: u8, cx: &mut Context<Self>) {
+        self.server.filter = filter;
+        self.refresh_display_items();
+        cx.notify();
+    }
+
+    fn render_server_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        let connected = self.server.client.is_some();
+        let inputs = self.server.inputs.as_ref();
+        let field = |entity: Option<&gpui_kit::Entity<gpui_kit::component::input::InputState>>| {
+            match entity {
+                Some(input) => gpui_kit::component::input::Input::new(input)
+                    .aria_label("Server field")
+                    .flex_1()
+                    .min_w_0()
+                    .into_any_element(),
+                None => div().into_any_element(),
+            }
+        };
+        if connected {
+            let address = self.server.address.clone();
+            let username = self
+                .server
+                .client
+                .as_ref()
+                .map(|client| client.session.user.username.clone())
+                .unwrap_or_default();
+            let count = self.server_items.len();
+            let buttons = div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    Button::new(
+                        "server-refresh",
+                        if self.server.busy { "Refreshing…" } else { "Refresh" },
+                    )
+                    .icon(Icon::Refresh)
+                    .build()
+                    .on_click(cx.listener(|this, _, _, cx| this.server_refresh_catalog(cx))),
                 )
-            });
+                .child(
+                    Button::new("server-disconnect", "Disconnect")
+                        .build()
+                        .on_click(cx.listener(|this, _, _, cx| this.server_disconnect(cx))),
+                );
+            let source = crate::ui::controls::segmented(
+                "server-source",
+                [("All", None), ("This Mac", None), ("Plexy Server", None)],
+                self.server.filter as usize,
+                {
+                    let view = cx.entity().downgrade();
+                    move |index, _, cx| {
+                        view.update(cx, |this, cx| {
+                            this.server_set_filter(index as u8, cx);
+                        })
+                        .ok();
+                    }
+                },
+            );
+            return div()
+                .flex()
+                .flex_col()
+                .gap(px(STACK))
+                .child(self.settings_card(
+                    Icon::Server,
+                    "Plexy Server",
+                    vec![
+                        Self::setting_row(
+                            "Status",
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(badge("Connected", Tone::Success))
+                                .child(badge(format!("{count} titles"), Tone::Neutral)),
+                        ),
+                        Self::setting_row("Server", body(address)),
+                        Self::setting_row("Account", body(username)),
+                        Self::setting_row("Controls", buttons.into_any_element()),
+                        Self::setting_row("Library source", source.into_any_element()),
+                    ],
+                ))
+                .child(div().px(px(4.)).child(caption(
+                    "Server titles appear in Library, Movies, TV Shows and Search. The source filter switches between this Mac, the server, and both.",
+                )))
+                .into_any_element();
+        }
+
+        let address = field(inputs.map(|inputs| &inputs.address));
+        let code = field(inputs.map(|inputs| &inputs.code));
+        let username = field(inputs.map(|inputs| &inputs.username));
+        let password = field(inputs.map(|inputs| &inputs.password));
+        let auth = crate::ui::controls::segmented(
+            "server-auth",
+            [("Pairing code", None), ("Account", None)],
+            self.server.auth_mode as usize,
+            {
+                let view = cx.entity().downgrade();
+                move |index, _, cx| {
+                    view.update(cx, |this, cx| {
+                        this.server.auth_mode = index as u8;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            },
+        );
+        let secret = if self.server.auth_mode == 0 {
+            code
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(username)
+                .child(password)
+                .into_any_element()
+        };
+        let connect = Button::new(
+            "server-connect",
+            if self.server.busy { "Connecting…" } else { "Connect" },
+        )
+        .icon(Icon::Play)
+        .primary()
+        .build()
+        .on_click(cx.listener(|this, _, _, cx| this.server_connect(cx)));
+        let error = self
+            .server
+            .error
+            .clone()
+            .map(|error| caption(error).text_color(theme::danger()).into_any_element());
         div()
             .flex()
             .flex_col()
@@ -622,37 +985,31 @@ impl PlayerView {
                         "Status",
                         div()
                             .flex()
-                            .flex_col()
-                            .items_end()
-                            .gap(px(3.))
-                            .child(div().text_size(px(13.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(status_color).child(state_label))
-                            .child(div().max_w(px(360.)).text_size(px(11.)).text_color(theme::muted()).child(message)),
-                    ),
-                    Self::setting_row("Controls", actions.into_any_element()),
-                    Self::setting_row(
-                        "Run at launch",
-                        self.toggle("server-run-launch", run_on_launch, cx, move |this| {
-                            this.catalog.set_setting("run_server_on_launch", if run_on_launch { "0" } else { "1" });
-                        }),
+                            .items_center()
+                            .gap(px(8.))
+                            .child(badge(
+                                if self.server.busy { "Connecting" } else { "Not connected" },
+                                if self.server.busy { Tone::Warning } else { Tone::Neutral },
+                            ))
+                            .child(caption(self.server.status.clone())),
                     ),
                     Self::setting_row(
-                        "Keep running after closing the window",
-                        self.toggle("server-keep-running", keep, cx, move |this| {
-                            this.keep_server_running = !keep;
-                            crate::server_host::set_keep_running(!keep);
-                            this.catalog.set_setting("keep_server_running", if keep { "0" } else { "1" });
-                        }),
+                        "Server address",
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(address)
+                            .child(connect),
                     ),
+                    Self::setting_row("Sign in with", auth.into_any_element()),
+                    Self::setting_row("Credentials", secret),
+                    Self::setting_row("Connect", error.unwrap_or_else(|| div().into_any_element())),
                 ],
             ))
-            .child(self.settings_card(
-                Icon::Folder,
-                "Server data",
-                vec![
-                    Self::setting_row("Library and account store", div().font_family("Menlo").text_size(px(11.)).text_color(theme::muted()).child(data)),
-                    Self::setting_row("Web UI", body("Open the server address in a browser, or use the admin button above to create the owner, add media folders, and enable LAN access.")),
-                ],
-            ))
+            .child(div().px(px(4.)).child(caption(
+                "Start the standalone Plexy Server app, finish setup in its web UI, then pair this client or sign in with an account. The local library keeps working when the server is offline.",
+            )))
             .into_any_element()
     }
 

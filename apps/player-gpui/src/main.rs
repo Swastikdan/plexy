@@ -15,10 +15,11 @@ mod mpv;
 mod personal_ui;
 mod preview;
 mod selftest;
+mod server_client;
+mod server_ui;
 mod settings_ui;
 #[cfg(test)]
 mod ui_tests;
-mod server_host;
 mod shell_ui;
 mod theme;
 mod ui;
@@ -97,14 +98,7 @@ fn main() {
             Menu { name: app_name.into(), disabled: false, items: vec![MenuItem::action(format!("Quit {app_name}"), Quit)] },
             Menu { name: "File".into(), disabled: false, items: vec![MenuItem::action("Open…", Open)] },
         ]);
-        cx.on_window_closed(|cx, _| {
-            if crate::variant::current().supports_hosting()
-                && crate::server_host::keep_running()
-            {
-                return;
-            }
-            cx.quit();
-        }).detach();
+        cx.on_window_closed(|cx, _| cx.quit()).detach();
 
         let bounds = Bounds::centered(None, size(px(1280.), px(760.)), cx);
         let file = args.file.clone();

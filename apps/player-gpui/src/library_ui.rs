@@ -104,7 +104,21 @@ pub(crate) fn progress_bar(fraction: f64) -> impl IntoElement {
 
 impl PlayerView {
     pub fn tv_library_ids(&self) -> HashSet<i64> {
-        self.libraries.iter().filter(|l| l.kind == LibraryKind::Shows).map(|l| l.id).collect()
+        let mut ids: HashSet<i64> = self.libraries.iter().filter(|l| l.kind == LibraryKind::Shows).map(|l| l.id).collect();
+        ids.insert(crate::server_ui::SERVER_TV_LIBRARY);
+        ids
+    }
+
+    pub fn refresh_display_items(&mut self) {
+        self.items = match self.server.filter {
+            crate::server_ui::SOURCE_LOCAL => self.local_items.clone(),
+            crate::server_ui::SOURCE_SERVER => self.server_items.clone(),
+            _ => {
+                let mut items = self.local_items.clone();
+                items.extend(self.server_items.clone());
+                items
+            }
+        };
     }
 
     pub fn shows(&self) -> Vec<Show> {
@@ -147,10 +161,14 @@ impl PlayerView {
                         this.catalog_load_error = None;
                         this.fix_matches = None;
                         this.libraries = snapshot.libraries;
-                        this.items = snapshot.items;
+                        this.local_items = snapshot.items;
+                        this.refresh_display_items();
                         this.personal = snapshot.personal;
                         this.episode_metas = snapshot.episode_metas;
                         this.metas = snapshot.metas;
+                        if this.server.client.is_some() {
+                            this.rebuild_server_meta();
+                        }
                         if !this.catalog_loaded {
                             this.catalog_loaded = true;
                             this.start_auto_scan();

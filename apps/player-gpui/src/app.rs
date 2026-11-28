@@ -128,7 +128,10 @@ pub struct PlayerView {
     pub identity: Option<Identity>,
     pub next_episode: Option<PathBuf>,
     pub catalog: Catalog,
-    pub keep_server_running: bool,
+    pub server: crate::server_ui::ServerState,
+    pub local_items: Vec<Item>,
+    pub server_items: Vec<Item>,
+    pub remote_playback: Option<crate::server_ui::RemotePlayback>,
     pub screen: Screen,
     pub libraries: Vec<Library>,
     pub items: Vec<Item>,
@@ -207,13 +210,6 @@ impl PlayerView {
     pub fn new(gpui_view: usize, catalog: Catalog, cx: &mut Context<Self>) -> Self {
         let launch_screen = std::env::var("PLEXY_SCREEN").unwrap_or_default();
         let (screen, settings_section) = Screen::from_launch(&launch_screen);
-        let keep_server_running = catalog.setting("keep_server_running").as_deref() == Some("1");
-        crate::server_host::set_keep_running(keep_server_running);
-        let run_server_on_launch = crate::variant::current().supports_hosting()
-            && catalog.setting("run_server_on_launch").map_or(true, |value| value != "0");
-        if run_server_on_launch {
-            crate::server_host::host().start();
-        }
         let mut view = Self {
             player: Player::default(),
             libmpv: None,
@@ -252,7 +248,10 @@ impl PlayerView {
             identity: None,
             next_episode: None,
             catalog: catalog.clone(),
-            keep_server_running,
+            server: crate::server_ui::ServerState::new(),
+            local_items: Vec::new(),
+            server_items: Vec::new(),
+            remote_playback: None,
             screen,
             libraries: Vec::new(),
             items: Vec::new(),
@@ -324,6 +323,10 @@ impl PlayerView {
         view.reload_catalog(cx);
         #[cfg(not(test))]
         view.load_credentials(cx);
+        #[cfg(not(test))]
+        if view.server.client.is_some() {
+            view.server_refresh_catalog(cx);
+        }
         view
     }
 
@@ -361,8 +364,177 @@ impl PlayerView {
         self.open_at(path, None, window, cx);
     }
 
+    /// Starts an authenticated Plexy Server stream without a local file.
+    fn open_remote(
+        &mut self,
+        remote: crate::catalog::ServerRef,
+        start: Option<f64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(file_id) = remote.file_id else {
+            self.state.error = Some("This server title has no playable file.".into());
+            cx.notify();
+            return;
+        };
+        let Some(client) = self.server.client.clone() else {
+            self.state.error = Some("Connect to Plexy Server first.".into());
+            cx.notify();
+            return;
+        };
+        if self.media.is_none() {
+            self.fullscreen_before_play = window.is_fullscreen();
+        }
+        self.save_progress();
+        self.open_select = None;
+        self.episode_menu = None;
+        self.collection_picker = false;
+        self.collection_target = None;
+        self.rating_target = None;
+        if self.libmpv.is_none() {
+            let libmpv = match mpv::find_libmpv() {
+                Ok(libmpv) => libmpv,
+                Err(error) => {
+                    self.state.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            };
+            let view = match self.player.initialize(&libmpv) {
+                Ok(view) => view,
+                Err(error) => {
+                    self.state.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            };
+            self.video = match unsafe { gpui_kit::NativeView::new(view, window, cx) } {
+                Ok(view) => Some(view),
+                Err(error) => {
+                    self.state.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            };
+            self.libmpv = Some(libmpv);
+        }
+        let path = crate::server_ui::file_path(&remote.server_id, file_id);
+        self.media = Some(path.clone());
+        self.remote_playback = None;
+        self.previews = None;
+        self.state = PlaybackState::default();
+        self.state.buffering = true;
+        self.state.error = None;
+        self.poke();
+        cx.notify();
+        let work = cx.background_spawn(async move { client.play(file_id).map(|play| (client, play)) });
+        cx.spawn_in(window, async move |view, cx| {
+            let result = work.await;
+            view.update_in(cx, |this, window, cx| match result {
+                Ok((client, play)) => this.start_remote_playback(client, play, path, start, window, cx),
+                Err(error) => {
+                    this.state.buffering = false;
+                    this.state.error = Some(error.message);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn start_remote_playback(
+        &mut self,
+        client: crate::server_client::ServerClient,
+        play: crate::server_client::ServerPlay,
+        path: PathBuf,
+        start: Option<f64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let url = client.stream_url(play.file_id);
+        let headers = client.stream_headers();
+        let pref = |key: &str| self.catalog.setting(key).filter(|value| !value.is_empty());
+        let _ = self.player.set("alang", &pref("audio_lang").unwrap_or_else(|| "auto".into()));
+        let _ = self.player.set("slang", &pref("subtitle_lang").unwrap_or_else(|| "auto".into()));
+        self.apply_subtitle_style();
+        let _ = self.player.set("sid", if pref("subtitles_on").as_deref() == Some("no") { "no" } else { "auto" });
+        let resume = start
+            .or_else(|| {
+                play.watch
+                    .as_ref()
+                    .filter(|watch| !watch.played && watch.position >= 30.0)
+                    .map(|watch| (watch.position - 3.0).max(0.0))
+            })
+            .unwrap_or(0.0);
+        match self.player.load_url(&url, &headers, resume) {
+            Ok(()) => {
+                let title = play.title.clone().unwrap_or_else(|| "Plexy".into());
+                window.set_window_title(&title);
+                let year = self.server_items.iter().find(|item| item.path == path).and_then(|item| item.year);
+                let kind = match (play.season_number, play.episode_number) {
+                    (Some(season), Some(episode)) => media::Kind::Episode {
+                        season,
+                        episode,
+                        episode_title: play.subtitle.clone(),
+                    },
+                    _ => media::Kind::Movie { year },
+                };
+                self.identity = Some(media::Identity { title, kind });
+                let server_id = client.session.server_id.clone();
+                self.next_episode = play
+                    .next
+                    .as_ref()
+                    .map(|next| crate::server_ui::file_path(&server_id, next.file_id))
+                    .or_else(|| play.next_file_id.map(|id| crate::server_ui::file_path(&server_id, id)));
+                self.remote_playback = Some(crate::server_ui::RemotePlayback {
+                    client: client.clone(),
+                    play: play.clone(),
+                    item_id: play.item_id.unwrap_or_default(),
+                    file_id: play.file_id,
+                });
+                self.autoplay_at = None;
+                self.autoplay_cancelled = false;
+                self.autoplay_fired = false;
+                self.autoplay_enabled = self.setting_on("autoplay");
+                self.sub_search = Default::default();
+                self.sub_was_busy = false;
+                self.was_paused = true;
+                self.last_saved = Instant::now();
+                self.last_saved_position = None;
+                self.state = self.player.snapshot();
+                self.marker_editor = None;
+                self.chapter_markers = self.catalog.setting("chapter_markers").as_deref() != Some("off");
+                self.segments = Default::default();
+                self.manual_segments = Default::default();
+                let slot = self.segments.clone();
+                let file_id = play.file_id;
+                let segment_path = path.clone();
+                std::thread::spawn(move || {
+                    if let Ok(skips) = client.skips(file_id) {
+                        *slot.lock() = Some((segment_path, crate::server_ui::skip_segments(skips)));
+                    }
+                });
+                self.media = Some(path);
+                self.retire_preview();
+                self.menu = None;
+                self.last_subtitle = None;
+                self.poke();
+                if resume > 0.0 {
+                    self.flash(Icon::Play, format!("Resuming from {}", format_time(resume)));
+                }
+            }
+            Err(error) => self.state.error = Some(error.to_string()),
+        }
+        cx.notify();
+    }
+
     /// Opens at `start` seconds, or at the saved resume point when `None`.
     pub fn open_at(&mut self, path: &Path, start: Option<f64>, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(remote) = crate::server_ui::parse_server_path(path) {
+            self.open_remote(remote, start, window, cx);
+            return;
+        }
         if self.media.is_none() {
             self.fullscreen_before_play = window.is_fullscreen();
         }
@@ -583,11 +755,27 @@ impl PlayerView {
     /// Records the current position for the open file.
     pub fn save_progress(&mut self) {
         let Some(path) = self.media.as_ref() else { return };
+        if path.to_string_lossy().starts_with("server://") && self.remote_playback.is_none() {
+            self.last_saved = Instant::now();
+            return;
+        }
         let state = self.player.snapshot();
         if state.loaded && state.duration > 0.0 {
             let position = if state.ended { state.duration } else { state.position };
             if self.last_saved_position != Some(position) {
-                self.catalog.record_progress(path, position, state.duration);
+                if let Some(remote) = &self.remote_playback {
+                    if remote.item_id > 0 {
+                        let client = remote.client.clone();
+                        let item_id = remote.item_id;
+                        let duration = state.duration;
+                        let played = state.ended || position / duration >= 0.95;
+                        std::thread::spawn(move || {
+                            let _ = client.progress(item_id, position, Some(duration), played);
+                        });
+                    }
+                } else {
+                    self.catalog.record_progress(path, position, state.duration);
+                }
                 self.last_saved_position = Some(position);
             }
         }
@@ -599,6 +787,7 @@ impl PlayerView {
         self.save_progress();
         let _ = self.player.command(&["stop"]);
         self.media = None;
+        self.remote_playback = None;
         self.previews = None;
         self.sub_search = Default::default();
         self.sub_was_busy = false;
@@ -689,9 +878,6 @@ impl PlayerView {
     /// resolve preview frames.
     pub fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let previous_revision = self.state.revision;
-        let hosting_before = crate::server_host::host().state();
-        crate::server_host::host().refresh();
-        let hosting_changed = hosting_before != crate::server_host::host().state();
         let mut overlay_changed = false;
         if self.media.is_some() {
             let previous_skip = self.skip_action();
@@ -816,7 +1002,6 @@ impl PlayerView {
             && (visibility_changed || (visible && previous_revision != self.state.revision));
         if playback_changed || overlay_changed || scan_changed || hero_changed
             || meta_changed || token_changed || matches_loaded || autoplay_tick
-            || hosting_changed
         {
             cx.notify();
         }

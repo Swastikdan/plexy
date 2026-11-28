@@ -1,8 +1,9 @@
 # Android and Plexy Server
 
-Android keeps its on-device library and adds Plexy Server as a source in
-**Hybrid** mode. Local only stays device-only, and Fully online stays
-online-only. The app never changes the server's library from the phone.
+Android keeps its on-device library and adds Plexy Server as a source in every
+watching mode. The library source picker offers **All**, **This device**,
+**Plexy Server**, and **Online** where the mode allows online. The app never
+changes the server's library from the phone.
 
 ## Connect
 
@@ -14,21 +15,22 @@ online-only. The app never changes the server's library from the phone.
 3. In Plexy, open **Settings → Plexy Server** and enter the HTTPS address.
 4. Sign in with a pairing code from **Settings → Devices** on the server, or
    with your username and password.
-5. Return to Home. Hybrid now shows device and server titles together.
+5. Open **Settings → Library source** and choose **All**, **Plexy Server**, or
+   **This device**. The same source is available from onboarding.
 
 The session is stored in the app's protected credential store and scoped to the
 server ID and account. A revoked or expired session asks you to sign in again;
 the saved address stays so device folders keep working offline.
 
-## Hybrid behavior
+## Sources and merging
 
-- Home, Library, and Search combine device and server titles with a small
-  server badge on server cards.
+- **All** combines device and server titles in Home, Library, and Search with
+  a small server badge on server cards.
+- **Plexy Server** shows only the server library. **This device** shows only
+  the on-device library. **Online** switches to the TMDB/Vidy catalog.
 - When the same title exists in both places, the device copy appears first.
   Its title page offers **Also on Plexy Server · Open server copy**.
 - Search results include server titles and episodes.
-- The **Hybrid source** setting switches between **Library** (device and
-  server) and **Online** (the TMDB/Vidy catalog on top).
 
 ## Playback
 

@@ -106,7 +106,7 @@ export function LibraryScreen({
   const focused = useIsFocused();
   const remoteProgress = useRemoteProgress(focused);
   const remoteNavigation = useRemoteNavigation();
-  const online = preferences.source === "remote";
+  const online = preferences.source === "online";
   type LibraryTab = "all" | "movie" | "series" | "collection";
   const [activeTab, setActiveTab] = useState<LibraryTab>("all");
   const [sort, setSort] = useState("added");

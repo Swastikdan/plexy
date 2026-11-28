@@ -1,8 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  chmodSync,
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -20,23 +18,22 @@ const player = join(root, "apps", "player-gpui");
 const output = join(root, "dist", "player-mac");
 const executableName = "plexy-player";
 
-type VariantName = "beta" | "unified" | "local";
+type VariantName = "beta" | "plexy";
 interface Variant {
   appName: string;
   bundleId: string;
   version: string;
   icon: string;
   dmgPrefix: string;
-  hosting: boolean;
 }
 
 function variantName(): VariantName {
   const args = process.argv.slice(2);
   const index = args.indexOf("--variant");
   const value = index >= 0 ? args[index + 1] : "beta";
-  if (value === "beta" || value === "unified" || value === "local")
-    return value;
-  throw new Error("Use --variant beta, --variant unified, or --variant local.");
+  if (value === "beta") return "beta";
+  if (value === "plexy" || value === "unified") return "plexy";
+  throw new Error("Use --variant beta or --variant plexy.");
 }
 
 function capture(command: string, args: string[], cwd?: string): string {
@@ -170,25 +167,6 @@ function verifyRuntime(executable: string, frameworks: string): string {
   return minimum;
 }
 
-function bundleServer(resources: string) {
-  const server = join(resources, "server");
-  const binary = join(root, "dist", "server", "plexy-server");
-  const ffmpeg = join(root, "dist", "server", "ffmpeg");
-  const web = join(root, "dist", "server", "web");
-  if (!existsSync(binary) || !existsSync(ffmpeg) || !existsSync(web))
-    throw new Error("Build the server bundle first: bun run build:server");
-  mkdirSync(server, { recursive: true });
-  copyFileSync(binary, join(server, "plexy-server"));
-  copyFileSync(ffmpeg, join(server, "ffmpeg"));
-  chmodSync(join(server, "plexy-server"), 0o755);
-  chmodSync(join(server, "ffmpeg"), 0o755);
-  cpSync(join(root, "apps", "server", "src", "migrations"), join(server, "migrations"), {
-    recursive: true,
-    filter: (source) => source.endsWith("migrations") || source.endsWith(".sql"),
-  });
-  cpSync(web, join(server, "web"), { recursive: true });
-}
-
 async function main() {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error("Build the Mac app on Apple Silicon macOS with native Bun and Rust.");
@@ -212,25 +190,14 @@ async function main() {
           version: cargoVersion,
           icon: join(root, "build", "icon.png"),
           dmgPrefix: "Plexy-Beta",
-          hosting: false,
         }
-      : variant === "local"
-        ? {
-            appName: "Plexy Local",
-            bundleId: "com.plexy.local",
-            version: "1.0.0",
-            icon: join(root, "build", "icon-local.png"),
-            dmgPrefix: "Plexy-Local",
-            hosting: false,
-          }
-        : {
-            appName: "Plexy",
-            bundleId: "com.plexy.desktop",
-            version: "1.1.0",
-            icon: join(root, "build", "icon.png"),
-            dmgPrefix: "Plexy",
-            hosting: true,
-          };
+      : {
+          appName: "Plexy",
+          bundleId: "com.plexy.desktop",
+          version: "1.1.0",
+          icon: join(root, "build", "icon.png"),
+          dmgPrefix: "Plexy",
+        };
 
   const artifacts = capture("cargo", ["build", "--locked", "--release", "--bin", executableName, "--message-format=json-render-diagnostics", "--manifest-path", manifest], player);
   const binary = artifacts.trim().split("\n").map((line) => JSON.parse(line)).find(
@@ -255,7 +222,6 @@ async function main() {
     rmSync(join(frameworks, "libmpv.2.dylib.version"), { force: true });
     const minimum = verifyRuntime(executable, frameworks);
     bundleIcon(staging, resources, config.icon);
-    if (config.hosting) bundleServer(resources);
 
     const plist = join(contents, "Info.plist");
     writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?>

@@ -65,7 +65,7 @@ export function EpisodeCalendarScreen() {
   const from = dateKey(-7);
   const to = dateKey(90);
   const calendar = useResource(async (signal) => {
-    if (!ready || preferences.source !== "remote") return { sections: [], failures: 0 };
+    if (!ready || preferences.source !== "online") return { sections: [], failures: 0 };
     const shows = new Map<number, Show>();
     for (const { title } of saved) {
       if (title.mediaType !== "tv" || isHidden(remotePublicId("tv", title.tmdbId))) continue;

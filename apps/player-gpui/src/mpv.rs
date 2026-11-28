@@ -383,6 +383,8 @@ impl Player {
     pub fn load(&self, path: &Path, start: f64) -> Result<()> {
         let path = local_media_path(path)?;
         let native = self.native()?;
+        let _ = self.command(&["set", "http-header-fields", ""]);
+        let _ = self.command(&["set", "cache", "no"]);
         {
             let mut state = native.state.lock();
             *state = PlaybackState {
@@ -398,6 +400,38 @@ impl Player {
         }
         let path = cstring(&path.to_string_lossy());
         check(unsafe { plexy_player_load(native.raw, path.as_ptr(), start) })
+    }
+
+    /// Loads an authenticated HTTP stream (Plexy Server playback). libmpv
+    /// receives the token in `http-header-fields`; the URL itself never
+    /// contains credentials.
+    pub fn load_url(&self, url: &str, headers: &[(String, String)], start: f64) -> Result<()> {
+        let native = self.native()?;
+        {
+            let mut state = native.state.lock();
+            *state = PlaybackState {
+                revision: state.revision + 1,
+                paused: false,
+                volume: state.volume,
+                muted: state.muted,
+                speed: state.speed,
+                subtitle_delay: state.subtitle_delay,
+                subtitle_position: state.subtitle_position,
+                ..PlaybackState::default()
+            };
+        }
+        let fields = headers
+            .iter()
+            .map(|(name, value)| format!("{name}: {value}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let _ = self.command(&["set", "http-header-fields", &fields]);
+        let _ = self.command(&["set", "cache", "yes"]);
+        let _ = self.command(&["set", "demuxer-max-bytes", "67108864"]);
+        let _ = self.command(&["set", "demuxer-max-back-bytes", "33554432"]);
+        let _ = self.command(&["set", "demuxer-readahead-secs", "20"]);
+        let url = cstring(url);
+        check(unsafe { plexy_player_load(native.raw, url.as_ptr(), start) })
     }
 
     /// A snapshot for rendering. Track and chapter lists are re-read lazily
@@ -669,11 +703,5 @@ impl Drop for Preview {
 /// Shows Plexy's app icon in the Dock when running an unbundled binary.
 pub fn set_app_icon() {
     static ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../build/icon.png"));
-    static LOCAL: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../build/icon-local.png"));
-    let bytes = if crate::variant::current() == crate::variant::AppVariant::Local {
-        LOCAL
-    } else {
-        ICON
-    };
-    unsafe { plexy_set_app_icon(bytes.as_ptr(), bytes.len()) }
+    unsafe { plexy_set_app_icon(ICON.as_ptr(), ICON.len()) }
 }

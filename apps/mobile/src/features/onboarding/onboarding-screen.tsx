@@ -106,20 +106,18 @@ export function OnboardingScreen({
           </>
         ) : (
           <>
-            {mode === "hybrid" && (
-              <View className="gap-2 rounded-[18px] border border-border bg-surface p-4">
-                <Text className="font-archivo-bold text-[16px] text-foreground">Plexy Server</Text>
-                <Text className="font-archivo-regular text-[13px] leading-5 text-muted">
-                  {serverConnected
-                    ? `Connected to ${serverLabel(plexyServer.session!)}. Its library joins this device in Hybrid.`
-                    : "Optional: connect a Plexy Server to browse its library alongside this device."}
-                </Text>
-                <Button
-                  label={serverConnected ? "Manage server" : "Connect server"}
-                  onPress={() => router.push("/server-connect")}
-                />
-              </View>
-            )}
+            <View className="gap-2 rounded-[18px] border border-border bg-surface p-4">
+              <Text className="font-archivo-bold text-[16px] text-foreground">Plexy Server</Text>
+              <Text className="font-archivo-regular text-[13px] leading-5 text-muted">
+                {serverConnected
+                  ? `Connected to ${serverLabel(plexyServer.session!)}. Pick it as the library source in Settings.`
+                  : "Optional: connect a Plexy Server to browse its library from this app."}
+              </Text>
+              <Button
+                label={serverConnected ? "Manage server" : "Connect server"}
+                onPress={() => router.push("/server-connect")}
+              />
+            </View>
             {mode !== "online" && <>
               {folders.map((folder) => (
                 <View key={folder.uri} className="flex-row items-center justify-between gap-3 py-1">

@@ -100,7 +100,7 @@ export function SearchScreen({
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [inputFocus, setInputFocus] = useState(false);
-  const onlineMode = preferences.source === "remote";
+  const onlineMode = preferences.source === "online";
   const remoteNavigation = useRemoteNavigation();
   const remoteActions = useRemoteTitleActions();
   const focused = useIsFocused();
