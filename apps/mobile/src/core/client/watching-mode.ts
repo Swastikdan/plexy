@@ -2,7 +2,7 @@ export type AppMode = "local" | "hybrid" | "online";
 export const modeLabels: Record<AppMode, string> = { local: "Local only", hybrid: "Hybrid", online: "Fully online" };
 
 export function modePreferences(mode: AppMode) {
-  return { mode, source: mode === "local" ? "local" as const : "remote" as const };
+  return { mode, source: mode === "online" ? "remote" as const : "local" as const };
 }
 
 export function restoredMode(stored: { mode?: unknown; onboardingCompleted?: unknown; source?: unknown }, hasMedia: boolean) {

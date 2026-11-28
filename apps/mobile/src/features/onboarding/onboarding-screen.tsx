@@ -5,6 +5,8 @@ import { BackHandler, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "@/shared/ui/safe-area-view";
 import { canFinishOnboarding } from "@/core/client/watching-mode";
 import { useClient } from "@/core/client/client-provider";
+import { useServer } from "@/core/server/server-provider";
+import { serverLabel } from "@/core/server/server-client";
 import { modeLabels, modePreferences, type AppMode } from "@/core/client/preferences";
 import { displayName, localLibrary } from "@/core/library/local-runtime";
 import { useColors } from "@/shared/theme";
@@ -30,6 +32,8 @@ export function OnboardingScreen({
 } = {}) {
   const colors = useColors();
   const { preferences, updatePreferences } = useClient();
+  const plexyServer = useServer();
+  const serverConnected = plexyServer.status === "connected" && plexyServer.session;
   const router = useRouter();
   const dialog = useAppDialog();
   const [mode, setMode] = useState<AppMode>(preferences.mode);
@@ -102,6 +106,20 @@ export function OnboardingScreen({
           </>
         ) : (
           <>
+            {mode === "hybrid" && (
+              <View className="gap-2 rounded-[18px] border border-border bg-surface p-4">
+                <Text className="font-archivo-bold text-[16px] text-foreground">Plexy Server</Text>
+                <Text className="font-archivo-regular text-[13px] leading-5 text-muted">
+                  {serverConnected
+                    ? `Connected to ${serverLabel(plexyServer.session!)}. Its library joins this device in Hybrid.`
+                    : "Optional: connect a Plexy Server to browse its library alongside this device."}
+                </Text>
+                <Button
+                  label={serverConnected ? "Manage server" : "Connect server"}
+                  onPress={() => router.push("/server-connect")}
+                />
+              </View>
+            )}
             {mode !== "online" && <>
               {folders.map((folder) => (
                 <View key={folder.uri} className="flex-row items-center justify-between gap-3 py-1">

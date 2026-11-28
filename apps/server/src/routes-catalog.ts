@@ -168,6 +168,8 @@ export async function attachArt(rows: Row[], request: Request): Promise<ItemCard
       runtime: md?.runtime == null ? null : Number(md.runtime),
       genres: md?.genres ? JSON.parse(String(md.genres)) as string[] : [],
       matchStatus: String(row.match_status ?? ""),
+      tmdbId: row.tmdb_id == null ? null : Number(row.tmdb_id),
+      certification: md?.certification == null ? null : String(md.certification),
       watchlist: Boolean(flag?.watchlist),
       favorite: Boolean(flag?.favorite),
       hidden: Boolean(flag?.hidden),

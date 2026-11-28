@@ -21,6 +21,7 @@ import { logsRoutes } from "./routes-logs";
 import { diagnosticsRoutes } from "./routes-diagnostics";
 import { log } from "./logger";
 import { accessGuard } from "./access";
+import { certificateInfo } from "./lan-tls";
 import { authGuard } from "./auth";
 
 function configuredCorsOrigins(): Set<string> {
@@ -171,6 +172,23 @@ export function buildApp(
         { error: "Something went wrong on the server." },
         { status: 500 },
       );
+    })
+    // Public certificate download for native clients that must install the
+    // LAN trust anchor before they can call the authenticated API.
+    .get("/api/server/certificate", () => {
+      const info = certificateInfo();
+      if (!info)
+        return apiError(
+          "LAN access has not been enabled on this server yet.",
+          404,
+        );
+      return new Response(info.certificate, {
+        headers: {
+          "Content-Type": "application/x-pem-file",
+          "Content-Disposition": 'attachment; filename="plexy-server.pem"',
+          "Cache-Control": "no-store",
+        },
+      });
     })
     .use(authRoutes)
     .use(adminRoutes)

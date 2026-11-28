@@ -17,13 +17,8 @@ import { useColors } from "@/shared/theme";
 import { Check, Download, Play, RotateCcw } from "@/shared/ui/icons";
 import type { MovyDownloadRecord } from "../lib/types";
 
-export type DownloadButtonState =
-  | "idle"
-  | "queued"
-  | "downloading"
-  | "paused"
-  | "done"
-  | "failed";
+import type { DownloadButtonState } from "@/core/downloads/state";
+export type { DownloadButtonState };
 
 export function downloadButtonState(
   record: MovyDownloadRecord | undefined,

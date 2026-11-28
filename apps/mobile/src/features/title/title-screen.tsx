@@ -13,8 +13,9 @@ import {
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SwipePager } from "@/shared/ui/swipe-pager";
-import type { ProgressQueue } from "@/core/client/progress-queue";
+import type { ProgressSink } from "@/core/client/progress-queue";
 import { useClient } from "@/core/client/client-provider";
+import { useServerDownloads } from "@/core/server/server-download-provider";
 import { familyAllows } from "@/core/content/audience";
 import { hideTitle } from "@/core/content/hidden-titles";
 import { onlineUnavailableKey, useOnlineUnavailable } from "@/core/content/online-unavailable";
@@ -148,6 +149,7 @@ export function TitleScreen({
   const addToCollection = useCollectionAction();
   const remoteActions = useRemoteTitleActions();
   const { api, progress, preferences } = useClient();
+  const serverDownloads = useServerDownloads();
   const { save, isSaved } = useRemote();
   const movy = useMovy();
   const remoteNavigation = useRemoteNavigation();
@@ -157,6 +159,7 @@ export function TitleScreen({
   const media = useMediaTitle(input, api, onlineEnabled);
   const detail = media.detail;
   const item = detail?.item ?? null;
+  const alternateSource = item ? api.alternateSource?.(item) ?? null : null;
   const tmdbId = media.tmdbId;
   const remoteMediaType = media.mediaType;
   const remoteDetail = media.remoteDetail;
@@ -1445,6 +1448,15 @@ export function TitleScreen({
                   onPress={() => openDownload(null, null)}
                 />
               ) : null}
+              {item?.source === "server" && item.fileId != null ? (
+                <DownloadButton
+                  state={serverDownloads.stateFor(item.fileId)}
+                  progress={serverDownloads.progressFor(item.fileId)}
+                  size={control.height}
+                  accessibilityLabel="Download from Plexy Server"
+                  onPress={() => void serverDownloads.toggle(item)}
+                />
+              ) : null}
               {seasonDownloadEpisodes.length > 0 ? (
                 <DownloadButton
                   state={seasonDownloadState}
@@ -1470,6 +1482,7 @@ export function TitleScreen({
 
         <View className="gap-[18px] px-5 pt-5">
           {!!actionError && <Notice message={actionError} />}
+          {!!serverDownloads.error && <Notice message={serverDownloads.error} />}
           {playbackBlocked && <Notice message={playbackBlockedMessage} />}
 
           <TitleFactLine
@@ -1478,6 +1491,30 @@ export function TitleScreen({
             online={onlineEnabled}
             isOffline={media.isOffline}
           />
+
+          {alternateSource && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                alternateSource.source === "server"
+                  ? "Open the Plexy Server copy"
+                  : "Open the device copy"
+              }
+              onPress={() =>
+                push({
+                  pathname: "/item/[id]",
+                  params: { id: alternateSource.publicId },
+                })
+              }
+              className="self-center rounded-full border border-border bg-surface px-4 py-2 active:opacity-70"
+            >
+              <Text className="font-archivo-medium text-[12px] text-foreground">
+                {alternateSource.source === "server"
+                  ? "Also on Plexy Server · Open server copy"
+                  : "Also on this device · Open device copy"}
+              </Text>
+            </Pressable>
+          )}
 
           <View className="flex-row items-center justify-center gap-3">
             <TitleRating rating={rating} />
@@ -1894,7 +1931,7 @@ function SeasonEpisodes({
   episodes: HybridEpisode[];
   api: LocalCatalog;
   play: (fileId: number) => void;
-  progress: ProgressQueue;
+  progress: ProgressSink;
   overrides: Record<number, boolean>;
   onToggleWatched: (ep: ItemCard) => void;
   selecting: boolean;

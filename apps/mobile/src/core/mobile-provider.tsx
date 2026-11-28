@@ -16,6 +16,8 @@ import {
 ClientProvider,
 useClient,
 } from "./client/client-provider";
+import { ServerProvider } from "./server/server-provider";
+import { ServerDownloadProvider } from "./server/server-download-provider";
 import { localRuntime } from "./library/local-runtime";
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 function Ready({ children }: React.PropsWithChildren) {
@@ -95,9 +97,13 @@ export function MobileProvider({ children }: React.PropsWithChildren) {
         ) : !booted || (!fonts && !fontError) ? (
           <Loading />
         ) : (
-          <ClientProvider runtime={localRuntime}>
-            <Ready>{children}</Ready>
-          </ClientProvider>
+          <ServerProvider>
+            <ServerDownloadProvider>
+              <ClientProvider runtime={localRuntime}>
+                <Ready>{children}</Ready>
+              </ClientProvider>
+            </ServerDownloadProvider>
+          </ServerProvider>
         )}
       </View>
     </SafeAreaProvider>

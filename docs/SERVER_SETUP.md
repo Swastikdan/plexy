@@ -79,7 +79,12 @@ API must be configured with `PLEXY_ALLOWED_ORIGINS`.
    LAN traffic uses TLS with a self-signed certificate; `http://` LAN addresses
    do not work.
 3. On another device, open the HTTPS address and accept the server certificate,
-   or enter the address in the Plexy client’s connection screen.
+   or enter the address in the Plexy client’s connection screen. On Android,
+   install the server certificate as a user CA first: open
+   `https://<address>:<port+1>/api/server/certificate`, download the PEM file,
+   then install it under **Settings → Security → Encryption & credentials →
+   Install a certificate → CA certificate**. Plexy’s Android network policy
+   trusts user-installed CAs; cleartext traffic stays disabled.
 4. In **Settings → Devices**, create a pairing code, or sign in with the owner
    or viewer account. Pairing returns a device token; the server stores only a
    hash and the token can be revoked from the same panel.

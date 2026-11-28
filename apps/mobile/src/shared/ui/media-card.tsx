@@ -6,7 +6,7 @@ import type { ItemCard,LocalCatalog } from "@/core/library/catalog-api";
 import { rememberTitlePreview } from "@/core/library/title-prefetch";
 import { LONG_PRESS_MS } from "@/shared/lib/press";
 import { useColors } from "@/shared/theme";
-import { Film, Tv, Globe } from "./icons";
+import { Film, Tv, Globe, HardDrive } from "./icons";
 import { PosterImage } from "./poster-image";
 import { Label } from "./text";
 import { Tappable } from "./tappable";
@@ -157,6 +157,14 @@ export function Card({
           </View>
         )}
         <View className="absolute right-[7px] top-[7px] z-[3] flex-row items-center gap-1.5">
+          {item.source === "server" && (
+            <View
+              accessibilityLabel="Plexy Server title"
+              className="h-[18px] w-[18px] items-center justify-center rounded-[4px] border-[0.5px] border-white/[0.2] bg-black/[0.65]"
+            >
+              <HardDrive size={11} color="#fff" strokeWidth={2} />
+            </View>
+          )}
           {isWatched && (
             <View className="rounded-[4px] bg-accent px-1.5 py-0.5">
               <Text className="font-archivo-bold text-[9px] text-white">Watched</Text>

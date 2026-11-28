@@ -17,6 +17,8 @@ import {
   View,
 } from "react-native";
 import { useClient } from "@/core/client/client-provider";
+import { useServer } from "@/core/server/server-provider";
+import { serverLabel } from "@/core/server/server-client";
 import {
   bundledMetadata,
   displayName,
@@ -110,6 +112,17 @@ export function SettingsScreen({
   }, [expandedFolder, folderFiles]);
   const [message, setMessage] = useState("");
   const { api, runtime, preferences, updatePreferences } = useClient();
+  const plexyServer = useServer();
+  const serverValue =
+    plexyServer.status === "connected" && plexyServer.session
+      ? serverLabel(plexyServer.session)
+      : plexyServer.status === "offline"
+        ? "Offline"
+        : plexyServer.status === "revoked"
+          ? "Sign in again"
+          : plexyServer.status === "loading"
+            ? "Checking…"
+            : "Not connected";
   const { hidden } = useHiddenTitles();
   const hasLocal = preferences.mode !== "online";
   const hasOnline = preferences.mode !== "local";
@@ -382,6 +395,44 @@ export function SettingsScreen({
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow navigation title="Watching mode" icon={Tv} value={modeLabels[preferences.mode]} onPress={() => push("/watching-mode")} />
             </View>
+            {preferences.mode === "hybrid" && (
+              <>
+                <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
+                  Plexy Server
+                </Text>
+                <View className="overflow-hidden rounded-[18px] bg-surface">
+                  <SettingsRow
+                    navigation
+                    title="Plexy Server"
+                    icon={HardDrive}
+                    value={serverValue}
+                    onPress={() => push("/server-connect")}
+                  />
+                  <SettingsRow
+                    navigation
+                    title="Hybrid source"
+                    icon={Library}
+                    value={preferences.source === "local" ? "Library" : "Online"}
+                    onPress={() =>
+                      setPicker({
+                        title: "Hybrid source",
+                        description:
+                          "Library shows this device and Plexy Server together. Online adds the TMDB catalog on top.",
+                        value: preferences.source,
+                        options: [
+                          ["local", "Library"],
+                          ["remote", "Online"],
+                        ],
+                        onSelect: (source) =>
+                          updatePreferences({
+                            source: source === "remote" ? "remote" : "local",
+                          }),
+                      })
+                    }
+                  />
+                </View>
+              </>
+            )}
             <Text className="mt-3.5 ml-[2px] text-[13px] font-archivo-medium text-muted">
               Kids & family
             </Text>

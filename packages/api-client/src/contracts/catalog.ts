@@ -56,6 +56,11 @@ export interface ItemCard {
   releaseDate?: string | null;
   /** When the title was last watched, for history rows. */
   watchedAt?: string | null;
+  /**
+   * Which catalog a merged client rendered this card from. The server does not
+   * send this field; clients that combine sources set it for badges and actions.
+   */
+  source?: "device" | "server";
 }
 
 export interface HomeRow {

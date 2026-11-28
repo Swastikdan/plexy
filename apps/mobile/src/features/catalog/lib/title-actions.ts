@@ -1,12 +1,12 @@
 import type { LocalCatalog } from "@/core/library/catalog-api";
-import type { ProgressQueue } from "@/core/client/progress-queue";
+import type { ProgressSink } from "@/core/client/progress-queue";
 
 export type TitleAction = "remove" | "finished" | "delete";
 export type EpisodeAction = "finished" | "delete";
 
 export async function applyTitleAction(
   api: LocalCatalog,
-  progress: ProgressQueue,
+  progress: ProgressSink,
   itemId: number,
   action: TitleAction,
 ) {
@@ -28,7 +28,7 @@ export async function applyTitleAction(
  */
 export async function applyEpisodeAction(
   api: LocalCatalog,
-  progress: ProgressQueue,
+  progress: ProgressSink,
   itemIds: number | number[],
   action: EpisodeAction,
 ) {

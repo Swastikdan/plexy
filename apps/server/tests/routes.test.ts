@@ -51,6 +51,17 @@ describe("Elysia API Routes (PRD 9)", () => {
     expect(Array.isArray(privateStatus.recentScans)).toBe(true);
   });
 
+  test("certificate download is public and only present after LAN setup", async () => {
+    const res = await app.handle(
+      new Request("http://localhost:8765/api/server/certificate"),
+    );
+    expect([200, 404]).toContain(res.status);
+    if (res.status === 200) {
+      expect(res.headers.get("content-type")).toContain("pem");
+      expect(await res.text()).toContain("BEGIN CERTIFICATE");
+    }
+  });
+
   test("playback diagnostics retain bounded metadata without media paths", async () => {
     const reported = await app.handle(new Request("http://localhost:8765/api/diagnostics/playback", {
       method: "POST",

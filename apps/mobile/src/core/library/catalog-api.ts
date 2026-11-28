@@ -41,6 +41,14 @@ export abstract class LocalCatalog {
     abstract watchlist(signal?: AbortSignal): Promise<ItemCard[]>;
     abstract play(fileId: number): Promise<Playability>;
     abstract stream(fileId: number): string;
+    /** Optional request headers for authenticated stream sources. */
+    streamHeaders(_fileId: number): Record<string, string> | undefined {
+        return undefined;
+    }
+    /** The same title in another connected catalog, when one exists. */
+    alternateSource(_item: ItemCard): ItemCard | null {
+        return null;
+    }
     abstract subtitle(fileId: number, uri: string, signal?: AbortSignal): Promise<string>;
     abstract titlesByPerson(): Map<string, ItemCard[]>;
     /** Local titles keyed by `tv:123` / `movie:123` for hybrid matching. */
@@ -75,6 +83,7 @@ export abstract class LocalCatalog {
     abstract removeTitle(id: number): Promise<void>;
     private images = new Map<string, {
         uri: string;
+        headers?: Record<string, string>;
     }>();
     image(path: string | null) {
         if (!path || !/^(file:|content:|https:)/.test(path))

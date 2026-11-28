@@ -13,7 +13,11 @@ test("local catalog adapters have no backend transport or account operations", a
     resolve(source, "../client/client-provider.tsx"),
     "utf8",
   );
-  expect(context).not.toMatch(/Session|DownloadManager|new PlexyApi|NetInfo/);
+  // Backend composition lives in core/server; the client provider only wires
+  // the resulting catalog to screens.
+  expect(context).toMatch(/@\/core\/server/);
+  expect(context).not.toMatch(/DownloadManager|new PlexyApi|NetInfo/);
+  expect(context).not.toMatch(/\bfetch\s*\(/);
 });
 
 async function sourceFiles(directory: string): Promise<string[]> {

@@ -59,6 +59,7 @@ const config: ExpoConfig = {
     "expo-router",
     "../../scripts/native/with-shared-build-inputs.cjs",
     "../../scripts/native/with-open-source-licenses.cjs",
+    "../../scripts/native/with-server-certificates.cjs",
     "../../scripts/native/with-gradle-jvmargs.cjs",
     "../../scripts/native/with-release-optimizations.cjs",
     "expo-sqlite",

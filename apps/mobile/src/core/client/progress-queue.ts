@@ -1,4 +1,5 @@
 import type { LocalCatalog } from "@/core/library/catalog-api";
+import { isServerId } from "@/core/server/ids";
 export interface Progress {
   itemId: number;
   position: number;
@@ -41,6 +42,16 @@ export interface ProgressStorage {
   load(): Promise<Progress[]>;
   save(values: Progress[]): Promise<void>;
 }
+/** Shared surface used by playback, title actions and the player drawer. */
+export interface ProgressSink {
+  restore(): Promise<void>;
+  flushLocal(): Promise<void>;
+  latest(itemId: number): Progress | undefined;
+  forget(itemId: number): Promise<void>;
+  forgetMany(itemIds: readonly number[]): Promise<void>;
+  record(progress: Progress): Promise<void>;
+  flush(api: LocalCatalog): Promise<void>;
+}
 export interface ProgressQueueOptions {
   /** Wait for playback to settle before writing the device copy. */
   persistDelayMs?: number;
@@ -49,7 +60,7 @@ export interface ProgressQueueOptions {
 }
 const DEFAULT_PERSIST_DELAY = 2_000;
 const DEFAULT_MAX_PERSIST_DELAY = 5_000;
-export class ProgressQueue {
+export class ProgressQueue implements ProgressSink {
   private pending = new Map<number, Progress>();
   private history = new Map<number, Progress>();
   private flushing?: Promise<void>;
@@ -158,3 +169,50 @@ export class ProgressQueue {
     return this.flushing;
   }
 }
+
+/**
+ * Splits pending writes between the device library and one server account so
+ * switching servers can never replay progress into another library.
+ */
+export class ProgressCoordinator implements ProgressSink {
+  constructor(
+    private readonly device: ProgressQueue,
+    private readonly server: ProgressQueue | null,
+  ) {}
+  async restore() {
+    await Promise.all([this.device.restore(), this.server?.restore()]);
+  }
+  async flushLocal() {
+    await Promise.all([this.device.flushLocal(), this.server?.flushLocal()]);
+  }
+  latest(itemId: number) {
+    return isServerId(itemId)
+      ? this.server?.latest(itemId)
+      : this.device.latest(itemId);
+  }
+  async forget(itemId: number) {
+    await (isServerId(itemId) ? this.server : this.device)?.forget(itemId);
+  }
+  async forgetMany(itemIds: readonly number[]) {
+    const serverIds = itemIds.filter(isServerId);
+    const deviceIds = itemIds.filter((id) => !isServerId(id));
+    await Promise.all([
+      this.server && serverIds.length
+        ? this.server.forgetMany(serverIds)
+        : Promise.resolve(),
+      deviceIds.length ? this.device.forgetMany(deviceIds) : Promise.resolve(),
+    ]);
+  }
+  async record(progress: Progress) {
+    await (isServerId(progress.itemId) ? this.server : this.device)?.record(
+      progress,
+    );
+  }
+  async flush(api: LocalCatalog) {
+    await Promise.allSettled([
+      this.device.flush(api),
+      this.server ? this.server.flush(api) : Promise.resolve(),
+    ]);
+  }
+}
+

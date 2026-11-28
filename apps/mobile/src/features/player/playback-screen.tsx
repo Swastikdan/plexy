@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { localSegments } from "@plexy/local-library/library";
 import { nativeMedia } from "@/core/native-media/bridge";
 import { useClient } from "@/core/client/client-provider";
+import { isServerId } from "@/core/server/server-catalog";
 import type { ShowTrackPreferences } from "@/core/client/preferences";
 import type {
   ItemCard,
@@ -186,6 +187,7 @@ export function PlaybackScreen({
   const [optimizing, setOptimizing] = useState(false);
   const remux = useRef<{ id: string; originalPosition: number; target?: number; resume?: boolean } | null>(null);
   const originalUri = externalSource ?? (manifest.path === "unsupported" ? "" : api.stream(manifest.fileId));
+  const originalHeaders = externalSource ? undefined : api.streamHeaders(manifest.fileId);
   useEffect(() => {
     if (!message) return;
     const t = setTimeout(() => setMessage(""), 4000);
@@ -787,7 +789,7 @@ export function PlaybackScreen({
       save(false, true);
       subs.forEach((s) => s.remove());
     };
-  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost, finishSleepTimer, casting, restoreOriginal, verifySeek, prepareOptimizedCopy, originalUri]);
+  }, [player, save, lastInteraction, loadAudioTracks, loadSubtitleTracks, setVisible, touchControls, endBoost, finishSleepTimer, casting, restoreOriginal, verifySeek, prepareOptimizedCopy, originalUri, originalHeaders]);
   const [previousChoice, setPreviousChoice] = useState(choice);
   if (previousChoice !== choice) {
     setPreviousChoice(choice);
@@ -822,6 +824,7 @@ export function PlaybackScreen({
     void player
       .replaceAsync({
         uri,
+        headers: originalHeaders,
         contentType: "auto",
         metadata: {
           title: manifest.title || "Plexy",
@@ -837,7 +840,7 @@ export function PlaybackScreen({
     return () => {
       live = false;
     };
-  }, [choice, originalUri, manifest.title, manifest.subtitle, player, restoreOriginal]);
+  }, [choice, originalHeaders, originalUri, manifest.title, manifest.subtitle, player, restoreOriginal]);
   useEffect(() => { autoSkipEnd.current = -1; }, [manifest.fileId]);
   const validatedSkips = React.useMemo(() => localSegments(skips ?? { intro: null, recap: null, outro: null }, duration || null), [skips, duration]);
   useEffect(() => {
@@ -1654,6 +1657,10 @@ export function PlaybackScreen({
           ...(cast.available && !optimizing ? [cast.active
             ? { label: "Stop casting", onPress: () => cast.command("stop") }
             : { label: "Cast to TV", onPress: () => {
+              if (isServerId(manifest.fileId)) {
+                setMessage("Casting a Plexy Server title is not supported yet.");
+                return;
+              }
               try {
                 cast.start(externalSource ?? api.stream(manifest.fileId), manifest.title ?? "Plexy", currentPosition.current);
               } catch {

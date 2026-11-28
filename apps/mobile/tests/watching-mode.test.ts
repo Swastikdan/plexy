@@ -17,7 +17,7 @@ test("only Local only requires a folder and each selection chooses a usable sour
   expect(canFinishOnboarding("hybrid", 0)).toBe(true);
   expect(canFinishOnboarding("online", 0)).toBe(true);
   expect(modePreferences("local").source).toBe("local");
-  expect(modePreferences("hybrid").source).toBe("remote");
+  expect(modePreferences("hybrid").source).toBe("local");
   expect(modePreferences("online").source).toBe("remote");
 });
 

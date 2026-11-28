@@ -396,7 +396,11 @@ export function tokensMatch(a: string, b: string): boolean {
 }
 
 /** Endpoints a client must reach before it can hold a token. */
-const PUBLIC_API_PATHS = new Set(["/api/server/status", "/api/server/status/"]);
+const PUBLIC_API_PATHS = new Set([
+  "/api/server/status",
+  "/api/server/status/",
+  "/api/server/certificate",
+]);
 
 /**
  * Global auth gate. Returns a 401 for `/api/*` requests without a valid device

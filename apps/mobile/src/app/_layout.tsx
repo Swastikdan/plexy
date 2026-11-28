@@ -27,6 +27,7 @@ export default function RootLayout() {
           >
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="item/[id]" />
+            <Stack.Screen name="server-connect" />
             <Stack.Screen name="remote/[media-type]/[tmdb-id]" />
             <Stack.Screen name="player/[file-id]" options={immersiveTransition} />
             <Stack.Screen

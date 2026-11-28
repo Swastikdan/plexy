@@ -1,5 +1,7 @@
 import { restoredMode } from "./watching-mode";
 import { catalogForMode } from "./mode-catalog";
+import { MergedCatalog } from "@/core/server/merged-catalog";
+import { useServer } from "@/core/server/server-provider";
 import { Uniwind } from "uniwind";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { AppState } from "react-native";
@@ -11,7 +13,7 @@ import { loadHiddenTitles } from "@/core/content/hidden-titles";
 import type { LocalCatalog } from "@/core/library/catalog-api";
 import { invalidateLocalResources } from "@/core/resources/use-resource";
 import { defaultPreferences, modePreferences, PREFERENCE_KEY, readJson, writeJson, type Preferences, } from "./preferences";
-import { ProgressQueue, type Progress } from "./progress-queue";
+import { ProgressCoordinator, ProgressQueue, type Progress } from "./progress-queue";
 export interface TitleSearchResult {
     id: number;
     title?: string;
@@ -38,7 +40,7 @@ interface ClientContext {
     runtime: MobileRuntimeBindings;
     preferences: Preferences;
     updatePreferences(patch: Partial<Preferences>): void;
-    progress: ProgressQueue;
+    progress: ProgressCoordinator;
     ready: boolean;
     storageError: string | null;
 }
@@ -46,15 +48,38 @@ const Context = createContext<ClientContext | null>(null);
 export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
     runtime: MobileRuntimeBindings;
 }>) {
+    const { catalog: serverCatalog, session: serverSession } = useServer();
     const [preferences, setPreferences] = useState(defaultPreferences);
-    const api = useMemo(() => catalogForMode(runtime.api, preferences.mode), [runtime.api, preferences.mode]);
+    const mergedApi = useMemo(() => serverCatalog ? new MergedCatalog(runtime.api, serverCatalog) : runtime.api, [runtime.api, serverCatalog]);
+    const api = useMemo(() => {
+        if (preferences.mode === "online") return catalogForMode(runtime.api, "online");
+        if (preferences.mode === "local") return runtime.api;
+        return mergedApi;
+    }, [mergedApi, preferences.mode, runtime.api]);
+    const apiRef = useRef(api);
+    useEffect(() => {
+        apiRef.current = api;
+    }, [api]);
     const [ready, setReady] = useState(false);
     const [storageError, setStorageError] = useState<string | null>(null);
     const preferencesRef = useRef(preferences);
-    const progress = useMemo(() => new ProgressQueue({
+    const deviceProgress = useMemo(() => new ProgressQueue({
         load: () => readJson<Progress[]>("plexy.progress.this-device", []),
         save: (values) => writeJson("plexy.progress.this-device", values),
     }), []);
+    const serverProgressKey = serverSession
+        ? `plexy.progress.server.${serverSession.serverId}.${serverSession.user.id}`
+        : null;
+    const serverProgress = useMemo(() => serverProgressKey
+        ? new ProgressQueue({
+            load: () => readJson<Progress[]>(serverProgressKey, []),
+            save: (values) => writeJson(serverProgressKey, values),
+        })
+        : null, [serverProgressKey]);
+    const progress = useMemo(
+        () => new ProgressCoordinator(deviceProgress, serverProgress),
+        [deviceProgress, serverProgress],
+    );
     useEffect(() => {
         let live = true;
         let loaded = false;
@@ -96,7 +121,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             if (live)
                 setPreferences(saved);
             await Promise.all([progress.restore(), loadHiddenTitles()]);
-            await progress.flush(runtime.api);
+            await progress.flush(apiRef.current);
             if (live) {
                 loaded = true;
                 setReady(true);
@@ -113,13 +138,13 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
                 wasBackgrounded = false;
                 scanConnectedFolders();
             }
-            void progress.flush(runtime.api).catch(() => { });
+            void progress.flush(apiRef.current).catch(() => { });
         });
         return () => {
             live = false;
             state.remove();
             void progress.flushLocal().catch(() => { });
-            void progress.flush(runtime.api).catch(() => { });
+            void progress.flush(apiRef.current).catch(() => { });
         };
     }, [runtime, progress]);
     const updatePreferences = (patch: Partial<Preferences>) => {
