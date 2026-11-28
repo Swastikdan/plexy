@@ -64,24 +64,13 @@ async function readError(response: Response): Promise<string> {
 export async function probeServer(address: string): Promise<ServerStatus> {
   const normalized = normalizeServerAddress(address);
   const { signal, clear } = timeoutSignal(8_000);
+  let response: Response;
   try {
-    const response = await fetch(`${normalized}/api/server/status`, {
+    response = await fetch(`${normalized}/api/server/status`, {
       headers: { Accept: "application/json" },
       signal,
     });
-    if (!response.ok)
-      throw new ServerRequestError(await readError(response), response.status);
-    const body = (await response.json()) as Partial<ServerStatus>;
-    if (typeof body.serverId !== "string" || typeof body.version !== "string")
-      throw new Error("That address does not look like a Plexy Server.");
-    return {
-      version: body.version,
-      serverId: body.serverId,
-      setupComplete: Boolean(body.setupComplete),
-      ownerCreated: Boolean(body.ownerCreated),
-    };
   } catch (error) {
-    if (error instanceof ServerRequestError) throw error;
     if ((error as Error)?.name === "AbortError")
       throw new Error("The server did not respond in time.");
     throw new Error(
@@ -90,6 +79,22 @@ export async function probeServer(address: string): Promise<ServerStatus> {
   } finally {
     clear();
   }
+  if (!response.ok)
+    throw new ServerRequestError(await readError(response), response.status);
+  let body: Partial<ServerStatus>;
+  try {
+    body = (await response.json()) as Partial<ServerStatus>;
+  } catch {
+    throw new Error("That address does not look like a Plexy Server.");
+  }
+  if (typeof body.serverId !== "string" || typeof body.version !== "string")
+    throw new Error("That address does not look like a Plexy Server.");
+  return {
+    version: body.version,
+    serverId: body.serverId,
+    setupComplete: Boolean(body.setupComplete),
+    ownerCreated: Boolean(body.ownerCreated),
+  };
 }
 
 export async function authenticateServer(
