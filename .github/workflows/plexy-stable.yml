@@ -62,7 +62,9 @@ jobs:
           [[ -f server-mac/Plexy-Server-1.0.0-mac-arm64.dmg ]] && images+=(server-mac/Plexy-Server-1.0.0-mac-arm64.dmg)
           [[ ${#images[@]} -gt 0 ]]
           for image in "${images[@]}"; do hdiutil verify "$image"; done
-          shasum -a 256 "${images[@]}" > SHA256SUMS
+          for image in "${images[@]}"; do
+            (cd "$(dirname "$image")" && shasum -a 256 "$(basename "$image")")
+          done > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@v7
         with:
@@ -97,23 +99,23 @@ jobs:
         working-directory: release
         run: |
           notes="${RELEASE_NOTES:-Stable Plexy macOS build.}"
-          if [[ -f Plexy-1.1.0-mac-arm64.dmg ]]; then
+          if [[ -f player-mac/Plexy-1.1.0-mac-arm64.dmg ]]; then
             tag="plexy-v1.1.0"
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "::error::Release $tag already exists. Bump the app version before publishing again."
               exit 1
             fi
-            gh release create "$tag" Plexy-1.1.0-mac-arm64.dmg SHA256SUMS \
+            gh release create "$tag" player-mac/Plexy-1.1.0-mac-arm64.dmg SHA256SUMS \
               --draft --latest=false --target "$GITHUB_SHA" \
               --title "Plexy 1.1.0" --notes "$notes"
           fi
-          if [[ -f Plexy-Server-1.0.0-mac-arm64.dmg ]]; then
+          if [[ -f server-mac/Plexy-Server-1.0.0-mac-arm64.dmg ]]; then
             tag="plexy-server-v1.0.0"
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "::error::Release $tag already exists. Bump the server app version before publishing again."
               exit 1
             fi
-            gh release create "$tag" Plexy-Server-1.0.0-mac-arm64.dmg SHA256SUMS \
+            gh release create "$tag" server-mac/Plexy-Server-1.0.0-mac-arm64.dmg SHA256SUMS \
               --draft --latest=false --target "$GITHUB_SHA" \
               --title "Plexy Server 1.0.0" --notes "$notes"
           fi
