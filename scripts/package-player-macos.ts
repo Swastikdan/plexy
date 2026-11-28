@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -185,6 +186,12 @@ async function main() {
   const versionOverride = process.env.PLEXY_APP_VERSION?.trim();
   if (versionOverride && !/^\d+\.\d+\.\d+$/.test(versionOverride))
     throw new Error("PLEXY_APP_VERSION must look like 1.2.3.");
+  // The stable binary reports this same constant at runtime, so the bundle
+  // version and the update check can never drift apart.
+  const stableVersion = readFileSync(join(player, "src", "variant.rs"), "utf8").match(
+    /Self::Plexy => "(\d+\.\d+\.\d+)"/,
+  )?.[1];
+  if (!stableVersion) throw new Error("Expected the stable app version in variant.rs.");
   const config: Variant =
     variant === "beta"
       ? {
@@ -197,7 +204,7 @@ async function main() {
       : {
           appName: "Plexy",
           bundleId: "com.plexy.desktop",
-          version: versionOverride ?? "1.1.0",
+          version: versionOverride ?? stableVersion,
           icon: join(root, "build", "icon.png"),
           dmgPrefix: "Plexy",
         };
