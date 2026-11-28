@@ -5,8 +5,10 @@ on:
     paths:
       - .github/workflows/plexy-beta.yml
       - apps/player-gpui/**
+      - apps/server-macos/**
       - apps/desktop/native/mpv-embed/include/**
       - scripts/package-player-macos.ts
+      - scripts/package-server-macos.ts
       - scripts/bundle-libmpv.ts
       - build/icon.png
       - package.json

@@ -51,9 +51,15 @@ export function OnboardingScreen({
     return () => listener.remove();
   }, [step, busy]);
   const folders = localLibrary.state.roots.filter(root => !root.singleFile);
+  const canFinish = canFinishOnboarding(mode, folders.length) || (Boolean(serverConnected) && mode === "local");
   const finish = () => {
-    if (!canFinishOnboarding(mode, folders.length)) return;
-    updatePreferences({ ...modePreferences(mode), onboardingCompleted: true, onlineDisclaimerSeen: mode !== "local" || preferences.onlineDisclaimerSeen });
+    if (!canFinish) return;
+    updatePreferences({
+      ...modePreferences(mode),
+      ...(serverConnected && mode === "local" ? { source: "all" as const } : {}),
+      onboardingCompleted: true,
+      onlineDisclaimerSeen: mode !== "local" || preferences.onlineDisclaimerSeen,
+    });
     if (onDone) onDone();
     else router.replace("/");
   };
@@ -132,7 +138,7 @@ export function OnboardingScreen({
             {mode !== "local" && <Notice message="Plexy does not host online titles. Metadata comes from TMDB and playback uses third-party sources. Availability may vary by title and region." />}
             {!!error && <Notice message={error} />}
             <View className="flex-1" />
-            <Button primary testID="finish-onboarding" label={mode === "hybrid" && !folders.length ? "Start without folders" : "Start watching"} disabled={busy || !canFinishOnboarding(mode, folders.length)} onPress={finish} />
+            <Button primary testID="finish-onboarding" label={mode === "hybrid" && !folders.length ? "Start without folders" : "Start watching"} disabled={busy || !canFinish} onPress={finish} />
             <Button label="Change mode" disabled={busy} onPress={() => setStep("mode")} />
           </>
         )}
