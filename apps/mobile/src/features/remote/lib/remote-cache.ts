@@ -86,3 +86,38 @@ export async function writeRemoteCache(
   }
   return updatedAt;
 }
+
+// The cache only ever grows as titles are browsed. Keep the most recently
+// refreshed entries of each kind and drop anything untouched for 60 days, so a
+// long-lived install stays at a few tens of MB.
+const KIND_LIMITS: Record<Exclude<RemoteCacheKind, "home">, number> = {
+  detail: 800,
+  season: 800,
+  recommendations: 300,
+  collection: 200,
+};
+const MAX_AGE_MS = 60 * 24 * 60 * 60_000;
+
+export async function pruneRemoteCache(): Promise<void> {
+  try {
+    const db = await database();
+    await db.runAsync(
+      "DELETE FROM remote_cache WHERE kind != 'home' AND updated_at < ?",
+      Date.now() - MAX_AGE_MS,
+    );
+    for (const [kind, limit] of Object.entries(KIND_LIMITS)) {
+      await db.runAsync(
+        `DELETE FROM remote_cache WHERE kind = ? AND key NOT IN (
+           SELECT key FROM remote_cache WHERE kind = ? ORDER BY updated_at DESC LIMIT ?
+         )`,
+        kind,
+        kind,
+        limit,
+      );
+    }
+    // Give the freed pages back to the file system.
+    await db.execAsync("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+  } catch {
+    // Maintenance is best effort; the next launch tries again.
+  }
+}

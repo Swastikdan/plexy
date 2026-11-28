@@ -105,7 +105,7 @@ export function EpisodeCardView({
         {online && !selecting && (
           <View
             accessibilityLabel="Online episode"
-            className="absolute left-1.5 top-1.5 h-[22px] w-[22px] items-center justify-center rounded-full bg-accent"
+            className="absolute left-1.5 top-1.5 h-[22px] w-[22px] items-center justify-center rounded-full bg-black/70"
           >
             <Globe size={13} color="#fff" strokeWidth={2.1} />
           </View>
@@ -114,7 +114,7 @@ export function EpisodeCardView({
           <View className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/[0.18]">
             <View
               className={cn(
-                "h-full rounded-[2px] bg-accent",
+                "h-full rounded-[2px] bg-white",
                 watched && "w-full",
               )}
               style={
@@ -149,7 +149,7 @@ export function EpisodeCardView({
                 hitSlop={10}
                 className={cn(
                   "items-center justify-center rounded-full border border-border bg-surface p-1.5 active:opacity-70",
-                  watched && "border-accent/40 bg-accent/15",
+                  watched && "border-foreground/30 bg-foreground/10",
                 )}
                 accessibilityRole="button"
                 accessibilityState={{ selected: watched }}
@@ -161,7 +161,7 @@ export function EpisodeCardView({
               >
                 <Eye
                   size={14}
-                  color={watched ? colors.brand : colors.muted}
+                  color={watched ? colors.ink : colors.muted}
                   strokeWidth={watched ? 2.6 : 2}
                 />
               </Pressable>

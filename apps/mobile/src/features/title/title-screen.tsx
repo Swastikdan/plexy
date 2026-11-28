@@ -17,6 +17,7 @@ import type { ProgressQueue } from "@/core/client/progress-queue";
 import { useClient } from "@/core/client/client-provider";
 import { familyAllows } from "@/core/content/audience";
 import { hideTitle } from "@/core/content/hidden-titles";
+import { onlineUnavailableKey, useOnlineUnavailable } from "@/core/content/online-unavailable";
 import { isReleased, releaseLabel } from "@/core/content/release";
 import type { ItemCard, LocalCatalog, TitleDetail } from "@/core/library/catalog-api";
 import { useResource } from "@/core/resources/use-resource";
@@ -31,6 +32,7 @@ import {
   Minus,
   EyeOff,
   Film,
+  Globe,
   Info,
   MoreHorizontal,
   Plus,
@@ -77,6 +79,8 @@ import {
   downloadButtonState,
   type DownloadButtonState,
 } from "@/features/movy/components/download-button";
+import { pickQuality } from "@/features/movy/lib/quality";
+import { MovyError } from "@/features/movy/lib/types";
 import { lockPlayerLandscape } from "@/features/player/hooks/use-player-orientation";
 import { fetchSeason, peekSeason, type RemoteMediaType } from "@/features/remote/lib/tmdb";
 import {
@@ -156,6 +160,9 @@ export function TitleScreen({
   const tmdbId = media.tmdbId;
   const remoteMediaType = media.mediaType;
   const remoteDetail = media.remoteDetail;
+  // Marked "online playback unavailable": only local or downloaded files play.
+  const onlineUnavailable = useOnlineUnavailable();
+  const onlineBlocked = onlineUnavailable.isUnavailable(remoteMediaType, tmdbId);
   // Kids & Family mode is enforced before any play route is reachable.
   const maturityRestricted = !familyAllows(
     detail?.metadata?.certification,
@@ -402,12 +409,20 @@ export function TitleScreen({
     (targetNumber == null ? nextPlayable : undefined);
   const canStreamTarget = onlineEnabled && remoteMediaType === "tv" && tmdbId != null &&
     remoteDetail?.seasons.some((entry) => entry.number === playbackSeason && targetNumber != null && targetNumber <= entry.episodes);
-  const hybridPlay = target?.local?.fileId
+  const streamPlay = target?.local?.fileId
     ? { kind: "local" as const, episode: target.local }
     : target?.remote
       ? { kind: "remote" as const, remote: target.remote }
       : canStreamTarget && playbackSeason != null && targetNumber != null
         ? { kind: "remote" as const, remote: { season: playbackSeason, number: targetNumber } }
+        : null;
+  const localFallback = playbackEpisodes.find((episode) => episode.local?.fileId)?.local;
+  const hybridPlay = !onlineBlocked
+    ? streamPlay
+    : streamPlay?.kind === "local"
+      ? streamPlay
+      : localFallback
+        ? { kind: "local" as const, episode: localFallback }
         : null;
   // The person index scans the library. Build it after the page has settled,
   // not during the navigation render, so opening a title stays immediate.
@@ -719,6 +734,12 @@ export function TitleScreen({
       setActionError(playbackBlockedMessage);
       return;
     }
+    if (onlineBlocked) {
+      setActionError(
+        "Online playback is marked unavailable for this title. Download it to watch offline.",
+      );
+      return;
+    }
     if (!tmdbId || !remoteMediaType) {
       setActionError(
         "This title is not matched to TMDB, so the online source is unavailable.",
@@ -841,13 +862,127 @@ export function TitleScreen({
     }
     setDownloadTarget(target);
   }
+  // "Download season": every released online-only episode of the selected
+  // season, queued at the preferred quality without a sheet per episode.
+  const [seasonQueueing, setSeasonQueueing] = useState(false);
+  const seasonDownloadEpisodes =
+    !media.isOffline && remoteMediaType === "tv" && remoteDetail && tmdbId != null
+      ? mergedSeasonEpisodes.filter(
+          (episode) => episode.remote && !episode.local && isReleased(episode.airDate),
+        )
+      : [];
+  const seasonRecords = seasonDownloadEpisodes.map((episode) =>
+    downloadRecordFor(episode.seasonNumber, episode.number),
+  );
+  const seasonStates = seasonRecords.map((record) => downloadButtonState(record));
+  const seasonDownloadState: DownloadButtonState = seasonQueueing
+    ? "queued"
+    : seasonStates.length && seasonStates.every((state) => state === "done")
+      ? "done"
+      : seasonStates.includes("downloading")
+        ? "downloading"
+        : seasonStates.includes("queued")
+          ? "queued"
+          : seasonStates.includes("paused")
+            ? "paused"
+            : "idle";
+  const seasonDownloadProgress = seasonRecords.length
+    ? seasonRecords.reduce(
+        (sum, record) =>
+          sum + (record?.status === "completed" ? 1 : (record?.progress ?? 0)),
+        0,
+      ) / seasonRecords.length
+    : 0;
+  async function queueSeasonDownloads(
+    episodes: typeof seasonDownloadEpisodes,
+  ) {
+    if (!remoteDetail || !remoteMediaType || tmdbId == null) return;
+    setSeasonQueueing(true);
+    setActionError("");
+    const titleName = remoteDetail.title || item?.name || "";
+    let queued = 0;
+    let lastError: unknown = null;
+    for (const episode of episodes) {
+      const existing = downloadRecordFor(episode.seasonNumber, episode.number);
+      if (existing && existing.status !== "failed") continue;
+      const ref = {
+        title: titleName,
+        mediaType: remoteMediaType,
+        year: remoteDetail.year ?? item?.year ?? null,
+        tmdbId,
+        imdbId: remoteDetail.imdbId ?? null,
+        season: episode.seasonNumber,
+        episode: episode.number,
+      };
+      try {
+        const reply = await movy.loadOptions(ref);
+        const choice = pickQuality(reply.options, preferences.movyMaxHeight);
+        if (!choice) continue;
+        await movy.download(ref, choice.option, {
+          title: titleName,
+          episodeTitle: episode.title,
+          display: `${titleName} · S${episode.seasonNumber}E${episode.number}`,
+          poster: remoteDetail.poster ?? item?.poster ?? null,
+        });
+        queued += 1;
+      } catch (cause) {
+        lastError = cause;
+        // Out of quota or signed out: the rest would fail the same way.
+        if (cause instanceof MovyError && (cause.code === "quota" || cause.code === "auth"))
+          break;
+      }
+    }
+    setSeasonQueueing(false);
+    if (lastError)
+      setActionError(
+        queued
+          ? `Queued ${queued} ${queued === 1 ? "episode" : "episodes"}. ${lastError instanceof Error ? lastError.message : ""}`.trim()
+          : lastError instanceof Error
+            ? lastError.message
+            : "Could not start the season download.",
+      );
+  }
+  function downloadSeason() {
+    if (playbackBlocked) {
+      setActionError(playbackBlockedMessage);
+      return;
+    }
+    if (seasonQueueing) return;
+    if (seasonDownloadState === "downloading" || seasonDownloadState === "queued" || seasonDownloadState === "done") {
+      push("/settings/downloads");
+      return;
+    }
+    if (!movy.active) {
+      movy.clearError();
+      setDownloadAccountOpen(true);
+      return;
+    }
+    const pending = seasonDownloadEpisodes.filter((episode) => {
+      const record = downloadRecordFor(episode.seasonNumber, episode.number);
+      return !record || record.status === "failed";
+    });
+    if (!pending.length) {
+      setActionError("Every released episode of this season is already downloaded or queued.");
+      return;
+    }
+    showDialog(
+      `Download season ${selectedSeason ?? ""}`.trim(),
+      `Queue ${pending.length} ${pending.length === 1 ? "episode" : "episodes"} at your maximum download quality. Each episode uses one download from your account quota.`,
+      [
+        {
+          text: `Download ${pending.length} ${pending.length === 1 ? "episode" : "episodes"}`,
+          onPress: () => void queueSeasonDownloads(pending),
+        },
+      ],
+    );
+  }
   const hasEpisodes = Boolean(
     item?.kind === "series" ||
       detail?.episodes?.length ||
       seasonOptions.length,
   );
   const remoteMoviePlayable =
-    !media.isOffline && remoteMediaType === "movie" && tmdbId != null;
+    !media.isOffline && !onlineBlocked && remoteMediaType === "movie" && tmdbId != null;
   const remoteTargetWatch =
     hybridPlay?.kind === "remote" && remoteMediaType && tmdbId
       ? remoteEpisodeWatch(
@@ -863,7 +998,7 @@ export function TitleScreen({
       ? "Continue watching"
       : "Start watching";
   const hybridBaseLabel =
-    !media.isOffline && remoteMediaType === "movie"
+    remoteMoviePlayable
       ? remotePlayLabel
       : hybridPlay?.kind === "remote"
         ? remotePlayLabel
@@ -902,7 +1037,7 @@ export function TitleScreen({
       playOnlineEpisode(hybridPlay.remote.season, hybridPlay.remote.number);
       return;
     }
-    if (!media.isOffline && remoteMediaType === "movie" && tmdbId) {
+    if (remoteMoviePlayable) {
       playOnlineMovie();
       return;
     }
@@ -923,6 +1058,10 @@ export function TitleScreen({
     // The blocked state already renders a notice and hides the action bar.
     if (playbackBlocked) return;
     autoOpened.current = true;
+    if (onlineBlocked) {
+      if (hybridPlay) setTimeout(playHybrid, 0);
+      return;
+    }
     // Navigate after the detail surface has mounted. This also keeps the
     // auto-play decision out of the render/effect commit path.
     const timer = setTimeout(() => {
@@ -1205,6 +1344,7 @@ export function TitleScreen({
           key={`${selectedSeason}:${episodeSort}`}
           api={api}
           episodes={sortedSeasonEpisodes}
+          onlineBlocked={onlineBlocked}
           remoteMediaType={remoteMediaType}
           tmdbId={onlineEnabled ? tmdbId : null}
           play={guardedPlay}
@@ -1274,6 +1414,48 @@ export function TitleScreen({
   };
   const singlePage = tabOptions.length <= 1;
 
+  const titleSecondaryActions = (
+            <View className="flex-row gap-2">
+              {detail.trailer?.provider?.toLowerCase() === "youtube" ? (
+                <NativeButton
+                  variant="secondary"
+                  size="lg"
+                  isIconOnly
+                  accessibilityLabel="Watch trailer"
+                  className="rounded-full bg-surface"
+                  style={{ width: control.height, height: control.height }}
+                  isDisabled={!online}
+                  onPress={() => {
+                    void Linking.openURL(
+                      `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
+                    ).catch((e) => setActionError(String(e)));
+                  }}
+                >
+                  <Film size={22} color={colors.ink} />
+                </NativeButton>
+              ) : null}
+              {!media.isOffline &&
+              remoteMediaType === "movie" &&
+              remoteDetail &&
+              tmdbId != null ? (
+                <DownloadButton
+                  state={downloadStateFor(null, null)}
+                  progress={downloadProgressFor(null, null)}
+                  size={control.height}
+                  onPress={() => openDownload(null, null)}
+                />
+              ) : null}
+              {seasonDownloadEpisodes.length > 0 ? (
+                <DownloadButton
+                  state={seasonDownloadState}
+                  progress={seasonDownloadProgress}
+                  size={control.height}
+                  accessibilityLabel={`Download season ${selectedSeason ?? ""}`.trim()}
+                  onPress={downloadSeason}
+                />
+              ) : null}
+            </View>
+  );
   return (
     <Animated.View entering={CONTENT_ENTER} className="flex-1 bg-background">
       <TopFade />
@@ -1473,6 +1655,20 @@ export function TitleScreen({
               addToCollection(item.publicId);
             }} />
           ) : null}
+          {onlineEnabled && remoteMediaType && tmdbId != null ? (
+            <TitleMenuAction
+              icon={Globe}
+              label={onlineBlocked ? "Online playback available" : "Online playback unavailable"}
+              onPress={() => {
+                setMenuOpen(false);
+                setActionError("");
+                void onlineUnavailable.set(
+                  onlineUnavailableKey(remoteMediaType, tmdbId),
+                  !onlineBlocked,
+                );
+              }}
+            />
+          ) : null}
           {item && (
             <TitleMenuAction
               destructive
@@ -1614,45 +1810,29 @@ export function TitleScreen({
             </Text>
           </View>
         </View>
+      ) : onlineBlocked && hybridDisabled ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 border-t border-t-border bg-background px-5 pt-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 14) }}
+        >
+          <View
+            className="flex-1 flex-row items-center gap-3 rounded-full bg-surface px-4"
+            style={{ minHeight: control.height }}
+          >
+            <Globe size={18} color={colors.muted} />
+            <Text className="flex-1 font-archivo-medium text-[13px] text-muted" numberOfLines={2}>
+              Online playback unavailable
+            </Text>
+          </View>
+          {titleSecondaryActions}
+        </View>
       ) : (
         <TitleActionBar
           label={hybridLabel}
           accessibilityLabel={hybridLabel}
           disabled={hybridDisabled}
           onPress={playHybrid}
-          secondary={
-            <View className="flex-row gap-2">
-              {detail.trailer?.provider?.toLowerCase() === "youtube" ? (
-                <NativeButton
-                  variant="secondary"
-                  size="lg"
-                  isIconOnly
-                  accessibilityLabel="Watch trailer"
-                  className="rounded-full bg-surface"
-                  style={{ width: control.height, height: control.height }}
-                  isDisabled={!online}
-                  onPress={() => {
-                    void Linking.openURL(
-                      `https://www.youtube.com/watch?v=${encodeURIComponent(detail.trailer!.key)}`,
-                    ).catch((e) => setActionError(String(e)));
-                  }}
-                >
-                  <Film size={22} color={colors.ink} />
-                </NativeButton>
-              ) : null}
-              {!media.isOffline &&
-              remoteMediaType === "movie" &&
-              remoteDetail &&
-              tmdbId != null ? (
-                <DownloadButton
-                  state={downloadStateFor(null, null)}
-                  progress={downloadProgressFor(null, null)}
-                  size={control.height}
-                  onPress={() => openDownload(null, null)}
-                />
-              ) : null}
-            </View>
-          }
+          secondary={titleSecondaryActions}
         />
       )}
 
@@ -1708,7 +1888,9 @@ function SeasonEpisodes({
   onDownload,
   downloadStateFor,
   downloadProgressFor,
+  onlineBlocked = false,
 }: {
+  onlineBlocked?: boolean;
   episodes: HybridEpisode[];
   api: LocalCatalog;
   play: (fileId: number) => void;
@@ -1794,7 +1976,9 @@ function SeasonEpisodes({
             selecting={selecting && selectable}
             selected={local ? selectedIds.has(local.id) : false}
             disabled={
-              selecting ? !selectable : !local?.fileId && !episode.remote
+              selecting
+                ? !selectable
+                : !local?.fileId && (!episode.remote || onlineBlocked)
             }
             onPress={() => {
               if (selecting) {
@@ -1802,7 +1986,7 @@ function SeasonEpisodes({
                 return;
               }
               if (local?.fileId) play(local.fileId);
-              else if (episode.remote)
+              else if (episode.remote && !onlineBlocked)
                 onPlayRemote(episode.remote.season, episode.remote.number);
             }}
             onLongPress={() => {

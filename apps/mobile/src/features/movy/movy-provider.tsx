@@ -423,7 +423,9 @@ export function MovyProvider({ children }: React.PropsWithChildren) {
           (await replacementAllowed(preferences.movyAccountCap))
         ) {
           try {
-            const replacement = await createGeneratedAccount(accountsRef.current);
+            const replacement = await createGeneratedAccount(accountsRef.current, {
+              automatic: true,
+            });
             await recordReplacement();
             const next = [...accountsRef.current, replacement];
             applyAccounts(next, replacement.username);

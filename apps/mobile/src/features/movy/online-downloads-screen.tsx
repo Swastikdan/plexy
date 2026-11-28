@@ -344,7 +344,6 @@ export function OnlineDownloadsScreen() {
     <View className="flex-1">
       <PageHeader
         title="Online downloads"
-        subtitle={movy.active ? movy.active.username : "No download account"}
       />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32, gap: 16 }}
@@ -375,7 +374,8 @@ export function OnlineDownloadsScreen() {
               label={movy.active ? "Manage" : "Set up"}
               onPress={() => {
                 movy.clearError();
-                setAccountOpen(true);
+                if (movy.active) router.push("/settings/download-accounts");
+                else setAccountOpen(true);
               }}
             />
           </View>
@@ -416,13 +416,11 @@ export function OnlineDownloadsScreen() {
         <View className="overflow-hidden rounded-[18px] bg-surface">
           <DownloadRow
             title="Maximum quality"
-            subtitle="Best source at or below this"
             value={qualityLabel}
             onPress={chooseQuality}
           />
           <DownloadRow
             title="Wi-Fi only"
-            subtitle="Pause when mobile data is active"
           >
             <ToggleSwitch
               value={preferences.movyWifiOnly}
@@ -432,7 +430,6 @@ export function OnlineDownloadsScreen() {
           </DownloadRow>
           <DownloadRow
             title="Fast downloads"
-            subtitle="Use multiple range requests when available"
           >
             <ToggleSwitch
               value={preferences.movyMultiStream}
@@ -442,11 +439,7 @@ export function OnlineDownloadsScreen() {
           </DownloadRow>
           <DownloadRow
             title="Background downloads"
-            subtitle={
-              hasNativeDownloads()
-                ? "Continue after leaving Plexy"
-                : "Requires the native app build"
-            }
+            value={hasNativeDownloads() ? undefined : "Needs native build"}
             disabled={!hasNativeDownloads()}
           >
             <ToggleSwitch
@@ -459,12 +452,11 @@ export function OnlineDownloadsScreen() {
           </DownloadRow>
           <DownloadRow
             title="Download notifications"
-            subtitle="Progress and pause/cancel from the notification"
             onPress={() => void askNotifications()}
           />
           <DownloadRow
             title="Auto-create replacement account"
-            subtitle={`On a quota hit, create a new account (max ${preferences.movyAccountCap} per 24 h)`}
+
           >
             <ToggleSwitch
               value={preferences.movyAutoCreateAccount}
@@ -476,15 +468,13 @@ export function OnlineDownloadsScreen() {
           </DownloadRow>
           {preferences.movyAutoCreateAccount ? (
             <DownloadRow
-              title="Replacement account cap"
-              subtitle="Per 24 hours"
+              title="Accounts per 24 hours"
               value={String(preferences.movyAccountCap)}
               onPress={chooseCap}
             />
           ) : null}
           <DownloadRow
             title="Download folder"
-            subtitle="Where Plexy saves movies and TV shows"
             value={downloadsRoot().uri.replace("file://", "")}
           />
         </View>
