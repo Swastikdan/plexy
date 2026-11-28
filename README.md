@@ -163,7 +163,7 @@ Mobile app code further splits into `apps/mobile/src/core` (infrastructure), `sr
 | `bun run build:mac-apps` | Both stable Mac apps |
 | `bun run build:server` | `dist/server/plexy-server` + `ffmpeg`, `migrations/`, `web/` |
 | `bun run build:mobile` | ARM64 Android APK under `.build/native` |
-| `bun run build` | All three (reuses one frontend build) |
+| `bun run build` | Web, server, Electron, and Android (reuses one frontend build) |
 | `bun run build:web` | Internal frontend build at `dist/web` |
 
 `bun run ffmpeg:minimal` builds a 4.8 MB decode/transcode FFmpeg (versus the
