@@ -149,6 +149,7 @@ target="$2"
 pid="$3"
 app_name="$4"
 tmp="$(mktemp -d)"
+download_dir="$(dirname "$0")"
 mount="$tmp/mnt"
 mkdir -p "$mount"
 mounted=0
@@ -168,7 +169,7 @@ mv "$target" "$previous"
 ditto "$new_app" "$target"
 xattr -dr com.apple.quarantine "$target" >/dev/null 2>&1 || true
 open "$target"
-rm -rf "$previous" "$tmp"
+rm -rf "$previous" "$tmp" "$download_dir"
 "#;
 
 /// Downloads a release DMG and starts a detached helper that waits for this
