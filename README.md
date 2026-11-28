@@ -211,6 +211,10 @@ The next **Force APK** release uploads the APK first, then the manifest, and rem
 
 ## Running the server
 
+The [Plexy Server setup and migration guide](docs/SERVER_SETUP.md) covers
+archive verification, first-run setup, LAN HTTPS, account pairing, data
+locations, moving an Electron library, upgrades, and troubleshooting.
+
 Keep `web/`, `migrations/`, and FFmpeg next to the executable:
 
 ```sh
@@ -228,6 +232,7 @@ In desktop **Settings** (or the connection screen), **Run local server** starts/
 | Doc | What it covers |
 | --- | --- |
 | `docs/ARCHITECTURE.md` | System diagram, process model, auth flows, playback pipeline |
+| `docs/SERVER_SETUP.md` | Standalone server setup, LAN access, backups, Electron migration |
 | `docs/CODEBASE_TOUR.md` | File-by-file tour of `apps/*`, `packages/*`, `scripts/` |
 | `docs/API.md` | HTTP API: auth, playback, catalog, settings (contract reference) |
 | `docs/PLAYBACK_PREPARATION.md` | Remux/transcode, storage modes, replacement + Trash policy |

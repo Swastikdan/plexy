@@ -1,6 +1,6 @@
 /// Local artwork storage, deduplication, and Bun.Image derivative pipeline.
 ///
-/// Stores largest original images at ~/Library/Application Support/Plexy/artwork/originals/
+/// Stores largest original images in the platform data directory under artwork/originals/
 /// and generates fast display derivatives under artwork/derived/ using Bun.Image.
 /// Keeps artwork available even when Plexy is completely offline. Never writes to media folders.
 import { mkdir, readdir, stat } from "node:fs/promises";

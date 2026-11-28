@@ -2,7 +2,7 @@
 ///
 /// Runtime state never touches media folders. Locations follow PRD sections 4
 /// and 7: a data directory for database/config/cached artwork and a log
-/// directory that mirrors macOS conventions (`~/Library/Logs/Plexy`).
+/// directory that follows the host platform's conventions.
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
@@ -13,17 +13,49 @@ export const isDev =
   (Bun.main ?? import.meta.path).includes("/apps/server/") ||
   (Bun.main ?? import.meta.path).includes("/tests/");
 
+type PlatformEnvironment = Record<string, string | undefined>;
+
+/** Data directory for a packaged server, before any environment override. */
+export function dataDirFor(
+  platform: NodeJS.Platform,
+  env: PlatformEnvironment,
+  home: string,
+): string {
+  if (platform === "darwin")
+    return join(home, "Library", "Application Support", "Plexy");
+  if (platform === "win32")
+    return join(env.APPDATA ?? join(home, "AppData", "Roaming"), "Plexy");
+  return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "plexy");
+}
+
+/** Log directory for a packaged server, before any environment override. */
+export function logDirFor(
+  platform: NodeJS.Platform,
+  env: PlatformEnvironment,
+  home: string,
+): string {
+  if (platform === "darwin") return join(home, "Library", "Logs", "Plexy");
+  if (platform === "win32")
+    return join(env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "Plexy", "logs");
+  return join(
+    env.XDG_STATE_HOME ?? join(home, ".local", "state"),
+    "plexy",
+    "logs",
+  );
+}
+
 /**
  * Data directory resolution order (PRD 8):
  *  1. `PLEXY_DATA_DIR` env override — used by tests and by the owner's config.
  *  2. In test/dev mode: `/tmp/plexy-test` or `/tmp/plexy-dev` (fully writable in sandboxed environments).
- *  3. Packaged production: `~/Library/Application Support/Plexy`.
+ *  3. Packaged production: the platform data directory, such as
+ *     `~/Library/Application Support/Plexy` on macOS.
  */
 export function resolveDataDir(): string {
   if (Bun.env.PLEXY_DATA_DIR) return Bun.env.PLEXY_DATA_DIR;
   if (Bun.env.NODE_ENV === "test") return "/tmp/plexy-test";
   if (isDev) return "/tmp/plexy-dev";
-  return join(homedir(), "Library", "Application Support", "Plexy");
+  return dataDirFor(process.platform, Bun.env, homedir());
 }
 
 /**
@@ -89,13 +121,14 @@ export async function migrateLegacyPackagedData(): Promise<void> {
  * Log directory resolution order (PRD 6):
  *  1. `PLEXY_LOG_DIR` env override.
  *  2. Development: `/tmp/plexy-dev/logs` keeps logs next to the database.
- *  3. Packaged: `~/Library/Logs/Plexy` per macOS conventions.
+ *  3. Packaged: the platform log directory, such as
+ *     `~/Library/Logs/Plexy` on macOS.
  */
 export function resolveLogDir(): string {
   if (Bun.env.PLEXY_LOG_DIR) return Bun.env.PLEXY_LOG_DIR;
   if (Bun.env.NODE_ENV === "test") return "/tmp/plexy-test/logs";
   if (isDev) return "/tmp/plexy-dev/logs";
-  return join(homedir(), "Library", "Logs", "Plexy");
+  return logDirFor(process.platform, Bun.env, homedir());
 }
 
 /** Local artwork storage root (originals + derived), never in media folders. */
