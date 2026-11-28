@@ -9,8 +9,8 @@ const output = join(root, "dist", "player-mac");
 const appName = "Plexy Beta";
 const executableName = "plexy-player";
 
-function capture(command: string, args: string[]): string {
-  const result = spawnSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 16 * 1024 * 1024 });
+function capture(command: string, args: string[], cwd?: string): string {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 16 * 1024 * 1024 });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} failed (${result.signal ?? result.status}).`);
   return result.stdout;
@@ -146,12 +146,13 @@ async function main() {
 
   const manifest = join(player, "Cargo.toml");
   const { packages }: { packages: { name: string; version: string }[] } = JSON.parse(
-    capture("cargo", ["metadata", "--locked", "--no-deps", "--format-version", "1", "--manifest-path", manifest]),
+    // Run cargo from the player folder so its rust-toolchain.toml applies.
+    capture("cargo", ["metadata", "--locked", "--no-deps", "--format-version", "1", "--manifest-path", manifest], player),
   );
   const version = packages.find(({ name }) => name === executableName)?.version;
   if (!version || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Expected a macOS-compatible version in Cargo.toml.");
 
-  const artifacts = capture("cargo", ["build", "--locked", "--release", "--bin", executableName, "--message-format=json-render-diagnostics", "--manifest-path", manifest]);
+  const artifacts = capture("cargo", ["build", "--locked", "--release", "--bin", executableName, "--message-format=json-render-diagnostics", "--manifest-path", manifest], player);
   const binary = artifacts.trim().split("\n").map((line) => JSON.parse(line)).find(
     (message) => message.reason === "compiler-artifact" && message.target.name === executableName && message.executable,
   )?.executable;

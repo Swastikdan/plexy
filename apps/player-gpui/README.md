@@ -16,8 +16,10 @@ cargo run --locked --release --manifest-path apps/player-gpui/Cargo.toml
 
 Append `-- /path/to/video.mkv` to open a file at launch. `PLEXY_LIBMPV` overrides
 the libmpv path. Beta uses the existing Rust player's
-data directory at `~/Library/Application Support/Plexy Player`. Set
-`PLEXY_PLAYER_DATA` to use a separate local test catalog.
+data directory at `~/Library/Application Support/Plexy Player`. The catalog and
+the app's saved preferences live in `library.sqlite`. Set `PLEXY_PLAYER_DATA`
+to use a separate directory for both. Set `PLEXY_SCREEN=settings:playback`
+to open a specific Settings section for local checks.
 
 ## Package for macOS
 
@@ -66,7 +68,7 @@ touch beta build inputs and manual build-only runs produce a
 4. Publish the draft from GitHub Releases as a pre-release. Its tag is
    `plexy-beta-v<version>` and points to the tested commit. Give a corrected build
    a new version once the prior version is public. Users install beta updates by
-   choosing **Settings → Updates → Check for updates** and installing the new DMG.
+   choosing **Settings → Overview → Check for updates** and installing the new DMG.
 
 Stable Plexy continues through [Build & Release](../../.github/workflows/build.yml)
 and its Electron updater. Use the [Plexy feature audit](../../docs/APP_FEATURE_AUDIT.md)
@@ -86,7 +88,8 @@ they receive stable updates. Retire Electron packaging once that transition is r
 | `src/app.rs` | Player chrome, shortcuts, menus |
 | `src/library_ui.rs` | Home, Movies, TV, show page, Libraries |
 | `src/personal_ui.rs` | Search, sort/filters, title pages, watchlist, favorites, ratings, hidden, collections, history |
-| `src/shell_ui.rs` | Top navigation, Home hero carousel, Library page, title hero pages, Settings |
+| `src/shell_ui.rs` | Top navigation, Home hero carousel, Library page, title hero pages |
+| `src/settings_ui.rs` | Settings navigation, preference controls, and library maintenance |
 | `src/theme.rs` | Plexy HeroUI dark/light tokens |
 | `assets/icons/` | The web app's icons (Video.js neutral for the player, lucide elsewhere); regenerate with `bun apps/player-gpui/tools/extract-icons.ts` from the repo root |
 | [`docs/README.md`](docs/README.md) | Parent orchestration log for the Rust UI work: status board, order of work, handoff protocol, verification matrices |
@@ -95,7 +98,8 @@ they receive stable updates. Retire Electron packaging once that transition is r
 
 ## Verify
 
-From `apps/player-gpui`:
+From `apps/player-gpui`, so `rust-toolchain.toml` picks the Rust version that
+GPUI Kit needs:
 
 ```sh
 cargo test --locked --release -- --test-threads=1
@@ -109,3 +113,8 @@ report and screenshots, then quit. Wrap them in
 `sandbox-exec -p '(version 1)(allow default)(deny network*)'` to prove offline
 playback. Screenshots need Screen Recording permission and an unobstructed
 window.
+
+The unit tests include GPUI Kit UI integration tests (`src/ui_tests.rs`). They
+open the real Settings view in a headless window and check Tab order, Escape
+on dialogs, focus restoration, and that preferences survive a relaunch. To
+build UI, see [src/ui/README.md](src/ui/README.md).

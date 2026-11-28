@@ -11,10 +11,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, size, Animation, AnimationExt, App, Bounds,
+use gpui_kit::{
+    canvas, div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, size, App, Bounds,
     ClickEvent, Context, ExternalPaths, FocusHandle, Hsla, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PathPromptOptions, Pixels, Point, RenderImage, ScrollWheelEvent, SharedString,
+    MouseMoveEvent, MouseUpEvent, PathPromptOptions, Pixels, Point, RenderImage, ScrollEvent, SharedString,
     Window,
 };
 use image::{Frame, RgbaImage};
@@ -84,6 +84,19 @@ pub struct PlayerView {
     pub state: PlaybackState,
     focus: FocusHandle,
     pub gpui_view: usize,
+    /// The libmpv surface, composited beneath the player chrome by GPUI.
+    video: Option<gpui_kit::NativeView>,
+    /// Kit `Select` states for the Settings preference pickers.
+    pub(crate) setting_selects: Vec<(&'static str, crate::settings_ui::ChoiceSelect)>,
+    pub(crate) select_subscriptions: Vec<gpui_kit::Subscription>,
+    /// The masked Kit `Input` for the TMDB token; mirrors into `token_draft`.
+    pub(crate) token_input: Option<gpui_kit::Entity<gpui_kit::component::input::InputState>>,
+    /// Set after a save so the next frame clears the token field.
+    pub(crate) token_clear: bool,
+    /// The Kit dialog currently shown, mirrored from the dialog state flags.
+    kit_dialog: Option<KitDialog>,
+    /// The Reset button's focus: the alert dialog returns focus here.
+    pub(crate) reset_focus: FocusHandle,
 
     last_activity: Instant,
     controls_visible: bool,
@@ -132,10 +145,22 @@ pub struct PlayerView {
     pub hero_paused: bool,
     pub hero_since: Instant,
     pub hero_prev: Option<usize>,
-    pub shell_scroll: gpui::ScrollHandle,
+    pub shell_scroll: gpui_kit::ScrollHandle,
+    pub(crate) catalog_loading: bool,
+    pub(crate) catalog_reload_pending: bool,
+    pub(crate) catalog_loaded: bool,
+    pub(crate) catalog_load_error: Option<String>,
     pub metas: std::collections::HashMap<TitleKey, crate::catalog::TitleMeta>,
     pub token_draft: String,
-    pub token_focus: FocusHandle,
+    pub fix_filter: u8,
+    pub fix_query: String,
+    pub(crate) fix_matches: Option<crate::settings_ui::FixMatches>,
+    pub(crate) fix_matches_scroll: gpui_kit::UniformListScrollHandle,
+    pub fix_focus: FocusHandle,
+    pub remap: Option<crate::settings_ui::Remap>,
+    pub remap_focus: FocusHandle,
+    pub(crate) resetting_local_data: bool,
+    pub maintenance_message: String,
     /// (ok, message) from the last token check; written by a worker thread.
     pub token_status: Arc<parking_lot::Mutex<(bool, String)>>,
     token_seen: String,
@@ -158,12 +183,13 @@ pub struct PlayerView {
     pub update_status: crate::updates::UpdateStatus,
     pub metadata_busy: bool,
     pub metadata_message: String,
-    pub settings_section: crate::shell_ui::SettingsSection,
+    pub settings_section: crate::settings_ui::SettingsSection,
     pub selected_season: Option<u32>,
-    pub viewport: gpui::Size<Pixels>,
+    pub viewport: gpui_kit::Size<Pixels>,
     pub add_library_open: bool,
+    pub new_collection_open: bool,
     pub library_error: Option<String>,
-    pub episode_menu: Option<(PathBuf, gpui::Point<Pixels>)>,
+    pub episode_menu: Option<(PathBuf, gpui_kit::Point<Pixels>)>,
     pub open_select: Option<&'static str>,
     pub hovered_card: Option<SharedString>,
     scan_progress: (u64, usize, bool),
@@ -178,6 +204,8 @@ pub struct PlayerView {
 
 impl PlayerView {
     pub fn new(gpui_view: usize, catalog: Catalog, cx: &mut Context<Self>) -> Self {
+        let launch_screen = std::env::var("PLEXY_SCREEN").unwrap_or_default();
+        let (screen, settings_section) = Screen::from_launch(&launch_screen);
         let mut view = Self {
             player: Player::default(),
             libmpv: None,
@@ -186,6 +214,13 @@ impl PlayerView {
             state: PlaybackState::default(),
             focus: cx.focus_handle(),
             gpui_view,
+            video: None,
+            setting_selects: Vec::new(),
+            select_subscriptions: Vec::new(),
+            token_input: None,
+            token_clear: false,
+            reset_focus: cx.focus_handle(),
+            kit_dialog: None,
             last_activity: Instant::now(),
             controls_visible: true,
             cursor_hidden: false,
@@ -209,11 +244,11 @@ impl PlayerView {
             identity: None,
             next_episode: None,
             catalog: catalog.clone(),
-            screen: Screen::from_env(),
+            screen,
             libraries: Vec::new(),
             items: Vec::new(),
             personal: Personal::default(),
-            search_query: std::env::var("PLEXY_SCREEN").ok().and_then(|s| s.strip_prefix("search:").map(str::to_string)).unwrap_or_default(),
+            search_query: launch_screen.strip_prefix("search:").unwrap_or_default().to_string(),
             search_focus: cx.focus_handle(),
             collection_draft: String::new(),
             collection_focus: cx.focus_handle(),
@@ -226,7 +261,11 @@ impl PlayerView {
             hero_paused: false,
             hero_since: Instant::now(),
             hero_prev: None,
-            shell_scroll: gpui::ScrollHandle::new(),
+            shell_scroll: gpui_kit::ScrollHandle::new(),
+            catalog_loading: false,
+            catalog_reload_pending: false,
+            catalog_loaded: false,
+            catalog_load_error: None,
             metas: Default::default(),
             episode_metas: Default::default(),
             token_draft: String::new(),
@@ -241,16 +280,25 @@ impl PlayerView {
             last_screen: Default::default(),
             sub_search: Default::default(),
             autoplay_fired: false,
-            token_focus: cx.focus_handle(),
+            fix_filter: 0,
+            fix_query: String::new(),
+            fix_matches: None,
+            fix_matches_scroll: Default::default(),
+            fix_focus: cx.focus_handle(),
+            remap: None,
+            remap_focus: cx.focus_handle(),
+            resetting_local_data: false,
+            maintenance_message: String::new(),
             token_status: Default::default(),
             metadata_epoch: catalog.metadata_epoch(),
             update_status: Default::default(),
             metadata_busy: false,
             metadata_message: String::new(),
-            settings_section: if std::env::var("PLEXY_SCREEN").as_deref() == Ok("appearance") { crate::shell_ui::SettingsSection::Appearance } else { crate::shell_ui::SettingsSection::Playback },
+            settings_section,
             selected_season: None,
-            viewport: gpui::size(px(1280.), px(760.)),
+            viewport: gpui_kit::size(px(1280.), px(760.)),
             add_library_open: false,
+            new_collection_open: false,
             library_error: None,
             episode_menu: None,
             open_select: None,
@@ -264,8 +312,31 @@ impl PlayerView {
             autoplay_enabled: false,
             observed_segments: Default::default(),
         };
-        view.reload_catalog();
+        view.reload_catalog(cx);
+        #[cfg(not(test))]
+        view.load_credentials(cx);
         view
+    }
+
+    #[cfg(not(test))]
+    fn load_credentials(&self, cx: &mut Context<Self>) {
+        let catalog = self.catalog.clone();
+        let work = cx.background_spawn(async move { catalog.load_tmdb_token() });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| {
+                if let Err(error) = result {
+                    let mut status = this.token_status.lock();
+                    if status.1.is_empty() {
+                        *status = (false, error.to_string());
+                    }
+                } else if this.catalog.tmdb_token().is_some() && this.scan_progress.0 != 0 {
+                    let catalog = this.catalog.clone();
+                    cx.background_spawn(async move { crate::metadata::enrich_missing(&catalog); }).detach();
+                }
+                cx.notify();
+            }).ok();
+        }).detach();
     }
 
     pub fn focus_handle(&self) -> &FocusHandle {
@@ -295,7 +366,9 @@ impl PlayerView {
         let resolved = match mpv::local_media_path(path).and_then(|path| {
             if self.libmpv.is_none() {
                 let libmpv = mpv::find_libmpv()?;
-                self.player.initialize(&libmpv, self.gpui_view as *mut _)?;
+                let view = self.player.initialize(&libmpv)?;
+                // SAFETY: a fresh NSView outside any hierarchy, kept alive by the player.
+                self.video = Some(unsafe { gpui_kit::NativeView::new(view, window, cx) }?);
                 self.libmpv = Some(libmpv);
             }
             Ok(path)
@@ -532,7 +605,7 @@ impl PlayerView {
             window.toggle_fullscreen();
         }
         window.set_window_title("Plexy");
-        self.reload_catalog();
+        self.reload_catalog(cx);
         cx.notify();
     }
 
@@ -667,7 +740,7 @@ impl PlayerView {
         let meta_changed = epoch != self.metadata_epoch;
         self.metadata_epoch = epoch;
         if scan_finished || meta_changed {
-            self.reload_catalog();
+            self.reload_catalog(cx);
         }
         if scan_finished && self.catalog.tmdb_token().is_some() {
             let catalog = self.catalog.clone();
@@ -683,6 +756,10 @@ impl PlayerView {
             }
             changed
         };
+        if token_changed {
+            self.fix_matches = None;
+        }
+        let matches_loaded = self.load_fix_matches();
         let (sub_ready, sub_busy) = {
             let mut s = self.sub_search.lock();
             (s.ready.take(), s.loading || s.downloading.is_some())
@@ -726,13 +803,13 @@ impl PlayerView {
         let playback_changed = self.media.is_some()
             && (visibility_changed || (visible && previous_revision != self.state.revision));
         if playback_changed || overlay_changed || scan_changed || hero_changed
-            || meta_changed || token_changed || autoplay_tick
+            || meta_changed || token_changed || matches_loaded || autoplay_tick
         {
             cx.notify();
         }
     }
 
-    fn start_auto_scan(&self) {
+    pub(crate) fn start_auto_scan(&self) {
         if self.libraries.iter().any(|library| library.auto_refresh && !library.roots.is_empty()) {
             self.catalog.scan(None, true);
         }
@@ -928,7 +1005,7 @@ impl PlayerView {
         if self.marker_editor.is_some() {
             if key == "escape" {
                 self.marker_editor = None;
-                window.focus(&self.focus);
+                window.focus(&self.focus, cx);
                 cx.notify();
             }
             return;
@@ -1191,27 +1268,16 @@ impl PlayerView {
                     .absolute()
                     .top_0()
                     .bottom_0()
-                    .left(gpui::relative((chapter.time / duration) as f32))
+                    .left(gpui_kit::relative((chapter.time / duration) as f32))
                     .w(px(3.))
                     .bg(black(0.85))
             })
             .collect::<Vec<_>>();
 
-        let segments = self.effective_segments();
-        let marker_ranges = crate::catalog::SegmentKind::ALL.into_iter().filter_map(|kind| {
-            let marker = segments.kind(kind)?;
-            (duration > 0.).then(|| {
-                div().absolute().top(px(17.)).h(px(3.)).rounded_full()
-                    .left(gpui::relative((marker.start / duration) as f32))
-                    .w(gpui::relative(((marker.end - marker.start) / duration) as f32))
-                    .bg(white(0.72))
-            })
-        }).collect::<Vec<_>>();
 
         div()
             .id("seek-bar")
             .relative()
-            .children(marker_ranges)
             .h(px(26.))
             .w_full()
             .flex()
@@ -1230,26 +1296,26 @@ impl PlayerView {
                     .rounded_full()
                     .overflow_hidden()
                     .bg(white(0.22))
-                    .child(div().absolute().top_0().bottom_0().left_0().w(gpui::relative(buffered)).bg(white(0.28)))
+                    .child(div().absolute().top_0().bottom_0().left_0().w(gpui_kit::relative(buffered)).bg(white(0.28)))
                     .when_some(self.hover_fraction.filter(|_| self.scrub_fraction.is_none()), |el, hover| {
                         el.child(
                             div()
                                 .absolute()
                                 .top_0()
                                 .bottom_0()
-                                .left(gpui::relative(hover.min(shown)))
-                                .w(gpui::relative((hover - shown).abs()))
+                                .left(gpui_kit::relative(hover.min(shown)))
+                                .w(gpui_kit::relative((hover - shown).abs()))
                                 .bg(white(0.35)),
                         )
                     })
-                    .child(div().absolute().top_0().bottom_0().left_0().w(gpui::relative(shown)).bg(white(0.97)))
+                    .child(div().absolute().top_0().bottom_0().left_0().w(gpui_kit::relative(shown)).bg(white(0.97)))
                     .children(chapter_marks),
             )
             .child(
                 div()
                     .absolute()
                     .top(px(13. - 7.))
-                    .left(gpui::relative(shown))
+                    .left(gpui_kit::relative(shown))
                     .ml(px(-7.))
                     .size(px(14.))
                     .rounded_full()
@@ -1338,7 +1404,7 @@ impl PlayerView {
                         .rounded(px(6.))
                         .bg(black(0.7))
                         .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                         .text_color(white(0.95))
                         .when_some(chapter, |el, title| el.child(div().text_color(white(0.65)).child(title)))
                         .child(format_time(seconds)),
@@ -1347,6 +1413,11 @@ impl PlayerView {
     }
 
     fn set_volume_hover(&mut self, hovered: bool) {
+        // One popover at a time: the volume panel replaces an open menu
+        // instead of opening underneath it.
+        if hovered && !self.volume_hover {
+            self.menu = None;
+        }
         self.volume_hover = hovered;
         // A short grace period lets the pointer cross the gap between the
         // speaker button and the popover below it.
@@ -1377,9 +1448,10 @@ impl PlayerView {
                     })),
             )
             .when(open, |el| {
-                el.child(
+                el.child(gpui_kit::deferred(
                     div()
                         .id("volume-popover")
+                        .occlude()
                         .absolute()
                         .top(px(46.))
                         .left(px(-2.))
@@ -1404,7 +1476,7 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                        .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+                        .on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
                             cx.stop_propagation();
                             let delta = f32::from(event.delta.pixel_delta(px(16.)).y);
                             if delta.abs() > 0.5 {
@@ -1420,19 +1492,19 @@ impl PlayerView {
                                 .rounded_full()
                                 .bg(white(0.22))
                                 .child(canvas(move |bounds, _, _| bounds_cell.set(bounds), |_, _, _, _| {}).absolute().size_full())
-                                .child(div().absolute().left_0().right_0().bottom_0().h(gpui::relative(level)).rounded_full().bg(theme::foreground()))
+                                .child(div().absolute().left_0().right_0().bottom_0().h(gpui_kit::relative(level)).rounded_full().bg(theme::foreground()))
                                 .child(
                                     div()
                                         .absolute()
                                         .left(px(-5.))
-                                        .bottom(gpui::relative(level))
+                                        .bottom(gpui_kit::relative(level))
                                         .mb(px(-7.))
                                         .size(px(14.))
                                         .rounded_full()
                                         .bg(theme::foreground()),
                                 ),
                         ),
-                )
+                ).with_priority(3))
             })
     }
 
@@ -1538,7 +1610,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .child(div().text_size(px(14.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(white(0.96)).child(title))
+            .child(div().text_size(px(14.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(white(0.96)).child(title))
             .when(menu != Menu::More && menu != Menu::Speed, |el| {
                 el.child(
                     div()
@@ -1577,7 +1649,7 @@ impl PlayerView {
                     cx.notify();
                 }
             }))
-            .on_scroll_wheel(|_: &ScrollWheelEvent, _, cx| cx.stop_propagation())
+            .on_scroll(|_: &ScrollEvent, _, cx| cx.stop_propagation())
             .child(header);
 
         let track_label = |kind: TrackKind, id: Option<i64>| {
@@ -1606,12 +1678,6 @@ impl PlayerView {
                     ))
                     .child(divider())
                     .child(self.settings_row("set-speed", Icon::Speed, "Speed", format!("{}x", trim_number(self.state.speed)), cx, Menu::Speed));
-                if self.state.duration > 0. {
-                    panel = panel.child(crate::ui::menu::MenuRow::action("edit-markers", "Edit markers")
-                        .tone(crate::ui::menu::MenuTone::Media)
-                        .icon(Icon::Chapters)
-                        .on_click(cx.listener(|this, _, window, cx| this.open_marker_editor(window, cx))));
-                }
                 if !self.state.chapters.is_empty() {
                     let current = self
                         .state
@@ -1669,13 +1735,13 @@ impl PlayerView {
             }
             Menu::SubtitleStyle => {
                 let size = self.sub_style_index("sub_size", 2);
-                let label = |text: &'static str| div().px(px(14.)).pt(px(6.)).pb(px(10.)).text_size(px(17.)).font_weight(gpui::FontWeight::BOLD).text_color(white(0.96)).child(text);
+                let label = |text: &'static str| div().px(px(14.)).pt(px(6.)).pb(px(10.)).text_size(px(17.)).font_weight(gpui_kit::FontWeight::BOLD).text_color(white(0.96)).child(text);
                 let sizes = div().px(px(14.)).flex().items_end().gap(px(16.)).children(SUB_SIZES.iter().enumerate().map(|(i, (_, font))| {
                     div()
                         .id(SharedString::from(format!("sub-size-{i}")))
                         .cursor_pointer()
                         .text_size(px(*font))
-                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .font_weight(gpui_kit::FontWeight::MEDIUM)
                         .text_color(if i == size { white(0.97) } else { white(0.4) })
                         .hover(|s| s.text_color(white(0.8)))
                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -1710,18 +1776,28 @@ impl PlayerView {
             Menu::SubtitleSearch => {
                 let s = self.sub_search.lock().clone();
                 if s.loading {
-                    panel = panel.child(div().p(px(18.)).flex().items_center().gap(px(10.)).text_size(px(14.)).text_color(theme::muted()).child(icon(Icon::Spinner, 18., theme::muted()).with_animation("sub-spin", Animation::new(Duration::from_millis(900)).repeat(), |svg, t| svg.with_transformation(gpui::Transformation::rotate(gpui::percentage(t))))).child("Searching OpenSubtitles…"));
+                    panel = panel.child(div().p(px(18.)).flex().items_center().gap(px(10.)).text_size(px(14.)).text_color(theme::muted()).child(gpui_kit::component::spinner::Spinner::new().color(theme::muted())).child("Searching OpenSubtitles…"));
                 }
                 if let Some(error) = &s.error {
                     panel = panel.child(div().p(px(14.)).text_size(px(13.)).text_color(theme::danger()).child(error.clone()));
                 }
                 if !s.results.is_empty() {
-                    let mut langs: Vec<String> = s.results.iter().map(|r| r.language.clone()).collect();
-                    langs.sort();
-                    langs.dedup();
+                    // Only languages the search returned, most results first,
+                    // the preferred language leading.
+                    let mut counts: Vec<(String, usize)> = Vec::new();
+                    for r in &s.results {
+                        match counts.iter_mut().find(|(l, _)| *l == r.language) {
+                            Some((_, n)) => *n += 1,
+                            None => counts.push((r.language.clone(), 1)),
+                        }
+                    }
+                    let preferred = self.catalog.setting("subtitle_lang");
+                    counts.sort_by_key(|(l, n)| (Some(l) != preferred.as_ref(), std::cmp::Reverse(*n)));
+                    let langs: Vec<String> = counts.into_iter().map(|(l, _)| l).collect();
                     let chip = |id: SharedString, label: String, active: bool, value: Option<String>| {
                         div()
                             .id(id)
+                            .flex_none()
                             .h(px(28.))
                             .px(px(11.))
                             .flex()
@@ -1729,7 +1805,7 @@ impl PlayerView {
                             .rounded_full()
                             .cursor_pointer()
                             .text_size(px(12.))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                             .bg(if active { theme::foreground() } else { theme::default() })
                             .text_color(if active { theme::background() } else { theme::foreground() })
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -1741,11 +1817,15 @@ impl PlayerView {
                     };
                     panel = panel.child(
                         div()
-                            .px(px(8.))
-                            .pb(px(8.))
+                            .id("sub-langs")
+                            .mt(px(8.))
+                            .mx(px(4.))
+                            .mb(px(10.))
+                            .pb(px(6.))
                             .flex()
-                            .flex_wrap()
+                            .flex_none()
                             .gap(px(6.))
+                            .overflow_x_scroll()
                             .child(chip("sub-lang-all".into(), "All".into(), s.language.is_none(), None))
                             .children(langs.into_iter().map(|l| chip(SharedString::from(format!("sub-lang-{l}")), mpv::language_name(&l), s.language.as_deref() == Some(l.as_str()), Some(l)))),
                     );
@@ -1776,7 +1856,7 @@ impl PlayerView {
                         .items_center()
                         .justify_center()
                         .text_size(px(15.))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                         .text_color(white(0.96))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
@@ -1837,7 +1917,7 @@ impl PlayerView {
                                 .rounded_full()
                                 .bg(black(0.55))
                                 .text_sm()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                                 .text_color(white(0.95))
                                 .child(osd.text),
                         )
@@ -1854,7 +1934,7 @@ impl PlayerView {
         active: bool,
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
         div()
             .id(id)
             .size(px(size_px + 18.))
@@ -1884,7 +1964,7 @@ impl PlayerView {
                         .items_center()
                         .justify_center()
                         .text_size(px(size_px * 0.32))
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .text_color(white(0.95))
                         .child("10"),
                 )
@@ -1936,13 +2016,13 @@ impl PlayerView {
                                 div()
                                     .text_size(px(30.))
                                     .line_height(px(36.))
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(gpui_kit::FontWeight::BOLD)
                                     .text_color(white(1.0))
                                     .truncate()
                                     .child(title),
                             )
                             .when_some(subtitle, |el, subtitle| {
-                                el.child(div().text_size(px(18.)).font_weight(gpui::FontWeight::MEDIUM).text_color(white(0.92)).truncate().child(subtitle))
+                                el.child(div().text_size(px(18.)).font_weight(gpui_kit::FontWeight::MEDIUM).text_color(white(0.92)).truncate().child(subtitle))
                             }),
                     ),
             )
@@ -1981,7 +2061,7 @@ impl PlayerView {
                             .rounded_full()
                             .cursor_pointer()
                             .text_size(px(18.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .font_weight(gpui_kit::FontWeight::MEDIUM)
                             .text_color(white(0.95))
                             .when(menu == Some(Menu::Speed), |el| el.bg(white(0.16)))
                             .hover(|style| style.bg(white(0.12)))
@@ -2021,7 +2101,7 @@ impl PlayerView {
                 .rounded(px(theme::RADIUS))
                 .cursor_pointer()
                 .text_size(px(13.))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                 .when(primary, |el| el.bg(white(0.97)).text_color(black(0.95)).hover(|s| s.bg(white(0.85))))
                 .when(!primary, |el| el.bg(rgba(0x262626e6)).text_color(white(0.97)).hover(|s| s.bg(rgba(0x3a3a3af0))))
                 .child(label)
@@ -2062,7 +2142,7 @@ impl PlayerView {
                             Some(n) => format!("Playing next in {n}s"),
                             None => "Up next".into(),
                         }))
-                        .child(div().text_size(px(14.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(white(0.97)).truncate().child(match name {
+                        .child(div().text_size(px(14.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(white(0.97)).truncate().child(match name {
                             Some(n) => format!("{code} · {n}"),
                             None => code,
                         }))
@@ -2094,7 +2174,7 @@ impl PlayerView {
         let shown = self.scrub_fraction.map(|f| f as f64 * state.duration).unwrap_or(state.position);
         let playing = !(state.paused || state.ended);
         let time = |text: String| {
-            div().flex_none().min_w(px(58.)).text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(white(0.96)).child(text)
+            div().flex_none().min_w(px(58.)).text_size(px(18.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(white(0.96)).child(text)
         };
 
         div()
@@ -2183,7 +2263,7 @@ impl PlayerView {
                 .rounded(px(theme::RADIUS))
                 .cursor_pointer()
                 .text_size(px(16.))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                 .when(primary, |el| el.bg(white(0.97)).text_color(black(0.95)).hover(|s| s.bg(white(0.85))))
                 .when(!primary, |el| el.bg(rgba(0x262626e6)).text_color(white(0.97)).hover(|s| s.bg(rgba(0x3a3a3af0))))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -2215,17 +2295,123 @@ impl PlayerView {
     }
 }
 
+/// The dialogs `PlayerView` shows through the GPUI Kit dialog layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum KitDialog {
+    Remap,
+    Marker,
+    AddLibrary,
+    Rating,
+    Collection,
+    NewCollection,
+}
+
+impl PlayerView {
+    /// Which dialog the view's state asks for, most specific first.
+    fn wanted_dialog(&self) -> Option<KitDialog> {
+        if self.remap.is_some() {
+            Some(KitDialog::Remap)
+        } else if self.marker_editor.is_some() {
+            Some(KitDialog::Marker)
+        } else if self.add_library_open {
+            Some(KitDialog::AddLibrary)
+        } else if self.rating_target.is_some() {
+            Some(KitDialog::Rating)
+        } else if self.collection_picker && self.collection_target.is_some() {
+            Some(KitDialog::Collection)
+        } else if self.new_collection_open {
+            Some(KitDialog::NewCollection)
+        } else {
+            None
+        }
+    }
+
+    fn dialog_parts(&self, which: KitDialog, window: &Window, cx: &mut Context<Self>) -> Option<crate::ui::controls::DialogParts> {
+        match which {
+            KitDialog::Remap => self.render_remap_dialog(window, cx),
+            KitDialog::Marker => self.render_marker_editor(cx, window),
+            KitDialog::AddLibrary => self.render_add_library(cx),
+            KitDialog::Rating => self.render_rating_dialog(cx),
+            KitDialog::Collection => self.render_collection_dialog(window, cx),
+            KitDialog::NewCollection => self.render_new_collection_dialog(window, cx),
+        }
+    }
+
+    /// Escape, the overlay or the close button dismissed `which`.
+    fn dismiss_dialog_state(&mut self, which: KitDialog) {
+        match which {
+            KitDialog::Remap => self.remap = None,
+            KitDialog::Marker => self.marker_editor = None,
+            KitDialog::AddLibrary => self.add_library_open = false,
+            KitDialog::Rating => self.rating_target = None,
+            KitDialog::Collection => {
+                self.collection_picker = false;
+                self.collection_target = None;
+                self.collection_draft.clear();
+            }
+            KitDialog::NewCollection => {
+                self.new_collection_open = false;
+                self.collection_draft.clear();
+            }
+        }
+    }
+
+    /// Opens or closes the Kit dialog to match the state flags. The dialog
+    /// content is rebuilt from the view on every frame, so it stays live.
+    fn sync_kit_dialog(&mut self, window: &Window, cx: &mut Context<Self>) {
+        use gpui_kit::component::WindowExt as _;
+        let wanted = self.wanted_dialog();
+        if wanted == self.kit_dialog {
+            return;
+        }
+        let had = self.kit_dialog.is_some();
+        self.kit_dialog = wanted;
+        // Outside render: the dialog layer belongs to the window's Root.
+        cx.defer_in(window, move |this, window, cx| {
+            if had {
+                window.close_dialog(cx);
+            }
+            let Some(which) = wanted.filter(|w| this.kit_dialog == Some(*w)) else { return };
+            let view = cx.entity().downgrade();
+            window.open_dialog(cx, move |dialog, window, cx| {
+                let Some(entity) = view.upgrade() else { return dialog };
+                let parts = entity.update(cx, |this, cx| this.dialog_parts(which, window, cx));
+                let Some(parts) = parts else { return dialog };
+                let view = view.clone();
+                crate::ui::controls::open_kit_dialog(dialog, parts).on_close(move |_, window, cx| {
+                    view.update(cx, |this: &mut PlayerView, cx: &mut Context<PlayerView>| {
+                        if this.kit_dialog == Some(which) {
+                            this.dismiss_dialog_state(which);
+                            this.kit_dialog = None;
+                            window.focus(&this.focus_handle(), cx);
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                })
+            });
+        });
+    }
+}
+
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::assets::begin_artwork_frame(window, cx);
+        self.ensure_setting_selects(window, cx);
+        self.sync_kit_dialog(window, cx);
         let has_media = self.media.is_some();
         let chrome_target = if self.controls_wanted() { 1.0 } else { 0.0 };
         // Light, dark or follow macOS; playback always stays dark.
-        let light = match self.catalog.setting("theme").as_deref() {
-            Some("light") => true,
-            Some("system") => matches!(window.appearance(), gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight),
-            _ => false,
-        };
-        theme::set_light(light && !has_media);
+        let light = !has_media
+            && match self.catalog.setting("theme").as_deref() {
+                Some("light") => true,
+                Some("system") => matches!(window.appearance(), gpui_kit::WindowAppearance::Light | gpui_kit::WindowAppearance::VibrantLight),
+                _ => false,
+            };
+        if theme::set_light(light) {
+            // Outside render: updating the Kit theme refreshes every window.
+            cx.defer(|cx| theme::apply_kit_theme(cx));
+        }
         self.viewport = window.viewport_size();
 
         div()
@@ -2243,7 +2429,7 @@ impl Render for PlayerView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| this.on_drop_paths(paths, window, cx)))
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+            .on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
                 if this.media.is_none() {
                     return;
                 }
@@ -2255,6 +2441,9 @@ impl Render for PlayerView {
                 }
             }))
             .when(!has_media, |el| el.child(self.render_shell(window, cx)))
+            .when_some(self.video.clone().filter(|_| has_media), |el, video| {
+                el.child(div().absolute().inset_0().child(video))
+            })
             .when(has_media, |el| {
                 el.child(
                     // Click the picture to play/pause, double-click for fullscreen.
@@ -2288,9 +2477,24 @@ impl Render for PlayerView {
                 })
                 .children(self.render_osd())
                 .child(
+                    // Above the video: GPUI 0.3 only calls mouse listeners on
+                    // hovered elements, and the native video view blocks hover
+                    // for everything painted before it (the player root).
                     div()
+                        .id("player-chrome-layer")
                         .absolute()
                         .inset_0()
+                        .on_mouse_move(cx.listener(Self::on_mouse_move))
+                        .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+                        .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
+                        .on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
+                            let delta = f32::from(event.delta.pixel_delta(px(16.)).y);
+                            if delta.abs() > 0.5 {
+                                this.poke();
+                                this.change_volume(if delta > 0.0 { 2.0 } else { -2.0 });
+                                cx.notify();
+                            }
+                        }))
                         .child(self.render_header(window, cx))
                         .child(self.render_footer(cx))
                         .with_tween(
@@ -2304,7 +2508,6 @@ impl Render for PlayerView {
                 .children(self.render_actions(cx))
                 .when_some(self.menu.filter(|_| self.controls_wanted()), |el, menu| el.child(self.render_menu(menu, cx)))
             })
-            .children(self.render_marker_editor(cx, window))
             .when_some(self.state.error.clone(), |el, error| {
                 el.child(
                     div().absolute().top(px(44.)).left_0().right_0().flex().justify_center().child(
@@ -2332,10 +2535,6 @@ fn near_episode_end(state: &PlaybackState) -> bool {
 pub fn start_ticking(window: &mut Window, cx: &mut Context<PlayerView>) {
     cx.observe_window_appearance(window, |_, _, cx| cx.notify()).detach();
     cx.spawn_in(window, async move |this, cx| {
-        cx.background_executor().timer(Duration::from_millis(200)).await;
-        if this.update(cx, |view, _| view.start_auto_scan()).is_err() {
-            return;
-        }
         loop {
             let Ok(next_delay) = this.update_in(cx, |view, window, cx| {
                 view.tick(window, cx);
@@ -2351,7 +2550,7 @@ pub fn start_ticking(window: &mut Window, cx: &mut Context<PlayerView>) {
     .detach();
 }
 
-impl gpui::Focusable for PlayerView {
+impl gpui_kit::Focusable for PlayerView {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus.clone()
     }

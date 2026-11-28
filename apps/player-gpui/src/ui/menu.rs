@@ -5,7 +5,7 @@
 //! Call sites own the open state and attach click handlers to the returned
 //! rows.
 
-use gpui::{div, prelude::*, px, rgba, App, ClickEvent, Div, Hsla, SharedString, Stateful, Window};
+use gpui_kit::{div, prelude::*, px, rgba, App, ClickEvent, Div, Hsla, SharedString, Stateful, Window};
 
 use crate::theme;
 use crate::ui::icon::{icon, Icon};
@@ -83,7 +83,7 @@ impl MenuTone {
 }
 
 fn snow(a: f32) -> Hsla {
-    gpui::hsla(0., 0., 1., a)
+    gpui_kit::hsla(0., 0., 1., a)
 }
 
 /// The panel every menu lives in. Add a width/position/max-height as needed.
@@ -107,7 +107,7 @@ pub fn select_trigger(
     open: bool,
 ) -> Stateful<Div> {
     div()
-        .id(gpui::ElementId::Name(id.into()))
+        .id(gpui_kit::ElementId::Name(id.into()))
         .relative()
         .h(px(40.))
         .px(px(14.))
@@ -129,45 +129,37 @@ pub fn select_trigger(
 
 /// A menu positioned below its trigger or at a context-click point.
 pub fn popup(
-    items: Vec<gpui::AnyElement>,
+    items: Vec<gpui_kit::AnyElement>,
     width: f32,
-    position: Option<gpui::Point<gpui::Pixels>>,
+    position: Option<gpui_kit::Point<gpui_kit::Pixels>>,
 ) -> impl IntoElement {
-    gpui::deferred(Popup { items: Some(items), width: px(width), position }).with_priority(2)
+    gpui_kit::deferred(Popup { items: Some(items), width: px(width), position }).with_priority(2)
 }
 
 struct Popup {
-    items: Option<Vec<gpui::AnyElement>>,
-    width: gpui::Pixels,
-    position: Option<gpui::Point<gpui::Pixels>>,
+    items: Option<Vec<gpui_kit::AnyElement>>,
+    width: gpui_kit::Pixels,
+    position: Option<gpui_kit::Point<gpui_kit::Pixels>>,
 }
 
-impl IntoElement for Popup {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
-impl gpui::Element for Popup {
+impl gpui_kit::Element for Popup {
     type RequestLayoutState = ();
-    type PrepaintState = gpui::AnyElement;
+    type PrepaintState = gpui_kit::AnyElement;
 
-    fn id(&self) -> Option<gpui::ElementId> { None }
+    fn id(&self) -> Option<gpui_kit::ElementId> { None }
     fn source_location(&self) -> Option<&'static std::panic::Location<'static>> { None }
 
     fn request_layout(
         &mut self,
-        _: Option<&gpui::GlobalElementId>,
-        _: Option<&gpui::InspectorElementId>,
+        _: Option<&gpui_kit::GlobalElementId>,
+        _: Option<&gpui_kit::InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (gpui::LayoutId, ()) {
+    ) -> (gpui_kit::LayoutId, ()) {
         // Fill the trigger's bounds without affecting the surrounding layout.
-        let style = gpui::Style {
-            position: gpui::Position::Absolute,
-            inset: gpui::Edges::all(px(0.).into()),
+        let style = gpui_kit::Style {
+            position: gpui_kit::Position::Absolute,
+            inset: gpui_kit::Edges::all(px(0.).into()),
             ..Default::default()
         };
         (window.request_layout(style, [], cx), ())
@@ -175,13 +167,13 @@ impl gpui::Element for Popup {
 
     fn prepaint(
         &mut self,
-        _: Option<&gpui::GlobalElementId>,
-        _: Option<&gpui::InspectorElementId>,
-        bounds: gpui::Bounds<gpui::Pixels>,
+        _: Option<&gpui_kit::GlobalElementId>,
+        _: Option<&gpui_kit::InspectorElementId>,
+        bounds: gpui_kit::Bounds<gpui_kit::Pixels>,
         _: &mut (),
         window: &mut Window,
         cx: &mut App,
-    ) -> gpui::AnyElement {
+    ) -> gpui_kit::AnyElement {
         let viewport = window.viewport_size();
         let edge = px(8.);
         let gap = px(6.);
@@ -201,22 +193,22 @@ impl gpui::Element for Popup {
         let mut menu = panel(MenuTone::App).id("popup").occlude()
             .w(width).max_h(max_height).overflow_y_scroll().children(items).into_any_element();
         let size = menu.layout_as_root(
-            gpui::size(gpui::AvailableSpace::Definite(width), gpui::AvailableSpace::MinContent),
+            gpui_kit::size(gpui_kit::AvailableSpace::Definite(width), gpui_kit::AvailableSpace::MinContent),
             window,
             cx,
         );
         let y = if flip { top - size.height } else { bottom };
-        menu.prepaint_at(gpui::point(x, y), window, cx);
+        menu.prepaint_at(gpui_kit::point(x, y), window, cx);
         menu
     }
 
     fn paint(
         &mut self,
-        _: Option<&gpui::GlobalElementId>,
-        _: Option<&gpui::InspectorElementId>,
-        _: gpui::Bounds<gpui::Pixels>,
+        _: Option<&gpui_kit::GlobalElementId>,
+        _: Option<&gpui_kit::InspectorElementId>,
+        _: gpui_kit::Bounds<gpui_kit::Pixels>,
         _: &mut (),
-        menu: &mut gpui::AnyElement,
+        menu: &mut gpui_kit::AnyElement,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -364,7 +356,7 @@ impl IntoElement for MenuRow {
         };
 
         let mut row = div()
-            .id(gpui::ElementId::Name(self.id.clone()))
+            .id(gpui_kit::ElementId::Name(self.id.clone()))
             .h(px(height))
             .flex_none()
             .when(self.selected, |row| row.bg(tone.selected()))
@@ -375,7 +367,7 @@ impl IntoElement for MenuRow {
             .rounded(px(ROW_RADIUS))
             .cursor_pointer()
             .text_size(px(13.))
-            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .font_weight(gpui_kit::FontWeight::SEMIBOLD)
             .text_color(label_color)
             .hover(move |s| s.bg(hover));
 
@@ -406,7 +398,7 @@ impl IntoElement for MenuRow {
                             el.child(
                                 div()
                                     .text_size(px(11.))
-                                    .font_weight(gpui::FontWeight::NORMAL)
+                                    .font_weight(gpui_kit::FontWeight::NORMAL)
                                     .text_color(tone.muted())
                                     .truncate()
                                     .child(detail),
@@ -431,7 +423,7 @@ impl IntoElement for MenuRow {
                         el.child(
                             div()
                                 .text_size(px(12.))
-                                .font_weight(gpui::FontWeight::NORMAL)
+                                .font_weight(gpui_kit::FontWeight::NORMAL)
                                 .text_color(tone.muted())
                                 .child(value),
                         )

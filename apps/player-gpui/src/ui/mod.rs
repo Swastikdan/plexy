@@ -13,6 +13,8 @@
 #![allow(dead_code)]
 
 pub mod artwork;
+pub mod button;
+pub mod surface;
 pub mod icon;
 pub mod menu;
 pub mod motion;
@@ -21,6 +23,8 @@ pub mod motion;
 #[allow(unused_imports)]
 pub mod prelude {
     pub use super::artwork::FrameTone;
+    pub use super::button::{Button, Size, Variant};
+    pub use super::surface::{self, Tone};
     pub use super::icon::{icon, Icon};
     pub use super::menu::{MenuRow, MenuTone};
     pub use super::motion::{Easing, MotionSpec, TweenExt};

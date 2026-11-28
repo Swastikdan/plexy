@@ -7,11 +7,12 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use gpui::{div, prelude::*, px, Context, MouseButton, PathPromptOptions, SharedString, Window};
+use gpui_kit::{div, prelude::*, px, Context, MouseButton, PathPromptOptions, SharedString, Window};
 
 use crate::app::{format_time, PlayerView};
 use crate::catalog::{self, Item, LibraryKind, Mark, Show, TitleKey};
-use crate::personal_ui::{Field, TitleView};
+use crate::personal_ui::{Field, TitleView, POSTER_SUBTITLE_LINE, POSTER_TEXT_GAP, POSTER_TITLE_LINE};
+use crate::settings_ui::SettingsSection;
 use crate::theme;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,11 +37,13 @@ pub enum Screen {
 
 impl Screen {
     /// Start page for screenshot checks: `PLEXY_SCREEN=library`, `show:<key>`,
-    /// `genre:<name>`, `search:<query>`, `history`, `collections`, `appearance`.
-    pub fn from_env() -> Screen {
-        let Ok(value) = std::env::var("PLEXY_SCREEN") else { return Screen::Home };
-        let (kind, arg) = value.split_once(':').unwrap_or((value.as_str(), ""));
-        match kind {
+    /// `genre:<name>`, `search:<query>`, `history`, `collections`, `settings:<section>`.
+    pub(crate) fn from_launch(value: &str) -> (Self, SettingsSection) {
+        if let Some(section) = SettingsSection::from_launch_screen(value) {
+            return (Self::Settings, section);
+        }
+        let (kind, arg) = value.split_once(':').unwrap_or((value, ""));
+        let screen = match kind {
             "library" => Screen::Library,
             "show" => Screen::Show(arg.to_string()),
             "movie" => Screen::Movie(PathBuf::from(arg)),
@@ -48,20 +51,46 @@ impl Screen {
             "search" => Screen::Search,
             "history" => Screen::History,
             "collections" => Screen::Collections,
-            "settings" | "appearance" => Screen::Settings,
             _ => Screen::Home,
+        };
+        (screen, SettingsSection::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Screen, SettingsSection};
+
+    #[test]
+    fn launch_screen_opens_the_requested_settings_section() {
+        for (name, section) in [
+            ("overview", SettingsSection::Overview),
+            ("playback", SettingsSection::Playback),
+            ("appearance", SettingsSection::Appearance),
+            ("libraries", SettingsSection::Libraries),
+            ("matches", SettingsSection::FixMatches),
+            ("metadata", SettingsSection::Metadata),
+            ("maintenance", SettingsSection::Maintenance),
+        ] {
+            assert_eq!(Screen::from_launch(&format!("settings:{name}")), (Screen::Settings, section));
+            if section != SettingsSection::Overview {
+                assert_eq!(Screen::from_launch(name), (Screen::Settings, section));
+            }
         }
+        assert_eq!(Screen::from_launch("settings"), (Screen::Settings, SettingsSection::Overview));
+        assert_eq!(Screen::from_launch("settings:unknown"), (Screen::Settings, SettingsSection::Overview));
+        assert_eq!(Screen::from_launch("library"), (Screen::Library, SettingsSection::Overview));
     }
 }
 
 use crate::ui::icon::{icon, Icon};
 
-fn white(alpha: f32) -> gpui::Hsla {
-    gpui::Hsla { a: alpha, ..theme::foreground() }
+fn white(alpha: f32) -> gpui_kit::Hsla {
+    gpui_kit::Hsla { a: alpha, ..theme::foreground() }
 }
 
 pub(crate) fn section_title(text: &str) -> impl IntoElement {
-    div().text_size(px(16.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child(text.to_string())
+    div().text_size(px(16.)).font_weight(gpui_kit::FontWeight::BOLD).text_color(theme::foreground()).child(text.to_string())
 }
 
 pub(crate) fn progress_bar(fraction: f64) -> impl IntoElement {
@@ -69,8 +98,8 @@ pub(crate) fn progress_bar(fraction: f64) -> impl IntoElement {
         .h(px(3.))
         .w_full()
         .rounded_full()
-        .bg(gpui::Hsla { a: 0.25, ..theme::foreground() })
-        .child(div().h_full().rounded_full().w(gpui::relative(fraction as f32)).bg(theme::accent()))
+        .bg(gpui_kit::Hsla { a: 0.25, ..theme::foreground() })
+        .child(div().h_full().rounded_full().w(gpui_kit::relative(fraction as f32)).bg(theme::accent()))
 }
 
 impl PlayerView {
@@ -96,22 +125,47 @@ impl PlayerView {
         episodes.get(index + 1).map(|e| e.path.clone())
     }
 
-    pub fn reload_catalog(&mut self) {
-        self.libraries = self.catalog.libraries();
-        self.items = self.catalog.items();
-        self.personal = self.catalog.personal();
-        let tv = self.tv_library_ids();
-        let mut keys = HashSet::new();
-        for item in &self.items {
-            if !item.missing && tv.contains(&item.library_id) {
-                keys.insert(TitleKey::Show(item.show_key()));
-            }
-            if item.season.is_none() {
-                keys.insert(TitleKey::Movie(item.path.clone()));
-            }
+    pub fn reload_catalog(&mut self, cx: &mut Context<Self>) {
+        self.fix_matches = None;
+        if self.catalog_loading {
+            self.catalog_reload_pending = true;
+            return;
         }
-        self.episode_metas = self.catalog.library_episode_metadata();
-        self.metas = self.catalog.matched_title_metadata(&keys);
+        self.catalog_loading = true;
+        let catalog = self.catalog.clone();
+        let work = cx.background_spawn(async move { catalog.snapshot() });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| {
+                this.catalog_loading = false;
+                if std::mem::take(&mut this.catalog_reload_pending) {
+                    this.reload_catalog(cx);
+                    return;
+                }
+                match result {
+                    Ok(snapshot) => {
+                        this.catalog_load_error = None;
+                        this.fix_matches = None;
+                        this.libraries = snapshot.libraries;
+                        this.items = snapshot.items;
+                        this.personal = snapshot.personal;
+                        this.episode_metas = snapshot.episode_metas;
+                        this.metas = snapshot.metas;
+                        if !this.catalog_loaded {
+                            this.catalog_loaded = true;
+                            this.start_auto_scan();
+                            if let Some(path) = &this.media {
+                                this.next_episode = this.catalog_next(path).or_else(|| this.next_episode.clone());
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        this.catalog_load_error = Some(format!("Couldn’t load the library: {error}"));
+                    }
+                }
+                cx.notify();
+            }).ok();
+        }).detach();
     }
 
     fn add_library(&mut self, kind: LibraryKind, window: &mut Window, cx: &mut Context<Self>) {
@@ -128,7 +182,7 @@ impl PlayerView {
                 this.update(cx, |view, cx| {
                     match view.catalog.add_library_with_folders(kind, &paths) {
                         Ok(id) => {
-                            view.reload_catalog();
+                            view.reload_catalog(cx);
                             view.catalog.scan(Some(id), false);
                         }
                         Err(error) => {
@@ -144,7 +198,7 @@ impl PlayerView {
         .detach();
     }
 
-    fn add_root(&mut self, library_id: i64, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn add_root(&mut self, library_id: i64, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions { files: false, directories: true, multiple: true, prompt: Some("Add Folder".into()) });
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Ok(Some(paths))) = paths.await {
@@ -152,7 +206,7 @@ impl PlayerView {
                     for path in paths {
                         let _ = view.catalog.add_root(library_id, &path);
                     }
-                    view.reload_catalog();
+                    view.reload_catalog(cx);
                     view.catalog.scan(Some(library_id), false);
                     cx.notify();
                 })
@@ -174,7 +228,7 @@ impl PlayerView {
             .rounded(px(theme::RADIUS))
             .cursor_pointer()
             .text_size(px(12.))
-            .font_weight(if active { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::MEDIUM })
+            .font_weight(if active { gpui_kit::FontWeight::SEMIBOLD } else { gpui_kit::FontWeight::MEDIUM })
             .text_color(if active { theme::foreground() } else { theme::muted() })
             .when(active, |el| el.bg(theme::default()))
             .hover(|style| style.bg(theme::default_soft()).text_color(theme::foreground()))
@@ -185,21 +239,10 @@ impl PlayerView {
             .child(label)
     }
 
-    pub(crate) fn button(&self, id: impl Into<SharedString>, label: impl Into<SharedString>, primary: bool) -> gpui::Stateful<gpui::Div> {
-        div()
-            .id(gpui::ElementId::Name(id.into()))
-            .h(px(29.))
-            .px(px(11.))
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .rounded(px(theme::RADIUS_LG))
-            .cursor_pointer()
-            .text_size(px(11.))
-            .font_weight(gpui::FontWeight::SEMIBOLD)
-            .when(primary, |el| el.bg(theme::accent()).text_color(theme::accent_foreground()).hover(|s| s.opacity(0.9)))
-            .when(!primary, |el| el.bg(theme::default()).text_color(theme::foreground()).hover(|s| s.bg(theme::segment())))
-            .child(label.into())
+    /// Dialog and page action. See `ui::button` for the variants.
+    pub(crate) fn button(&self, id: impl Into<SharedString>, label: impl Into<SharedString>, primary: bool) -> crate::ui::button::KitButton {
+        let button = crate::ui::button::Button::new(id, label);
+        if primary { button.primary() } else { button }.build()
     }
 
     /// Poster width: ~8 per row like the web grid.
@@ -207,7 +250,7 @@ impl PlayerView {
         ((self.page_width() - 7. * 20.) / 8.).clamp(112., 200.)
     }
 
-    pub(crate) fn poster(&self, poster: Option<PathBuf>, title: &str, width: f32, height: f32) -> gpui::Div {
+    pub(crate) fn poster(&self, poster: Option<PathBuf>, title: &str, width: f32, height: f32) -> gpui_kit::Div {
         div()
             .w(px(width))
             .h(px(height))
@@ -227,7 +270,7 @@ impl PlayerView {
                         .flex_col()
                         .justify_end()
                         .text_size(px(14.))
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .text_color(white(0.55))
                         .child(title.to_string()),
                 )
@@ -271,7 +314,7 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(div().size(px(38.)).rounded_full().bg(gpui::Hsla { a: 0.55, ..theme::background() }).flex().items_center().justify_center().child(icon(Icon::Play, 22., theme::foreground()))),
+                            .child(div().size(px(38.)).rounded_full().bg(gpui_kit::Hsla { a: 0.55, ..theme::background() }).flex().items_center().justify_center().child(icon(Icon::Play, 22., theme::foreground()))),
                     )
                     .when(fraction > 0.0, |el| el.child(div().absolute().left(px(8.)).right(px(8.)).bottom(px(8.)).child(progress_bar(fraction)))),
             )
@@ -280,7 +323,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(px(2.))
-                    .child(div().text_size(px(12.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::foreground()).truncate().child(item.title.clone()))
+                    .child(div().text_size(px(12.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(theme::foreground()).truncate().child(item.title.clone()))
                     .child(div().text_size(px(10.)).text_color(theme::muted()).truncate().child(match remaining {
                         Some(left) if !caption.is_empty() => format!("{caption} · {left}"),
                         Some(left) => left,
@@ -304,14 +347,14 @@ impl PlayerView {
     ) -> impl IntoElement {
         let width = self.poster_width();
         let group = SharedString::from(format!("poster-{id}"));
-        div()
+        let card = div()
             .id(SharedString::from(id))
             .group(group.clone())
             .w(px(width))
             .flex_none()
             .flex()
             .flex_col()
-            .gap(px(7.))
+            .gap(px(POSTER_TEXT_GAP))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
             .child(
@@ -328,21 +371,24 @@ impl PlayerView {
                                 .right(px(7.))
                                 .size(px(20.))
                                 .rounded_full()
-                                .bg(gpui::hsla(0., 0., 1., 0.96))
+                                .bg(gpui_kit::hsla(0., 0., 1., 0.96))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .child(icon(Icon::Check, 14., gpui::hsla(0., 0., 0.02, 1.))),
+                                .child(icon(Icon::Check, 14., gpui_kit::hsla(0., 0., 0.02, 1.))),
                         )
                     })
                     .when(fraction > 0.0 && !watched, |el| el.child(div().absolute().left(px(7.)).right(px(7.)).bottom(px(7.)).child(progress_bar(fraction))))
                     .child(crate::ui::artwork::hover_veil(group.clone(), 10.)),
             )
-            .child(div().text_size(px(15.)).font_weight(gpui::FontWeight::MEDIUM).text_color(theme::foreground()).truncate().group_hover(group.clone(), |s| s.text_color(theme::accent())).child(title))
-            .child(div().text_size(px(12.)).text_color(theme::muted()).truncate().child(subtitle))
+            .child(div().text_size(px(15.)).line_height(px(POSTER_TITLE_LINE)).font_weight(gpui_kit::FontWeight::MEDIUM).text_color(theme::foreground()).truncate().group_hover(group.clone(), |s| s.text_color(theme::accent())).child(title))
+            .child(div().text_size(px(12.)).line_height(px(POSTER_SUBTITLE_LINE)).text_color(theme::muted()).truncate().child(subtitle));
+        #[cfg(test)]
+        let card = gpui_kit::test::TestSupportExt::test_support(card);
+        card
     }
 
-    fn row(&self, id: &'static str, title: &str, children: Vec<gpui::AnyElement>) -> impl IntoElement {
+    fn row(&self, id: &'static str, title: &str, children: Vec<gpui_kit::AnyElement>) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -351,7 +397,7 @@ impl PlayerView {
             .child(div().id(id).flex().gap(px(13.)).overflow_x_scroll().pb(px(5.)).children(children))
     }
 
-    fn render_home(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_home(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         if self.libraries.is_empty() {
             return self.render_welcome(cx).into_any_element();
         }
@@ -425,7 +471,7 @@ impl PlayerView {
             .gap(px(11.))
             .py(px(96.))
             .child(icon(Icon::Film, 56., theme::accent()))
-            .child(div().text_size(px(21.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child("Welcome to Plexy"))
+            .child(div().text_size(px(21.)).font_weight(gpui_kit::FontWeight::BOLD).text_color(theme::foreground()).child("Welcome to Plexy"))
             .child(div().text_size(px(12.)).text_color(theme::muted()).child("Add your movie and TV folders. Everything stays on this Mac."))
             .child(
                 div()
@@ -437,7 +483,7 @@ impl PlayerView {
             )
     }
 
-    fn render_movies(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_movies(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let titles: Vec<_> = self
             .visible_movies()
             .iter()
@@ -455,7 +501,7 @@ impl PlayerView {
             .into_any_element()
     }
 
-    fn render_shows(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_shows(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let titles: Vec<_> = self
             .visible_shows()
             .iter()
@@ -473,7 +519,7 @@ impl PlayerView {
             .into_any_element()
     }
 
-    fn render_show(&self, key: &str, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_show(&self, key: &str, window: &Window, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let Some(show) = self.shows().into_iter().find(|s| s.key == key) else {
             return div().text_color(theme::muted()).child("This show is no longer in your library.").into_any_element();
         };
@@ -493,7 +539,7 @@ impl PlayerView {
                             .flex_col()
                             .justify_end()
                             .gap(px(8.))
-                            .child(div().text_size(px(27.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child(show.title.clone()))
+                            .child(div().text_size(px(27.)).font_weight(gpui_kit::FontWeight::BOLD).text_color(theme::foreground()).child(show.title.clone()))
                             .child(div().text_size(px(12.)).text_color(theme::muted()).child(format!(
                                 "{} season{} · {} episodes · {} unwatched",
                                 show.seasons.keys().filter(|s| **s > 0).count(),
@@ -542,7 +588,7 @@ impl PlayerView {
                                 .child(
                                     div()
                                         .text_size(px(12.))
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                                         .text_color(theme::foreground())
                                         .truncate()
                                         .child(episode.episode_title.clone().unwrap_or_else(|| episode.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())),
@@ -565,7 +611,7 @@ impl PlayerView {
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
                                     this.catalog.set_watched(&toggle_path, !watched);
-                                    this.reload_catalog();
+                                    this.reload_catalog(cx);
                                     cx.notify();
                                 }))
                                 .child(icon(Icon::Check, 14., if watched { theme::accent() } else { theme::muted() }))
@@ -589,12 +635,12 @@ impl PlayerView {
         self.button("add-library", "Add a Library", true).on_click(cx.listener(|this, _, window, cx| {
             this.add_library_open = true;
             this.library_error = None;
-            window.focus(&this.focus_handle());
+            window.focus(&this.focus_handle(), cx);
             cx.notify();
         }))
     }
 
-    pub fn render_add_library(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+    pub fn render_add_library(&self, cx: &mut Context<Self>) -> Option<crate::ui::controls::DialogParts> {
         self.add_library_open.then(|| {
             let choices = div().flex().flex_col().gap(px(6.))
                 .when_some(self.library_error.clone(), |el, error| {
@@ -622,7 +668,7 @@ impl PlayerView {
         })
     }
 
-    fn render_libraries(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_libraries(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         let status = self.catalog.status.lock().clone();
         let mut page = div()
             .flex()
@@ -695,7 +741,7 @@ impl PlayerView {
                                 .flex_col()
                                 .min_w_0()
                                 .gap(px(2.))
-                                .child(div().text_size(px(14.)).font_weight(gpui::FontWeight::BOLD).text_color(theme::foreground()).child(library.name.clone()))
+                                .child(div().text_size(px(14.)).font_weight(gpui_kit::FontWeight::BOLD).text_color(theme::foreground()).child(library.name.clone()))
                                 .child(div().text_size(px(10.)).text_color(theme::muted()).child(format!("{} · {} items", library.kind.label(), library.item_count))),
                         )
                         .child(
@@ -705,7 +751,7 @@ impl PlayerView {
                                 .flex_wrap()
                                 .child(self.button(format!("lib-auto-{id}"), if auto { "Auto-refresh: On" } else { "Auto-refresh: Off" }, false).on_click(cx.listener(move |this, _, _, cx| {
                                     this.catalog.set_auto_refresh(id, !auto);
-                                    this.reload_catalog();
+                                    this.reload_catalog(cx);
                                     cx.notify();
                                 })))
                                 .child(self.button(format!("lib-root-{id}"), "Add Folder", false).on_click(cx.listener(move |this, _, window, cx| this.add_root(id, window, cx))))
@@ -718,7 +764,7 @@ impl PlayerView {
                                         .text_color(theme::danger())
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.catalog.remove_library(id);
-                                            this.reload_catalog();
+                                            this.reload_catalog(cx);
                                             cx.notify();
                                         })),
                                 ),
@@ -747,7 +793,7 @@ impl PlayerView {
                                 .hover(|s| s.text_color(theme::danger()))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.catalog.remove_root(root_id);
-                                    this.reload_catalog();
+                                    this.reload_catalog(cx);
                                     cx.notify();
                                 }))
                                 .child("Remove folder"),
@@ -763,27 +809,34 @@ impl PlayerView {
         self.render_welcome(cx)
     }
 
-    pub fn render_libraries_public(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        self.render_libraries(cx)
+    pub fn render_personal_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let targets = [Screen::Watchlist, Screen::Favorites, Screen::Collections, Screen::Hidden];
+        let selected = targets.iter().position(|target| *target == self.screen).unwrap_or(0);
+        let view = cx.entity().downgrade();
+        let tabs = crate::ui::controls::segmented(
+            "lists",
+            [
+                ("Watchlist", Some(self.personal.marked(Mark::Watchlist).len())),
+                ("Favorites", Some(self.personal.marked(Mark::Favorite).len())),
+                ("Collections", Some(self.personal.collections.len())),
+                ("Hidden", Some(self.personal.marked(Mark::Hidden).len())),
+            ],
+            selected,
+            move |index, _, cx| {
+                view.update(cx, |this, cx| {
+                    if this.screen != targets[index] {
+                        this.screen = targets[index].clone();
+                        cx.notify();
+                    }
+                }).ok();
+            },
+        );
+        div().flex().child(tabs)
     }
 
     /// Screens that keep the simple list layout inside the new shell.
-    pub fn render_list_screen(&self, screen: Screen, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let lists = |this: &Self, cx: &mut Context<Self>| {
-            crate::ui::controls::tabs(
-                [("lists-watchlist", "Watchlist", Screen::Watchlist), ("lists-favorites", "Favorites", Screen::Favorites), ("lists-collections", "Collections", Screen::Collections), ("lists-hidden", "Hidden", Screen::Hidden)]
-                    .into_iter()
-                    .map(|(id, label, target)| {
-                        crate::ui::controls::tab(id, label, this.screen == target)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.screen = target.clone();
-                                cx.notify();
-                            }))
-                            .into_any_element()
-                    }),
-            )
-        };
-        let body = match screen {
+    pub fn render_list_screen(&self, screen: Screen, window: &Window, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        match screen {
             Screen::Movies => self.render_movies(cx),
             Screen::Shows => self.render_shows(cx),
             Screen::Search => self.render_search(window, cx),
@@ -793,9 +846,7 @@ impl PlayerView {
             Screen::Collections => self.render_collections(window, cx),
             Screen::History => self.render_history(cx),
             _ => div().into_any_element(),
-        };
-        let personal = matches!(screen, Screen::Watchlist | Screen::Favorites | Screen::Hidden) || (screen == Screen::Collections && !self.personal.collections.is_empty());
-        div().flex().flex_col().gap(px(19.)).when(personal, |el| el.child(lists(self, cx))).child(body).into_any_element()
+        }
     }
 
     #[allow(dead_code)]
@@ -837,12 +888,12 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(px(3.))
-                    .child(div().px(px(10.)).pb(px(14.)).text_size(px(19.)).font_weight(gpui::FontWeight::BLACK).text_color(theme::foreground()).child("Plexy"))
+                    .child(div().px(px(10.)).pb(px(14.)).text_size(px(19.)).font_weight(gpui_kit::FontWeight::BLACK).text_color(theme::foreground()).child("Plexy"))
                     .child(div().pb(px(8.)).child(self.text_field("nav-search", Field::Search, &self.search_focus, &self.search_query, "Search", window, cx)))
                     .child(self.nav_item("nav-home", "Home", Screen::Home, cx))
                     .child(self.nav_item("nav-movies", "Movies", Screen::Movies, cx))
                     .child(self.nav_item("nav-shows", "TV Shows", Screen::Shows, cx))
-                    .child(div().px(px(10.)).pt(px(13.)).pb(px(3.)).text_size(px(10.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(theme::muted()).child("Your library"))
+                    .child(div().px(px(10.)).pt(px(13.)).pb(px(3.)).text_size(px(10.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(theme::muted()).child("Your library"))
                     .child(self.nav_item("nav-watchlist", "Watchlist", Screen::Watchlist, cx))
                     .child(self.nav_item("nav-favorites", "Favorites", Screen::Favorites, cx))
                     .child(self.nav_item("nav-collections", "Collections", Screen::Collections, cx))

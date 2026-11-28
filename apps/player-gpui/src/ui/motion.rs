@@ -19,10 +19,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui::{
+use gpui_kit::{
     AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
     LayoutId, Pixels, Window,
 };
+
+/// How far (px) a page rises while it fades in with [`MotionSpec::page`].
+pub const PAGE_RISE: f32 = 10.;
 
 /// The shortest tween duration the engine will run.
 ///
@@ -125,9 +128,36 @@ impl MotionSpec {
         Self::new(Duration::from_millis(140), Duration::ZERO, Easing::Exit)
     }
 
+    /// 240 ms enter: a page or settings section arriving. Pair with
+    /// [`PAGE_RISE`]: fade from 0 and rise into place.
+    pub const fn page() -> Self {
+        Self::new(Duration::from_millis(240), Duration::ZERO, Easing::Enter)
+    }
+
     /// 700 ms: the hero crossfade and hero copy timeline.
     pub const fn hero() -> Self {
         Self::new(Duration::from_millis(700), Duration::ZERO, Easing::Standard)
+    }
+}
+
+impl MotionSpec {
+    /// A one-shot GPUI [`gpui_kit::Animation`] for `with_animation`, using this
+    /// token's duration and curve. A delay is not representable here; use
+    /// `with_animations` with a leading hold step, or a [`Tween`].
+    pub fn animation(self) -> gpui_kit::Animation {
+        let easing = self.easing;
+        gpui_kit::Animation::new(self.duration.max(MIN_DURATION)).with_easing(move |t| easing.sample(t))
+    }
+
+    /// The same token, repeating (spinners).
+    pub fn repeating(self) -> gpui_kit::Animation {
+        self.animation().repeat()
+    }
+
+    /// The same token with another duration (rare; prefer a named token).
+    pub const fn with_duration(mut self, duration: Duration) -> Self {
+        self.duration = duration;
+        self
     }
 }
 
@@ -317,14 +347,6 @@ pub trait TweenExt: IntoElement + Sized + 'static {
 }
 
 impl<E: IntoElement + 'static> TweenExt for E {}
-
-impl<E: IntoElement + 'static> IntoElement for Tween<E> {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
 
 impl<E: IntoElement + 'static> Element for Tween<E> {
     type RequestLayoutState = AnyElement;

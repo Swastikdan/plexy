@@ -3,16 +3,18 @@
 fn main() {
     let headers = "../desktop/native/mpv-embed/include";
     println!("cargo:rerun-if-changed=native/plexy_mpv.mm");
+    println!("cargo:rerun-if-changed=native/plexy_artwork.mm");
     println!("cargo:rerun-if-changed={headers}/mpv");
     cc::Build::new()
         .cpp(true)
         .file("native/plexy_mpv.mm")
+        .file("native/plexy_artwork.mm")
         .include(headers)
         .flag("-std=c++17")
         .flag("-fobjc-arc")
         .flag("-Wno-deprecated-declarations")
         .compile("plexy_mpv");
-    for framework in ["AppKit", "OpenGL", "QuartzCore", "Foundation"] {
+    for framework in ["AppKit", "OpenGL", "QuartzCore", "Foundation", "CoreGraphics", "ImageIO"] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
     println!("cargo:rustc-link-lib=c++");

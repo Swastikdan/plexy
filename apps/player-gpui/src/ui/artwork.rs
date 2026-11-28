@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use gpui::{div, prelude::*, px, Div, Hsla, SharedString};
+use gpui_kit::{div, prelude::*, px, Div, Hsla, SharedString};
 
 use crate::assets;
 use crate::theme;
@@ -30,9 +30,9 @@ impl FrameTone {
             FrameTone::Surface => theme::surface(),
             FrameTone::Media => {
                 if theme::is_light() {
-                    gpui::hsla(0., 0., 0.06, 1.)
+                    gpui_kit::hsla(0., 0., 0.06, 1.)
                 } else {
-                    gpui::hsla(0., 0., 0.08, 1.)
+                    gpui_kit::hsla(0., 0., 0.08, 1.)
                 }
             }
         }
@@ -42,7 +42,9 @@ impl FrameTone {
 /// The fixed, clipped art frame. Add the art layer and the corner restoration
 /// as children; put badges/controls on an outer relative wrapper.
 pub fn frame(radius: f32) -> Div {
-    div().relative().rounded(px(radius)).overflow_hidden()
+    // The placeholder color lives on the frame, which never grows, so its
+    // rounded corners stay intact while the art layer scales on hover.
+    div().relative().rounded(px(radius)).overflow_hidden().bg(theme::surface_secondary())
 }
 
 /// A fixed-size overlay inside a frame: hover wash, veil, gradient, etc.
@@ -56,56 +58,16 @@ pub fn art(image: Option<PathBuf>, radius: f32) -> impl IntoElement {
     div()
         .absolute()
         .inset_0()
-        .bg(theme::surface_secondary())
         .when_some(image, |el, path| {
             el.child(assets::artwork_cover(path, radius))
         })
 }
 
-/// Paints `color` over the corners outside a rounded rect. Use this at frame
-/// size after a grown image, with the local backdrop color.
-pub fn corner_mask(r: f32, color: Hsla) -> impl IntoElement {
-    gpui::canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            let (o, w, h) = (
-                bounds.origin,
-                f32::from(bounds.size.width),
-                f32::from(bounds.size.height),
-            );
-            // (corner x, corner y, arc centre x, arc centre y, start angle)
-            for (x, y, cx_, cy_, start) in [
-                (0., 0., r, r, 0.5f32),
-                (w, 0., w - r, r, 0.75),
-                (w, h, w - r, h - r, 0.0),
-                (0., h, r, h - r, 0.25),
-            ] {
-                let mut b = gpui::PathBuilder::fill();
-                b.move_to(gpui::point(o.x + px(x), o.y + px(y)));
-                for step in 0..=8 {
-                    let a = (start + 0.25 * step as f32 / 8.) * std::f32::consts::TAU;
-                    b.line_to(gpui::point(
-                        o.x + px(cx_ + (r + 0.4) * a.cos()),
-                        o.y + px(cy_ + (r + 0.4) * a.sin()),
-                    ));
-                }
-                b.close();
-                if let Ok(path) = b.build() {
-                    window.paint_path(path, color);
-                }
-            }
-        },
-    )
-    .absolute()
-    .inset_0()
-}
-
-/// A fixed, clipped frame with a rounded-corner restoration layer at frame
-/// size. Callers add the growing art layer and fixed decorations.
+/// A fixed, clipped frame around a (possibly growing) art layer. The art
+/// rounds its own corners at the frame's clip, so no mask is needed.
 pub fn framed(radius: f32, tone: FrameTone, art: impl IntoElement) -> Div {
-    frame(radius)
-        .child(art)
-        .child(corner_mask(radius, tone.backdrop()))
+    let _ = tone;
+    frame(radius).child(art)
 }
 
 /// Theme-aware hover wash. The current visual keeps the name `hover_ring` for
@@ -127,7 +89,7 @@ pub fn hover_veil(group: SharedString, radius: f32) -> Div {
 pub fn hover_ring(group: SharedString, radius: f32) -> Div {
     overlay((radius - 1.).max(0.))
         .border_2()
-        .border_color(gpui::transparent_black())
+        .border_color(gpui_kit::transparent_black())
         .group_hover(group, |s| s.border_color(snow(0.9)))
 }
 
@@ -136,11 +98,11 @@ fn with_alpha(color: Hsla, a: f32) -> Hsla {
 }
 
 fn snow(a: f32) -> Hsla {
-    gpui::hsla(0., 0., 1., a)
+    gpui_kit::hsla(0., 0., 1., a)
 }
 
 fn ink(a: f32) -> Hsla {
-    gpui::hsla(0., 0., 0.02, a)
+    gpui_kit::hsla(0., 0., 0.02, a)
 }
 
 #[cfg(test)]
@@ -155,7 +117,7 @@ mod tests {
 
     #[test]
     fn alpha_helper_preserves_rgb() {
-        let base = gpui::hsla(0.5, 0.5, 0.5, 1.);
+        let base = gpui_kit::hsla(0.5, 0.5, 0.5, 1.);
         assert_eq!(with_alpha(base, 0.25).a, 0.25);
         assert_eq!(with_alpha(base, 0.25).h, base.h);
         assert_eq!(snow(0.5).a, 0.5);

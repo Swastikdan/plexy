@@ -13,9 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use parking_lot::Mutex;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 
 use crate::media::{self, Kind, Progress};
 
@@ -205,18 +205,31 @@ fn find_poster(path: &Path) -> Option<PathBuf> {
     None
 }
 
+pub struct CatalogSnapshot {
+    pub(crate) libraries: Vec<Library>,
+    pub(crate) items: Vec<Item>,
+    pub(crate) personal: Personal,
+    pub(crate) episode_metas: std::collections::HashMap<PathBuf, EpisodeMeta>,
+    pub(crate) metas: std::collections::HashMap<TitleKey, TitleMeta>,
+}
+
 #[derive(Clone)]
 pub struct Catalog {
     db: Arc<Mutex<Connection>>,
+    dir: PathBuf,
     pub status: Arc<Mutex<ScanStatus>>,
     pub(crate) metadata_work: Arc<Mutex<()>>,
     /// Bumped when background metadata or marker work changes the database,
     /// so the UI can reload without polling the network.
     metadata_epoch: Arc<AtomicU64>,
+    credentials: Arc<crate::credentials::Credentials>,
 }
 impl Catalog {
     pub fn open() -> Result<Self> {
-        let dir = data_dir();
+        Self::open_in(data_dir())
+    }
+
+    pub(crate) fn open_in(dir: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&dir)?;
         let db = Connection::open(dir.join("library.sqlite"))?;
         db.execute_batch(
@@ -279,9 +292,35 @@ impl Catalog {
              CREATE TABLE IF NOT EXISTS skip_lookups (
                path TEXT PRIMARY KEY, status TEXT NOT NULL, imdb_id TEXT, expires_at INTEGER NOT NULL);",
         )?;
-        let catalog = Self { db: Arc::new(Mutex::new(db)), status: Arc::new(Mutex::new(ScanStatus::default())), metadata_work: Default::default(), metadata_epoch: Arc::new(AtomicU64::new(0)) };
-        catalog.import_legacy_progress(&dir);
+        let credentials = Arc::new(crate::credentials::Credentials::new(&dir));
+        let catalog = Self { credentials, db: Arc::new(Mutex::new(db)), dir, status: Arc::new(Mutex::new(ScanStatus::default())), metadata_work: Default::default(), metadata_epoch: Arc::new(AtomicU64::new(0)) };
+        catalog.import_legacy_progress(&catalog.dir);
         Ok(catalog)
+    }
+
+    /// Uses a separate connection so reading a large library never holds the
+    /// mutex that protects settings and playback writes.
+    pub fn snapshot(&self) -> Result<CatalogSnapshot> {
+        let db = Connection::open_with_flags(self.dir.join("library.sqlite"), OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        db.execute_batch("BEGIN")?;
+        let reader = Self { db: Arc::new(Mutex::new(db)), ..self.clone() };
+        let libraries = reader.libraries();
+        let items = reader.items();
+        let tv = libraries.iter().filter(|library| library.kind == LibraryKind::Shows)
+            .map(|library| library.id).collect::<HashSet<_>>();
+        let mut keys = HashSet::new();
+        for item in &items {
+            if !item.missing && tv.contains(&item.library_id) {
+                keys.insert(TitleKey::Show(item.show_key()));
+            }
+            if item.season.is_none() {
+                keys.insert(TitleKey::Movie(item.path.clone()));
+            }
+        }
+        let personal = reader.personal();
+        let episode_metas = reader.library_episode_metadata();
+        let metas = reader.matched_title_metadata(&keys);
+        Ok(CatalogSnapshot { libraries, items, personal, episode_metas, metas })
     }
 
     /// Keeps resume points recorded by the earlier per-file progress store.
@@ -817,13 +856,59 @@ impl Catalog {
         self.db.lock().execute("DELETE FROM tmdb_cache", [])
     }
 
+    /// Clears the catalog, watch progress, match history, TMDB cache,
+    /// downloaded artwork and playback caches. Libraries, folders, personal
+    /// lists, hand-made skip markers and preferences are kept.
+    pub fn reset_local_data(&self) -> Result<Vec<String>> {
+        let _metadata = self.metadata_work.try_lock()
+            .ok_or_else(|| anyhow::anyhow!("Wait for metadata work to finish, then try again."))?;
+        let scan = self.status.lock();
+        anyhow::ensure!(!scan.running, "Wait for the library scan to finish, then try again.");
+        let mut db = self.db.lock();
+        let transaction = db.transaction()?;
+        transaction.execute_batch(
+            "DELETE FROM items; DELETE FROM progress; DELETE FROM history;
+             DELETE FROM tmdb_cache; DELETE FROM title_metadata; DELETE FROM episode_metadata;
+             DELETE FROM manual_matches; DELETE FROM match_status;
+             DELETE FROM skip_segments; DELETE FROM skip_lookups;",
+        )?;
+        // Prevent a leftover legacy file from restoring cleared progress at startup.
+        match std::fs::remove_file(self.dir.join("progress.tsv")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("remove legacy watch progress"),
+        }
+        transaction.commit()?;
+        drop(db);
+        drop(scan);
+        let mut cleanup_errors = Vec::new();
+        for sub in ["artwork", "previews"] {
+            if let Err(error) = std::fs::remove_dir_all(self.dir.join(sub)) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    cleanup_errors.push(format!("{sub}: {error}"));
+                }
+            }
+        }
+        self.bump_metadata_epoch();
+        Ok(cleanup_errors)
+    }
+
     pub fn tmdb_token(&self) -> Option<String> {
         crate::metadata::token(self)
     }
 
-    pub fn set_tmdb_token(&self, token: &str) {
-        self.set_setting("tmdb_token", token.trim());
+    pub fn stored_tmdb_token(&self) -> Option<String> {
+        self.credentials.token()
+    }
+
+    pub fn load_tmdb_token(&self) -> Result<()> {
+        self.credentials.load(&self.dir.join("library.sqlite"))
+    }
+
+    pub fn set_tmdb_token(&self, token: &str) -> Result<()> {
+        self.credentials.save(token.trim(), &self.dir.join("library.sqlite"))?;
         self.bump_metadata_epoch();
+        Ok(())
     }
 
     pub fn bump_metadata_epoch(&self) {
@@ -978,6 +1063,20 @@ impl Catalog {
     }
 
     // MARK: Matching
+
+    pub(crate) fn match_review_keys(&self) -> (HashSet<TitleKey>, HashSet<TitleKey>) {
+        let db = self.db.lock();
+        let keys = |query| -> rusqlite::Result<HashSet<TitleKey>> {
+            let mut statement = db.prepare(query)?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            let keys = rows.filter_map(|row| TitleKey::decode(&row.ok()?)).collect();
+            Ok(keys)
+        };
+        (
+            keys("SELECT title_key FROM manual_matches").unwrap_or_default(),
+            keys("SELECT title_key FROM match_status WHERE status = 'review'").unwrap_or_default(),
+        )
+    }
 
     pub fn manual_match(&self, key: &TitleKey) -> Option<(String, i64)> {
         self.db
@@ -1396,6 +1495,42 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reset_rolls_back_database_on_failure_and_reports_cache_cleanup_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalog = Catalog::open_in(dir.path().to_path_buf()).unwrap();
+        let library = catalog.add_library(LibraryKind::Movies, dir.path()).unwrap();
+        let title = TitleKey::Movie(dir.path().join("Fixture.mkv"));
+        catalog.set_setting("subtitle_lang", "eng");
+        catalog.set_manual_match(&title, "movie", 42);
+        catalog.record_match_status(&title, "review");
+        let (manual, review) = catalog.match_review_keys();
+        assert!(manual.contains(&title));
+        assert!(review.contains(&title));
+        catalog.db.lock().execute_batch(
+            "CREATE TRIGGER fail_reset BEFORE DELETE ON match_status
+             BEGIN SELECT RAISE(ABORT, 'reset fixture'); END;",
+        ).unwrap();
+        let artwork = dir.path().join("artwork");
+        let previews = dir.path().join("previews");
+        std::fs::write(&artwork, "blocks directory cleanup").unwrap();
+        std::fs::create_dir(&previews).unwrap();
+
+        assert!(catalog.reset_local_data().is_err());
+        assert_eq!(catalog.manual_match(&title), Some(("movie".into(), 42)));
+        assert!(previews.is_dir());
+
+        catalog.db.lock().execute_batch("DROP TRIGGER fail_reset").unwrap();
+        let warnings = catalog.reset_local_data().unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].starts_with("artwork: "));
+        assert!(!previews.exists());
+        assert_eq!(catalog.manual_match(&title), None);
+        assert!(catalog.match_review_keys().1.is_empty());
+        assert_eq!(catalog.setting("subtitle_lang").as_deref(), Some("eng"));
+        assert_eq!(catalog.libraries()[0].id, library);
+    }
 
     #[test]
     fn scans_groups_and_keeps_state_when_root_disappears() {

@@ -6,7 +6,7 @@
 //! (`packages/local-library/src/metadata.ts`):
 //!
 //! - Bearer auth with a read-access token the user pastes into Settings
-//!   (`settings.tmdb_token`, or `PLEXY_TMDB_TOKEN` for development).
+//!   (macOS Keychain, or `PLEXY_TMDB_TOKEN` for development).
 //! - SQLite response cache: 24 h for search, 7 d for details. Stale rows keep
 //!   serving offline; only ancient search rows are pruned.
 //! - ~1 request/second throttle and bounded retries on 429/5xx.
@@ -50,9 +50,9 @@ pub fn normalized_title(s: &str) -> String {
     s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
-/// TMDB token: the Settings value first, then the environment for dev/tests.
+/// TMDB token, with an environment override for dev/tests.
 pub fn token(catalog: &Catalog) -> Option<String> {
-    std::env::var("PLEXY_TMDB_TOKEN").ok().filter(|t| !t.trim().is_empty()).or_else(|| catalog.setting("tmdb_token").filter(|t| !t.trim().is_empty()))
+    std::env::var("PLEXY_TMDB_TOKEN").ok().filter(|t| !t.trim().is_empty()).or_else(|| catalog.stored_tmdb_token())
 }
 
 /// Checks a TMDB read-access token against `/configuration`.

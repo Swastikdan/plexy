@@ -1,4 +1,4 @@
-use gpui::{Context, FocusHandle, Window, div, prelude::*, px};
+use gpui_kit::{Context, FocusHandle, Window, div, prelude::*, px};
 
 use crate::{
     app::PlayerView,
@@ -18,6 +18,7 @@ pub struct MarkerEditor {
 }
 
 impl PlayerView {
+    #[allow(dead_code)] // Not offered in the player; kept for a future title-page entry.
     pub fn open_marker_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.menu = None;
         self.marker_editor = Some(MarkerEditor {
@@ -29,7 +30,7 @@ impl PlayerView {
             end_focus: cx.focus_handle(),
         });
         self.select_marker(SegmentKind::Intro);
-        window.focus(&self.focus_handle());
+        window.focus(&self.focus_handle(), cx);
         cx.notify();
     }
 
@@ -85,7 +86,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
         window: &Window,
-    ) -> Option<impl IntoElement> {
+    ) -> Option<controls::DialogParts> {
         let editor = self.marker_editor.as_ref()?;
         let tabs = controls::tabs(
             [
@@ -98,7 +99,7 @@ impl PlayerView {
                 controls::tab(label, label, kind == editor.kind)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.select_marker(kind);
-                        window.focus(&this.focus_handle());
+                        window.focus(&this.focus_handle(), cx);
                         cx.notify();
                     }))
                     .into_any_element()
@@ -172,7 +173,7 @@ impl PlayerView {
                     self.button("marker-reset", "Reset to default", false)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.save_marker(true, cx);
-                            window.focus(&this.focus_handle());
+                            window.focus(&this.focus_handle(), cx);
                         })),
                 )
             })
@@ -180,7 +181,7 @@ impl PlayerView {
                 self.button("marker-cancel", "Cancel", false)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.marker_editor = None;
-                        window.focus(&this.focus_handle());
+                        window.focus(&this.focus_handle(), cx);
                         cx.notify();
                     })),
             )
@@ -189,7 +190,7 @@ impl PlayerView {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.save_marker(false, cx);
                         if this.marker_editor.is_none() {
-                            window.focus(&this.focus_handle());
+                            window.focus(&this.focus_handle(), cx);
                         }
                     })),
             );

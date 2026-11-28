@@ -72,7 +72,8 @@ struct MpvApi {
     *(void **)(&field) = dlsym(handle, name);         \
     if (!field) {                                     \
       error = std::string("libmpv is missing ") + name; \
-      handle = nullptr;                               \
+      dlclose(handle);                                \
+      *this = MpvApi{};                               \
       return false;                                   \
     }                                                 \
   } while (0)
@@ -471,6 +472,8 @@ PlexyPlayer *plexy_player_create(const char *libmpvPath, plexy_event_fn callback
   gApi.mpv_set_property_string(mpv, "vo", "libmpv");
   gApi.mpv_set_property_string(mpv, "ao", "coreaudio");
   gApi.mpv_set_property_string(mpv, "hwdec", "auto-safe");
+  // Avoid waiting for the frame's target time on AppKit's main thread.
+  gApi.mpv_set_property_string(mpv, "video-timing-offset", "0");
   gApi.mpv_set_property_string(mpv, "keep-open", "yes");
   gApi.mpv_set_property_string(mpv, "idle", "yes");
   gApi.mpv_set_property_string(mpv, "pause", "yes");
@@ -524,19 +527,18 @@ PlexyPlayer *plexy_player_create(const char *libmpvPath, plexy_event_fn callback
 
 /// Puts the video surface into the window that owns `gpuiView`, directly
 /// below it, filling the window and following its size. Main thread only.
-int plexy_player_attach(PlexyPlayer *player, void *gpuiView) {
-  if (!player || !gpuiView) return -1;
+/// Creates the video view and its libmpv render context. The view is not put
+/// in any hierarchy: the caller hands it to GPUI (`NativeView`), which owns its
+/// frame, order and visibility. `outView` stays valid while the player lives.
+int plexy_player_attach(PlexyPlayer *player, void **outView) {
+  if (!player || !outView) return -1;
   if (![NSThread isMainThread]) return -2;
-  NSView *above = (__bridge NSView *)gpuiView;
-  NSView *host = above.superview;
-  if (!host) return -3;
-  PlexyGLView *video = [[PlexyGLView alloc] initWithFrame:host.bounds owner:player];
+  PlexyGLView *video = [[PlexyGLView alloc] initWithFrame:NSMakeRect(0, 0, 640, 360) owner:player];
   NSOpenGLContext *context = [video openGLContext];
   if (!context) return -4;
   player->view = video;
   player->frameSignal->view = video;
-  video.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-  [host addSubview:video positioned:NSWindowBelow relativeTo:above];
+  *outView = (__bridge void *)video;
   // AppKit may defer prepareOpenGL until the first draw, but libmpv must
   // already have a render context when the caller starts loading a video.
   [context makeCurrentContext];

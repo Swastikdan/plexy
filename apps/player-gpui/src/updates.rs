@@ -34,7 +34,7 @@ pub fn check() -> anyhow::Result<UpdateStatus> {
         let more = response
             .header("Link")
             .is_some_and(|link| link.contains("rel=\"next\""));
-        let releases: Vec<Value> = serde_json::from_reader(response.into_reader())?;
+        let releases: Vec<Value> = serde_json::from_str(&response.into_string()?)?;
         for release in releases {
             let Some(tag) = release["tag_name"].as_str() else {
                 continue;

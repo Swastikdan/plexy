@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use gpui::{px, size, AsyncWindowContext, Context, Keystroke, WeakEntity, Window};
+use gpui_kit::{px, size, AsyncWindowContext, Context, Keystroke, WeakEntity, Window};
 
 use crate::app::PlayerView;
 
@@ -91,7 +91,7 @@ async fn wait_until(
     false
 }
 
-async fn key(this: &WeakEntity<PlayerView>, cx: &mut Cx, keystroke: &str) {
+async fn key(this: &WeakEntity<PlayerView>, cx: &mut Cx, keystroke: &'static str) {
     let keystroke = Keystroke::parse(keystroke).expect("keystroke");
     let _ = this;
     cx.update(|window, cx| {
@@ -193,6 +193,7 @@ pub fn run(report_path: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
         // Use the player menu's editor and verify the skip action and saved marker.
         let (middle, _) = play_button_point(cx);
         click(&this, cx, 2. * middle - 48., 63.).await;
+        screenshot(&this, cx, &dir, "more-menu", &mut report).await;
         click(&this, cx, 2. * middle - 190., 305.).await;
         let editing = this.update(cx, |v, _| v.marker_editor.is_some()).unwrap_or(false);
         report.check("player menu opens Edit markers", editing, format!("open {editing}"));
@@ -551,41 +552,75 @@ pub fn run_library(dir: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
             .ok();
             screenshot(&this, cx, &dir, name, &mut report).await;
         }
+        {
+            use crate::settings_ui::SettingsSection as S;
+            for (name, section) in [("set-overview", S::Overview), ("set-libraries", S::Libraries), ("set-matches", S::FixMatches), ("set-metadata", S::Metadata), ("set-maintenance", S::Maintenance)] {
+                this.update(cx, |v, cx| {
+                    v.screen = crate::library_ui::Screen::Settings;
+                    v.settings_section = section;
+                    cx.notify();
+                })
+                .ok();
+                screenshot(&this, cx, &dir, name, &mut report).await;
+                if section == S::FixMatches {
+                    let row_laid_out = this.update(cx, |v, _| {
+                        v.fix_matches_scroll.0.borrow().last_item_size.is_some()
+                    }).unwrap_or(false);
+                    report.check("Fix Matches lays out virtual rows", row_laid_out, format!("laid out {row_laid_out}"));
+                }
+            }
+            // Libraries stays reachable from every section (it used to vanish).
+            this.update(cx, |v, cx| {
+                v.settings_section = S::Overview;
+                cx.notify();
+            })
+            .ok();
+        }
         this.update_in(cx, |v, window, cx| {
             v.screen = crate::library_ui::Screen::Settings;
-            v.settings_section = crate::shell_ui::SettingsSection::Playback;
+            v.settings_section = crate::settings_ui::SettingsSection::Playback;
             window.resize(size(px(640.), px(390.)));
             cx.notify();
         }).ok();
         sleep(cx, 350).await;
         let quarter = cx.update(|window, _| window.viewport_size()).ok();
         report.check("quarter-screen window", quarter == Some(size(px(640.), px(390.))), format!("{quarter:?}"));
-        click(&this, cx, 503., 350.).await;
-        let subtitle_open = this.update(cx, |v, _| v.open_select == Some("subtitle_lang")).unwrap_or(false);
+        // The wrapped settings nav pushes the dropdown below the fold.
+        this.update(cx, |v, cx| {
+            v.shell_scroll.set_offset(gpui_kit::point(px(0.), px(-100.)));
+            cx.notify();
+        }).ok();
+        sleep(cx, 250).await;
+        click(&this, cx, 503., 257.).await;
+        let subtitle_open = this.update_in(cx, |v, window, cx| v.select_focused("subtitle_lang", window, cx)).unwrap_or(false);
         report.check("subtitle dropdown opens with a stationary pointer", subtitle_open, format!("open {subtitle_open}"));
         screenshot(&this, cx, &dir, "lib-quarter-subtitle-menu", &mut report).await;
-        click(&this, cx, 502., 74.).await;
+        // Kit menu rows: Default, then English at about y=52 in this window.
+        click(&this, cx, 502., 52.).await;
         let selected = this.update(cx, |v, _| v.catalog.setting("subtitle_lang")).ok().flatten();
         report.check("subtitle menu selects a language", selected.as_deref() == Some("eng"), format!("{selected:?}"));
         this.update_in(cx, |v, window, cx| {
             v.open_select = None;
+            v.shell_scroll.set_offset(gpui_kit::point(px(0.), px(0.)));
             window.resize(size(px(640.), px(760.)));
             cx.notify();
         }).ok();
         sleep(cx, 350).await;
         let half = cx.update(|window, _| window.viewport_size()).ok();
         report.check("half-screen window", half == Some(size(px(640.), px(760.))), format!("{half:?}"));
-        click(&this, cx, 503., 503.).await;
-        let audio_open = this.update(cx, |v, _| v.open_select == Some("audio_lang")).unwrap_or(false);
+        click(&this, cx, 495., 481.).await;
+        let audio_open = this.update_in(cx, |v, window, cx| v.select_focused("audio_lang", window, cx)).unwrap_or(false);
         report.check("audio dropdown opens with a stationary pointer", audio_open, format!("open {audio_open}"));
         screenshot(&this, cx, &dir, "lib-half-audio-menu", &mut report).await;
         this.update(cx, |v, cx| {
             v.open_select = None;
-            v.screen = crate::library_ui::Screen::Libraries;
+            v.screen = crate::library_ui::Screen::Settings;
+            v.settings_section = crate::settings_ui::SettingsSection::Libraries;
             cx.notify();
         }).ok();
         sleep(cx, 250).await;
-        click(&this, cx, 468., 214.).await;
+        screenshot(&this, cx, &dir, "lib-half-libraries", &mut report).await;
+        click(&this, cx, 540., 264.).await;
         let adding = this.update(cx, |v, _| v.add_library_open).unwrap_or(false);
         report.check("Add a Library opens the type picker", adding, format!("open {adding}"));
         screenshot(&this, cx, &dir, "lib-half-add-library", &mut report).await;
@@ -600,11 +635,11 @@ pub fn run_library(dir: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
         report.check("horizontal half-screen window", horizontal == Some(size(px(1280.), px(390.))), format!("{horizontal:?}"));
 
         this.update(cx, |v, cx| {
-            v.settings_section = crate::shell_ui::SettingsSection::Updates;
+            v.settings_section = crate::settings_ui::SettingsSection::Overview;
             cx.notify();
         }).ok();
         sleep(cx, 300).await;
-        click(&this, cx, 340., 319.).await;
+        click(&this, cx, 1158., 169.).await;
         let started = Instant::now();
         let update_status = loop {
             use crate::updates::UpdateStatus;
@@ -628,18 +663,32 @@ pub fn run_library(dir: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
             })
             .ok();
             screenshot(&this, cx, &dir, "lib-4-show", &mut report).await;
+            // Start from no progress so the menu always has two rows (Play,
+            // then the watched toggle) whatever earlier runs left behind.
+            this.update(cx, |v, cx| {
+                if let Some(path) = v.shows().first().and_then(|s| s.episodes().next().map(|e| e.path.clone())) {
+                    v.catalog.set_watched(&path, false);
+                    v.reload_catalog(cx);
+                }
+                cx.notify();
+            }).ok();
+            sleep(cx, 200).await;
             mouse_click(&this, cx, 120., 671., true).await;
             let episode_menu = this.update(cx, |v, _| v.episode_menu.as_ref().map(|(path, _)| path.clone())).ok().flatten();
             report.check("right-click opens the episode action menu", episode_menu.is_some(), format!("{episode_menu:?}"));
             screenshot(&this, cx, &dir, "lib-episode-context", &mut report).await;
             if let Some(episode) = episode_menu {
-                click(&this, cx, 160., 646.).await;
+                // Two rows opening upward from the pointer: the second is at y≈643.
+                click(&this, cx, 160., 643.).await;
                 let watched = this.update(cx, |v, _| v.catalog.progress(&episode).is_some_and(|p| p.watched())).unwrap_or(false);
                 report.check("episode menu marks watched", watched, format!("watched {watched}"));
                 mouse_click(&this, cx, 120., 671., true).await;
-                click(&this, cx, 160., 646.).await;
-                let removed = this.update(cx, |v, _| v.catalog.progress(&episode).is_none()).unwrap_or(false);
-                report.check("episode menu removes watched state", removed, format!("removed {removed}"));
+                let reopened = this.update(cx, |v, _| v.episode_menu.is_some()).unwrap_or(false);
+                // The watched menu has two rows and sits lower: "Remove from watched".
+                click(&this, cx, 160., 643.).await;
+                let progress = this.update(cx, |v, _| v.catalog.progress(&episode)).ok().flatten();
+                let removed = progress.as_ref().is_none_or(|p| !p.watched());
+                report.check("episode menu removes watched state", removed, format!("menu reopened {reopened}, progress {:?}", progress.map(|p| (p.position, p.watched()))));
             }
             key(&this, cx, "escape").await;
             if let Some(path) = next {
@@ -685,7 +734,7 @@ pub fn run_library(dir: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
         cx.update(|window, cx| {
             if let Some(view) = this.upgrade() {
                 let focus = view.read(cx).search_focus.clone();
-                window.focus(&focus);
+                window.focus(&focus, cx);
             }
         })
         .ok();
@@ -712,7 +761,7 @@ pub fn run_library(dir: PathBuf, window: &mut Window, cx: &mut Context<PlayerVie
                     v.catalog.toggle_in_collection(id, &key);
                 }
                 v.catalog.set_watched(&path, true);
-                v.reload_catalog();
+                v.reload_catalog(cx);
                 v.screen = crate::library_ui::Screen::Movie(path.clone());
                 cx.notify();
             })

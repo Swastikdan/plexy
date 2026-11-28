@@ -43,9 +43,15 @@ jobs:
             xcodebuild -downloadComponent metalToolchain
             xcrun -sdk macosx metal --version
           fi
+      - name: Install the player's Rust toolchain
+        # GPUI Kit needs a newer Rust than the runner's default; the version
+        # is pinned in apps/player-gpui/rust-toolchain.toml.
+        working-directory: apps/player-gpui
+        run: rustup toolchain install
       - name: Run locked Rust tests
         # Catalog fixtures change the process-wide data directory.
-        run: cargo test --locked --release --manifest-path apps/player-gpui/Cargo.toml -- --test-threads=1
+        working-directory: apps/player-gpui
+        run: cargo test --locked --release -- --test-threads=1
       - name: Install libmpv
         run: brew install mpv
       - name: Build the beta DMG

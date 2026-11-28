@@ -5,6 +5,7 @@
 mod app;
 mod assets;
 mod catalog;
+mod credentials;
 mod library_ui;
 mod marker_ui;
 mod media;
@@ -13,6 +14,9 @@ mod mpv;
 mod personal_ui;
 mod preview;
 mod selftest;
+mod settings_ui;
+#[cfg(test)]
+mod ui_tests;
 mod shell_ui;
 mod theme;
 mod ui;
@@ -20,8 +24,8 @@ mod updates;
 
 use std::path::PathBuf;
 
-use gpui::{
-    actions, prelude::*, px, size, App, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
+use gpui_kit::{
+    actions, prelude::*, px, size, App, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
     WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -66,8 +70,12 @@ fn parse_args() -> Args {
 
 fn main() {
     let args = parse_args();
-    Application::new().with_assets(assets::Assets).run(move |cx: &mut App| {
+    gpui_kit::application().with_assets(assets::Assets).run(move |cx: &mut App| {
+        // Kit first: theme, Root overlays, component keybindings.
+        gpui_kit::init(cx);
+        theme::apply_kit_theme(cx);
         cx.set_global(assets::ArtworkCache::default());
+        cx.background_executor().spawn(async { preview::prune_disk_cache(); }).detach();
         mpv::set_app_icon();
         // Archivo, the web app's UI font (SIL OFL, assets/fonts/OFL.txt).
         let fonts: Vec<std::borrow::Cow<'static, [u8]>> = vec![
@@ -84,30 +92,34 @@ fn main() {
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-o", Open, None)]);
         cx.set_menus(vec![
-            Menu { name: APP_NAME.into(), items: vec![MenuItem::action(format!("Quit {APP_NAME}"), Quit)] },
-            Menu { name: "File".into(), items: vec![MenuItem::action("Open…", Open)] },
+            Menu { name: APP_NAME.into(), disabled: false, items: vec![MenuItem::action(format!("Quit {APP_NAME}"), Quit)] },
+            Menu { name: "File".into(), disabled: false, items: vec![MenuItem::action("Open…", Open)] },
         ]);
-        cx.on_window_closed(|cx| cx.quit()).detach();
+        cx.on_window_closed(|cx, _| cx.quit()).detach();
 
         let bounds = Bounds::centered(None, size(px(1280.), px(760.)), cx);
         let file = args.file.clone();
         let self_test = args.self_test.clone();
         let library_test = args.library_test.clone();
         let add_libraries = args.add_libraries.clone();
-        let window = cx
-            .open_window(
+        // `gpui_kit::open_window` mounts the Kit Root (dialogs, tooltips,
+        // notifications) around the player view.
+        let (window, view) = gpui_kit::open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
                         title: Some(APP_NAME.into()),
                         appears_transparent: true,
-                        traffic_light_position: Some(gpui::point(px(14.), px(14.))),
+                        traffic_light_position: Some(gpui_kit::point(px(14.), px(14.))),
                     }),
-                    window_background: WindowBackgroundAppearance::Opaque,
+                    // GPUI 0.3 makes the Metal layer opaque for `Opaque`, hiding the libmpv
+                    // view beneath it. Every screen paints its own background.
+                    window_background: WindowBackgroundAppearance::Transparent,
                     window_min_size: Some(size(px(600.), px(360.))),
                     ..Default::default()
                 },
-                move |window, cx| {
+                cx,
+                move |window, cx: &mut App| {
                     // GPUI draws into a layer-backed NSView inside the
                     // window's content view; the video surface goes directly
                     // beneath it.
@@ -123,7 +135,7 @@ fn main() {
                     }
                     let view = cx.new(|cx| PlayerView::new(gpui_view as usize, catalog, cx));
                     view.update(cx, |view, cx| {
-                        window.focus(view.focus_handle());
+                        window.focus(view.focus_handle(), cx);
                         cx.observe_window_bounds(window, |view, _, cx| {
                             view.episode_menu = None;
                             cx.notify();
@@ -145,8 +157,9 @@ fn main() {
             .expect("open window");
 
         cx.on_action(move |_: &Open, cx| {
+            let view = view.clone();
             window
-                .update(cx, |view, window, cx| view.prompt_open(window, cx))
+                .update(cx, |_, window, cx| view.update(cx, |view, cx| view.prompt_open(window, cx)))
                 .ok();
         });
         cx.activate(true);

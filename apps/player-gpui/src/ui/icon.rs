@@ -11,7 +11,7 @@
 //! `icons/{name}.svg` paths itself. The compiler then catches typos, and no
 //! path string is allocated per icon per frame.
 
-use gpui::{prelude::*, px, svg, Hsla, Svg};
+use gpui_kit::{prelude::*, px, svg, Hsla, Svg};
 
 /// Every icon embedded from `assets/icons`.
 ///

@@ -32,7 +32,7 @@ extern "C" {
         error: *mut c_char,
         error_len: usize,
     ) -> *mut RawPlayer;
-    fn plexy_player_attach(player: *mut RawPlayer, gpui_view: *mut c_void) -> c_int;
+    fn plexy_player_attach(player: *mut RawPlayer, out_view: *mut *mut c_void) -> c_int;
     fn plexy_player_load(player: *mut RawPlayer, path: *const c_char, start: f64) -> c_int;
     fn plexy_player_command(player: *mut RawPlayer, args: *const *const c_char) -> c_int;
     fn plexy_player_set_property(player: *mut RawPlayer, name: *const c_char, value: *const c_char) -> c_int;
@@ -342,16 +342,20 @@ struct NativePlayer {
 }
 
 impl Player {
-    pub fn initialize(&self, libmpv: &Path, gpui_view: *mut c_void) -> Result<()> {
-        if self.native.get().is_none() {
-            let native = NativePlayer::new(libmpv)?;
-            match unsafe { plexy_player_attach(native.raw, gpui_view) } {
-                0 => {}
-                code => bail!("Could not attach the video surface ({code})"),
-            }
-            let _ = self.native.set(native);
+    /// Starts libmpv and returns its video `NSView`, not yet in any
+    /// hierarchy, for the caller to show with GPUI's `NativeView`.
+    pub fn initialize(&self, libmpv: &Path) -> Result<std::ptr::NonNull<c_void>> {
+        if self.native.get().is_some() {
+            bail!("The playback core is already running");
         }
-        Ok(())
+        let native = NativePlayer::new(libmpv)?;
+        let mut view = std::ptr::null_mut();
+        match unsafe { plexy_player_attach(native.raw, &mut view) } {
+            0 => {}
+            code => bail!("Could not create the video surface ({code})"),
+        }
+        let _ = self.native.set(native);
+        std::ptr::NonNull::new(view).ok_or_else(|| anyhow!("No video surface"))
     }
 
     fn native(&self) -> Result<&NativePlayer> {
