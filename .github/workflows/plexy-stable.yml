@@ -45,6 +45,8 @@ jobs:
         run: cargo test --locked --release -- --test-threads=1
       - name: Install libmpv
         run: brew install mpv
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Build the bundled server
         if: inputs.app == 'server' || inputs.app == 'both'
         run: bun run build:server
