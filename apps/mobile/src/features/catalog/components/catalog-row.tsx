@@ -1,7 +1,7 @@
 import { usePagerGestureBoundary } from "@/shared/ui/swipe-pager";
 import { useTitleActions } from "@/features/catalog/hooks/use-title-actions";
 import { useEffect } from "react";
-import { FlatList,Text,View } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
 import { useClient } from "@/core/client/client-provider";
 import type { ItemCard } from "@/core/library/catalog-api";
@@ -23,6 +23,7 @@ export function CatalogRow({
   cardWidth: cardWidthOverride,
   onlineFor,
   playOnPress = false,
+  onSeeAll,
 }: {
   title: string;
   items: ItemCard[];
@@ -41,6 +42,8 @@ export function CatalogRow({
   onlineFor?: (item: ItemCard) => boolean;
   /** Next Up rows should start playback instead of opening details. */
   playOnPress?: boolean;
+  /** Shows a "See all" link on the right of the row header. */
+  onSeeAll?: () => void;
 }) {
   const pagerBoundary = usePagerGestureBoundary();
   const prefetch = useTitlePrefetch();
@@ -72,6 +75,17 @@ export function CatalogRow({
       {/* Section header */}
       <View className="mb-0.5 flex-row items-center justify-between px-5">
         <Text className="font-archivo-bold text-[16px] tracking-[-0.3px] text-foreground">{title}</Text>
+        {onSeeAll ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`See all ${title}`}
+            hitSlop={10}
+            onPress={onSeeAll}
+            className="active:opacity-60"
+          >
+            <Text className="font-archivo-medium text-[13px] text-muted">See all</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <FlatList {...pagerBoundary}

@@ -496,6 +496,53 @@ export async function fetchHome(
   return home;
 }
 
+/** The shelf definition behind a Home row, for the same family options. */
+export function homeRowDefinition(
+  key: string,
+  options: RemoteCatalogOptions = {},
+) {
+  const value = remoteCatalogOptions(options);
+  const rows = value.maxAge != null ? familyHomeRows(value) : HOME_ROWS;
+  return (rows as readonly { key: string; title: string; paths: readonly string[] }[])
+    .find((row) => row.key === key) ?? null;
+}
+
+/**
+ * One page of a Home shelf for the "See all" list. Each path of the shelf is
+ * paged together, so a mixed shelf keeps movies and series interleaved.
+ */
+export async function fetchHomeRowPage(
+  key: string,
+  page: number,
+  options: RemoteCatalogOptions = {},
+  signal?: AbortSignal,
+): Promise<{ title: string; items: RemoteTitle[]; hasMore: boolean }> {
+  const row = homeRowDefinition(key, options);
+  if (!row) throw new CatalogError("This list is not available.");
+  let hasMore = false;
+  const lists = await Promise.all(
+    row.paths.map(async (path) => {
+      const fallbackType: RemoteMediaType =
+        path.startsWith("/tv") || path.startsWith("/discover/tv") ? "tv" : "movie";
+      const body = await get<{ results?: TmdbMedia[]; total_pages?: number }>(
+        `${path}${path.includes("?") ? "&" : "?"}page=${page}`,
+        signal,
+      );
+      // TMDB serves at most 500 pages per list.
+      if (page < Math.min(500, body.total_pages ?? 1)) hasMore = true;
+      return (body.results ?? [])
+        .filter(
+          (media) =>
+            media.media_type !== "person" &&
+            media.adult !== true &&
+            isReleased(media.release_date ?? media.first_air_date),
+        )
+        .map((media) => toTitle(media, fallbackType));
+    }),
+  );
+  return { title: row.title, items: interleave(lists), hasMore };
+}
+
 /**
  * The last home response saved on this device. Home paints from this before
  * its network refresh finishes; the refresh then replaces the stored rows.

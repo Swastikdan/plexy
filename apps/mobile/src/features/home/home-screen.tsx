@@ -16,6 +16,7 @@ import { PageState } from "@/shared/ui/page-state";
 import { HomeSkeleton } from "@/shared/ui/skeleton";
 import { Reveal } from "@/shared/ui/reveal";
 import { prefetchImages } from "@/features/remote/lib/prefetch";
+import { scheduleCacheMaintenance } from "@/features/remote/lib/cache-maintenance";
 import { CatalogRow } from "@/features/catalog/components/catalog-row";
 import { LibraryAttention } from "@/features/catalog/components/library-attention";
 import { TopFade } from "@/features/catalog/components/top-fade";
@@ -63,6 +64,9 @@ export function HomeScreen({
     previousActive.current = active;
   }, [active, api, progress]);
   const handlePlay = usePlayCard(play, open);
+  React.useEffect(() => {
+    scheduleCacheMaintenance();
+  }, []);
   // Normalize any item: if it is an episode, convert to full TV series card
   const toFullSeriesOrMovie = React.useCallback((it: ItemCard): ItemCard => {
     if (it.kind === "episode") {
@@ -165,10 +169,15 @@ export function HomeScreen({
   // Movies and shows share a row; each card carries its own kind tag.
   const shelfRows = React.useMemo(
     () => [
-      ...otherRows.map((row) => ({ ...row, online: false })),
+      ...otherRows.map((row) => ({
+        ...row,
+        listKey: null as string | null,
+        online: false,
+      })),
       ...(online?.rows ?? []).map((row) => ({
         ...row,
         key: `online-${row.key}`,
+        listKey: row.key,
         online: true,
       })),
     ],
@@ -411,6 +420,15 @@ export function HomeScreen({
                 open={heroOpen}
                 onPlay={handlePlay}
                 onlineFor={(item) => item.publicId.startsWith("remote:")}
+                onSeeAll={
+                  row.listKey
+                    ? () =>
+                        push({
+                          pathname: "/online-list/[key]",
+                          params: { key: row.listKey! },
+                        })
+                    : undefined
+                }
                 onLongPressItem={(item) => {
                   if (item.publicId.startsWith("remote:")) {
                     remoteActions(item, {

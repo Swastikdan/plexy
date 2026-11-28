@@ -97,10 +97,13 @@ export function useHeroTransition(items: ItemCard[]) {
 
   const step = useCallback(
     (direction: -1 | 1) => {
-      const index = itemsRef.current.findIndex(
+      const list = itemsRef.current;
+      if (!list.length) return;
+      const index = list.findIndex(
         (item) => item.publicId === requestedId.current,
       );
-      select(Math.max(0, index) + direction);
+      // Wrap around: past the last slide returns to the first and vice versa.
+      select((Math.max(0, index) + direction + list.length) % list.length);
     },
     [select],
   );

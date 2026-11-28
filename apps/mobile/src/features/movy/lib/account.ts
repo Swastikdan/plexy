@@ -6,13 +6,62 @@ import {
   registerAccount,
   type MovyAuthReply,
 } from "./api";
-import type { MovyAccount, MovyAccountRecord, MovyQuota } from "./types";
+import {
+  MovyError,
+  type MovyAccount,
+  type MovyAccountRecord,
+  type MovyQuota,
+} from "./types";
 
 const ACCOUNTS_KEY = "plexy.movy.accounts";
 const ACTIVE_KEY = "plexy.movy.active";
 const LEGACY_KEY = "plexy.movy.account";
 const DEVICE_KEY = "plexy.movy.device";
 const REPLACEMENT_LOG_KEY = "plexy.movy.account-log";
+const BACKOFF_KEY = "plexy.movy.account-backoff";
+
+// Account creation backs off after a refused or failed registration so a
+// busy or rate-limiting source is not hammered: 1 min, 2, 4 … up to 6 h.
+const BACKOFF_BASE_MS = 60_000;
+const BACKOFF_MAX_MS = 6 * 60 * 60_000;
+
+export interface AccountBackoff {
+  failures: number;
+  until: number;
+}
+
+export async function accountCreationBackoff(): Promise<AccountBackoff> {
+  try {
+    const raw = await AsyncStorage.getItem(BACKOFF_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<AccountBackoff>) : null;
+    return {
+      failures: Number(parsed?.failures) || 0,
+      until: Number(parsed?.until) || 0,
+    };
+  } catch {
+    return { failures: 0, until: 0 };
+  }
+}
+
+async function recordCreationFailure(retryAfterSeconds: number | null) {
+  const current = await accountCreationBackoff();
+  const failures = current.failures + 1;
+  const delay = Math.min(
+    BACKOFF_MAX_MS,
+    Math.max(
+      BACKOFF_BASE_MS * 2 ** (failures - 1),
+      (retryAfterSeconds ?? 0) * 1000,
+    ),
+  );
+  await AsyncStorage.setItem(
+    BACKOFF_KEY,
+    JSON.stringify({ failures, until: Date.now() + delay }),
+  ).catch(() => {});
+}
+
+export async function resetAccountCreationBackoff() {
+  await AsyncStorage.removeItem(BACKOFF_KEY).catch(() => {});
+}
 
 const USERNAME_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
 const PASSWORD_ALPHABET =
@@ -129,11 +178,34 @@ export async function saveAccounts(accounts: MovyAccountRecord[]) {
 
 export async function createGeneratedAccount(
   accounts: MovyAccountRecord[],
+  options: { automatic?: boolean } = {},
 ): Promise<MovyAccountRecord> {
+  if (options.automatic) {
+    const backoff = await accountCreationBackoff();
+    if (backoff.until > Date.now()) {
+      const minutes = Math.ceil((backoff.until - Date.now()) / 60_000);
+      throw new MovyError(
+        "quota",
+        `Too many account requests. Plexy will try again in ${minutes} min.`,
+        { retryAfterSeconds: Math.ceil((backoff.until - Date.now()) / 1000) },
+      );
+    }
+  }
   const id = await deviceId();
   const username = generateUsername();
   const password = generatePassword();
-  const reply = await registerAccount({ username, password, deviceId: id });
+  let reply: MovyAuthReply;
+  try {
+    reply = await registerAccount({ username, password, deviceId: id });
+  } catch (cause) {
+    // Invalid input (e.g. a taken name) is not a sign of rate limiting.
+    if (!(cause instanceof MovyError) || cause.code !== "invalid")
+      await recordCreationFailure(
+        cause instanceof MovyError ? cause.retryAfterSeconds : null,
+      );
+    throw cause;
+  }
+  await resetAccountCreationBackoff();
   const record: MovyAccountRecord = {
     username: reply.username || username,
     token: reply.token,
@@ -208,6 +280,11 @@ export async function updateQuota(
 export async function replacementAllowed(cap: number): Promise<boolean> {
   const timestamps = await readReplacementLog();
   return timestamps.length < cap;
+}
+
+/** Replacement accounts created automatically in the last 24 hours. */
+export async function replacementsToday(): Promise<number> {
+  return (await readReplacementLog()).length;
 }
 
 export async function recordReplacement(): Promise<void> {

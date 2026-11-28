@@ -3,7 +3,6 @@ import { Text, View } from "react-native";
 import type { Preferences } from "@/core/client/preferences";
 import { useClient } from "@/core/client/client-provider";
 import {
-  familyLevelDescriptions,
   familyLevelLabels,
   familyRegions,
   familyRegionLabel,
@@ -80,12 +79,11 @@ export function FamilySettings() {
         <SettingsRow
           navigation
           title="Kids & family mode"
-          subtitle={`${familyLevelLabels[preferences.familyLevel]}\n${familyLevelDescriptions[preferences.familyLevel]}`}
+          value={familyLevelLabels[preferences.familyLevel]}
           onPress={openLevels}
         />
         <SettingsRow
           title="Block unrated titles"
-          subtitle="Hide titles without an age rating"
         >
           <ToggleSwitch
             value={preferences.familyBlockUnrated}
@@ -98,7 +96,7 @@ export function FamilySettings() {
         <SettingsRow
           navigation
           title="Rating system"
-          subtitle={familyRegionLabel(preferences.familyRegion)}
+          value={familyRegionLabel(preferences.familyRegion)}
           onPress={openRegions}
         />
       </View>

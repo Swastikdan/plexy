@@ -56,6 +56,7 @@ import { AppearanceModeSelector } from "./components/appearance-mode-selector";
 import { FamilySettings } from "./components/family-settings";
 import { HiddenTitlesSettings } from "./components/hidden-titles-settings";
 import { SettingsRow } from "./components/settings-row";
+import { useMovy } from "@/features/movy/movy-provider";
 import { useAppUpdates } from "./hooks/use-app-updates";
 
 export function SettingsScreen({
@@ -73,6 +74,10 @@ export function SettingsScreen({
   const showDialog = useAppDialog();
   const colors = useColors();
   const online = useOnline();
+  const movy = useMovy();
+  const movyAccountsLabel = movy.accounts.length
+    ? `${movy.accounts.length} ${movy.accounts.length === 1 ? "account" : "accounts"}`
+    : undefined;
   const { navigate, push } = useRouter();
   const [, update] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -532,7 +537,7 @@ export function SettingsScreen({
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow
                 title="Skip forward & backward"
-                subtitle={`${preferences.seekSeconds} seconds`}
+                value={`${preferences.seekSeconds} seconds`}
                 onPress={() =>
                   showDialog(
                     "Seek duration",
@@ -556,12 +561,11 @@ export function SettingsScreen({
               <SettingsRow
                 navigation
                 title="Preferred audio language"
-                subtitle={mediaLanguageName(preferences.audioLanguage) || preferences.audioLanguage || "File default"}
+                value={mediaLanguageName(preferences.audioLanguage) || preferences.audioLanguage || "File default"}
                 onPress={() => chooseTrackLanguage("audioLanguage", "Preferred audio language", "File default")}
               />
               <SettingsRow
                 title="Automatic subtitles"
-                subtitle="Show subtitles during local playback"
               >
                 <ToggleSwitch
                   value={preferences.autoSubtitles}
@@ -572,7 +576,7 @@ export function SettingsScreen({
               <SettingsRow
                 navigation
                 title="Preferred subtitle language"
-                subtitle={mediaLanguageName(preferences.subtitleLanguage) || preferences.subtitleLanguage || "File default"}
+                value={mediaLanguageName(preferences.subtitleLanguage) || preferences.subtitleLanguage || "File default"}
                 onPress={() => chooseTrackLanguage("subtitleLanguage", "Preferred subtitle language", "File default")}
               />
             </View>
@@ -582,7 +586,6 @@ export function SettingsScreen({
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow
                 title="Automatically skip marked sections"
-                subtitle="Skip intro, recap and credits"
               >
                 <ToggleSwitch
                   value={preferences.autoSkip}
@@ -592,7 +595,6 @@ export function SettingsScreen({
               </SettingsRow>
               <SettingsRow
                 title="Background play"
-                subtitle="Keep listening when you leave the app or lock the screen"
               >
                 <ToggleSwitch
                   value={preferences.backgroundPlay}
@@ -602,7 +604,6 @@ export function SettingsScreen({
               </SettingsRow>
               <SettingsRow
                 title="Play next episode"
-                subtitle="Continue automatically"
               >
                 <ToggleSwitch
                   value={preferences.autoNext}
@@ -618,7 +619,6 @@ export function SettingsScreen({
             <View className="overflow-hidden rounded-[18px] bg-surface">
               <SettingsRow
                 title="Autoplay online"
-                subtitle="Start the Vidy player automatically"
               >
                 <ToggleSwitch
                   value={preferences.onlineAutoplay}
@@ -630,7 +630,6 @@ export function SettingsScreen({
               </SettingsRow>
               <SettingsRow
                 title="Online episode picker"
-                subtitle="Show the provider season and episode menu"
               >
                 <ToggleSwitch
                   value={preferences.onlineEpisodeSelector}
@@ -648,9 +647,14 @@ export function SettingsScreen({
               <SettingsRow
                 navigation
                 title="Online downloads"
-                subtitle="Save movies and episodes for offline playback"
                 icon={Download}
                 onPress={() => push("/settings/downloads")}
+              />
+              <SettingsRow
+                navigation
+                title="Download accounts"
+                value={movyAccountsLabel}
+                onPress={() => push("/settings/download-accounts")}
               />
             </View>
             </>}
