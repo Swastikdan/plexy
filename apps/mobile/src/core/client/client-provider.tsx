@@ -1,4 +1,4 @@
-import { restoredMode } from "./watching-mode";
+import { normalizeSource, restoredMode } from "./watching-mode";
 import { catalogForMode } from "./mode-catalog";
 import { MergedCatalog } from "@/core/server/merged-catalog";
 import { useServer } from "@/core/server/server-provider";
@@ -99,10 +99,7 @@ export function ClientProvider({ runtime, children, }: React.PropsWithChildren<{
             saved.theme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "system";
             Object.assign(saved, restoredMode(stored, !runtime.needsSetup()));
             // Migrate the two-value source from earlier builds.
-            if ((stored.source as string | undefined) === "local") saved.source = "device";
-            if ((stored.source as string | undefined) === "remote") saved.source = "online";
-            if (!["device", "server", "all", "online"].includes(saved.source)) saved.source = "device";
-            if (saved.mode === "local" && saved.source === "online") saved.source = "device";
+            saved.source = normalizeSource(stored.source, saved.mode);
             if (![5, 10, 15, 20, 30, 60].includes(saved.seekSeconds)) saved.seekSeconds = 10;
             if (typeof saved.onlineAutoplay !== "boolean") saved.onlineAutoplay = true;
             if (typeof saved.onlineEpisodeSelector !== "boolean") saved.onlineEpisodeSelector = true;

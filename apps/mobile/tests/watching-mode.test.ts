@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canFinishOnboarding, modePreferences, restoredMode } from "@/core/client/watching-mode";
+import { canFinishOnboarding, modePreferences, normalizeSource, restoredMode } from "@/core/client/watching-mode";
 import { catalogForMode } from "@/core/client/mode-catalog";
 import type { LocalCatalog } from "@/core/library/catalog-api";
 
@@ -39,4 +39,15 @@ test("online-only catalog hides existing media and preserves bound utility metho
   expect(api.image("test")).toEqual({ uri: "poster" });
   expect(catalogForMode(catalog as unknown as LocalCatalog, "hybrid")).toBe(catalog as unknown as LocalCatalog);
   expect(catalogForMode(catalog as unknown as LocalCatalog, "local")).toBe(catalog as unknown as LocalCatalog);
+});
+
+
+test("legacy sources migrate and mode rules stay explicit", () => {
+  expect(normalizeSource("local", "hybrid")).toBe("device");
+  expect(normalizeSource("remote", "hybrid")).toBe("online");
+  expect(normalizeSource("remote", "local")).toBe("device");
+  expect(normalizeSource("server", "local")).toBe("server");
+  expect(normalizeSource("online", "local")).toBe("device");
+  expect(normalizeSource(undefined, "hybrid")).toBe("all");
+  expect(normalizeSource("nonsense", "online")).toBe("online");
 });
