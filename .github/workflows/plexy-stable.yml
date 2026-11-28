@@ -57,9 +57,11 @@ jobs:
       - name: Verify the disk images and write checksums
         working-directory: dist
         run: |
-          images=()
-          [[ -f player-mac/Plexy-1.1.0-mac-arm64.dmg ]] && images+=(player-mac/Plexy-1.1.0-mac-arm64.dmg)
-          [[ -f server-mac/Plexy-Server-1.0.0-mac-arm64.dmg ]] && images+=(server-mac/Plexy-Server-1.0.0-mac-arm64.dmg)
+          shopt -s nullglob
+          images=(
+            player-mac/Plexy-[0-9]*-mac-arm64.dmg
+            server-mac/Plexy-Server-[0-9]*-mac-arm64.dmg
+          )
           [[ ${#images[@]} -gt 0 ]]
           for image in "${images[@]}"; do hdiutil verify "$image"; done
           for image in "${images[@]}"; do
@@ -70,8 +72,8 @@ jobs:
         with:
           name: plexy-stable-mac-arm64
           path: |
-            dist/player-mac/Plexy-1.1.0-mac-arm64.dmg
-            dist/server-mac/Plexy-Server-1.0.0-mac-arm64.dmg
+            dist/player-mac/Plexy-[0-9]*-mac-arm64.dmg
+            dist/server-mac/Plexy-Server-[0-9]*-mac-arm64.dmg
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -100,23 +102,34 @@ jobs:
         working-directory: release
         run: |
           notes="${RELEASE_NOTES:-Stable Plexy macOS build.}"
-          if [[ -f player-mac/Plexy-1.1.0-mac-arm64.dmg ]]; then
-            tag="plexy-v1.1.0"
+          shopt -s nullglob
+          clients=(player-mac/Plexy-[0-9]*-mac-arm64.dmg)
+          servers=(server-mac/Plexy-Server-[0-9]*-mac-arm64.dmg)
+          if [[ ${#clients[@]} -eq 0 && ${#servers[@]} -eq 0 ]]; then
+            echo "::error::The artifact contains no disk images."
+            exit 1
+          fi
+          for image in "${clients[@]}"; do
+            version="${image#player-mac/Plexy-}"
+            version="${version%-mac-arm64.dmg}"
+            tag="plexy-v$version"
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "::error::Release $tag already exists. Bump the app version before publishing again."
               exit 1
             fi
-            gh release create "$tag" player-mac/Plexy-1.1.0-mac-arm64.dmg SHA256SUMS \
+            gh release create "$tag" "$image" SHA256SUMS \
               --draft --latest=false --target "$GITHUB_SHA" \
-              --title "Plexy 1.1.0" --notes "$notes"
-          fi
-          if [[ -f server-mac/Plexy-Server-1.0.0-mac-arm64.dmg ]]; then
-            tag="plexy-server-v1.0.0"
+              --title "Plexy $version" --notes "$notes"
+          done
+          for image in "${servers[@]}"; do
+            version="${image#server-mac/Plexy-Server-}"
+            version="${version%-mac-arm64.dmg}"
+            tag="plexy-server-v$version"
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "::error::Release $tag already exists. Bump the server app version before publishing again."
               exit 1
             fi
-            gh release create "$tag" server-mac/Plexy-Server-1.0.0-mac-arm64.dmg SHA256SUMS \
+            gh release create "$tag" "$image" SHA256SUMS \
               --draft --latest=false --target "$GITHUB_SHA" \
-              --title "Plexy Server 1.0.0" --notes "$notes"
-          fi
+              --title "Plexy Server $version" --notes "$notes"
+          done
