@@ -136,12 +136,17 @@ export function ServerProvider({ children }: React.PropsWithChildren) {
   );
 
   const disconnect = useCallback(async () => {
+    if (session) {
+      await serverJson(session, "/api/auth/logout", { method: "POST" }).catch(
+        () => {},
+      );
+    }
     await clearStoredSession();
     setSession(null);
     setServer(null);
     setStatus("disconnected");
     setError(null);
-  }, []);
+  }, [session]);
 
   const retry = useCallback(async () => {
     const current = session;
