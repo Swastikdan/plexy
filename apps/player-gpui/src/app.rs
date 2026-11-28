@@ -128,6 +128,7 @@ pub struct PlayerView {
     pub identity: Option<Identity>,
     pub next_episode: Option<PathBuf>,
     pub catalog: Catalog,
+    pub keep_server_running: bool,
     pub screen: Screen,
     pub libraries: Vec<Library>,
     pub items: Vec<Item>,
@@ -206,6 +207,13 @@ impl PlayerView {
     pub fn new(gpui_view: usize, catalog: Catalog, cx: &mut Context<Self>) -> Self {
         let launch_screen = std::env::var("PLEXY_SCREEN").unwrap_or_default();
         let (screen, settings_section) = Screen::from_launch(&launch_screen);
+        let keep_server_running = catalog.setting("keep_server_running").as_deref() == Some("1");
+        crate::server_host::set_keep_running(keep_server_running);
+        let run_server_on_launch = crate::variant::current().supports_hosting()
+            && catalog.setting("run_server_on_launch").map_or(true, |value| value != "0");
+        if run_server_on_launch {
+            crate::server_host::host().start();
+        }
         let mut view = Self {
             player: Player::default(),
             libmpv: None,
@@ -244,6 +252,7 @@ impl PlayerView {
             identity: None,
             next_episode: None,
             catalog: catalog.clone(),
+            keep_server_running,
             screen,
             libraries: Vec::new(),
             items: Vec::new(),
@@ -680,6 +689,9 @@ impl PlayerView {
     /// resolve preview frames.
     pub fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let previous_revision = self.state.revision;
+        let hosting_before = crate::server_host::host().state();
+        crate::server_host::host().refresh();
+        let hosting_changed = hosting_before != crate::server_host::host().state();
         let mut overlay_changed = false;
         if self.media.is_some() {
             let previous_skip = self.skip_action();
@@ -804,6 +816,7 @@ impl PlayerView {
             && (visibility_changed || (visible && previous_revision != self.state.revision));
         if playback_changed || overlay_changed || scan_changed || hero_changed
             || meta_changed || token_changed || matches_loaded || autoplay_tick
+            || hosting_changed
         {
             cx.notify();
         }

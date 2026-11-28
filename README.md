@@ -158,6 +158,9 @@ Mobile app code further splits into `apps/mobile/src/core` (infrastructure), `sr
 | --- | --- |
 | `bun run build:desktop` | Apple Silicon app, DMG + ZIP under `dist/mac` |
 | `bun run build:player:mac` | Plexy Beta Rust app + DMG for Apple Silicon under `dist/player-mac` ([requirements](apps/player-gpui/README.md#package-for-macos)) |
+| `bun run build:plexy:mac` | Unified `Plexy.app` 1.1.0 + DMG, with the bundled server ([variants](apps/player-gpui/README.md#stable-variants)) |
+| `bun run build:plexy-local:mac` | Local-only `Plexy Local.app` 1.0.0 + DMG ([variants](apps/player-gpui/README.md#stable-variants)) |
+| `bun run build:mac-apps` | Both stable Mac apps; build the server bundle first |
 | `bun run build:server` | `dist/server/plexy-server` + `ffmpeg`, `migrations/`, `web/` |
 | `bun run build:mobile` | ARM64 Android APK under `.build/native` |
 | `bun run build` | All three (reuses one frontend build) |
@@ -175,6 +178,9 @@ Desktop packaging needs macOS; server builds target the host; Android builds nee
 
 The Rust desktop preview ships as Plexy Beta through its own build and release
 workflow. See the [Plexy Beta release guide](apps/player-gpui/README.md#ci-and-beta-releases).
+The two stable Mac apps use [Plexy Stable Mac](.github/workflows/plexy-stable.yml),
+which runs the locked Rust tests, builds the selected DMGs, verifies them, and
+uploads the images and `SHA256SUMS`.
 
 For stable releases, open [Actions → Build & Release](https://github.com/Swastikdan/plexy/actions/workflows/build.yml), click **Run workflow**, and select **main**. Check any combination of **macOS desktop**, **Linux backend**, **macOS backend**, and **Android**. A push or merge does not launch a release.
 
@@ -237,6 +243,7 @@ In desktop **Settings** (or the connection screen), **Run local server** starts/
 | `docs/API.md` | HTTP API: auth, playback, catalog, settings (contract reference) |
 | `docs/PLAYBACK_PREPARATION.md` | Remux/transcode, storage modes, replacement + Trash policy |
 | `docs/MOBILE_LOCAL_LIBRARY.md` | Offline catalog, TMDB/IntroDB caching, previews |
+| `docs/MOBILE_PLEXY_SERVER.md` | Android connection, Hybrid merging, server playback and downloads |
 | `docs/native-playback.md` | Native playback contract details |
 | `docs/MONOREPO.md` | Workspace layout, dependency rules, adding apps/packages |
 | `docs/CODE_HEALTH.md` | Build/dev layout, line budget, guardrails |

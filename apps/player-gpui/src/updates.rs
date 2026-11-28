@@ -1,6 +1,8 @@
 use serde_json::Value;
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub fn version() -> &'static str {
+    crate::variant::current().version()
+}
 const RELEASES_API: &str = "https://api.github.com/repos/Swastikdan/plexy/releases";
 const DOWNLOADS: &str = "https://github.com/Swastikdan/plexy/releases/download";
 
@@ -18,7 +20,8 @@ pub enum UpdateStatus {
 }
 
 pub fn check() -> anyhow::Result<UpdateStatus> {
-    let current = version_number(VERSION).ok_or_else(|| anyhow::anyhow!("Invalid app version"))?;
+    let variant = crate::variant::current();
+    let current = version_number(variant.version()).ok_or_else(|| anyhow::anyhow!("Invalid app version"))?;
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(10))
         .build();
@@ -29,7 +32,7 @@ pub fn check() -> anyhow::Result<UpdateStatus> {
             .query("per_page", "100")
             .query("page", &page.to_string())
             .set("Accept", "application/vnd.github+json")
-            .set("User-Agent", "Plexy-Beta")
+            .set("User-Agent", variant.user_agent())
             .call()?;
         let more = response
             .header("Link")
@@ -39,7 +42,7 @@ pub fn check() -> anyhow::Result<UpdateStatus> {
             let Some(tag) = release["tag_name"].as_str() else {
                 continue;
             };
-            let Some(version) = tag.strip_prefix("plexy-beta-v") else {
+            let Some(version) = tag.strip_prefix(variant.tag_prefix()) else {
                 continue;
             };
             let Some(number) = version_number(version) else {
@@ -48,7 +51,7 @@ pub fn check() -> anyhow::Result<UpdateStatus> {
             if number <= current || latest.as_ref().is_some_and(|(best, _)| number <= *best) {
                 continue;
             }
-            let name = format!("Plexy-Beta-{version}-mac-arm64.dmg");
+            let name = format!("{}-{version}-mac-arm64.dmg", variant.asset_prefix());
             let download = format!("{DOWNLOADS}/{tag}/{name}");
             let published = release["draft"] == false
                 && release["assets"].as_array().is_some_and(|assets| {

@@ -1,0 +1,67 @@
+name: Plexy Stable Mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Build the unified Plexy app, Plexy Local, or both
+        type: choice
+        options: [both, unified, local]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Test and package stable Mac apps
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Ensure the Metal shader compiler is available
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent metalToolchain
+            xcrun -sdk macosx metal --version
+          fi
+      - name: Install the player's Rust toolchain
+        working-directory: apps/player-gpui
+        run: rustup toolchain install
+      - name: Run locked Rust tests
+        working-directory: apps/player-gpui
+        run: cargo test --locked --release -- --test-threads=1
+      - name: Install libmpv
+        run: brew install mpv
+      - name: Build the bundled server
+        if: inputs.app == 'unified' || inputs.app == 'both'
+        run: bun run build:server
+      - name: Build Plexy
+        if: inputs.app == 'unified' || inputs.app == 'both'
+        run: bun run build:plexy:mac
+      - name: Build Plexy Local
+        if: inputs.app == 'local' || inputs.app == 'both'
+        run: bun run build:plexy-local:mac
+      - name: Verify the disk images and write checksums
+        working-directory: dist/player-mac
+        run: |
+          images=()
+          [[ -f Plexy-1.1.0-mac-arm64.dmg ]] && images+=(Plexy-1.1.0-mac-arm64.dmg)
+          [[ -f Plexy-Local-1.0.0-mac-arm64.dmg ]] && images+=(Plexy-Local-1.0.0-mac-arm64.dmg)
+          [[ ${#images[@]} -gt 0 ]]
+          for image in "${images[@]}"; do hdiutil verify "$image"; done
+          shasum -a 256 "${images[@]}" > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plexy-stable-mac-arm64
+          path: |
+            dist/player-mac/Plexy-1.1.0-mac-arm64.dmg
+            dist/player-mac/Plexy-Local-1.0.0-mac-arm64.dmg
+            dist/player-mac/SHA256SUMS
+          if-no-files-found: error

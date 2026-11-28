@@ -271,11 +271,12 @@ export async function downloadServerItem(
     destination: null,
     createdAt: Date.now(),
   };
-  await persist([...records, record]);
+  await persist([...records.filter((entry) => entry.id !== record.id), record]);
   const partial = new File(
     incompleteRoot(),
     `${session.serverId}-${fileId}.part`,
   );
+  if (partial.exists) partial.delete();
   const task = File.createDownloadTask(
     serverMediaUrl(session, `/api/download/${fileId}`),
     partial,

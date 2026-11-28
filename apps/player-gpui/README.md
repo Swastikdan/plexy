@@ -21,6 +21,37 @@ the app's saved preferences live in `library.sqlite`. Set `PLEXY_PLAYER_DATA`
 to use a separate directory for both. Set `PLEXY_SCREEN=settings:playback`
 to open a specific Settings section for local checks.
 
+## Stable variants
+
+The same executable is packaged into three bundles. The bundle path selects the
+variant, and `PLEXY_APP_VARIANT` overrides it for development.
+
+| Bundle | Bundle ID | Version | Data | Server |
+| --- | --- | --- | --- | --- |
+| `Plexy Beta.app` | `com.plexy.beta` | Cargo version | `~/Library/Application Support/Plexy Player` | No |
+| `Plexy.app` | `com.plexy.desktop` | 1.1.0 | `~/Library/Application Support/Plexy/Player` | Hosts the bundled server and imports the Electron library |
+| `Plexy Local.app` | `com.plexy.local` | 1.0.0 | `~/Library/Application Support/Plexy Local` | No; imports Plexy Beta data |
+
+`Plexy` keeps the hosted server store in `~/Library/Application Support/Plexy`
+and its native catalog in the `Player` subdirectory, so the two SQLite files
+never collide. `Plexy Local` has a neutral accent icon (`build/icon-local.png`).
+Both stable apps use their own update tags: `plexy-v*` and `plexy-local-v*`.
+
+The unified app starts the bundled server at launch when the setting is on,
+shows its status in **Settings → Plexy Server**, and opens the web admin for
+owner setup, library roots, LAN access, and device pairing. `Plexy` imports the
+Electron library and the owner's progress, marks, ratings, and collections on
+first launch. `Plexy Local` imports the Plexy Beta catalog on first launch.
+
+```sh
+bun run build:plexy:mac
+bun run build:plexy-local:mac
+bun run build:mac-apps
+```
+
+`build:plexy:mac` needs `bun run build:server` first so the packaging step can
+bundle the server executable, FFmpeg, migrations, and web UI.
+
 ## Package for macOS
 
 On Apple Silicon, install native Bun and Rust, Xcode with the Metal toolchain,
@@ -84,6 +115,9 @@ they receive stable updates. Retire Electron packaging once that transition is r
 | `src/mpv.rs` | Rust-callable player interface replacing the Electron bridge |
 | `src/preview.rs` | Seek previews off the playback core, latest-request-wins, cached |
 | `src/catalog.rs` | SQLite libraries, roots, items, watch progress; incremental background scan |
+| `src/variant.rs` | Beta, unified Plexy, and Plexy Local identities, data paths, and update channels |
+| `src/server_host.rs` | Bundled Plexy Server lifecycle, status, and the keep-running preference |
+| `src/migrate.rs` | Electron and Plexy Beta first-launch imports |
 | `src/media.rs` | Filename identification (`S01E02`, `1x02`, `Movie (2019)`), next episode |
 | `src/app.rs` | Player chrome, shortcuts, menus |
 | `src/library_ui.rs` | Home, Movies, TV, show page, Libraries |

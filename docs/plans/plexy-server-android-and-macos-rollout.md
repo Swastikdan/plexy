@@ -58,3 +58,23 @@ Ship Plexy Server as a standalone bundle with the existing web UI. Add access to
 | Native Rust hosting and the two app variants | 3–6 additional days |
 
 The baseline is roughly **11–22 engineering days** for server and web verification, Android integration, and the Mac cutover. Android work and Mac release preparation can overlap after confirming the API and migration scope. Time spent gathering Beta feedback is separate from these estimates.
+
+## Implementation status
+
+The standalone server now uses platform data and log directories and ships
+with a setup and migration guide. Its certificate endpoint supports installing
+the LAN trust anchor on Android while keeping cleartext traffic disabled.
+
+Android has the Plexy Server source in Hybrid: address and server-ID checks,
+pairing and password sign-in, secure credential storage, merged device and
+server Home/Library/Search with device-first duplicates, an alternate-source
+action on the title page, authenticated playback and subtitles, per-server
+progress queues, and original-quality downloads that import into the device
+library.
+
+The Mac app has the three variant identities, two stable packaging targets,
+the neutral `Plexy Local` icon, bundled-server hosting with status and
+lifecycle controls, first-launch imports from Electron and Plexy Beta, and the
+separate stable update channels. Native browsing of an external Plexy Server
+inside the GPUI app, the menu-bar keep-running surface, and physical-device
+verification are not part of this implementation pass.

@@ -140,7 +140,14 @@ pub fn now() -> i64 {
 pub fn data_dir() -> PathBuf {
     std::env::var_os("PLEXY_PLAYER_DATA")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Plexy Player")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| {
+                PathBuf::from(home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join(crate::variant::current().data_subdir())
+            })
+        })
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -435,6 +442,59 @@ impl Catalog {
         }
         transaction.commit()?;
         Ok(id)
+    }
+
+    pub fn rename_library(&self, id: i64, name: &str) {
+        let _ = self.db.lock().execute(
+            "UPDATE libraries SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        );
+    }
+
+    /// Copies the Beta catalog into an empty stable catalog. Both builds use
+    /// the same schema, so the copy preserves ids, roots, progress and personal
+    /// marks without a rescan.
+    pub fn import_beta_database(&self, source: &Path) -> Result<()> {
+        let db = self.db.lock();
+        db.execute(
+            "ATTACH DATABASE ?1 AS beta",
+            params![source.display().to_string()],
+        )?;
+        let result = (|| -> Result<()> {
+            db.execute_batch(
+                "INSERT OR IGNORE INTO libraries(id,name,kind,auto_refresh,created_at)
+                   SELECT id,name,kind,auto_refresh,created_at FROM beta.libraries;
+                 INSERT OR IGNORE INTO roots(id,library_id,path)
+                   SELECT id,library_id,path FROM beta.roots;
+                 INSERT OR IGNORE INTO items(id,library_id,root_id,path,size,mtime,title,year,season,episode,episode_title,poster,backdrop,added_at,missing)
+                   SELECT id,library_id,root_id,path,size,mtime,title,year,season,episode,episode_title,poster,backdrop,added_at,missing FROM beta.items;
+                 INSERT OR IGNORE INTO progress(key,path,position,duration,updated)
+                   SELECT key,path,position,duration,updated FROM beta.progress;
+                 INSERT OR IGNORE INTO marks(title_key,kind,created_at)
+                   SELECT title_key,kind,created_at FROM beta.marks;
+                 INSERT OR IGNORE INTO ratings(title_key,rating)
+                   SELECT title_key,rating FROM beta.ratings;
+                 INSERT OR IGNORE INTO collections(id,name,created_at)
+                   SELECT id,name,created_at FROM beta.collections;
+                 INSERT OR IGNORE INTO collection_items(collection_id,title_key,added_at)
+                   SELECT collection_id,title_key,added_at FROM beta.collection_items;
+                 INSERT OR IGNORE INTO history(id,path,title,label,watched_at)
+                   SELECT id,path,title,label,watched_at FROM beta.history;
+                 INSERT OR IGNORE INTO settings(key,value)
+                   SELECT key,value FROM beta.settings;
+                 INSERT OR IGNORE INTO title_metadata(title_key,tmdb_id,kind,name,overview,year,rating,runtime,certification,genres,cast_json,poster_file,backdrop_file,logo_file,imdb_id,manual,matched,fetched_at)
+                   SELECT title_key,tmdb_id,kind,name,overview,year,rating,runtime,certification,genres,cast_json,poster_file,backdrop_file,logo_file,imdb_id,manual,matched,fetched_at FROM beta.title_metadata;
+                 INSERT OR IGNORE INTO episode_metadata(path,still_file,name,overview)
+                   SELECT path,still_file,name,overview FROM beta.episode_metadata;
+                 INSERT OR IGNORE INTO manual_matches(title_key,kind,tmdb_id,created_at)
+                   SELECT title_key,kind,tmdb_id,created_at FROM beta.manual_matches;
+                 INSERT OR IGNORE INTO match_status(title_key,status,attempted_at)
+                   SELECT title_key,status,attempted_at FROM beta.match_status;",
+            )?;
+            Ok(())
+        })();
+        let _ = db.execute("DETACH DATABASE beta", []);
+        result
     }
 
     pub fn add_root(&self, library_id: i64, folder: &Path) -> Result<()> {

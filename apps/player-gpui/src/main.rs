@@ -10,6 +10,7 @@ mod library_ui;
 mod marker_ui;
 mod media;
 mod metadata;
+mod migrate;
 mod mpv;
 mod personal_ui;
 mod preview;
@@ -17,10 +18,12 @@ mod selftest;
 mod settings_ui;
 #[cfg(test)]
 mod ui_tests;
+mod server_host;
 mod shell_ui;
 mod theme;
 mod ui;
 mod updates;
+mod variant;
 
 use std::path::PathBuf;
 
@@ -33,8 +36,6 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use app::PlayerView;
 
 actions!(plexy, [Quit, Open]);
-
-const APP_NAME: &str = "Plexy Beta";
 
 struct Args {
     file: Option<PathBuf>,
@@ -70,6 +71,7 @@ fn parse_args() -> Args {
 
 fn main() {
     let args = parse_args();
+    let app_name = variant::current().name();
     gpui_kit::application().with_assets(assets::Assets).run(move |cx: &mut App| {
         // Kit first: theme, Root overlays, component keybindings.
         gpui_kit::init(cx);
@@ -92,10 +94,17 @@ fn main() {
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-o", Open, None)]);
         cx.set_menus(vec![
-            Menu { name: APP_NAME.into(), disabled: false, items: vec![MenuItem::action(format!("Quit {APP_NAME}"), Quit)] },
+            Menu { name: app_name.into(), disabled: false, items: vec![MenuItem::action(format!("Quit {app_name}"), Quit)] },
             Menu { name: "File".into(), disabled: false, items: vec![MenuItem::action("Open…", Open)] },
         ]);
-        cx.on_window_closed(|cx, _| cx.quit()).detach();
+        cx.on_window_closed(|cx, _| {
+            if crate::variant::current().supports_hosting()
+                && crate::server_host::keep_running()
+            {
+                return;
+            }
+            cx.quit();
+        }).detach();
 
         let bounds = Bounds::centered(None, size(px(1280.), px(760.)), cx);
         let file = args.file.clone();
@@ -108,7 +117,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some(APP_NAME.into()),
+                        title: Some(app_name.into()),
                         appears_transparent: true,
                         traffic_light_position: Some(gpui_kit::point(px(14.), px(14.))),
                     }),
@@ -128,6 +137,9 @@ fn main() {
                         _ => std::ptr::null_mut(),
                     };
                     let catalog = catalog::Catalog::open().expect("open the library database");
+                    if let Err(error) = migrate::run(&catalog) {
+                        eprintln!("migration: {error:#}");
+                    }
                     for (kind, path) in &add_libraries {
                         if !catalog.libraries().iter().any(|l| l.roots.iter().any(|r| &r.path == path)) {
                             let _ = catalog.add_library(*kind, path);

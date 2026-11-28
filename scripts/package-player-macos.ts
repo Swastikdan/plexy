@@ -1,13 +1,43 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import { bundleLibmpv } from "./bundle-libmpv";
 
 const root = join(import.meta.dir, "..");
 const player = join(root, "apps", "player-gpui");
 const output = join(root, "dist", "player-mac");
-const appName = "Plexy Beta";
 const executableName = "plexy-player";
+
+type VariantName = "beta" | "unified" | "local";
+interface Variant {
+  appName: string;
+  bundleId: string;
+  version: string;
+  icon: string;
+  dmgPrefix: string;
+  hosting: boolean;
+}
+
+function variantName(): VariantName {
+  const args = process.argv.slice(2);
+  const index = args.indexOf("--variant");
+  const value = index >= 0 ? args[index + 1] : "beta";
+  if (value === "beta" || value === "unified" || value === "local")
+    return value;
+  throw new Error("Use --variant beta, --variant unified, or --variant local.");
+}
 
 function capture(command: string, args: string[], cwd?: string): string {
   const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 16 * 1024 * 1024 });
@@ -20,14 +50,14 @@ function run(command: string, args: string[]) {
   execFileSync(command, args, { stdio: "inherit" });
 }
 
-function bundleIcon(staging: string, resources: string) {
+function bundleIcon(staging: string, resources: string, source: string) {
   const iconset = join(staging, "AppIcon.iconset");
   mkdirSync(iconset);
   for (const size of [16, 32, 128, 256, 512]) {
     for (const scale of [1, 2]) {
       const pixels = String(size * scale);
       const filename = `icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`;
-      capture("sips", ["-z", pixels, pixels, join(root, "build", "icon.png"), "--out", join(iconset, filename)]);
+      capture("sips", ["-z", pixels, pixels, source, "--out", join(iconset, filename)]);
     }
   }
   run("iconutil", ["-c", "icns", iconset, "-o", join(resources, "AppIcon.icns")]);
@@ -46,10 +76,11 @@ function dmgBackground(staging: string): string {
 }
 
 /** Detach a stale installer volume so Finder never bakes a " 2" suffix into .DS_Store. */
-function detachStalePlayerVolumes() {
+function detachStalePlayerVolumes(appName: string) {
+  const pattern = new RegExp(`^${appName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( \\d+)?$`);
   try {
     for (const name of readdirSync("/Volumes")) {
-      if (!/^Plexy Beta( \d+)?$/.test(name)) continue;
+      if (!pattern.test(name)) continue;
       try {
         execFileSync("hdiutil", ["detach", `/Volumes/${name}`, "-force"], { stdio: "ignore", timeout: 15_000 });
       } catch {
@@ -69,12 +100,12 @@ function attachWritable(dmg: string): string {
 }
 
 /** Author the Finder window, icon positions and background, then compress. */
-function styledDmg(imageRoot: string, staging: string, dmg: string) {
+function styledDmg(imageRoot: string, staging: string, dmg: string, appName: string, tag: string) {
   const background = join(imageRoot, ".background");
   mkdirSync(background);
   copyFileSync(dmgBackground(staging), join(background, "background.tiff"));
-  detachStalePlayerVolumes();
-  const rw = join(staging, "Plexy-Beta-rw.dmg");
+  detachStalePlayerVolumes(appName);
+  const rw = join(staging, `${tag}-rw.dmg`);
   run("hdiutil", ["create", "-srcfolder", imageRoot, "-volname", appName, "-fs", "HFS+", "-format", "UDRW", "-ov", rw]);
   const mount = attachWritable(rw);
   try {
@@ -139,9 +170,28 @@ function verifyRuntime(executable: string, frameworks: string): string {
   return minimum;
 }
 
+function bundleServer(resources: string) {
+  const server = join(resources, "server");
+  const binary = join(root, "dist", "server", "plexy-server");
+  const ffmpeg = join(root, "dist", "server", "ffmpeg");
+  const web = join(root, "dist", "server", "web");
+  if (!existsSync(binary) || !existsSync(ffmpeg) || !existsSync(web))
+    throw new Error("Build the server bundle first: bun run build:server");
+  mkdirSync(server, { recursive: true });
+  copyFileSync(binary, join(server, "plexy-server"));
+  copyFileSync(ffmpeg, join(server, "ffmpeg"));
+  chmodSync(join(server, "plexy-server"), 0o755);
+  chmodSync(join(server, "ffmpeg"), 0o755);
+  cpSync(join(root, "apps", "server", "src", "migrations"), join(server, "migrations"), {
+    recursive: true,
+    filter: (source) => source.endsWith("migrations") || source.endsWith(".sql"),
+  });
+  cpSync(web, join(server, "web"), { recursive: true });
+}
+
 async function main() {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
-    throw new Error(`Build ${appName} on Apple Silicon macOS with native Bun and Rust.`);
+    throw new Error("Build the Mac app on Apple Silicon macOS with native Bun and Rust.");
   }
 
   const manifest = join(player, "Cargo.toml");
@@ -149,8 +199,38 @@ async function main() {
     // Run cargo from the player folder so its rust-toolchain.toml applies.
     capture("cargo", ["metadata", "--locked", "--no-deps", "--format-version", "1", "--manifest-path", manifest], player),
   );
-  const version = packages.find(({ name }) => name === executableName)?.version;
-  if (!version || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Expected a macOS-compatible version in Cargo.toml.");
+  const cargoVersion = packages.find(({ name }) => name === executableName)?.version;
+  if (!cargoVersion || !/^\d+\.\d+\.\d+$/.test(cargoVersion))
+    throw new Error("Expected a macOS-compatible version in Cargo.toml.");
+
+  const variant = variantName();
+  const config: Variant =
+    variant === "beta"
+      ? {
+          appName: "Plexy Beta",
+          bundleId: "com.plexy.beta",
+          version: cargoVersion,
+          icon: join(root, "build", "icon.png"),
+          dmgPrefix: "Plexy-Beta",
+          hosting: false,
+        }
+      : variant === "local"
+        ? {
+            appName: "Plexy Local",
+            bundleId: "com.plexy.local",
+            version: "1.0.0",
+            icon: join(root, "build", "icon-local.png"),
+            dmgPrefix: "Plexy-Local",
+            hosting: false,
+          }
+        : {
+            appName: "Plexy",
+            bundleId: "com.plexy.desktop",
+            version: "1.1.0",
+            icon: join(root, "build", "icon.png"),
+            dmgPrefix: "Plexy",
+            hosting: true,
+          };
 
   const artifacts = capture("cargo", ["build", "--locked", "--release", "--bin", executableName, "--message-format=json-render-diagnostics", "--manifest-path", manifest], player);
   const binary = artifacts.trim().split("\n").map((line) => JSON.parse(line)).find(
@@ -162,7 +242,7 @@ async function main() {
   const staging = mkdtempSync(join(output, ".package-"));
   try {
     const imageRoot = join(staging, "image");
-    const app = join(imageRoot, `${appName}.app`);
+    const app = join(imageRoot, `${config.appName}.app`);
     const contents = join(app, "Contents");
     const resources = join(contents, "Resources");
     const frameworks = join(contents, "Frameworks");
@@ -174,7 +254,8 @@ async function main() {
     // Frameworks is reserved for signed code. The Electron-only version marker is plain text.
     rmSync(join(frameworks, "libmpv.2.dylib.version"), { force: true });
     const minimum = verifyRuntime(executable, frameworks);
-    bundleIcon(staging, resources);
+    bundleIcon(staging, resources, config.icon);
+    if (config.hosting) bundleServer(resources);
 
     const plist = join(contents, "Info.plist");
     writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?>
@@ -184,13 +265,17 @@ async function main() {
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>${executableName}</string>
   <key>CFBundleIconFile</key><string>AppIcon.icns</string>
-  <key>CFBundleIdentifier</key><string>com.plexy.beta</string>
-  <key>CFBundleDisplayName</key><string>${appName}</string>
-  <key>CFBundleName</key><string>${appName}</string>
+  <key>CFBundleIdentifier</key><string>${config.bundleId}</string>
+  <key>CFBundleDisplayName</key><string>${config.appName}</string>
+  <key>CFBundleName</key><string>${config.appName}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${version}</string>
-  <key>CFBundleVersion</key><string>${version}</string>
+  <key>CFBundleShortVersionString</key><string>${config.version}</string>
+  <key>CFBundleVersion</key><string>${config.version}</string>
   <key>LSMinimumSystemVersion</key><string>${minimum}</string>
+  <key>LSEnvironment</key>
+  <dict>
+    <key>PLEXY_APP_VARIANT</key><string>${variant}</string>
+  </dict>
 </dict>
 </plist>
 `);
@@ -199,9 +284,9 @@ async function main() {
     run("codesign", ["--verify", "--deep", "--strict", app]);
 
     symlinkSync("/Applications", join(imageRoot, "Applications"));
-    const dmgName = `Plexy-Beta-${version}-mac-arm64.dmg`;
+    const dmgName = `${config.dmgPrefix}-${config.version}-mac-arm64.dmg`;
     const dmg = join(staging, dmgName);
-    styledDmg(imageRoot, staging, dmg);
+    styledDmg(imageRoot, staging, dmg, config.appName, config.dmgPrefix);
 
     const finalApp = join(output, basename(app));
     rmSync(finalApp, { recursive: true, force: true });

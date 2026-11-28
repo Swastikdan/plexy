@@ -67,6 +67,7 @@ pub enum SettingsSection {
     FixMatches,
     Metadata,
     Maintenance,
+    Server,
 }
 
 impl SettingsSection {
@@ -80,6 +81,7 @@ impl SettingsSection {
             "matches" => Self::FixMatches,
             "metadata" => Self::Metadata,
             "maintenance" => Self::Maintenance,
+            "server" => Self::Server,
             _ if section.is_some() => Self::Overview,
             _ => return None,
         })
@@ -325,6 +327,7 @@ impl PlayerView {
             SettingsSection::Overview => self.render_overview(cx),
             SettingsSection::FixMatches => self.render_fix_matches(window, cx),
             SettingsSection::Maintenance => self.render_maintenance(cx),
+            SettingsSection::Server => self.render_server_settings(cx),
             SettingsSection::Libraries => self.render_libraries_settings(cx),
             SettingsSection::Appearance => {
                 let current = self.catalog.setting("theme").unwrap_or_else(|| "dark".into());
@@ -403,6 +406,7 @@ impl PlayerView {
             SettingsSection::Overview => "Overview",
             SettingsSection::FixMatches => "Fix matches",
             SettingsSection::Maintenance => "Maintenance & diagnostics",
+            SettingsSection::Server => "Plexy Server",
         };
         div()
             .when(section == SettingsSection::FixMatches, |el| el.h(self.viewport.height).min_h(px(440.)))
@@ -474,6 +478,7 @@ impl PlayerView {
             .child(item("settings-libraries", "Libraries", Icon::Library, SettingsSection::Libraries, cx))
             .child(item("settings-matches", "Fix matches", Icon::Search, SettingsSection::FixMatches, cx))
             .child(item("settings-metadata", "Metadata & markers", Icon::Film, SettingsSection::Metadata, cx))
+            .when(crate::variant::current().supports_hosting(), |el| el.child(item("settings-server", "Plexy Server", Icon::Server, SettingsSection::Server, cx)))
             .child(item("settings-maintenance", "Maintenance", Icon::Server, SettingsSection::Maintenance, cx))
             .into_any_element()
     }
@@ -520,7 +525,7 @@ impl PlayerView {
         let updates = card().child(card_header(
             Some(Icon::PlexyLogo),
             "Plexy app updates",
-            Some(format!("Installed version {}", crate::updates::VERSION).into()),
+            Some(format!("Installed version {}", crate::updates::version()).into()),
             Some(actions.into_any_element()),
         ));
 
@@ -541,6 +546,115 @@ impl PlayerView {
     }
 
     // MARK: Libraries
+
+    fn render_server_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        let (running, starting, failed, url, message) = {
+            let host = crate::server_host::host();
+            (
+                host.is_running(),
+                host.state() == crate::server_host::HostState::Starting,
+                host.state() == crate::server_host::HostState::Failed,
+                host.url(),
+                host.message()
+                    .unwrap_or("Plexy Server is part of the unified Plexy app.")
+                    .to_string(),
+            )
+        };
+        let state_label = if running {
+            "Running"
+        } else if starting {
+            "Starting…"
+        } else if failed {
+            "Stopped with an error"
+        } else {
+            "Stopped"
+        };
+        let status_color = if running {
+            theme::accent()
+        } else if failed {
+            theme::warning()
+        } else {
+            theme::muted()
+        };
+        let run_on_launch = self.catalog.setting("run_server_on_launch").as_deref() != Some("0");
+        let keep = self.keep_server_running;
+        let data = crate::server_host::ServerHost::data_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "Unavailable".into());
+        let actions = div()
+            .flex()
+            .gap(px(8.))
+            .child(
+                Button::new(
+                    "server-start-stop",
+                    if running || starting { "Stop server" } else { "Start server" },
+                )
+                .icon(if running || starting { Icon::Pause } else { Icon::Play })
+                .primary()
+                .build()
+                .on_click(cx.listener(|_, _, _, cx| {
+                    let mut host = crate::server_host::host();
+                    if host.is_running() || host.state() == crate::server_host::HostState::Starting {
+                        host.stop();
+                    } else {
+                        host.start();
+                    }
+                    cx.notify();
+                })),
+            )
+            .when_some(url.clone(), |el, url| {
+                el.child(
+                    Button::new("server-open-admin", "Open server admin")
+                        .icon(Icon::Server)
+                        .build()
+                        .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&url))),
+                )
+            });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(STACK))
+            .child(self.settings_card(
+                Icon::Server,
+                "Plexy Server",
+                vec![
+                    Self::setting_row(
+                        "Status",
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_end()
+                            .gap(px(3.))
+                            .child(div().text_size(px(13.)).font_weight(gpui_kit::FontWeight::SEMIBOLD).text_color(status_color).child(state_label))
+                            .child(div().max_w(px(360.)).text_size(px(11.)).text_color(theme::muted()).child(message)),
+                    ),
+                    Self::setting_row("Controls", actions.into_any_element()),
+                    Self::setting_row(
+                        "Run at launch",
+                        self.toggle("server-run-launch", run_on_launch, cx, move |this| {
+                            this.catalog.set_setting("run_server_on_launch", if run_on_launch { "0" } else { "1" });
+                        }),
+                    ),
+                    Self::setting_row(
+                        "Keep running after closing the window",
+                        self.toggle("server-keep-running", keep, cx, move |this| {
+                            this.keep_server_running = !keep;
+                            crate::server_host::set_keep_running(!keep);
+                            this.catalog.set_setting("keep_server_running", if keep { "0" } else { "1" });
+                        }),
+                    ),
+                ],
+            ))
+            .child(self.settings_card(
+                Icon::Folder,
+                "Server data",
+                vec![
+                    Self::setting_row("Library and account store", div().font_family("Menlo").text_size(px(11.)).text_color(theme::muted()).child(data)),
+                    Self::setting_row("Web UI", body("Open the server address in a browser, or use the admin button above to create the owner, add media folders, and enable LAN access.")),
+                ],
+            ))
+            .into_any_element()
+    }
 
     fn render_libraries_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let status = self.catalog.status.lock().clone();
