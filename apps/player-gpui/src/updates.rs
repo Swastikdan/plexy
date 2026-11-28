@@ -175,6 +175,9 @@ rm -rf "$previous" "$tmp"
 /// process to exit, replaces the bundle, and relaunches the new app.
 pub fn install(download: &str) -> anyhow::Result<PathBuf> {
     let app = app_bundle().ok_or_else(|| anyhow::anyhow!("The app bundle could not be located."))?;
+    if app.to_string_lossy().starts_with("/Volumes/") {
+        anyhow::bail!("Move Plexy to Applications before updating.");
+    }
     let app_name = crate::variant::current().name();
     let temp = std::env::temp_dir().join(format!("plexy-update-{}", std::process::id()));
     std::fs::create_dir_all(&temp)?;
