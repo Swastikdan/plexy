@@ -526,15 +526,65 @@ impl PlayerView {
 
     // MARK: Overview
 
+    pub(crate) fn install_update(&mut self, download: String, cx: &mut Context<Self>) {
+        self.update_status = crate::updates::UpdateStatus::Installing;
+        self.update_message = None;
+        cx.notify();
+        let work = cx.background_spawn(async move { crate::updates::install(&download) });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| match result {
+                Ok(_) => {
+                    this.update_status = crate::updates::UpdateStatus::Idle;
+                    cx.quit();
+                }
+                Err(error) => {
+                    this.update_status = crate::updates::UpdateStatus::Failed;
+                    this.update_message = Some(error.to_string());
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn start_auto_update(&mut self, cx: &mut Context<Self>) {
+        self.update_status = crate::updates::UpdateStatus::Checking;
+        self.update_message = None;
+        cx.notify();
+        let work = cx.background_spawn(async { crate::updates::check() });
+        cx.spawn(async move |view, cx| {
+            let result = work.await;
+            view.update(cx, |this, cx| match result {
+                Ok(crate::updates::UpdateStatus::Available { download, .. }) => {
+                    this.install_update(download, cx);
+                }
+                Ok(status) => {
+                    this.update_status = status;
+                    cx.notify();
+                }
+                Err(error) => {
+                    this.update_status = crate::updates::UpdateStatus::Failed;
+                    this.update_message = Some(error.to_string());
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn render_overview(&self, cx: &mut Context<Self>) -> AnyElement {
         use crate::updates::UpdateStatus;
-        let checking = matches!(self.update_status, UpdateStatus::Checking);
+        let checking = matches!(self.update_status, UpdateStatus::Checking | UpdateStatus::Installing);
         let status = match &self.update_status {
             UpdateStatus::Idle => None,
             UpdateStatus::Checking => Some(("Checking for updates…".to_string(), Tone::Neutral)),
             UpdateStatus::Current => Some(("You’re up to date".to_string(), Tone::Success)),
             UpdateStatus::Available { version, .. } => Some((format!("Plexy {version} is available"), Tone::Accent)),
-            UpdateStatus::Failed => Some(("Couldn’t check. Try again in a moment.".to_string(), Tone::Danger)),
+            UpdateStatus::Installing => Some(("Installing update…".to_string(), Tone::Warning)),
+            UpdateStatus::Failed => Some((self.update_message.clone().unwrap_or_else(|| "Couldn’t update. Try again in a moment.".into()), Tone::Danger)),
         };
         let download = match &self.update_status {
             UpdateStatus::Available { download, .. } => Some(download.clone()),
@@ -545,7 +595,15 @@ impl PlayerView {
             .items_center()
             .gap(px(8.))
             .when_some(status, |el, (text, tone)| el.child(badge(text, tone)))
-            .when_some(download, |el, url| el.child(Button::new("download-update", "Download update").primary().build().on_click(move |_, _, cx| cx.open_url(&url))))
+            .when_some(download, |el, url| {
+                let url = url.clone();
+                el.child(
+                    Button::new("install-update", if matches!(self.update_status, UpdateStatus::Installing) { "Installing…" } else { "Update now" })
+                        .primary()
+                        .build()
+                        .on_click(cx.listener(move |this, _, _, cx| this.install_update(url.clone(), cx))),
+                )
+            })
             .child(Button::new("check-update", if checking { "Checking…" } else { "Check for updates" }).icon(Icon::Refresh).build().loading(checking).on_click(cx.listener(|this, _, _, cx| {
                 if matches!(this.update_status, UpdateStatus::Checking) {
                     return;

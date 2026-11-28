@@ -47,6 +47,24 @@ bun run build:mac-apps
 bundle the server executable, FFmpeg, migrations, and web UI. The stable
 client uses the `plexy-v*` update channel.
 
+## Updates
+
+The stable client checks `plexy-v*` GitHub releases, and Beta checks
+`plexy-beta-v*`. **Update now** downloads the matching DMG, mounts it, copies
+the new app after the current process exits, and relaunches it. The helper
+waits for the old process so the running bundle is never replaced underneath
+the player.
+
+For local release testing, point `PLEXY_UPDATE_FEED` at a JSON manifest:
+
+```json
+{"version":"1.1.1","download":"file:///absolute/path/Plexy-1.1.1-mac-arm64.dmg"}
+```
+
+Set `PLEXY_AUTO_UPDATE=1` to run the same check and install path at launch.
+The DMG is currently verified by the release workflow but the in-app installer
+does not parse `SHA256SUMS` yet.
+
 ## Package for macOS
 
 On Apple Silicon, install native Bun and Rust, Xcode with the Metal toolchain,

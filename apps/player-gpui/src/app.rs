@@ -185,6 +185,7 @@ pub struct PlayerView {
     pub episode_metas: std::collections::HashMap<PathBuf, crate::catalog::EpisodeMeta>,
     metadata_epoch: u64,
     pub update_status: crate::updates::UpdateStatus,
+    pub update_message: Option<String>,
     pub metadata_busy: bool,
     pub metadata_message: String,
     pub settings_section: crate::settings_ui::SettingsSection,
@@ -300,6 +301,7 @@ impl PlayerView {
             token_status: Default::default(),
             metadata_epoch: catalog.metadata_epoch(),
             update_status: Default::default(),
+            update_message: None,
             metadata_busy: false,
             metadata_message: String::new(),
             settings_section,
@@ -326,6 +328,10 @@ impl PlayerView {
         #[cfg(not(test))]
         if view.server.client.is_some() {
             view.server_refresh_catalog(cx);
+        }
+        #[cfg(not(test))]
+        if std::env::var("PLEXY_AUTO_UPDATE").as_deref() == Ok("1") {
+            view.start_auto_update(cx);
         }
         view
     }

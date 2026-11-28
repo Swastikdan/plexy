@@ -77,4 +77,5 @@ The first implementation pass covers the server bundle, the Android server sourc
 - `Plexy Server.app` is a Swift menu bar app that launches the bundled backend, opens the library/setup web UI, and optionally starts at login.
 - The Plexy Mac client connects to an external server, merges server titles into the local library, offers the All / This Mac / Plexy Server filter, and plays authenticated streams through libmpv.
 - Android exposes the Plexy Server source in every mode, with onboarding, pairing/password sign-in, merged or server-only catalogs, playback, progress scoping, and downloads.
+- The Plexy client's **Update now** path downloads a release DMG, replaces the running bundle after exit, and relaunches it. A local-feed test upgraded a 1.1.0 build to 1.1.1 end to end.
 - Remaining verification: clean-Mac server setup and login-item behavior, real-server Mac playback/seek/subtitle checks, physical Android certificate and playback checks, and the Electron cutover rehearsal.

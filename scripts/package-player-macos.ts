@@ -182,6 +182,9 @@ async function main() {
     throw new Error("Expected a macOS-compatible version in Cargo.toml.");
 
   const variant = variantName();
+  const versionOverride = process.env.PLEXY_APP_VERSION?.trim();
+  if (versionOverride && !/^\d+\.\d+\.\d+$/.test(versionOverride))
+    throw new Error("PLEXY_APP_VERSION must look like 1.2.3.");
   const config: Variant =
     variant === "beta"
       ? {
@@ -194,7 +197,7 @@ async function main() {
       : {
           appName: "Plexy",
           bundleId: "com.plexy.desktop",
-          version: "1.1.0",
+          version: versionOverride ?? "1.1.0",
           icon: join(root, "build", "icon.png"),
           dmgPrefix: "Plexy",
         };
